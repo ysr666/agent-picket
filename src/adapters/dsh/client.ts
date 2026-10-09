@@ -1,7 +1,7 @@
 import { createBrowserDashboardBridge } from './client-dashboard.ts'
 import { createDshClientRightsScope, type DshSettingsScope, type RightsSection } from './client-rights-scope.ts'
 import { registerDshNativeRightsSlots, type ReactForDsh, type PortalForDsh, type DshSlots } from './native-rights-ui.ts'
-import { formatMessage, resolveLocale } from '../../i18n/index.ts'
+import { formatMessage, resolveLocale, type MessageKey } from '../../i18n/index.ts'
 
 /**
  * DSH Web CLIENT companion. Listens only to the public command/executed event;
@@ -80,7 +80,7 @@ export function apply(ctx: ClientContext, react?: ReactForDsh, portal?: PortalFo
     registerDshNativeRightsSlots(scoped as { slots: DshSlots }, react, portal, {
       rights: owner,
       t: (key, params) => (formatMessage as unknown as
-        (locale: ReturnType<typeof uiLocale>, key: typeof key, params?: typeof params) => string)(
+        (locale: ReturnType<typeof uiLocale>, key: MessageKey, params?: Record<string, string | number>) => string)(
           uiLocale(), key, params),
       getLocale: () => uiLocale(),
       subscribeLocale: listener => scoped.locale!.subscribe(listener),
