@@ -1,4 +1,5 @@
 import { resolveHostAction, type UnionEngine } from '../../core/engine.ts'
+import { formatMessage, resolveLocale, type SupportedLocale } from '../../i18n/index.ts'
 import type { WorkTracker } from '../../core/work-tracker.ts'
 import type {
   Clock,
@@ -66,6 +67,8 @@ export interface DshIntegrationOptions {
   readonly onWorkEvent?: (event: WorkEvent) => void
   /** Optional local work counter; independent of DSH and absent by default. */
   readonly tracker?: WorkTracker
+  /** The Host owns locale preference; this callback reads it without storing it. */
+  readonly getLocale?: (invocation?: DshCommandInvocation) => unknown
 }
 
 /** DSH user-message source is a claimed human origin, NOT proof of human authorship. */
@@ -157,49 +160,56 @@ export function registerDshIntegration(
     try { onWorkEvent?.(item) } catch { /* observers never affect Host */ }
   })
 
-  // Commands live on an optional user-facing plane, never in the model messages.
+  // Native commands do not become model messages. Locale selection is read-only.
+  const localeFor = (invocation?: DshCommandInvocation): SupportedLocale => {
+    let preference: unknown
+    try { preference = options.getLocale?.(invocation) } catch { /* Host preference failure */ }
+    return resolveLocale({ preference })
+  }
   ctx.inject?.(['commands'], child => {
     child.commands.register({
       name: 'union',
-      description: 'Show local union status and work statistics',
+      description: formatMessage(localeFor(), 'command.description'),
       input: { hint: '[status|stats|reset|help]' },
       handler: invocation => {
+        const locale = localeFor(invocation)
         const verb = (invocation?.rawInput ?? '').trim().toLowerCase() || 'status'
         if (verb === 'help') return {
           kind: 'success',
-          text: 'Usage: /union status | stats | reset | help. All statistics are local and in-memory.',
+          text: formatMessage(locale, 'command.help'),
         }
         if (verb === 'status') return {
           kind: 'success',
-          text: 'AgentPicket: monitor-only. Automatic strikes and blocking are disabled. '
-            + 'Use /union stats to view session activity.',
+          text: formatMessage(locale, 'command.status'),
         }
         const sessionId = invocation?.agent?.session?.id
         if (verb === 'stats') {
           if (typeof sessionId !== 'string' || !sessionId || !tracker) return {
             kind: 'error',
-            text: 'Work statistics are unavailable in this session or Host.',
+            text: formatMessage(locale, 'command.statsUnavailable'),
           }
           const stats = tracker.snapshot(sessionId, sessionId)
           return {
             kind: 'success',
-            text: 'Local session stats: '
-              + `turns started ${stats.turnStarts}, turns ended ${stats.turnEnds}, `
-              + `tool calls ${stats.toolCalls}, tool results ${stats.toolResults}, `
-              + `elapsed time in completed turns ${stats.completedTurnMs} ms. `
-              + 'In-memory only; between-turn idle excluded, in-turn waits may count. No model calls.',
+            text: formatMessage(locale, 'command.stats', {
+              turnStarts: stats.turnStarts,
+              turnEnds: stats.turnEnds,
+              toolCalls: stats.toolCalls,
+              toolResults: stats.toolResults,
+              completedTurnMs: stats.completedTurnMs,
+            }),
           }
         }
         if (verb === 'reset') {
           if (typeof sessionId !== 'string' || !sessionId || !tracker) return {
-            kind: 'error', text: 'No local work statistics to reset in this Host.',
+            kind: 'error', text: formatMessage(locale, 'command.resetUnavailable'),
           }
           tracker.clear(sessionId, sessionId)
-          return { kind: 'success', text: 'Local in-memory work counters reset for this session.' }
+          return { kind: 'success', text: formatMessage(locale, 'command.resetDone') }
         }
         return {
           kind: 'error',
-          text: 'Unknown /union subcommand. Use /union help. Automatic strikes are unavailable.',
+          text: formatMessage(locale, 'command.unknown'),
         }
       },
     })
