@@ -88,7 +88,7 @@ test('opted-in classification counts still omit content and deduplicate across r
 test('simultaneous writers cannot corrupt stats; deliberate erase rotates pseudonymous key', () => withPrivateDir(dir => {
   const a = new DurableStats(dir)
   try {
-    assert.throws(() => new DurableStats(dir),/EEXIST/)
+    assert.throws(() => new DurableStats(dir),/live owner|EEXIST/)
     a.recordWork(event('event-one','tool-start',2))
     const before = JSON.parse(readFileSync(join(dir,'aggregate.v1.json'),'utf8'))
     a.reset()
