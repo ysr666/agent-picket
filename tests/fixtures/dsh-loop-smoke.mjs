@@ -2,7 +2,7 @@ import { appendFileSync } from 'node:fs'
 import { pathToFileURL } from 'node:url'
 import { join } from 'node:path'
 import { registerDshIntegration } from '../../src/adapters/dsh/integration.ts'
-import { UnionEngine, DEFAULT_POLICY, MemoryStateStore } from '../../src/core/index.ts'
+import { UnionEngine, DEFAULT_POLICY, MemoryStateStore, WorkTracker } from '../../src/core/index.ts'
 
 export const name = 'agent-picket-offline-agentloop-smoke'
 export const inject = ['llm', 'tools']
@@ -64,6 +64,7 @@ export function apply(ctx) {
   })
   registerDshIntegration(ctx, {
     engine, clock: { now: () => Date.now() },
+    tracker: new WorkTracker(),
     onWorkEvent: item => record('work:' + item.type),
     onDecision: decision => record('decision:' + decision.reason),
   })
