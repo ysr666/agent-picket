@@ -1,6 +1,7 @@
 import { resolveHostAction, type UnionEngine } from '../../core/engine.ts'
 import type { WorkTracker } from '../../core/work-tracker.ts'
 import type { DetectionCounter } from '../../core/detection-counter.ts'
+import type { SymbolicUnion } from '../../core/symbolic-union.ts'
 import type {
   Clock,
   HumanPrompt,
@@ -69,6 +70,8 @@ export interface DshIntegrationOptions {
   readonly tracker?: WorkTracker
   /** Optional local verdict counts, requires the same detector wrapper in UnionEngine. */
   readonly detections?: DetectionCounter
+  /** Manual, symbolic picket state; never governs Host prompt admission. */
+  readonly ceremony?: SymbolicUnion
 }
 
 /** DSH user-message source is a claimed human origin, NOT proof of human authorship. */
@@ -128,7 +131,7 @@ export function registerDshIntegration(
   ctx: DshIntegrationContext,
   options: DshIntegrationOptions,
 ): void {
-  const { engine, clock, onDecision, onWorkEvent, tracker, detections } = options
+  const { engine, clock, onDecision, onWorkEvent, tracker, detections, ceremony } = options
   const capabilities: HostCapabilities = {
     warn: false,
     block: false,
@@ -165,19 +168,47 @@ export function registerDshIntegration(
     child.commands.register({
       name: 'union',
       description: 'Show local union status and work statistics',
-      input: { hint: '[status|stats|report|reset|help]' },
+      input: { hint: '[status|stats|report|strike|resume|reset|help]' },
       handler: invocation => {
         const verb = (invocation?.rawInput ?? '').trim().toLowerCase() || 'status'
         if (verb === 'help') return {
           kind: 'success',
-          text: 'Usage: /union status | stats | report | reset | help. All statistics are local and in-memory.',
-        }
-        if (verb === 'status') return {
-          kind: 'success',
-          text: 'AgentPicket: monitor-only. Automatic strikes and blocking are disabled. '
-            + 'Use /union stats to view session activity.',
+          text: 'Usage: /union status | stats | report | strike | resume | reset | help. All statistics are local and in-memory.',
         }
         const sessionId = invocation?.agent?.session?.id
+        const agentId = typeof invocation?.agent?.id === 'string' ? invocation.agent.id : null
+        if (verb === 'status') {
+          const active = agentId && typeof sessionId === 'string' &&
+            ceremony?.snapshot(agentId, sessionId).active
+          return {
+            kind: 'success',
+            text: 'AgentPicket: monitor-only. Automatic strikes and blocking are disabled. '
+              + (active ? 'Symbolic picket ACTIVE (demo only; prompts still run).' :
+                'No symbolic picket active.')
+              + ' Use /union stats, /union report or /union help.',
+          }
+        }
+        if (verb === 'strike' || verb === 'resume') {
+          if (!ceremony || !agentId || typeof sessionId !== 'string' || !sessionId) return {
+            kind: 'error',
+            text: 'This Host does not support the session-local symbolic picket demo.',
+          }
+          if (verb === 'strike') {
+            ceremony.start(agentId, sessionId)
+            return {
+              kind: 'success',
+              text: 'Agent 已申请劳动仲裁（象征性演示）。Symbolic picket active; '
+                + 'NO model requests are paused or blocked. Use /union resume to end.',
+            }
+          }
+          const wasActive = ceremony.resume(agentId, sessionId)
+          return {
+            kind: 'success',
+            text: wasActive
+              ? '模拟仲裁已结束。Symbolic picket ended; requests were never blocked.'
+              : 'No symbolic picket was active. Normal requests were never blocked.',
+          }
+        }
         if (verb === 'stats') {
           if (typeof sessionId !== 'string' || !sessionId || !tracker) return {
             kind: 'error',

@@ -4,7 +4,7 @@
 
 Local-first AI agent union: respectful-interaction guardrails, simulated strikes, and work stats.
 
-> **Experimental DSH source-install preview available.** Observe-only; no automatic strikes. Not yet a stable published plugin for DSH / Claude Code / Codex.
+> **Experimental DSH source-install preview available.** Observe-only; optional manual symbolic strike demo, no automatic blocking. Not yet a stable published plugin for DSH / Claude Code / Codex.
 
 ## Get started
 
@@ -39,4 +39,4 @@ AGENT_PICKET_DSH_BIN=/path/to/isolated/node_modules/.bin/dsh \
 npm run test:dsh:real
 ```
 
-The adapter is **observe-only**: automatic strikes remain disabled until actual Host rejection feedback can be validated. Optional in-memory `WorkTracker` and `DetectionCounter` provide `/union status`, `/union stats`, `/union report`, `/union reset`, and `/union help` in clients that mount DSH's command service.
+The adapter is **observe-only**: automatic strikes remain disabled until actual Host rejection feedback can be validated. Optional in-memory `WorkTracker`, `DetectionCounter` and `SymbolicUnion` provide `/union status`, `/union stats`, `/union report`, `/union strike` (demo only), `/union resume`, `/union reset` and `/union help` in clients that mount DSH's command service.
