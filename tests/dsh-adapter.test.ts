@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { UnionEngine, DEFAULT_POLICY, MemoryStateStore } from '../src/core/index.ts'
+import { UnionEngine, DEFAULT_POLICY, MemoryStateStore, WorkTracker } from '../src/core/index.ts'
 import {
   createDshPreStepProbe,
   normalizeDshPrompt,
@@ -164,4 +164,40 @@ test('probe rejects matching IDs without invoking downstream, and delegates othe
   assert.deepEqual(await probe({ agent: { id: 'a' }, messages: [{ id: 'not-reject' }] },
     async () => { count++; return { kind: 'enter' } }), { kind: 'enter' })
   assert.equal(count, 1)
+})
+
+test('DSH union stats command reflects local events and can clear counters', () => {
+  const tracker = new WorkTracker()
+  const hooks = new Map<string, Function>()
+  let command: any
+  const engine = new UnionEngine({
+    store: new MemoryStateStore(),
+    clock: { now: () => 1000 },
+    detector: { detect: () => ({ verdict: 'safe', confidence: 1 }) },
+  })
+  registerDshIntegration({
+    on(name: string, cb: Function) { hooks.set(name, cb) },
+    inject(_services: unknown, cb: Function) {
+      cb({ commands: { register(def: unknown) { command = def } } })
+    },
+  } as unknown as DshIntegrationContext, {
+    engine, clock: { now: () => 1000 }, tracker,
+  })
+  const sess = { id: 'session-100' }
+  hooks.get('session/event')!(sess, { type: 'turn/start', seq: 1, time: 1000 })
+  hooks.get('session/event')!(sess, { type: 'tool/call', seq: 2, time: 1010 })
+  hooks.get('session/event')!(sess, { type: 'tool/result', seq: 3, time: 1050 })
+  hooks.get('session/event')!(sess, { type: 'turn/end', seq: 4, time: 1200 })
+  const call = (rawInput: string) => command.handler({
+    rawInput, agent: { id: 'agent-not-equal-session', session: sess },
+  })
+  assert.match(call(' stats').text, /turns started 1, turns ended 1/)
+  assert.match(call(' stats').text, /tool calls 1, tool results 1/)
+  assert.match(call(' stats').text, /elapsed time in completed turns 200 ms/)
+  assert.match(call(' status').text, /monitor-only/)
+  assert.match(call(' help').text, /Usage:/)
+  assert.match(call(' reset').text, /reset/)
+  assert.match(call(' stats').text, /turns started 0, turns ended 0/)
+  assert.equal(call(' strike').kind, 'error')
+  assert.equal(call(' stats').text.includes('secret'), false)
 })
