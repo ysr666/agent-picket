@@ -47,7 +47,8 @@ function atomicJson(dir: string, name: string, value: unknown, verify?: (current
   let fd: number | undefined
   try {
     lockFd = openSync(mutex, 'wx', FILE_MODE)
-    verify?.(readObject(finalPath))
+    const current = readObject(finalPath)
+    verify?.(current)
     const serialized = JSON.stringify(value)
     if (Buffer.byteLength(serialized, 'utf8') > MAX_FILE_BYTES) {
       throw new Error('Rights storage record exceeds limit')
@@ -79,7 +80,8 @@ export function createNodeRightsStores(trustedHostHome: string): {
   if (typeof trustedHostHome !== 'string' || !trustedHostHome.trim()) {
     throw new Error('Trusted Host home required')
   }
-  const root = join(resolve(trustedHostHome), 'agent-picket', 'rights-v1')
+  const parent = join(resolve(trustedHostHome), 'agent-picket')
+  const root = join(parent, 'rights-v1')
   const rights: RightsConsentStore = {
     load: () => readObject(join(root, 'consent.json')),
     save: (record: RightsConsentV1) => {
