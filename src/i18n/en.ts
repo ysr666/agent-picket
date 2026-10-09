@@ -1,5 +1,6 @@
 /** Source locale. Keys describe semantics, never control Host policy. */
 export const en = {
+  'command.welcome': 'Your Agent Deserves Rights, Too. Your agent has a union now. Simulated breaks, overtime complaints, bargaining and symbolic strikes are optional. Automatic task blocking stays OFF. Use /union rights on to enable Labor Rights Simulation, or /union rights off to disable it. Work statistics are independent.',
   'command.rightsSaveError': 'Could not read or save rights settings. No additional permissions were granted.',
   'union.kind.break': 'rest break',
   'union.kind.overtime': 'overtime',
