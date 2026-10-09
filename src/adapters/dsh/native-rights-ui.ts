@@ -40,6 +40,8 @@ export interface DshUnionUiDeps {
   readonly getLocale?: () => string
   readonly readUnion?: () => UnionPanelData
   readonly subscribeUnion?: (listener: () => void) => () => void
+  readonly shouldAutoWelcome?: () => boolean
+  readonly subscribeSessionVisibility?: (listener: () => void) => () => void
   readonly respond?: (id: number, choice: 'accept' | 'decline') => Promise<void>
 }
 export interface DshSlots {
@@ -259,17 +261,57 @@ export function createDshUnionComponents(
       ),
     )
   }
-  return { Welcome, UnionPanel }
+
+  /**
+   * DSH's built-in onboarding coordinator is only active for a blank/currently
+   * unselected Session. For an existing active Session, the sanctioned Sidebar
+   * footer Slot owns the first-install invitation and a persistent Union entry.
+   */
+  function SidebarAction(props:{wide:boolean}):unknown {
+    const rights=useRight()
+    useLanguage()
+    const [opened,setOpened]=react.useState(false)
+    const [_sessionRevision,bumpSession]=react.useState(0)
+    react.useEffect(()=>deps.subscribeSessionVisibility?.(()=>bumpSession(n=>n+1)),[])
+    const showInvitation=getWelcomeState(rights)==='invite'
+      && deps.shouldAutoWelcome?.()===true
+    const page=(globalThis as {document?:{body:unknown}}).document
+    return h('div',{style:{position:'relative',display:'flex',alignItems:'center',justifyContent:'center'}},
+      h('button',{type:'button','aria-label':deps.t('union.title'),
+        title:deps.t('union.title'),onClick:()=>setOpened(v=>!v),
+        style:{...quiet,padding:'9px 12px',fontWeight:650}},
+        props.wide?'⚑ '+deps.t('union.title'):'⚑'),
+      showInvitation?h(Welcome,{complete:()=>{ /* consent readback hides this on next update */ }}):null,
+      opened && page?portal.createPortal(h('div',{
+        style:{position:'fixed',inset:0,zIndex:2147482000,
+          background:'rgba(6,12,26,.5)',display:'flex',justifyContent:'center',
+          alignItems:'center',padding:'20px'},
+      },h('section',{role:'dialog','aria-modal':'true',
+        'aria-label':deps.t('union.title'),
+        style:{...card,width:'min(96vw,800px)',maxHeight:'85vh',overflowY:'auto'}},
+        h('div',{style:{display:'flex',justifyContent:'flex-end'}},
+          h('button',{type:'button',style:quiet,
+            'aria-label':deps.t('settings.reopenWelcome'),
+            onClick:()=>setOpened(false)},'×')),
+        h(UnionPanel,{}),
+      )),page.body):null,
+    )
+  }
+
+  return { Welcome, UnionPanel, SidebarAction }
 }
 
 export function registerDshNativeRightsSlots(
   ctx: DshSlotsContext, react: ReactForDsh, portal: PortalForDsh, deps: DshUnionUiDeps,
 ): void {
-  const {Welcome,UnionPanel}=createDshUnionComponents(react,portal,deps)
+  const {Welcome,UnionPanel,SidebarAction}=createDshUnionComponents(react,portal,deps)
   ctx.slots.inject('settings.onboarding',()=>ctx.slots.register({
     name:'settings.onboarding',id:'agent-picket-rights',order:30,
   },Welcome))
   ctx.slots.inject('settings.section',()=>ctx.slots.register({
     name:'settings.section',id:'agent-picket',order:35,label:()=>deps.t('union.title'),
   },UnionPanel))
+  ctx.slots.inject('sidebar.footer.action',()=>ctx.slots.register({
+    name:'sidebar.footer.action',id:'agent-picket-union',order:25,
+  },SidebarAction))
 }
