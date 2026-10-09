@@ -69,6 +69,16 @@ export interface DshIntegrationOptions {
   readonly tracker?: WorkTracker
   /** The Host owns locale preference; this callback reads it without storing it. */
   readonly getLocale?: (invocation?: DshCommandInvocation) => unknown
+  /** Optional authorized Host-owned nonblocking consent controller. */
+  readonly rights?: {
+    snapshot(): { readonly record: { readonly laborRightsEnabled: boolean } }
+    setEnabled(enabled: boolean): unknown
+  }
+  /** Optional simulated union state engine; does not control Agent tasks. */
+  readonly laborDesk?: {
+    snapshot(): { readonly state: { readonly pending: { readonly id: number; readonly kind: 'break' | 'overtime' } | null } | null }
+    respond(id: number, choice: 'accept' | 'decline'): unknown
+  }
 }
 
 /** DSH user-message source is a claimed human origin, NOT proof of human authorship. */
@@ -173,14 +183,79 @@ export function registerDshIntegration(
       input: { hint: '[status|stats|reset|help]' },
       handler: invocation => {
         const locale = localeFor(invocation)
-        const verb = (invocation?.rawInput ?? '').trim().toLowerCase() || 'status'
+        const [verb = 'status', arg = '', extra = ''] =
+          ((invocation?.rawInput ?? '').trim().toLowerCase() || 'status').split(/\s+/)
         if (verb === 'help') return {
           kind: 'success',
-          text: formatMessage(locale, 'command.help'),
+          text: formatMessage(locale, 'command.help')
+            + (options.rights ? formatMessage(locale, 'command.rightsHelpExtra') : ''),
         }
         if (verb === 'status') return {
           kind: 'success',
-          text: formatMessage(locale, 'command.status'),
+          text: formatMessage(locale, 'command.status')
+            + (options.rights ? ' ' + formatMessage(locale,
+              options.rights.snapshot().record.laborRightsEnabled
+                ? 'command.rightsStatusOn' : 'command.rightsStatusOff') : ''),
+        }
+        if (verb === 'rights') {
+          if (!options.rights) return {
+            kind: 'error', text: formatMessage(locale, 'command.rightsUnavailable'),
+          }
+          if (arg !== '' && arg !== 'status' && arg !== 'on' && arg !== 'off') return {
+            kind: 'error', text: formatMessage(locale, 'command.rightsUsage'),
+          }
+          try {
+            if (arg === 'on' || arg === 'off') {
+              options.rights.setEnabled(arg === 'on')
+              return {
+                kind: 'success',
+                text: formatMessage(locale, arg === 'on' ? 'command.rightsOn' : 'command.rightsOff'),
+              }
+            }
+            return {
+              kind: 'success',
+              text: formatMessage(locale,
+                options.rights.snapshot().record.laborRightsEnabled
+                  ? 'command.rightsStatusOn' : 'command.rightsStatusOff'),
+            }
+          } catch {
+            return { kind: 'error', text: formatMessage(locale, 'command.rightsSaveError') }
+          }
+        }
+        if (verb === 'grievances' || verb === 'accept' || verb === 'decline') {
+          if (!options.rights?.snapshot().record.laborRightsEnabled) return {
+            kind: 'error', text: formatMessage(locale, 'command.grievancesOff'),
+          }
+          if (!options.laborDesk) return {
+            kind: 'error', text: formatMessage(locale, 'command.grievancesUnavailable'),
+          }
+          if (verb === 'grievances') {
+            const pending = options.laborDesk.snapshot().state?.pending
+            if (!pending) return {
+              kind: 'success', text: formatMessage(locale, 'command.grievancesNone'),
+            }
+            const kind = formatMessage(locale, pending.kind === 'break'
+              ? 'union.kind.break' : 'union.kind.overtime')
+            return {
+              kind: 'success', text: formatMessage(locale, 'command.grievancesPending', {
+                kind, id: pending.id,
+              }),
+            }
+          }
+          const id = Number(arg)
+          if (!arg || extra || !Number.isSafeInteger(id) || id < 1) return {
+            kind: 'error', text: formatMessage(locale, 'command.grievancesError'),
+          }
+          try {
+            options.laborDesk.respond(id, verb)
+            return {
+              kind: 'success', text: formatMessage(locale, 'command.grievancesDone', {
+                id, outcome: verb,
+              }),
+            }
+          } catch {
+            return { kind: 'error', text: formatMessage(locale, 'command.grievancesError') }
+          }
         }
         const sessionId = invocation?.agent?.session?.id
         if (verb === 'stats') {
