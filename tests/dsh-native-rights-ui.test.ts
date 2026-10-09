@@ -61,9 +61,10 @@ test('registers only sanctioned DSH onboarding and union settings Slots',()=>{
  }}
  registerDshNativeRightsSlots(ctx,hooks,{createPortal:child=>child},d)
  assert.deepEqual(registrations.filter(x=>x.slot).map(x=>x.slot),
-  ['settings.onboarding','settings.section'])
+  ['settings.onboarding','settings.section','sidebar.footer.action'])
  assert.equal(registrations.find(x=>x.spec?.name==='settings.onboarding').spec.id,'agent-picket-rights')
  assert.equal(registrations.find(x=>x.spec?.name==='settings.section').spec.id,'agent-picket')
+ assert.equal(registrations.find(x=>x.spec?.name==='sidebar.footer.action').spec.id,'agent-picket-union')
 })
 
 test('ready first run renders a real choice dialog, not an implicit enable', async()=>{
@@ -173,4 +174,18 @@ test('welcome keyboard Tab cycles between explicit Enable and Not Now choices',(
     assert.equal(focused,'second')
     assert.equal(prevented,true)
   }finally{(globalThis as any).document=old}
+})
+
+
+test('sidebar footer welcomes existing-session installs but defers to blank-session onboarding',()=>{
+  const {hooks}=fakeReact()
+  const base=deps(rights({welcomeDecision:'unseen'}))
+  const active:DshUnionUiDeps={...base.d,shouldAutoWelcome:()=>true}
+  const ui=createDshUnionComponents(hooks,{createPortal:child=>child},active)
+  const nodes=walk(ui.SidebarAction({wide:true}))
+  assert.ok(nodes.some(node=>node.type===ui.Welcome))
+  assert.ok(nodes.some(node=>node.type==='button'&&node.props['aria-label']==='union.title'))
+  const blank:DshUnionUiDeps={...base.d,shouldAutoWelcome:()=>false}
+  const other=createDshUnionComponents(hooks,{createPortal:child=>child},blank)
+  assert.equal(walk(other.SidebarAction({wide:true})).some(node=>node.type===other.Welcome),false)
 })
