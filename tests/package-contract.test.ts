@@ -55,6 +55,7 @@ test('npm dry-run tarball contains prebuilt plugin and no source, tests, or runt
   for (const expected of [
     'dist/core/index.js', 'dist/core/index.d.ts',
     'dist/adapters/dsh/plugin.js', 'dist/adapters/dsh/client.js',
+    'dist/adapters/hooks/entry.js', 'dist/adapters/hooks/evaluate.js',
     'README.md', 'LICENSE', 'package.json',
   ]) assert.ok(files.has(expected), 'Missing distribution file: ' + expected)
   for (const file of files) {
