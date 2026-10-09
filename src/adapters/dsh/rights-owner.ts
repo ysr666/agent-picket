@@ -1,7 +1,13 @@
 import { createNodeRightsStores } from '../node/rights-storage.ts'
 import { createRightsConsentController } from '../../product/rights-consent.ts'
 import { createLaborDesk } from '../../product/union-desk.ts'
-import type { DshCommandInvocation } from './integration.ts'
+/** Narrow structural command context; no runtime dependency on DSH packages. */
+export interface RightsCommandInvocation {
+  readonly agent?: {
+    readonly id?: unknown
+    readonly session?: { readonly id?: unknown }
+  }
+}
 
 /**
  * Trusted Node-side settings owner for a DSH Host. Never exposed over Browser
@@ -14,7 +20,7 @@ export function createDshRightsOwner(trustedDshHome: string) {
   const rights = createRightsConsentController(stores.rights)
   return {
     rights,
-    getLaborDesk(invocation?: DshCommandInvocation) {
+    getLaborDesk(invocation?: RightsCommandInvocation) {
       const agentId = invocation?.agent?.id
       const sessionId = invocation?.agent?.session?.id
       if (typeof agentId !== 'string' || !agentId
