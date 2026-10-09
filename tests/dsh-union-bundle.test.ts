@@ -41,7 +41,7 @@ test('packaged DSH Client loads native React Slots without extra React, model ca
   const ctx:any={
     provide(name:string,data:any){assert.equal(name,'agentPicketDashboard');published=data;return()=>{}},
     sessions:{
-      list:{getSnapshot:()=>({current:'session-1'}),subscribe:()=>()=>{}},
+      list:{getSnapshot:()=>({current:'session-1',phase:'ready',byId:{'session-1':{blank:false}}}),subscribe:()=>()=>{}},
       binding(id:string){return id==='session-1'?{eventSource:{
         getSnapshot:()=>events,subscribe:()=>()=>{},
       }}:undefined},
@@ -76,7 +76,9 @@ test('packaged DSH Client loads native React Slots without extra React, model ca
   assert.equal(stat.sessionWork?.completedTurnMs,300)
   assert.equal(JSON.stringify(stat).includes('PRIVATE_PROMPT_9876'),false)
   assert.deepEqual(registrations.map(x=>x.options.name),
-    ['settings.onboarding','settings.section'])
+    ['settings.onboarding','settings.section','sidebar.footer.action'])
+  const footer=registrations[2].component({wide:true})
+  assert.ok(JSON.stringify(footer).includes('AI 工会'))
   const content=registrations[1].component({})
   const serialized=JSON.stringify(content)
   assert.ok(serialized.includes('工会'),serialized.slice(0,300))
