@@ -8,7 +8,7 @@
 
 **一句话**：本地运行、默认不上传任何聊天内容的 Agent 交互边界和「赛博工会」插件。既有趣，也能提供真实的工作量统计和可审计的本地拦截机制。
 
-第一目标平台：**DeepSeek Harness (DSH)**。之后再根据真实兼容性提取共享核心，支持 Claude Code、Codex 等。
+首个完整验证平台：**DeepSeek Harness (DSH)**。**从 Phase 0 起就建立与宿主无关的 Core/Contract；Cordis 仅在 DSH Adapter 内使用**。Claude Code、Codex 以后只新增适配层，不重新实现检测器、工会状态机和统计逻辑。
 
 核心价值：
 - 只对**直接面向 Agent 的持续、明确、恶意辱骂**作出温和、分级且可恢复的处理；
@@ -18,6 +18,15 @@
 - 尽可能不改变原宿主正常的模型调用和安全边界。
 
 **不是**心理健康诊断、AI 意识或真实劳动权利的法律认定；不破坏用户文件、不擅自中止正在执行的工具、不注入外部审查服务。
+
+## 架构决策：DSH-first ≠ Cordis-first
+
+- **Core 从第一天独立**：仅使用标准 TypeScript/Node API 与注入的时钟、状态存储接口；严禁导入 Cordis、DSH、Claude Code、Codex 的类型和运行时代码。
+- **Platform Adapters**：分别完成原生生命周期事件 → 统一输入/事件，Core Decision → 宿主动作，不能把宿主操作混进检测器。
+- **最小 Contract**：`HumanPrompt`（需明确来源可信度）、`WorkEvent`、`DetectionResult`、`UnionDecision`、`HostCapabilities`、`StateStore`。以 DSH 初步验证与模拟 Host 测试逐步固定，避免先抽象整个 Agent Framework。
+- **Source confidence**：某宿主无法证明消息来自真人时，只允许 observe/warn，**禁止自动 strike/block**；不能因为 Hook 名叫 `UserPromptSubmit` 就视为真人来源。
+- **能力降级**：同一 Core 可返回决策，Adapter 按可用能力分别执行 block / warn / observe；未支持的动作必须明确反馈。
+- **平台中立性验证**：Phase 0 即使用至少一个不依赖 DSH 的模拟 Adapter 跑相同测试；后续 Claude Code/Codex 添加真实端到端测试。
 
 ## 1. 关键源代码依据（实施前重新确认当前 Host 版本）
 
@@ -31,24 +40,24 @@
 
 ## 2. 实施阶段与验收
 
-### Phase 0 — DSH Integration Spike（第一优先级）
+### Phase 0 — Core Contract + DSH Integration Spike（第一优先级）
 
 任务：
-1. 在隔离测试环境运行 DSH；记录版本/commit、profile 和依赖版本。
+1. **先确定独立 Core 与最小 Adapter Contract 的输入、事件、决策、能力声明；用模拟 Host 跑纯单测，禁止引入 Cordis 依赖。** 随后在隔离测试环境运行 DSH；记录版本/commit、profile 和依赖版本。
 2. 验证 Cordis 插件加载/卸载以及与 `dsh-vision-router` 并存。
 3. 验证 `agent/pre-step` 的 `messages`、`source`、`next()` 组合顺序、reject 后输入/回显表现、同一轮多条消息、steer/inject/subagent 行为。
 4. 验证 `ctx.commands.register` 中 `/union status` 的注册、显示、卸载和在不同 profile 上的缺失处理。
 5. 验证 `session/event` 的 `turn/start`、`turn/end`、`tool/call`、`tool/result` 等事件载荷、顺序、取消与重放行为。
-6. 编写最小端到端 characterization tests。任何不确定的宿主行为应以测试结果为准，而不是硬编码猜测。
+6. 编写 Core-only 单测、模拟 Host contract tests 和 DSH 端到端 characterization tests。任何不确定的宿主行为以测试结果为准，而非硬编码猜测。
 
-交付：`docs/DSH_INTEGRATION.md`（实际接口证据、兼容矩阵、风险）+ 可重跑的集成测试。
+交付：`docs/ARCHITECTURE.md`（边界和 Contract）+ `docs/DSH_INTEGRATION.md`（实际接口证据、兼容矩阵、风险）+ Core/模拟 Host/DSH 可重跑测试。
 
-**验收**：可正常进出一轮交互；拒绝不产生模型调用；拒绝后 UI 能清晰说明结果、用户能继续发送下一条正常请求；已安装其他插件不受影响；卸载无残留 Hook。
+**验收**：Core 不引用宿主 API，同一测试用例可运行于模拟 Host 与 DSH Adapter；可正常进出一轮交互；拒绝不产生模型调用；拒绝后 UI 能清晰说明结果、用户能继续发送下一条正常请求；其他插件不受影响；卸载无残留 Hook。
 
 ### Phase 1 — 可安装的 DSH MVP
 
 任务：
-1. 最小 Cordis plugin + DSH bundle (`package.json` / `cordis.patch.yml`) + 独立测试脚本。
+1. 实现独立 Core 检测/策略与最小 Cordis Adapter + DSH bundle (`package.json` / `cordis.patch.yml`)；**只有 DSH Adapter 依赖 Cordis**。
 2. 先实现纯函数规则检测器：目标是否为 Agent、强度、是否属于引用或编程语境。
 3. 同一会话的轻量状态机：`normal → warned → arbitration → strike`；采用连续行为累计与衰减，不因一句脏话立即罢工。
 4. 实现 `/union status`、`/union help`、`/union strike`（主动模拟）、`/union resume`、`/union mode`。
@@ -84,12 +93,12 @@
 
 **验收**：冷重启后计数准确；多 Agent 和并发不串数据；卸载/关闭拦截不影响正常工作；导出/彻底清除均有测试。
 
-### Phase 4 — Shared Core & Multi-Agent
+### Phase 4 — Additional Host Adapters（共享 Core 已从 Phase 0 存在）
 
 任务：
-1. 基于 DSH 实测提取**最小**平台无关接口：`HumanPrompt`、`WorkEvent`、`Decision`、`Notifier`、`StateStore`。
-2. 加入 Claude Code 原生 Hook Adapter；再调查 Codex 的当前 Hook 能力，不能直接拦截时显式降级至 Wrapper/监测模式。
-3. 做宿主能力矩阵：输入来源真实性、拒绝权限、用户通知、会话事件、命令、撤销能力。
+1. 复查并小幅演进 Phase 0 已定义的平台无关 Contract；禁止因新增宿主把 Cordis/DSH 类型引入 Core。
+2. 加入 Claude Code Hooks Adapter、Codex Hooks Adapter；分别实测 prompt 阻断、状态事件、命令、包管理和 Hook 顺序。能力不足时明确降级至 Wrapper/监测模式。
+3. 做宿主能力矩阵：输入来源真实性、拒绝权限、用户通知、会话事件、命令、撤销能力。**Claude Code 的 UserPromptSubmit 也可能发生在自主开启的轮次；Codex 的人类输入来源同样不能仅凭 Hook 名称推断。未证明来源时不允许自动惩罚。**
 4. 共享相同检测 fixture，增加真实平台端到端测试，不把「有 Skill/MCP」等同于「能强制拦截」。
 
 **验收**：至少 DSH 与一个非 DSH 宿主通过相同语义测试；不支持的能力在文档中明确降级。
@@ -109,15 +118,16 @@
 ```text
 agent-picket/
 ├── src/
-│   ├── core/
+│   ├── core/                 # independent: zero host imports
 │   │   ├── detector.ts       # pure, no host API
 │   │   ├── policy.ts         # thresholds + state transitions
-│   │   └── types.ts
+│   │   └── contract.ts       # normalized events, capabilities, decisions
 │   ├── adapters/
-│   │   └── dsh/
-│   │       ├── plugin.ts
-│   │       ├── commands.ts
-│   │       └── events.ts
+│   │   ├── dsh/              # only here: Cordis / DSH
+│   │   │   ├── plugin.ts
+│   │   │   ├── commands.ts
+│   │   │   └── events.ts
+│   │   └── mock/             # verifies Core without DSH
 │   └── storage/
 ├── tests/
 │   ├── unit/
@@ -125,7 +135,8 @@ agent-picket/
 │   └── integration/
 ├── docs/
 │   ├── ROADMAP.zh.md
-│   └── DSH_INTEGRATION.md       # Phase 0 output; not created yet
+│   ├── ARCHITECTURE.md        # Phase 0 boundary/contract record
+│   └── DSH_INTEGRATION.md     # Phase 0 evidence
 ├── package.json                # Phase 1 output
 └── cordis.patch.yml            # Phase 1 output
 ```
@@ -147,8 +158,9 @@ agent-picket/
 **任务名：DSH Integration Spike**
 
 - 克隆、检查当前 AgentPicket 和 DSH；先记录版本、测试依赖和干净环境。
+- 先拟定最小平台无关 Contract，并写 Mock Adapter 测试；不依赖 Cordis。
 - 根据源码验证五项真实能力：pre-step；人工来源；命令；session event；plugin 生命周期。
-- 在隔离 profile 中编写最小实验，不新增产品功能，不写复杂 detector，不发布 npm。
+- 在隔离 profile 中编写最小 DSH Adapter 实验，不新增产品功能，不写复杂 detector，不发布 npm。
 - 实测拒绝后的 UI 反馈与恢复策略，以及与 dsh-vision-router 共存。
 - 将证据写入 `docs/DSH_INTEGRATION.md`，连同最小复现测试提交到 feature 分支，由验证结果决定 Phase 1 的实现细节。
 
