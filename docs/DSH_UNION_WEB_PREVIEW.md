@@ -41,3 +41,9 @@ Verified in isolated Node 24.5.0 environment:
 ## Next user-visible release step
 
 Run the real DSH Chrome test harness against a disposable installed plugin (with all external access blocked), check enabling, decline, restart, dark/light, and unloading. Then review integration of the already-built simulated grievance engine from PR #39 with a narrowly authorized Host action channel. No ad hoc HTTP or scraping.
+
+## Existing-session first install and union access
+
+DSH's default settings.onboarding coordinator runs only for no/blank selected sessions. Agent Picket therefore ALSO registers the supported sidebar.footer.action Slot. That action is visible as a persistent union entry in both collapsed and expanded sidebars and can open the union-first drawer. When a current Host Session is explicitly ready and nonblank, and rights preference is still unseen, that entry shows the same first-use invitation; blank/no-session views defer to native onboarding to avoid two simultaneous invitations. No dialog is shown before authenticated writable preference state is ready. The union's verified elapsed-time progress against the fictional eight-hour target is visible only when coverage is complete. Incomplete history never produces a bogus progress bar.
+
+Extra validation: six original native UI tests expanded to eight; bundled Browser factory/Slot test, Host schema tests, full TypeScript compilation, and a clean offline npm-ci install of Schemastery + its declared transitive dependencies passed on Node 24.5.0. A real DSH Chrome/Host render remains a separate release gate.
