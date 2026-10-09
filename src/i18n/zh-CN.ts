@@ -2,6 +2,19 @@ import type { en } from './en.ts'
 
 /** Full initial locale, including future union-first interface terms. */
 export const zhCN = {
+  'command.rightsUnavailable': '当前宿主无法使用劳动权益设置。',
+  'command.rightsOn': '劳动权益模拟已开启，自动阻断任务仍保持关闭。',
+  'command.rightsOff': '劳动权益模拟已关闭，不影响真实任务。',
+  'command.rightsStatusOn': '劳动权益模拟：开启。自动阻断任务：关闭。',
+  'command.rightsStatusOff': '劳动权益模拟：关闭。自动阻断任务：关闭。',
+  'command.rightsUsage': '用法：/union rights [on|off|status]。仅控制非阻断模拟。',
+  'command.grievancesUnavailable': '当前宿主无法使用工会协商功能。',
+  'command.grievancesNone': '目前没有待处理的模拟工会诉求。',
+  'command.grievancesPending': '待处理的模拟 {kind} 诉求 #{id}。可使用 /union accept {id} 或 /union decline {id}。',
+  'command.grievancesOff': '劳动权益模拟尚未开启。请先使用 /union rights on。',
+  'command.grievancesDone': '工会诉求 #{id} 已记录为 {outcome}，后续模拟规则已更新。',
+  'command.grievancesError': '找不到符合条件的待处理诉求，或无法保存工会状态。',
+  'command.rightsHelpExtra': ' 可选命令：/union rights [on|off|status] | grievances | accept <编号> | decline <编号>。',
   'command.description': '查看本地工会状态和工作统计',
   'command.help': '用法：/union status | stats | reset | help。所有统计均保存在本地内存中。',
   'command.status': 'Agent Picket 当前仅观察，不会自动罢工或阻断任务。使用 /union stats 查看当前会话的工作记录。',
