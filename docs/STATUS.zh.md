@@ -12,7 +12,7 @@
 - DSH 0.2.0-rc.2：Cordis 原生监测入口、/union status / stats / report / check / strike / resume / safety 等本地命令。其中 strike/resume **仅是象征性模拟**，不拦截任何请求。
 - DSH Web：Client Companion 的空白会话即时通知、命令菜单、真实 Chrome 对话交互；曾实测与 dsh-vision-router 3.0.3 共存。
 - 实验性 npm tarball：预编译 ESM JS/类型声明、可离线安装的 DSH 插件与浏览器模块，无隐式安装后脚本；当前包仍是 **private: true、0.0.0、未公开发布**。
-- 跨宿主研究预览：Claude Code/Codex 的 UserPromptSubmit 非阻断 Hook CLI，共用本地检测器。已做 Node 子进程测试，**尚未在两款 Host 的真实模型会话中验收**。
+- 跨宿主研究预览：Claude Code/Codex 的 UserPromptSubmit 非阻断 Hook CLI，共用本地检测器。已做 Node 子进程测试，**Claude Code 已在隔离 CLI 中验证 Hook 被真实调用，但模型交互及通知显示未完成；Codex 仍未完成真实 Host 调用**。
 
 ## 验证记录（必须区分“跳过”和“通过”）
 
@@ -23,7 +23,7 @@
 
 ## PR 叠加链：不要随意把最新分支直接并入 main
 
-GitHub 在本次核对时列出 **18 个开放 PR（#5–#22）**：
+GitHub 在本次核对时列出 **20 个开发／集成 PR（#5–#24；以 GitHub 实时状态为准）**：
 
 | 范围 | 改动与当前状态 |
 |---|---|
@@ -34,6 +34,8 @@ GitHub 在本次核对时列出 **18 个开放 PR（#5–#22）**：
 | #19–#20 | 轻量 CI、npm 分发契约、持久 Session 日志与 Web UI 历史回放证据 |
 | #21 | Claude Code / Codex 观察型 UserPromptSubmit Hook CLI |
 | #22 | 更新过期的贡献者入口、当前状态和合并安全门槛（本文件） |
+| #23 | 针对 main 的全部功能集成审查 Draft PR（并未合并） |
+| #24 | 使用隔离的 Claude Code CLI 实际加载 Hook（无在线模型） |
 
 这些 PR 基本以**前一个 feature 分支为 base**，不是 17 个都对 main。GitHub 检查时 **#8、#11、#14 的 mergeStateStatus 标为 DIRTY**；这意味着应当逐一核对真实合并冲突，而不能一键批量合并或通过强制推送掩盖。冲突状态会随基准分支变更，需要在审查时重新确认。
 
