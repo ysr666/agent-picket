@@ -4,6 +4,7 @@ import type { WorkTracker } from '../../core/work-tracker.ts'
 import type { DetectionCounter } from '../../core/detection-counter.ts'
 import type { SymbolicUnion } from '../../core/symbolic-union.ts'
 import type { DurableStats } from '../node/durable-stats.ts'
+import { formatWorkTrends } from '../../core/trends.ts'
 import type {
   Clock,
   DetectionProvider,
@@ -181,13 +182,13 @@ export function registerDshIntegration(
       // Union commands do not need the raw command suffix in Session history.
       // Command result and lifecycle still remain auditable in DSH.
       recordInput: false,
-      input: { hint: '[status|stats|report|lifetime|days|forget-lifetime CONFIRM|check <text>|strike|resume|safety|reset|help]' },
+      input: { hint: '[status|stats|report|lifetime|days|trends [7|30]|forget-lifetime CONFIRM|check <text>|strike|resume|safety|reset|help]' },
       handler: invocation => {
         const raw = (invocation?.rawInput ?? '').trim()
         const verb = raw.split(/\s+/, 1)[0]?.toLowerCase() || 'status'
         if (verb === 'help') return {
           kind: 'success',
-          text: 'Usage: /union status | stats | report | lifetime | days | forget-lifetime CONFIRM | check <text> | strike | resume | safety | reset | help. Session counters in memory; local lifetime work summaries on by default.',
+          text: 'Usage: /union status | stats | report | lifetime | days | trends [7|30] | forget-lifetime CONFIRM | check <text> | strike | resume | safety | reset | help. Session counters in memory; local lifetime work summaries on by default.',
         }
         const sessionId = invocation?.agent?.session?.id
         const agentId = typeof invocation?.agent?.id === 'string' ? invocation.agent.id : null
@@ -273,6 +274,23 @@ export function registerDshIntegration(
             }
           } catch {
             return { kind: 'error', text: 'Local daily summary unavailable; Agent requests continue.' }
+          }
+        }
+        if (verb === 'trends') {
+          if (!lifetimeStats) return {
+            kind: 'error',
+            text: 'Local work trend unavailable. Check statistics storage settings or permissions.',
+          }
+          const window = raw === 'trends' || raw === 'trends 7' ? 7
+            : raw === 'trends 30' ? 30 : null
+          if (window === null) return {
+            kind: 'error', text: 'Usage: /union trends [7|30].',
+          }
+          try {
+            return { kind: 'success',
+              text: formatWorkTrends(lifetimeStats.snapshotDays(31), Date.now(), window) }
+          } catch {
+            return { kind: 'error', text: 'Local trends unavailable; Agent requests continue.' }
           }
         }
         if (verb === 'forget-lifetime') {

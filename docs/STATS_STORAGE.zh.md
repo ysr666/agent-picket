@@ -43,13 +43,15 @@ $DSH_HOME/agent-picket/stats/aggregate.v1.json
 /union report
 /union lifetime
 /union days
+/union trends [7|30]
 /union reset
 /union forget-lifetime CONFIRM
 ```
 
 - `stats`、`report`：当前 Session 的即时内存数字，重启后不自动恢复。
 - `lifetime`：跨重启总工作统计及当前规则分类长期保存状态。
-- `days`：最近 7 个**UTC 日期**的工作汇总，最长保留 366 个有事件的日历日；小时数不是纯模型推理时长。
+- `days`：最近 7 个**有事件的 UTC 日期**的工作汇总，最长保留 366 个有事件的日历日；小时数不是纯模型推理时长。
+- `trends [7|30]`：最近 7 或 30 个**连续 UTC 日历日**的工作趋势，自动补齐 0 活动的日期，提供完成轮次、工具调用、累计轮次时间与工具调用相对强度条形符号；其中“今天”是未完成的部分日期。图表只读取本地的每日**数字汇总**，不提取聊天原文、不新增持久化字段。
 - `reset`：只清空当前 Session 的内存统计，**不擦除**历史工作总数。
 - `forget-lifetime CONFIRM`：明确销毁累计数字、按天统计和事件去重指纹，并轮换本地密钥。不会删除 DSH 自己的会话日志。
 
@@ -77,3 +79,6 @@ $DSH_HOME/agent-picket/stats/aggregate.v1.json
 
 
 **擦除语义提示：** `/union forget-lifetime CONFIRM` 删除的是本插件当前文件系统可见的累计账本和 HMAC 事件日志，并生成新密钥；它**不是**物理磁盘安全擦除。APFS 快照、系统备份、SSD 磨损均衡或取证恢复可能留有旧数据，不能承诺历史字节不可恢复。
+
+
+**趋势显示示例：** `/union trends` 默认看 7 天，`/union trends 30` 看最近 30 天。两种视图仅从同一份本地汇总生成；如果禁用了持久化存储、目录不可访问或当前无数据，会明确显示统计不可用或全部为 0，不会偷偷打开云端同步。
