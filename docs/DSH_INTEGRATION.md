@@ -48,13 +48,13 @@ The isolated Host installation is a **development/test prerequisite**, **not** a
 
 An isolated DSH `sdk-minimal` server runs the **actual AgentPicket observe-only adapter**, a dedicated test-only explicit-marker rejection listener, and a synthetic local `picket-offline` LlmAdapter. No external LLM calls are needed; process-level HTTP(S) proxy environment variables direct accidental outgoing attempts to non-listening loopback port 9.
 
-The test sends JSON-RPC `initialize` followed by `session/prompt('BLOCK TEST')`: the SDK receipt contains a message ID, but the real session records `turn/end` with `reason.kind === 'blocked'`, **zero `step/start`**, **zero `user/message`**, and **zero synthetic model calls**. It then sends `session/prompt('ALLOW TEST')` in the same session: `turn/end` records `completed`, a user surface message and one assistant message are committed, and exactly one offline `stream()` invocation occurs. The Adapter also receives the actual session turn start/end notifications (2 each).
+The test sends JSON-RPC `initialize` followed by `session/prompt('BLOCK TEST')`: the SDK receipt contains a message ID, but the real session records `turn/end` with `reason.kind === 'blocked'`, **zero `step/start`**, **zero `user/message`**, and **zero synthetic model calls**. It then sends `session/prompt('ALLOW TEST')` in the same session: `turn/end` records `completed`, a user surface message and one assistant message are committed, and exactly one offline `stream()` invocation occurs. The Adapter also receives the actual session turn start/end notifications (2 each). A third SDK prompt (`TOOL TEST`) makes the offline model emit one tool call to `picket_probe_ping`, a deterministic in-memory tool returning `pong:hello`. In the *real DSH AgentLoop*, this produces exactly one `tool/call`, one `tool/result`, one `work:tool-start`, one `work:tool-end`, one safe tool execution, and two model calls (tool proposal + model continuation).
 
 Thus *reject suppresses model calls and a later fresh prompt works*. It does **not** mean the rejected prompt is saved for replay or that the SDK/UI displays a user-friendly arbitration explanation. Explicit user resubmission and UI messaging still need design before opt-in auto-block.
 
 ### dsh-vision-router coexistence (SDK-minimal)
 
-With published `dsh-vision-router@3.0.3` installed in the disposable Host directory, a second end-to-end test mounts both plugins in a single `sdk-minimal` profile. The same offline rejection and recovery assertions pass without stderr/errors. Vision's free cloud fallback is disabled for the experiment. This proves **basic SDK-profile coexistence**, not Web UI compatibility or vision request functionality; those remain outstanding.
+With published `dsh-vision-router@3.0.3` installed in the disposable Host directory, a second end-to-end test mounts both plugins in a single `sdk-minimal` profile. The same offline rejection, recovery **and real tool-call** assertions pass without stderr/errors. Vision's free cloud fallback is disabled for the experiment. This proves **basic SDK-profile coexistence**, not Web UI compatibility or vision request functionality; those remain outstanding.
 
 ### Native DSH app boot
 
@@ -101,7 +101,8 @@ When the two variables are absent, the real-runtime tests are skipped. They are 
 - [ ] Provide and verify a clear *user-facing* rejection explanation in Web/CLI, plus explicit resubmission and resume semantics. SDK currently only emits a generic `blocked` outcome, which is insufficient for auto-strike.
 - [ ] Test actual human provenance guarantee (or continue treating all events as unverified and permanently disable automatic block).
 - [x] Verify real DSH `turn/start` / `turn/end` events are normalized by the actual adapter.
-- [ ] Test real tool events, concurrency/retries, cancellation, session reload and cold startup/recovery.
+- [x] Test actual tool execution and work event normalization (a synthetic `picket_probe_ping` tool, one `tool/call` and matching `tool/result`).
+- [ ] Test concurrency/retries, cancellation, session reload and cold startup/recovery.
 - [x] Prove basic `sdk-minimal` coexistence with published `dsh-vision-router@3.0.3` in a disposable shared profile, without modifying its repo.
 - [ ] Test the two plugins together in real Web Client and exercise vision routing, command presentation, unload order.
 - [ ] Validate compatibility across relevant DSH releases and Node versions.

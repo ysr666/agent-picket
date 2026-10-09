@@ -32,6 +32,7 @@ async function verifyOfflineAgentLoop(visionEntry?: string): Promise<void> {
       name: ${JSON.stringify(modulePath)}
       inject:
         - llm
+        - tools
 ${visionRow}`)
   const env = {
     ...process.env,
@@ -123,7 +124,20 @@ ${visionRow}`)
     assert.equal(blockEnd.data.reason.kind, 'blocked')
     assert.equal(JSON.stringify(blockEnd.data).includes('arbitration'), false)
 
-    const shutdown = await request(4, 'shutdown', {})
+    const toolRequest = await request(4, 'session/prompt', {
+      sessionId, contentBlocks: [{ type:'text', text:'TOOL TEST' }],
+    })
+    assert.equal(typeof (toolRequest.result as any)?.messageId, 'string')
+    await until(() => getEnds().length >= 3, 'third turn with one real local tool execution')
+    assert.deepEqual(getEnds().map(x => x.data.reason.kind), ['blocked', 'completed', 'completed'])
+    assert.equal(getSessionEvents().filter(x => x.type === 'tool/call').length, 1)
+    assert.equal(getSessionEvents().filter(x => x.type === 'tool/result').length, 1)
+    assert.equal(logLines().filter(x => x === 'tool-executed').length, 1)
+    assert.equal(logLines().filter(x => x === 'work:tool-start').length, 1)
+    assert.equal(logLines().filter(x => x === 'work:tool-end').length, 1)
+    assert.equal(logLines().filter(x => x === 'model-call').length, 3)
+
+    const shutdown = await request(5, 'shutdown', {})
     assert.deepEqual(shutdown.result, {})
   } finally {
     lines.close()
