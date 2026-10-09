@@ -132,6 +132,9 @@ test('pending demand renders working actionable controls only when response is p
  void accept!.props.onClick()
  assert.equal(responded,1)
  assert.ok(view.some(n=>n.children.includes('1h 0m')))
+ const progress=view.find(n=>n.type==='progress')
+ assert.equal(progress?.props.value,3_600_000)
+ assert.equal(progress?.props.max,8*60*60_000)
 })
 
 test('partial session coverage must hide measured accumulated durations',()=>{
@@ -145,6 +148,7 @@ test('partial session coverage must hide measured accumulated durations',()=>{
  assert.ok(view.some(n=>n.children.includes('stats.coverage.partial')))
  assert.ok(view.some(n=>n.children.includes('—')))
  assert.ok(!view.some(n=>n.children.includes('5h 0m')))
+ assert.equal(view.some(n=>n.type==='progress'),false)
 })
 
 
