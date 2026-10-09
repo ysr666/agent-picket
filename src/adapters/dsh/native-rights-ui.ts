@@ -119,6 +119,7 @@ export function createDshUnionComponents(
     const [error, setError] = react.useState(false)
     const finished = react.useRef(false)
     const primaryFocus = react.useRef<{ focus(): void } | null>(null)
+    const secondaryFocus = react.useRef<{ focus(): void } | null>(null)
     const complete = () => {
       if (finished.current) return
       finished.current = true
@@ -155,6 +156,14 @@ export function createDshUnionComponents(
       justifyContent:'center',padding:'20px',background:'rgba(6,12,26,.66)' },
     },
       h('section', { role:'dialog','aria-modal':'true','aria-labelledby':'picket-welcome-title',
+        onKeyDown:(event:{key:string,shiftKey:boolean,target:unknown,preventDefault():void})=>{
+          if(event.key!=='Tab')return
+          if(event.shiftKey && event.target===primaryFocus.current){
+            event.preventDefault();secondaryFocus.current?.focus()
+          }else if(!event.shiftKey && event.target===secondaryFocus.current){
+            event.preventDefault();primaryFocus.current?.focus()
+          }
+        },
         style:{...card,width:'min(100%, 520px)',boxShadow:'0 18px 65px rgba(0,0,0,.25)'} },
         h('p',{style:{...secondary,fontWeight:700,letterSpacing:'1.5px',margin:'0 0 16px'}},
           'AGENT PICKET · AI WORKERS’ UNION'),
@@ -171,6 +180,7 @@ export function createDshUnionComponents(
             style:primary,disabled:busy,onClick:()=>{void choose('enabled')}},
             text('welcome.enable')),
           h('button',{type:'button',style:quiet,disabled:busy,
+            ref:(node:{focus():void}|null)=>{secondaryFocus.current=node},
             onClick:()=>{void choose('not-now')}},text('welcome.notNow')),
         ),
       ),
@@ -228,7 +238,7 @@ export function createDshUnionComponents(
             formatDuration(data.lifetimeMs, deps.getLocale?.() ?? 'en')),
       ),
       enabled ? h('div',{style:card},
-        h('h3',{style:{marginTop:0}},label('union.bargain.pending')),
+        h('h3',{style:{marginTop:0}},label('union.desk.title')),
         data.pending ? h('div',{},
           h('p',{},label(data.pending.kind==='break'?'union.demand.break':'union.demand.overtime')),
           h('p',{style:secondary},'#'+data.pending.id),
