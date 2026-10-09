@@ -1,6 +1,6 @@
 # AgentPicket × DeepSeek Harness — Integration Spike
 
-**Status:** real AgentLoop and SDK rejection/recovery proven offline; **Issue #2 stays open** until user-readable rejection feedback, cold-recovery and remaining behavior are validated.
+**Status:** real AgentLoop rejection/recovery, parallel sessions and tool events proven offline; **Issue #2 stays open** until user-readable rejection feedback and full Host/profile resume semantics are validated.
 
 **Scope:** Host-neutral Core from [Issue #1](https://github.com/ysr666/agent-picket/issues/1), Cordis/DSH adapter entry and five real-runtime tests. The adapter is **observe-only**. This is NOT a production installable AI abuse detector or an enabled strike policy.
 
@@ -42,7 +42,7 @@ The isolated Host installation is a **development/test prerequisite**, **not** a
 
 - `session/event` normalizes only `turn/start`, `turn/end`, `tool/call`, `tool/result` with valid event sequence IDs.
 - Events emit structured `WorkEvent` values; they do not archive text or tool argument payloads.
-- **Only real Cordis event dispatch with synthetic SessionEvents was tested.** Real DSH AgentLoop emissions, cancellation/retry ordering and cold-resume reconstruction have **not** been verified; do not claim production-grade work statistics yet.
+- **Real AgentLoop session events are now tested** for turn and tool boundaries, alongside two simultaneous sessions. Cancellation, retry ordering, persistence reconstruction and comprehensive work-time estimation remain unverified; do not claim production-grade work statistics yet.
 
 ### Real AgentLoop rejection and offline recovery
 
@@ -50,7 +50,13 @@ An isolated DSH `sdk-minimal` server runs the **actual AgentPicket observe-only 
 
 The test sends JSON-RPC `initialize` followed by `session/prompt('BLOCK TEST')`: the SDK receipt contains a message ID, but the real session records `turn/end` with `reason.kind === 'blocked'`, **zero `step/start`**, **zero `user/message`**, and **zero synthetic model calls**. It then sends `session/prompt('ALLOW TEST')` in the same session: `turn/end` records `completed`, a user surface message and one assistant message are committed, and exactly one offline `stream()` invocation occurs. The Adapter also receives the actual session turn start/end notifications (2 each). A third SDK prompt (`TOOL TEST`) makes the offline model emit one tool call to `picket_probe_ping`, a deterministic in-memory tool returning `pong:hello`. In the *real DSH AgentLoop*, this produces exactly one `tool/call`, one `tool/result`, one `work:tool-start`, one `work:tool-end`, one safe tool execution, and two model calls (tool proposal + model continuation).
 
+The same test then submits two additional **concurrent sessions** over the SDK connection and verifies that both complete independently without contaminating the original session's event stream. Real pre-step observations confirm that DSH provides distinct Agent and Session objects; the adapter now uses `agent.session.id` for the true session key instead of treating `agent.id` as interchangeable.
+
 Thus *reject suppresses model calls and a later fresh prompt works*. It does **not** mean the rejected prompt is saved for replay or that the SDK/UI displays a user-friendly arbitration explanation. Explicit user resubmission and UI messaging still need design before opt-in auto-block.
+
+### Cold-restart characterization (pinned SDK-minimal)
+
+The test starts a fresh SDK-minimal Host with a temporary persistent `DSH_HOME`, submits a prompt under a known session ID, and cleanly shuts down. On a new process with the **same** home and ID, `session/prompt` returns JSON-RPC error `-32603: session ... already exists`; creating a **new** session ID still works. This pins an observed `sdk-minimal` API limitation: **a fresh `session/prompt` is not a substitute for a resume API**. The test does *not* prove that the underlying Session log is unrecoverable. AgentPicket must not automatically claim cold resume or covertly invent a replacement ID without exposing the state change. This behavior may differ in other DSH profiles or versions.
 
 ### dsh-vision-router coexistence (SDK-minimal)
 
@@ -102,11 +108,13 @@ When the two variables are absent, the real-runtime tests are skipped. They are 
 - [ ] Test actual human provenance guarantee (or continue treating all events as unverified and permanently disable automatic block).
 - [x] Verify real DSH `turn/start` / `turn/end` events are normalized by the actual adapter.
 - [x] Test actual tool execution and work event normalization (a synthetic `picket_probe_ping` tool, one `tool/call` and matching `tool/result`).
-- [ ] Test concurrency/retries, cancellation, session reload and cold startup/recovery.
+- [x] Test concurrent SDK prompts to two distinct sessions; verify isolated events and responses.
+- [x] Characterize pinned SDK-minimal cold restart: a formerly used Session ID fails lazy `session/prompt` creation with `already exists`.
+- [ ] Test retry ordering, cancellation, actual Session `resume()` API and recovery of an interrupted turn using the Host's supported path.
 - [x] Prove basic `sdk-minimal` coexistence with published `dsh-vision-router@3.0.3` in a disposable shared profile, without modifying its repo.
 - [ ] Test the two plugins together in real Web Client and exercise vision routing, command presentation, unload order.
 - [ ] Validate compatibility across relevant DSH releases and Node versions.
 
-**Next safe change:** Build real offline AgentLoop/UI rejection characterization tests. Leave `registerDshIntegration` observe-only until the missing invariants are resolved. Do not close #2, merge this as release-ready, or start automatic strike behavior on the basis of these smoke tests alone.
+**Next safe change:** Design/validate an explicit user-visible explanation and resubmission contract (likely needs a Host-specific UI layer); investigate DSH resume APIs without bypassing Session persistence. Leave `registerDshIntegration` observe-only until the missing invariants are resolved. Do not close #2, merge this as release-ready, or start automatic strike behavior on the basis of these smoke tests alone.
 
 Sources: [DSH lifecycle](https://github.com/deepseek-ai/deepseek-harness/blob/master/docs/agent-lifecycle.md), [DSH commands](https://github.com/deepseek-ai/deepseek-harness/blob/master/packages/interaction/commands/README.md), [DSH architecture](https://github.com/deepseek-ai/deepseek-harness/blob/master/docs/architecture.md).

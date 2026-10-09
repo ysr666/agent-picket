@@ -14,7 +14,10 @@ export interface DshMessage {
   readonly source?: { readonly kind?: unknown }
   readonly content?: readonly DshTextBlock[]
 }
-export interface DshAgent { readonly id?: unknown }
+export interface DshAgent {
+  readonly id?: unknown
+  readonly session?: { readonly id?: unknown }
+}
 export interface DshPreStep {
   readonly agent: DshAgent
   readonly messages: readonly DshMessage[]
@@ -65,6 +68,8 @@ export function normalizeDshPrompt(
   now: number,
 ): HumanPrompt | undefined {
   if (typeof agent.id !== 'string' || !agent.id) return
+  // An Agent and a Session are different identities in DSH. Never guess.
+  if (typeof agent.session?.id !== 'string' || !agent.session.id) return
   if (typeof message.id !== 'string' || !message.id) return
   const actor = message.source?.kind === 'user' ? 'human' :
     message.source?.kind === 'tool' ? 'tool' :
@@ -75,7 +80,7 @@ export function normalizeDshPrompt(
     : []
   return {
     agentId: agent.id,
-    sessionId: agent.id,
+    sessionId: agent.session.id,
     id: message.id,
     receivedAtMs: now,
     provenance: { actor, assurance: actor === 'human' ? 'claimed' : 'unknown' },

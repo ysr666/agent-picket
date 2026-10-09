@@ -65,9 +65,11 @@ export function apply(ctx) {
   registerDshIntegration(ctx, {
     engine, clock: { now: () => Date.now() },
     onWorkEvent: item => record('work:' + item.type),
+    onDecision: decision => record('decision:' + decision.reason),
   })
   // Test only: explicit marker, not based on language or inferred user abuse.
-  ctx.on('agent/pre-step', ({ messages }, next) => {
+  ctx.on('agent/pre-step', ({ agent, messages }, next) => {
+    record('shape:agent-has-session=' + Boolean(agent?.session?.id) + ',agent-equals-session=' + (agent?.id === agent?.session?.id) + ',message-id-type=' + typeof messages[0]?.id + ',source=' + String(messages[0]?.source?.kind))
     const hasTestMarker = messages.some(message =>
       message.source?.kind === 'user' &&
       message.content?.some(block=> block.type==='text' && block.text==='BLOCK TEST'))

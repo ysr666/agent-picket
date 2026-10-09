@@ -58,7 +58,7 @@ test('DSH 0.2 Cordis event waterfall, native command service and teardown', {
     const original = { kind: 'enter', messages: [{ id: 'downstream' }] }
     for (let i = 0; i < 3; i++) {
       const result = await ctx.waterfall('agent/pre-step', {
-        agent: { id: 'a' },
+        agent: { id: 'a', session: { id: 'real-session-a' } },
         messages: [{
           id: String(i),
           source: { kind: 'user' },
@@ -78,7 +78,7 @@ test('DSH 0.2 Cordis event waterfall, native command service and teardown', {
     const before = events.length
     const next = { kind: 'enter' }
     const result = await ctx.waterfall('agent/pre-step', {
-      agent: { id: 'a' },
+      agent: { id: 'a', session: { id: 'real-session-a' } },
       messages: [{ id: 'after-unload', source: { kind: 'user' } }],
     }, async () => next)
     assert.strictEqual(result, next)
@@ -105,12 +105,12 @@ test('real Cordis waterfall confirms isolated reject short-circuits downstream',
     await new Promise(resolve => setTimeout(resolve, 20))
     let downstreamCalled = 0
     const blocked = await ctx.waterfall('agent/pre-step', {
-      agent: { id: 'a' }, messages: [{ id: 'reject-this-id' }],
+      agent: { id: 'a', session: { id: 'real-session-a' } }, messages: [{ id: 'reject-this-id' }],
     }, async () => { downstreamCalled++; return { kind: 'enter' } })
     assert.deepEqual(blocked, { kind: 'reject' })
     assert.equal(downstreamCalled, 0)
     const accepted = await ctx.waterfall('agent/pre-step', {
-      agent: { id: 'a' }, messages: [{ id: 'normal' }],
+      agent: { id: 'a', session: { id: 'real-session-a' } }, messages: [{ id: 'normal' }],
     }, async () => { downstreamCalled++; return { kind: 'enter' } })
     assert.deepEqual(accepted, { kind: 'enter' })
     assert.equal(downstreamCalled, 1)

@@ -83,9 +83,10 @@ ${visionRow}`)
   }
 
   const sessionId = 'picket-offline-test-session'
-  const getSessionEvents = () => notices
-    .filter(x => x.method === 'session.event' && x.params?.sessionId === sessionId)
+  const eventsFor = (id: string) => notices
+    .filter(x => x.method === 'session.event' && x.params?.sessionId === id)
     .map(x => x.params.event)
+  const getSessionEvents = () => eventsFor(sessionId)
   const getEnds = () => getSessionEvents().filter(x => x?.type === 'turn/end')
   const logLines = () => existsSync(log) ? readFileSync(log, 'utf8').trim().split('\n') : []
 
@@ -136,6 +137,40 @@ ${visionRow}`)
     assert.equal(logLines().filter(x => x === 'work:tool-start').length, 1)
     assert.equal(logLines().filter(x => x === 'work:tool-end').length, 1)
     assert.equal(logLines().filter(x => x === 'model-call').length, 3)
+
+    // Concurrent JSON-RPC submissions must not corrupt or combine session streams.
+    const firstParallelSession = 'picket-parallel-a'
+    const secondParallelSession = 'picket-parallel-b'
+    const [parallelA, parallelB] = await Promise.all([
+      request(6, 'session/prompt', {
+        sessionId: firstParallelSession,
+        contentBlocks: [{ type: 'text', text: 'PARALLEL A' }],
+      }),
+      request(7, 'session/prompt', {
+        sessionId: secondParallelSession,
+        contentBlocks: [{ type: 'text', text: 'PARALLEL B' }],
+      }),
+    ])
+    assert.equal(typeof (parallelA.result as any)?.messageId, 'string')
+    assert.equal(typeof (parallelB.result as any)?.messageId, 'string')
+    await until(
+      () => eventsFor(firstParallelSession).some(x => x.type === 'turn/end')
+        && eventsFor(secondParallelSession).some(x => x.type === 'turn/end'),
+      'two concurrent sessions finish independently',
+    )
+    for (const parallelSession of [firstParallelSession, secondParallelSession]) {
+      const events = eventsFor(parallelSession)
+      assert.deepEqual(events.filter(x => x.type === 'turn/end')
+        .map(x => x.data.reason.kind), ['completed'])
+      assert.equal(events.filter(x => x.type === 'user/message').length, 1)
+      assert.equal(events.filter(x => x.type === 'assistant/message').length, 1)
+      assert.equal(events.filter(x => x.type === 'tool/call').length, 0)
+    }
+    assert.equal(getEnds().length, 3, 'original session must not receive concurrent events')
+    assert.equal(logLines().filter(x => x === 'model-call').length, 5)
+    assert.equal(logLines().filter(x => x === 'work:turn-start').length, 5)
+    assert.equal(logLines().filter(x => x === 'work:turn-end').length, 5)
+    assert.equal(logLines().filter(x => x === 'decision:observe-mode').length >= 5, true)
 
     const shutdown = await request(5, 'shutdown', {})
     assert.deepEqual(shutdown.result, {})

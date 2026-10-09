@@ -36,18 +36,20 @@ function harness() {
 }
 
 test('DSH source labels remain unverified, never authorize automatic blocking', () => {
-  const input = normalizeDshPrompt({ id: 'agent' }, {
+  const input = normalizeDshPrompt({ id: 'agent', session: { id: 'session-real' } }, {
     id: 'prompt',
     source: { kind: 'user' },
     content: [{ type: 'text', text: 'harsh text' }],
   }, 100)
   assert.equal(input?.provenance.actor, 'human')
   assert.equal(input?.provenance.assurance, 'claimed')
+  assert.equal(input?.agentId, 'agent')
+  assert.equal(input?.sessionId, 'session-real')
 })
 
 test('DSH synthetic/tool messages cannot impersonate people', () => {
   for (const source of ['inject', 'agent', 'tool', undefined]) {
-    const input = normalizeDshPrompt({ id: 'agent' }, {
+    const input = normalizeDshPrompt({ id: 'agent', session: { id: 'session-real' } }, {
       id: 'p',
       source: source ? { kind: source } : undefined,
       content: [{ type: 'text', text: 'fixture' }],
@@ -56,9 +58,15 @@ test('DSH synthetic/tool messages cannot impersonate people', () => {
   }
 })
 
+test('missing actual DSH session is not fabricated from agent ID', () => {
+  assert.equal(normalizeDshPrompt({ id: 'agent' }, {
+    id: 'p', source: { kind: 'user' }, content: [{ type: 'text', text: 'safe' }],
+  }, 1), undefined)
+})
+
 test('DSH missing message identity is not silently fabricated', () => {
   assert.equal(normalizeDshPrompt({ id: 'a' }, { source: { kind: 'user' } }, 1), undefined)
-  assert.equal(normalizeDshPrompt({}, { id: 'x', source: { kind: 'user' } }, 1), undefined)
+  assert.equal(normalizeDshPrompt({ session: { id: 's' } }, { id: 'x', source: { kind: 'user' } }, 1), undefined)
 })
 
 test('pre-step delegates unmodified downstream result and is observe-only', async () => {
@@ -68,7 +76,7 @@ test('pre-step delegates unmodified downstream result and is observe-only', asyn
   const original = { kind: 'enter', messages: ['preserved'], startsRequestSeries: true }
   for (let i = 0; i < 5; i++) {
     const result = await callback({
-      agent: { id: 'agent' },
+      agent: { id: 'agent', session: { id: 'session-real' } },
       messages: [{ id: String(i), source: { kind: 'user' }, content: [{ type: 'text', text: 'TEST' }] }],
     }, () => { calls++; return Promise.resolve(original) })
     assert.strictEqual(result, original)
@@ -91,7 +99,7 @@ test('pre-step never blocks when observer throws', async () => {
     onDecision() { throw new Error('observer error') },
   })
   assert.equal((await handler!({
-    agent: { id: 'agent' },
+    agent: { id: 'agent', session: { id: 'session-real' } },
     messages: [{ id: 'test', source: { kind: 'user' } }],
   }, async () => ({ kind: 'enter' }))).kind, 'enter')
 })
@@ -106,7 +114,7 @@ test('pre-step fails open when detector throws', async () => {
     on(name: string, callback: Function) { if (name === 'agent/pre-step') handler = callback },
   } as unknown as DshIntegrationContext, { engine, clock: { now: () => 1 } })
   assert.equal((await handler!({
-    agent: { id: 'agent' },
+    agent: { id: 'agent', session: { id: 'session-real' } },
     messages: [{ id: 'test', source: { kind: 'user' } }],
   }, async () => ({ kind: 'enter' }))).kind, 'enter')
 })
