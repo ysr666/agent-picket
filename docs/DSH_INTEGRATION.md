@@ -118,3 +118,9 @@ When the two variables are absent, the real-runtime tests are skipped. They are 
 **Next safe change:** Design/validate an explicit user-visible explanation and resubmission contract (likely needs a Host-specific UI layer); investigate DSH resume APIs without bypassing Session persistence. Leave `registerDshIntegration` observe-only until the missing invariants are resolved. Do not close #2, merge this as release-ready, or start automatic strike behavior on the basis of these smoke tests alone.
 
 Sources: [DSH lifecycle](https://github.com/deepseek-ai/deepseek-harness/blob/master/docs/agent-lifecycle.md), [DSH commands](https://github.com/deepseek-ai/deepseek-harness/blob/master/packages/interaction/commands/README.md), [DSH architecture](https://github.com/deepseek-ai/deepseek-harness/blob/master/docs/architecture.md).
+
+## Web Host and browser-auth smoke (later stacked PR)
+
+The opt-in `tests/dsh-web.real.test.ts` starts the actual pinned DSH `web` Profile with an isolated Home, local ephemeral HTTP port and a fixture that installs the **real** AgentPicket adapter. It verifies the adapter ran, the unauthenticated root is HTTP 401, root token exchange is 303 with a signed Cookie, cookie-authenticated root is 200 HTML, and cross-origin `/api` access fails with 403.
+
+This is **Host Web startup and authentication**, not a browser-click test of the slash menu, user draft restoration, attachment recovery or any true auto-block behavior. See [DSH_WEB_RUNTIME.zh.md](DSH_WEB_RUNTIME.zh.md). Running this test with the pinned DSH raises the opt-in runtime suite to **11 tests**.

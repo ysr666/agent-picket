@@ -11,6 +11,7 @@ Local-first AI agent union: respectful-interaction guardrails, simulated strikes
 - **[Start Here（中文开工清单）](docs/START_HERE.zh.md)** — implementation order, first PR, and acceptance gates.
 - **[Install a compiled local npm tarball（中文）](docs/PACKAGING.zh.md)** — build, offline install and DSH runtime verification.
 - **[DSH Source Install Preview（中文）](docs/DSH_INSTALL.zh.md)** — locally load the monitor-only Cordis plugin, no global Host changes.
+- [Real DSH Web Host startup and auth smoke（中文）](docs/DSH_WEB_RUNTIME.zh.md) — authenticated page startup, not full browser-click E2E.
 - [DSH Web capabilities and manual preflight（中文）](docs/DSH_WEB_CAPABILITIES.zh.md) — read-only manual command; automatic interception disabled.
 - [Blocking safety and recovery requirements](docs/BLOCKING_SAFETY.md) — actual strikes remain blocked by safety gates.
 - [Local rule detector and privacy boundaries](docs/LOCAL_DETECTION.md) — conservative bilingual rules; no automatic strikes.
