@@ -14,7 +14,7 @@ export interface ReactForDsh {
   useRef<T>(initial: T): { current: T }
 }
 export interface PortalForDsh {
-  createPortal(children: unknown, container: Element): unknown
+  createPortal(children: unknown, container: unknown): unknown
 }
 export interface DshRightsPort {
   snapshot(): ClientRightsSnapshot
@@ -117,7 +117,7 @@ export function createDshUnionComponents(
     const [busy, setBusy] = react.useState(false)
     const [error, setError] = react.useState(false)
     const finished = react.useRef(false)
-    const primaryFocus = react.useRef<HTMLButtonElement | null>(null)
+    const primaryFocus = react.useRef<{ focus(): void } | null>(null)
     const complete = () => {
       if (finished.current) return
       finished.current = true
@@ -129,13 +129,14 @@ export function createDshUnionComponents(
     }, [mode, props.complete])
     react.useEffect(() => {
       if (mode !== 'invite') return
-      const root = document.getElementById('root')
+      const root = (globalThis as { document?: { getElementById(id: string): { inert: boolean } | null } }).document?.getElementById('root')
       const previous = root?.inert ?? false
       if (root) root.inert = true
       primaryFocus.current?.focus()
       return () => { if (root) root.inert = previous }
     }, [mode])
-    if (mode !== 'invite' || typeof document === 'undefined') return null
+    const page = (globalThis as { document?: { body: unknown } }).document
+    if (mode !== 'invite' || !page) return null
     const choose = async (choice: 'enabled' | 'not-now') => {
       if (busy) return
       setBusy(true); setError(false)
@@ -165,14 +166,14 @@ export function createDshUnionComponents(
           text('welcome.disclaimer')),
         error ? h('p',{role:'alert',style:{color:'#b91c1c'}},text('welcome.saveError')):null,
         h('div',{style:{display:'flex',flexWrap:'wrap',gap:'10px'}},
-          h('button',{type:'button',ref:(node:HTMLButtonElement|null)=>{primaryFocus.current=node},
+          h('button',{type:'button',ref:(node:{focus():void}|null)=>{primaryFocus.current=node},
             style:primary,disabled:busy,onClick:()=>{void choose('enabled')}},
             text('welcome.enable')),
           h('button',{type:'button',style:quiet,disabled:busy,
             onClick:()=>{void choose('not-now')}},text('welcome.notNow')),
         ),
       ),
-    ),document.body)
+    ),page.body)
   }
 
   function UnionPanel(): unknown {
