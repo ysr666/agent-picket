@@ -37,6 +37,7 @@ export interface DshUnionUiDeps {
   /** UI language is read from DSH's locale service (Host preferred, en fallback). */
   readonly t: (key: MessageKey, params?: Record<string, string | number>) => string
   readonly subscribeLocale?: (listener: () => void) => () => void
+  readonly getLocale?: () => string
   readonly readUnion?: () => UnionPanelData
   readonly subscribeUnion?: (listener: () => void) => () => void
   readonly respond?: (id: number, choice: 'accept' | 'decline') => Promise<void>
@@ -68,7 +69,7 @@ function formatDuration(milliseconds: number | null, locale: string): string {
   if (milliseconds === null || !Number.isSafeInteger(milliseconds) || milliseconds < 0) return '—'
   const minutes = Math.floor(milliseconds / 60000)
   const hours = Math.floor(minutes / 60)
-  return locale === 'zh' ? hours + ' 小时 ' + (minutes % 60) + ' 分钟'
+  return locale.startsWith('zh') ? hours + ' 小时 ' + (minutes % 60) + ' 分钟'
     : hours + 'h ' + (minutes % 60) + 'm'
 }
 function getDataLabel(
@@ -219,11 +220,12 @@ export function createDshUnionComponents(
       h('div',{style:card},
         h('h3',{style:{marginTop:0}},label('workday.title')),
         h('p',{style:{fontSize:'20px',fontWeight:700,margin:'0 0 6px'}},
-          completeWork?formatDuration(data.completedTurnMs,'en'):'—'),
+          completeWork?formatDuration(data.completedTurnMs,deps.getLocale?.() ?? 'en'):'—'),
         h('p',{style:secondary},getDataLabel(deps.t,data)),
         h('p',{style:secondary},label('stats.durationNote')),
         h('p',{style:secondary},
-          label('stats.lifetime.unavailable') + (data.lifetimeMs === null ? '' : '')),
+          data.lifetimeMs === null ? label('stats.lifetime.unavailable') :
+            formatDuration(data.lifetimeMs, deps.getLocale?.() ?? 'en')),
       ),
       enabled ? h('div',{style:card},
         h('h3',{style:{marginTop:0}},label('union.bargain.pending')),
