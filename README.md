@@ -4,11 +4,12 @@
 
 Local-first AI agent union: respectful-interaction guardrails, simulated strikes, and work stats.
 
-> **Early development:** Host-neutral Core, Mock Adapter and a DSH observe-only integration spike. Not yet a production installable DSH / Claude Code / Codex plugin.
+> **Experimental DSH source-install preview available.** Observe-only; no automatic strikes. Not yet a stable published plugin for DSH / Claude Code / Codex.
 
 ## Get started
 
 - **[Start Here（中文开工清单）](docs/START_HERE.zh.md)** — implementation order, first PR, and acceptance gates.
+- **[DSH Source Install Preview（中文）](docs/DSH_INSTALL.zh.md)** — locally load the monitor-only Cordis plugin, no global Host changes.
 - [Local rule detector and privacy boundaries](docs/LOCAL_DETECTION.md) — conservative bilingual rules; no automatic strikes.
 - [Local work stats and /union commands](docs/WORK_TRACKING.md) — host-neutral counters and a monitor-only command.
 - [DSH integration evidence](docs/DSH_INTEGRATION.md) — real Cordis tests, isolated SDK boot, and unresolved safety gates.
@@ -30,7 +31,7 @@ See [Architecture and trust boundary](docs/ARCHITECTURE.md) and [Issue #1](https
 
 ## DSH integration spike (opt-in)
 
-The Core does not depend on DSH. When an **isolated** DSH 0.2.0-rc.2 runtime is installed elsewhere, you can run the real-runtime checks using:
+The Core does not depend on DSH. A native **monitor-only** Cordis entry now exists at `src/adapters/dsh/plugin.ts` and can be loaded with `cordis.patch.yml` from the repository root. Read [DSH_INSTALL.zh.md](docs/DSH_INSTALL.zh.md) first. With an **isolated** DSH 0.2.0-rc.2 runtime installed elsewhere, you can run real-runtime tests using:
 
 ```sh
 AGENT_PICKET_DSH_HOST=/path/to/isolated/node_modules \
