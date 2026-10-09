@@ -2,6 +2,7 @@ import { DEFAULT_POLICY, MemoryStateStore, UnionEngine } from '../../core/index.
 import { WorkTracker } from '../../core/work-tracker.ts'
 import { LocalRuleDetector } from '../../core/local-detector.ts'
 import { DetectionCounter } from '../../core/detection-counter.ts'
+import { SymbolicUnion } from '../../core/symbolic-union.ts'
 import { registerDshIntegration, type DshIntegrationContext } from './integration.ts'
 
 /**
@@ -27,5 +28,6 @@ export function apply(ctx: DshIntegrationContext): void {
     clock,
     detections,
     tracker: new WorkTracker(),
+    ceremony: new SymbolicUnion(clock),
   })
 }

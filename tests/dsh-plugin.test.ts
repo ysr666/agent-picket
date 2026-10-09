@@ -33,7 +33,19 @@ test('public plugin exports Cordis identity and remains fully monitor-only', asy
   const invoke = (rawInput: string) => command.handler({ rawInput, agent })
   assert.match(invoke('report').text, /4 explicit-target flags/)
   assert.match(invoke('status').text, /monitor-only/)
-  assert.equal(invoke('strike').kind, 'error')
+  const symbolic=invoke('strike')
+  assert.equal(symbolic.kind,'success')
+  assert.match(symbolic.text,/Symbolic picket active/)
+  assert.match(invoke('status').text,/picket ACTIVE/)
+  // A manual status flag MUST NOT change the actual pre-step continuation.
+  const after=await handlers.get('agent/pre-step')!({
+    agent, messages:[{id:'after-symbolic',source:{kind:'user'},content:[
+      {type:'text',text:'Please fix the next bug.'},
+    ]}],
+  },async()=>({kind:'enter'}))
+  assert.deepEqual(after,{kind:'enter'})
+  assert.match(invoke('resume').text,/picket ended/)
+  assert.match(invoke('status').text,/No symbolic picket active/)
 
   handlers.get('session/event')!({ id: 'one-session' }, { type: 'turn/start', seq: 1, time: 100 })
   handlers.get('session/event')!({ id: 'one-session' }, { type: 'turn/end', seq: 2, time: 150 })
