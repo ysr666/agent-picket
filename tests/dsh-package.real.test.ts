@@ -40,6 +40,7 @@ test('distribution tarball installs offline and loads the compiled DSH plugin wi
     const archive = join(temp, manifest[0]!.filename)
     assert.equal(existsSync(archive), true)
     assert.ok(files.includes('dist/adapters/dsh/plugin.js'))
+    assert.ok(files.includes('dist/adapters/dsh/client.js'))
     assert.ok(files.includes('dist/core/engine.js'))
     assert.ok(!files.some(x => x.includes('node_modules/') || x.startsWith('tests/')
       || x.startsWith('src/') || x.startsWith('scripts/')))
@@ -52,7 +53,13 @@ test('distribution tarball installs offline and loads the compiled DSH plugin wi
     assert.equal(existsSync(join(installed, 'tests')), false)
     assert.equal(readdirSync(join(installed, 'dist', 'adapters', 'dsh'))
       .some(x => x === 'plugin.ts'), false)
-    assert.equal(JSON.parse(readFileSync(join(installed, 'package.json'), 'utf8')).private, true)
+    const installedManifest = JSON.parse(readFileSync(join(installed, 'package.json'), 'utf8'))
+    assert.equal(installedManifest.private, true)
+    assert.equal(installedManifest.dsh.client.platform, 'web')
+    assert.equal(installedManifest.exports['./client'].default, './dist/adapters/dsh/client.js')
+    assert.match(readFileSync(join(installed, 'dist/adapters/dsh/client.js'), 'utf8'),
+      /window\.__ModuleLoader__\.load/)
+    assert.equal(existsSync(join(installed, 'dist/adapters/dsh/client.js.map')), false)
 
     const entry = await import(pathToFileURL(join(installed, 'dist', 'adapters', 'dsh', 'plugin.js')).href)
     assert.equal(entry.name, 'agent-picket')

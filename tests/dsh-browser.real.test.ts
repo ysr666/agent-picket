@@ -131,8 +131,9 @@ test('real Chrome: union picker, native command results and non-blocking symboli
       return envelope.result.value.result
     }
 
-    // A blank Session can discover/execute host commands, but DSH Web 0.2.0-rc.2
-    // delays rendering the command flow node until a normal chat turn exists.
+    // A blank Session can execute host commands. The packaged browser companion
+    // now shows the response immediately via native SessionInput.notify; the
+    // permanent transcript card remains deferred until the first user turn.
     await editor.fill('/union')
     await page.getByText('Show local union status and work statistics').waitFor({ state:'visible' })
     await editor.press('Enter')
@@ -144,8 +145,8 @@ test('real Chrome: union picker, native command results and non-blocking symboli
     const initialResult = (await (await initialResultPromise).json()).result.value.result
     assert.equal(initialResult.kind, 'success')
     assert.match(initialResult.text, /NOT READY/)
-    assert.equal(await visible(initialResult.text, 400), false,
-      'Characterize empty-session command card visibility in pinned DSH only')
+    assert.equal(await visible(initialResult.text, 1800), true,
+      'The browser companion must show a notification before the first ordinary turn')
 
     // Seed exactly one synthetic input to make the Chat view materialize.
     // This test has no model API key and blocks outbound proxy calls; therefore

@@ -55,3 +55,6 @@ UI Conversation 的输入说明还明确：默认发送会先乐观地清空输�
 - [DSH Agent Loop](https://github.com/deepseek-ai/deepseek-harness/blob/main/packages/core/agent-loop/src/index.ts)
 
 真实运行验证细节见 [DSH_INTEGRATION.md](DSH_INTEGRATION.md)、[BLOCKING_SAFETY.md](BLOCKING_SAFETY.md)。
+
+
+AgentPicket 即时通知实现与其安全边界详见 [DSH_WEB_COMPANION.zh.md](DSH_WEB_COMPANION.zh.md)。

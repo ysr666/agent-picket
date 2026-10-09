@@ -17,7 +17,7 @@
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "check": "npm run typecheck && npm test && npm run build",
     "test:dsh:real": "node --experimental-strip-types --test tests/dsh*.real.test.ts",
-    "build": "node scripts/clean-build.mjs && tsc -p tsconfig.build.json"
+    "build": "node scripts/clean-build.mjs && tsc -p tsconfig.build.json && node scripts/build-dsh-client.mjs"
   },
   "main": "./dist/core/index.js",
   "types": "./dist/core/index.d.ts",
@@ -33,6 +33,10 @@
     "./dsh": {
       "types": "./dist/adapters/dsh/plugin.d.ts",
       "default": "./dist/adapters/dsh/plugin.js"
+    },
+    "./client": {
+      "types": "./dist/adapters/dsh/client.d.ts",
+      "default": "./dist/adapters/dsh/client.js"
     }
   },
   "files": [
@@ -40,5 +44,15 @@
     "README.md",
     "LICENSE",
     "docs/"
-  ]
+  ],
+  "dsh": {
+    "client": {
+      "inject": [
+        "@deepseek-ai/dsh-api-session-controller",
+        "@deepseek-ai/dsh-client-ui-conversation",
+        "@deepseek-ai/dsh-client-ui-commands"
+      ],
+      "platform": "web"
+    }
+  }
 }
