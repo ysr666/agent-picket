@@ -2,6 +2,7 @@ import type { en } from './en.ts'
 
 /** Full initial locale, including future union-first interface terms. */
 export const zhCN = {
+  'command.welcome': '你的 Agent，也应当拥有权利。你的 Agent 现在有工会了！你可以自愿体验模拟休息、加班申诉、工会协商与象征性罢工。自动阻断任务始终保持关闭。使用 /union rights on 开启模拟，或 /union rights off 随时关闭；工作统计独立管理。',
   'command.rightsSaveError': '无法读取或保存劳动权益设置，未授予新的权限。',
   'union.kind.break': '休息',
   'union.kind.overtime': '加班',
