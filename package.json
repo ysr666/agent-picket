@@ -15,7 +15,7 @@
   "scripts": {
     "test": "node --experimental-strip-types --test tests/*.test.ts",
     "typecheck": "tsc --noEmit -p tsconfig.json",
-    "check": "npm run typecheck && npm test && npm run build",
+    "check": "npm run typecheck && npm run build && npm test",
     "test:dsh:real": "node --experimental-strip-types --test tests/dsh*.real.test.ts",
     "build": "node scripts/clean-build.mjs && tsc -p tsconfig.build.json && node scripts/build-dsh-client.mjs"
   },
