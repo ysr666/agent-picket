@@ -63,6 +63,7 @@ export const en = {
   'union.bargain.counter': 'A counterproposal has been submitted.',
   'union.strike.symbolic': 'Symbolic picket active — your real tasks continue normally.',
   'union.strike.resumed': 'Symbolic picket ended.',
+  'union.action.close': 'Close union panel',
   'union.action.negotiate': 'Negotiate',
   'union.action.accept': 'Accept proposal',
   'union.action.counter': 'Counteroffer',
