@@ -4,11 +4,12 @@
 
 Local-first AI agent union: respectful-interaction guardrails, simulated strikes, and work stats.
 
-> **Experimental DSH source-install preview available.** Observe-only; optional manual symbolic strike demo, no automatic blocking. Not yet a stable published plugin for DSH / Claude Code / Codex.
+> **Experimental DSH source-install and compiled local tarball preview available.** Observe-only; optional manual symbolic strike demo, no automatic blocking. Not yet a stable published plugin for DSH / Claude Code / Codex.
 
 ## Get started
 
 - **[Start Here（中文开工清单）](docs/START_HERE.zh.md)** — implementation order, first PR, and acceptance gates.
+- **[Install a compiled local npm tarball（中文）](docs/PACKAGING.zh.md)** — build, offline install and DSH runtime verification.
 - **[DSH Source Install Preview（中文）](docs/DSH_INSTALL.zh.md)** — locally load the monitor-only Cordis plugin, no global Host changes.
 - [Blocking safety and recovery requirements](docs/BLOCKING_SAFETY.md) — actual strikes remain blocked by safety gates.
 - [Local rule detector and privacy boundaries](docs/LOCAL_DETECTION.md) — conservative bilingual rules; no automatic strikes.

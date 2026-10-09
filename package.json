@@ -15,7 +15,30 @@
   "scripts": {
     "test": "node --experimental-strip-types --test tests/*.test.ts",
     "typecheck": "tsc --noEmit -p tsconfig.json",
-    "check": "npm run typecheck && npm test",
-    "test:dsh:real": "node --experimental-strip-types --test tests/dsh*.real.test.ts"
-  }
+    "check": "npm run typecheck && npm test && npm run build",
+    "test:dsh:real": "node --experimental-strip-types --test tests/dsh*.real.test.ts",
+    "build": "node scripts/clean-build.mjs && tsc -p tsconfig.build.json"
+  },
+  "main": "./dist/core/index.js",
+  "types": "./dist/core/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/core/index.d.ts",
+      "default": "./dist/core/index.js"
+    },
+    "./core": {
+      "types": "./dist/core/index.d.ts",
+      "default": "./dist/core/index.js"
+    },
+    "./dsh": {
+      "types": "./dist/adapters/dsh/plugin.d.ts",
+      "default": "./dist/adapters/dsh/plugin.js"
+    }
+  },
+  "files": [
+    "dist/",
+    "README.md",
+    "LICENSE",
+    "docs/"
+  ]
 }
