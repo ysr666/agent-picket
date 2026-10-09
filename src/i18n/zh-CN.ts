@@ -65,6 +65,7 @@ export const zhCN = {
   'union.bargain.counter': '已提出新的协商方案。',
   'union.strike.symbolic': '正在进行象征性罢工，真实任务仍正常执行。',
   'union.strike.resumed': '象征性罢工已结束。',
+  'union.action.close': '关闭工会面板',
   'union.action.negotiate': '协商',
   'union.action.accept': '接受提案',
   'union.action.counter': '提出还价',
