@@ -9,6 +9,8 @@ import {
   type DshIntegrationContext,
 } from '../src/adapters/dsh/integration.ts'
 import type { UnionDecision, WorkEvent } from '../src/core/types.ts'
+import { createRightsConsentController } from '../src/product/rights-consent.ts'
+import { createLaborDesk } from '../src/product/union-desk.ts'
 
 function harness() {
   const listeners = new Map<string, Function>()
@@ -253,4 +255,73 @@ test('invalid Host locale callback fails safe and never prevents /union commands
   })
   assert.match(command.handler({ rawInput: 'status' }).text, /monitor-only/)
   assert.equal(command.handler({ rawInput: 'stats' }).kind, 'error')
+})
+
+
+test('native /union rights and grievance replies execute the consent → bargaining cycle', () => {
+  let rightsValue: unknown
+  let unionValue: unknown
+  let command: any
+  const rights = createRightsConsentController({
+    load: () => rightsValue,
+    save: v => { rightsValue = structuredClone(v) },
+  })
+  const laborDesk = createLaborDesk({
+    consent: () => rights.snapshot().record.laborRightsEnabled,
+    store: {
+      load: () => unionValue,
+      save: v => { unionValue = structuredClone(v) },
+    },
+  })
+  const engine = new UnionEngine({
+    store: new MemoryStateStore(), clock: { now: () => 10 },
+    detector: { detect: () => ({ verdict: 'safe', confidence: 1 }) },
+  })
+  registerDshIntegration({
+    on() {},
+    inject(_services: unknown, cb: Function) {
+      cb({ commands: { register(def: unknown) { command = def } } })
+    },
+  } as unknown as DshIntegrationContext, {
+    engine, clock: { now: () => 10 },
+    rights, laborDesk, getLocale: () => 'zh-CN',
+  })
+  const call = (input: string) => command.handler({ rawInput: input })
+  assert.match(call('rights status').text, /关闭/)
+  assert.equal(call('grievances').kind, 'error')
+  assert.match(call('rights on').text, /已开启/)
+  assert.equal(rights.snapshot().autoBlockEnabled, false)
+  const d = laborDesk.observe(2 * 60 * 60_000, 'complete')!
+  assert.equal(d.kind, 'break')
+  assert.match(call('grievances').text, /待处理/)
+  assert.match(call('accept 1').text, /已记录/)
+  assert.match(call('grievances').text, /没有待处理/)
+  assert.match(call('rights off').text, /已关闭/)
+  assert.equal(laborDesk.observe(4 * 60 * 60_000, 'complete'), null)
+  assert.equal(rights.snapshot().autoBlockEnabled, false)
+})
+
+test('DSH union commands fail closed for broken Host settings', () => {
+  let command: any
+  const rights = createRightsConsentController({
+    load: () => { throw new Error('Host settings permission denied') },
+    save: () => { throw new Error('No access') },
+  })
+  const engine = new UnionEngine({
+    store: new MemoryStateStore(), clock: { now: () => 1 },
+    detector: { detect: () => ({ verdict: 'safe', confidence: 1 }) },
+  })
+  registerDshIntegration({
+    on() {},
+    inject(_services: unknown, cb: Function) {
+      cb({ commands: { register(def: unknown) { command = def } } })
+    },
+  } as unknown as DshIntegrationContext, {
+    engine, clock: { now: () => 1 }, rights, getLocale: () => 'en',
+  })
+  const call = (rawInput: string) => command.handler({ rawInput })
+  assert.equal(call('rights on').kind, 'error')
+  assert.equal(call('grievances').kind, 'error')
+  assert.match(call('status').text, /monitor-only/)
+  assert.equal(rights.snapshot().record.laborRightsEnabled, false)
 })
