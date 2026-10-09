@@ -4,7 +4,7 @@
 
 Local-first AI agent union: respectful-interaction guardrails, simulated strikes, and work stats.
 
-> Planning stage. No functional plugin has been implemented yet.
+> **Early development:** Phase 0 host-neutral Core + Mock Adapter only. Not yet an installable DSH / Claude Code / Codex plugin.
 
 ## Get started
 
@@ -13,3 +13,14 @@ Local-first AI agent union: respectful-interaction guardrails, simulated strikes
 - [Initial development tasks](https://github.com/ysr666/agent-picket/issues) — Issue #1 → #2 → #3 → #4.
 
 **Architecture rule:** The core is host-neutral. DeepSeek Harness (Cordis) is the first Adapter, not a dependency of the core. Later Claude Code/Codex integrations use their own adapters.
+
+## Developer quickstart (Phase 0)
+
+Requires Node.js 22.19+.
+
+```sh
+npm ci
+npm run check
+```
+
+See [Architecture and trust boundary](docs/ARCHITECTURE.md) and [Issue #1](https://github.com/ysr666/agent-picket/issues/1). The test classifier is synthetic; no real abuse detection is shipped yet.
