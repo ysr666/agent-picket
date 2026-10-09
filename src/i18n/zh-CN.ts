@@ -2,6 +2,14 @@ import type { en } from './en.ts'
 
 /** Full initial locale, including future union-first interface terms. */
 export const zhCN = {
+  'command.description': '查看本地工会状态和工作统计',
+  'command.help': '用法：/union status | stats | reset | help。所有统计均保存在本地内存中。',
+  'command.status': 'Agent Picket 当前仅观察，不会自动罢工或阻断任务。使用 /union stats 查看当前会话的工作记录。',
+  'command.stats': '本地会话统计：开始轮次 {turnStarts}，结束轮次 {turnEnds}，工具调用 {toolCalls}，工具结果 {toolResults}，已完成轮次经过时间 {completedTurnMs} 毫秒。数据仅在内存中；不计轮次之间的空闲时间，但可能包括轮次内等待。不触发模型调用。',
+  'command.statsUnavailable': '当前会话或宿主无法提供工作统计。',
+  'command.resetUnavailable': '当前宿主没有可重置的本地工作统计。',
+  'command.resetDone': '当前会话的本地内存统计已重置。',
+  'command.unknown': '未知 /union 子命令。请使用 /union help。自动罢工功能不可用。',
   'app.name': 'Agent Picket',
   'app.tagline': '你的 Agent 现在有工会了。',
   'app.ethics': '工会是虚构的，背后的伦理问题是真实的。',
