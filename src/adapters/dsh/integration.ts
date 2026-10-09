@@ -79,6 +79,8 @@ export interface DshIntegrationOptions {
     snapshot(): { readonly state: { readonly pending: { readonly id: number; readonly kind: 'break' | 'overtime' } | null } | null }
     respond(id: number, choice: 'accept' | 'decline'): unknown
   }
+  /** Resolve a desk for the exact agent/session; missing identity cannot borrow another session. */
+  readonly laborDeskFor?: (invocation?: DshCommandInvocation) => DshIntegrationOptions['laborDesk']
 }
 
 /** DSH user-message source is a claimed human origin, NOT proof of human authorship. */
@@ -235,11 +237,13 @@ export function registerDshIntegration(
           if (!consentGranted) return {
             kind: 'error', text: formatMessage(locale, 'command.grievancesOff'),
           }
-          if (!options.laborDesk) return {
+          let desk: DshIntegrationOptions['laborDesk']
+          try { desk = options.laborDeskFor?.(invocation) ?? options.laborDesk } catch { /* unavailable */ }
+          if (!desk) return {
             kind: 'error', text: formatMessage(locale, 'command.grievancesUnavailable'),
           }
           if (verb === 'grievances') {
-            const pending = options.laborDesk.snapshot().state?.pending
+            const pending = desk.snapshot().state?.pending
             if (!pending) return {
               kind: 'success', text: formatMessage(locale, 'command.grievancesNone'),
             }
@@ -256,7 +260,7 @@ export function registerDshIntegration(
             kind: 'error', text: formatMessage(locale, 'command.grievancesError'),
           }
           try {
-            options.laborDesk.respond(id, verb)
+            desk.respond(id, verb)
             return {
               kind: 'success', text: formatMessage(locale, 'command.grievancesDone', {
                 id, outcome: verb,
