@@ -126,7 +126,7 @@ export function createLaborDesk(options: {
   const closeDemand = (s: LaborStateV1, outcome: BargainOutcome, newInterval?: number): LaborStateV1 => {
     if (!s.pending) throw new Error('No active union demand')
     const p = s.pending
-    const agreement: LaborAgreement = { ...s.agreement }
+    const agreement: { breakIntervalMs: number; overtimeIntervalMs: number } = { ...s.agreement }
     if (newInterval !== undefined) {
       if (p.kind === 'break') agreement.breakIntervalMs = newInterval
       else agreement.overtimeIntervalMs = newInterval
