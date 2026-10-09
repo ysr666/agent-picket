@@ -52,6 +52,7 @@ export const zhCN = {
   'union.action.decline': '拒绝提案',
   'union.action.vote': '模拟工会决定',
   'union.status.waitingCounter': '还价正在等待模拟工会作出决定。',
+  'union.desk.title': '工会诉求与协商',
   'union.title': 'AI 工会',
   'union.status.inactive': '工会模拟未开启',
   'union.status.active': '工会模拟进行中',
