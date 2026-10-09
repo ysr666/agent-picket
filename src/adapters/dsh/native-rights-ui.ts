@@ -291,7 +291,7 @@ export function createDshUnionComponents(
         style:{...card,width:'min(96vw,800px)',maxHeight:'85vh',overflowY:'auto'}},
         h('div',{style:{display:'flex',justifyContent:'flex-end'}},
           h('button',{type:'button',style:quiet,
-            'aria-label':deps.t('settings.reopenWelcome'),
+            'aria-label':deps.t('union.action.close'),
             onClick:()=>setOpened(false)},'×')),
         h(UnionPanel,{}),
       )),page.body):null,
