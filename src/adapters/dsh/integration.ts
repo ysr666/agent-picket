@@ -1,5 +1,6 @@
 import { resolveHostAction, type UnionEngine } from '../../core/engine.ts'
 import type { WorkTracker } from '../../core/work-tracker.ts'
+import type { DetectionCounter } from '../../core/detection-counter.ts'
 import type {
   Clock,
   HumanPrompt,
@@ -66,6 +67,8 @@ export interface DshIntegrationOptions {
   readonly onWorkEvent?: (event: WorkEvent) => void
   /** Optional local work counter; independent of DSH and absent by default. */
   readonly tracker?: WorkTracker
+  /** Optional local verdict counts, requires the same detector wrapper in UnionEngine. */
+  readonly detections?: DetectionCounter
 }
 
 /** DSH user-message source is a claimed human origin, NOT proof of human authorship. */
@@ -125,7 +128,7 @@ export function registerDshIntegration(
   ctx: DshIntegrationContext,
   options: DshIntegrationOptions,
 ): void {
-  const { engine, clock, onDecision, onWorkEvent, tracker } = options
+  const { engine, clock, onDecision, onWorkEvent, tracker, detections } = options
   const capabilities: HostCapabilities = {
     warn: false,
     block: false,
@@ -162,12 +165,12 @@ export function registerDshIntegration(
     child.commands.register({
       name: 'union',
       description: 'Show local union status and work statistics',
-      input: { hint: '[status|stats|reset|help]' },
+      input: { hint: '[status|stats|report|reset|help]' },
       handler: invocation => {
         const verb = (invocation?.rawInput ?? '').trim().toLowerCase() || 'status'
         if (verb === 'help') return {
           kind: 'success',
-          text: 'Usage: /union status | stats | reset | help. All statistics are local and in-memory.',
+          text: 'Usage: /union status | stats | report | reset | help. All statistics are local and in-memory.',
         }
         if (verb === 'status') return {
           kind: 'success',
@@ -190,12 +193,27 @@ export function registerDshIntegration(
               + 'In-memory only; between-turn idle excluded, in-turn waits may count. No model calls.',
           }
         }
+        if (verb === 'report') {
+          if (typeof sessionId !== 'string' || !sessionId || !detections) return {
+            kind: 'error', text: 'Local rule detection is unavailable in this Host.',
+          }
+          const summary = detections.snapshot((typeof invocation?.agent?.id === 'string' ? invocation.agent.id : sessionId), sessionId)
+          return {
+            kind: 'success',
+            text: `Local rule check: ${summary.checked} messages, `
+              + `${summary.safe} no flag, ${summary.review} review, `
+              + `${summary.targeted} explicit-target flags. `
+              + 'Experimental rules only; a flag is NOT proof of abuse. '
+              + 'No quoted content saved. Automatic blocking disabled.',
+          }
+        }
         if (verb === 'reset') {
           if (typeof sessionId !== 'string' || !sessionId || !tracker) return {
             kind: 'error', text: 'No local work statistics to reset in this Host.',
           }
           tracker.clear(sessionId, sessionId)
-          return { kind: 'success', text: 'Local in-memory work counters reset for this session.' }
+          detections?.clear((typeof invocation?.agent?.id === 'string' ? invocation.agent.id : sessionId), sessionId)
+          return { kind: 'success', text: 'Local in-memory counters reset for this session.' }
         }
         return {
           kind: 'error',

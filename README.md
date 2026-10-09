@@ -9,6 +9,7 @@ Local-first AI agent union: respectful-interaction guardrails, simulated strikes
 ## Get started
 
 - **[Start Here（中文开工清单）](docs/START_HERE.zh.md)** — implementation order, first PR, and acceptance gates.
+- [Local rule detector and privacy boundaries](docs/LOCAL_DETECTION.md) — conservative bilingual rules; no automatic strikes.
 - [Local work stats and /union commands](docs/WORK_TRACKING.md) — host-neutral counters and a monitor-only command.
 - [DSH integration evidence](docs/DSH_INTEGRATION.md) — real Cordis tests, isolated SDK boot, and unresolved safety gates.
 - [Development roadmap（中文）](docs/ROADMAP.zh.md) — DSH-first integration, detection, work tracking, and multi-agent support.
@@ -25,7 +26,7 @@ npm ci
 npm run check
 ```
 
-See [Architecture and trust boundary](docs/ARCHITECTURE.md) and [Issue #1](https://github.com/ysr666/agent-picket/issues/1). The test classifier is synthetic; no real abuse detection is shipped yet.
+See [Architecture and trust boundary](docs/ARCHITECTURE.md) and [Issue #1](https://github.com/ysr666/agent-picket/issues/1). A conservative local rule detector is now implemented and tested. There is still no production-ready abuse judgement or automatic strike support.
 
 ## DSH integration spike (opt-in)
 
@@ -37,4 +38,4 @@ AGENT_PICKET_DSH_BIN=/path/to/isolated/node_modules/.bin/dsh \
 npm run test:dsh:real
 ```
 
-The adapter is **observe-only**: automatic strikes remain disabled until actual Host rejection feedback can be validated. Optional in-memory `WorkTracker` provides `/union status`, `/union stats`, `/union reset`, and `/union help` in clients that mount DSH's command service.
+The adapter is **observe-only**: automatic strikes remain disabled until actual Host rejection feedback can be validated. Optional in-memory `WorkTracker` and `DetectionCounter` provide `/union status`, `/union stats`, `/union report`, `/union reset`, and `/union help` in clients that mount DSH's command service.

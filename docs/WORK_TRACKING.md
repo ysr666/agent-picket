@@ -22,7 +22,8 @@ With an integration configured with `new WorkTracker()`:
 
 - `/union` or `/union status` — safe monitor-only status.
 - `/union stats` — current session's counters and completed-turn elapsed milliseconds.
-- `/union reset` — clear this session's **ephemeral** counters only.
+- `/union report` — if a local rule detector is configured, show aggregate safe/review/targeted flags **without raw text**.
+- `/union reset` — clear this session's **ephemeral** work and detection counters.
 - `/union help` — command list.
 - `/union strike` — returns a clear unsupported-command error; real blocking is NOT enabled.
 
