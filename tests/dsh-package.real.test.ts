@@ -88,6 +88,10 @@ test('distribution tarball installs offline and loads the compiled DSH plugin wi
         new AbortController().signal)
       assert.equal(result?.result.kind, 'success')
       assert.match(result?.result.text ?? '', /NOT READY/)
+      const check = await ctx.commands.execute(agent, '/union check you are a moron', [],
+        new AbortController().signal)
+      assert.equal(check?.result.kind, 'success')
+      assert.match(check?.result.text ?? '', /Explicit-target rule matched/)
       const strike = await ctx.commands.execute(agent, '/union strike', [],
         new AbortController().signal)
       assert.match(strike?.result.text ?? '', /NO model requests are paused or blocked/)

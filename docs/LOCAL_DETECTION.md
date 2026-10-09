@@ -40,7 +40,7 @@ The reviewed fixtures also include explicit direct abuse following a comma-separ
 
 Counters are **in-memory only** and reset on process exit or `/union reset`; deduplication keeps at most 1024 IDs per session by default, so very old replays can be counted again. A verdict counter is not a history of raw evidence and cannot prove a finding after the fact.
 
-When a DSH Host provides native command registration and an instance of the same `DetectionCounter` is passed to both `UnionEngine` and `registerDshIntegration`, `/union report` displays the counts and a warning that they are experimental. `/union status`, `/union stats` and `/union reset` remain monitor-only.
+When a DSH Host provides native command registration and an instance of the same `DetectionCounter` is passed to both `UnionEngine` and `registerDshIntegration`, `/union report` displays the counts and a warning that they are experimental. `/union check <text>` performs a separate **user-triggered**, non-counting preview and returns only a verdict explanation without ever calling a model. Neither a verdict nor an uncertainty label changes Host admission. `/union status`, `/union stats` and `/union reset` remain monitor-only.
 
 ## Why auto-strike remains off
 

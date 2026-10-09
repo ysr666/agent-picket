@@ -5,6 +5,7 @@ import type { DetectionCounter } from '../../core/detection-counter.ts'
 import type { SymbolicUnion } from '../../core/symbolic-union.ts'
 import type {
   Clock,
+  DetectionProvider,
   HumanPrompt,
   HostCapabilities,
   UnionDecision,
@@ -74,6 +75,8 @@ export interface DshIntegrationOptions {
   readonly detections?: DetectionCounter
   /** Manual, symbolic picket state; never governs Host prompt admission. */
   readonly ceremony?: SymbolicUnion
+  /** Raw-text manual checks: injected LOCAL detector; no counters or history. */
+  readonly manualPreflight?: DetectionProvider
 }
 
 /** DSH user-message source is a claimed human origin, NOT proof of human authorship. */
@@ -133,7 +136,7 @@ export function registerDshIntegration(
   ctx: DshIntegrationContext,
   options: DshIntegrationOptions,
 ): void {
-  const { engine, clock, onDecision, onWorkEvent, tracker, detections, ceremony } = options
+  const { engine, clock, onDecision, onWorkEvent, tracker, detections, ceremony, manualPreflight } = options
   const capabilities: HostCapabilities = {
     warn: false,
     block: false,
@@ -173,15 +176,56 @@ export function registerDshIntegration(
       // Union commands do not need the raw command suffix in Session history.
       // Command result and lifecycle still remain auditable in DSH.
       recordInput: false,
-      input: { hint: '[status|stats|report|strike|resume|safety|reset|help]' },
+      input: { hint: '[status|stats|report|check <text>|strike|resume|safety|reset|help]' },
       handler: invocation => {
-        const verb = (invocation?.rawInput ?? '').trim().toLowerCase() || 'status'
+        const raw = (invocation?.rawInput ?? '').trim()
+        const verb = raw.split(/\s+/, 1)[0]?.toLowerCase() || 'status'
         if (verb === 'help') return {
           kind: 'success',
-          text: 'Usage: /union status | stats | report | strike | resume | safety | reset | help. All statistics are local and in-memory.',
+          text: 'Usage: /union status | stats | report | check <text> | strike | resume | safety | reset | help. All statistics are local and in-memory.',
         }
         const sessionId = invocation?.agent?.session?.id
         const agentId = typeof invocation?.agent?.id === 'string' ? invocation.agent.id : null
+        if (verb === 'check') {
+          // Explicit user-triggered, non-blocking preview. The command's
+          // recordInput:false ensures the original text is NOT in DSH's
+          // command/run event. Do not echo source text in result/diagnostics.
+          if (!manualPreflight) return {
+            kind: 'error', text: 'Manual local check is not enabled in this Host.',
+          }
+          const text = raw.slice(verb.length).trim()
+          if (!text) return {
+            kind: 'error', text: 'Usage: /union check <text>. Nothing was sent to a model.',
+          }
+          if (text.length > 24_000) return {
+            kind: 'error',
+            text: 'Manual check limited to 24,000 characters; no partial verdict was issued.',
+          }
+          try {
+            const result = manualPreflight.detect({
+              id: 'manual-check-not-logged',
+              agentId: 'manual-check', sessionId: 'manual-check',
+              receivedAtMs: clock.now(),
+              provenance: { actor: 'human', assurance: 'claimed' },
+              segments: [{ kind: 'text', text }],
+            })
+            const message = result.verdict === 'targeted-abuse'
+              ? 'Explicit-target rule matched. This is NOT proof of abuse.'
+              : result.verdict === 'suspected-abuse'
+                ? 'Ambiguous language; review context. Not proof of abuse.'
+                : 'No explicit personal-attack rule matched. This does NOT prove it is safe.'
+            return {
+              kind: 'success',
+              text: 'Local manual check: ' + message
+                + ' No model call, no automatic block, no input copied into the command log.',
+            }
+          } catch {
+            return {
+              kind: 'error',
+              text: 'Local manual check unavailable; no verdict issued and no request blocked.',
+            }
+          }
+        }
         if (verb === 'safety') {
           const readiness = inspectBlockingReadiness(capabilities)
           return {
