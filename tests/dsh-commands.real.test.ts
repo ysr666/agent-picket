@@ -68,6 +68,16 @@ test('real DSH CommandRuntime dispatches union status, report, strike, resume, r
     }, async () => ({ kind: 'enter' }))
     assert.equal(input.kind, 'enter')
 
+    const secretSample = 'you are an idiot confidential-code-82a'
+    const preflight = await call('/union check ' + secretSample)
+    assert.equal(preflight.kind, 'success')
+    assert.match(preflight.text ?? '', /Explicit-target rule matched/)
+    assert.doesNotMatch(preflight.text ?? '', /confidential-code-82a|idiot/)
+    const benignPreflight = await call('/union check Your code is garbage, please rewrite it.')
+    assert.match(benignPreflight.text ?? '', /No explicit personal-attack rule matched/)
+    const emptyPreflight = await call('/union check')
+    assert.equal(emptyPreflight.kind, 'error')
+
     const report = await call('/union report')
     assert.equal(report.kind, 'success')
     assert.match(report.text ?? '', /2 messages, 1 no flag, 0 review, 1 explicit-target flags/)
@@ -109,6 +119,9 @@ test('real DSH CommandRuntime dispatches union status, report, strike, resume, r
     }
     assert.equal(recorded.some(x => x.type === 'user/message'), false)
     assert.equal(recorded.some(x => x.type === 'step/start'), false)
+    assert.equal(JSON.stringify(recorded).includes('confidential-code-82a'), false,
+      'Native DSH command events must not retain the sensitive preflight source')
+    assert.equal(recorded.filter(x => x.type === 'command/run').length >= 13, true)
   } finally {
     await pluginFiber.dispose()
     assert.equal(ctx.commands.list(agent).some((c: { name: string }) => c.name === 'union'), false)

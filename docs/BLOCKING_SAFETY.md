@@ -60,6 +60,8 @@ Avoid silently rewriting messages, injecting fake assistant output, covertly dup
 - Real DSH command registry tests verify the user-visible slash-command route and command-log privacy.
 - SDK profile real-runtime tests (isolated `@deepseek-ai/dsh@0.2.0-rc.2`) confirm observe-only operation, offline model execution, synthetic reject behavior, tool events, concurrency, cold restart behavior and basic released `dsh-vision-router@3.0.3` coexistence.
 
+**Safe manual alternative:** `/union check <text>` is an explicit local, non-blocking rule preview via the proven native command route. It neither consumes a normal Host prompt through `pre-step` nor demonstrates lossless automatic retry. See [DSH Web capability assessment](DSH_WEB_CAPABILITIES.zh.md).
+
 **Still unproven:** DSH Web/CLI client pre-submit interaction, reliable human-origin attestation, cross-client rejection explanation and attachment-complete prompt restoration. Therefore actual automatic strike remains disabled.
 
 References: [DSH integration evidence](DSH_INTEGRATION.md), [Development roadmap](ROADMAP.zh.md), [source-install guide](DSH_INSTALL.zh.md).

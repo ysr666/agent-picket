@@ -15,7 +15,8 @@ import { registerDshIntegration, type DshIntegrationContext } from './integratio
 export const name = 'agent-picket'
 
 export function apply(ctx: DshIntegrationContext): void {
-  const detections = new DetectionCounter(new LocalRuleDetector())
+  const rules = new LocalRuleDetector()
+  const detections = new DetectionCounter(rules)
   const clock = { now: () => Date.now() }
   const engine = new UnionEngine({
     detector: detections,
@@ -27,6 +28,7 @@ export function apply(ctx: DshIntegrationContext): void {
     engine,
     clock,
     detections,
+    manualPreflight: rules,
     tracker: new WorkTracker(),
     ceremony: new SymbolicUnion(clock),
   })
