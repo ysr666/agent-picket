@@ -12,6 +12,7 @@ Local-first AI agent union: respectful-interaction guardrails, simulated strikes
 - **[Install a compiled local npm tarball（中文）](docs/PACKAGING.zh.md)** — build, offline install and DSH runtime verification.
 - **[DSH Source Install Preview（中文）](docs/DSH_INSTALL.zh.md)** — locally load the monitor-only Cordis plugin, no global Host changes.
 - [Lightweight CI and explicit release gates（中文）](docs/CI_AND_RELEASE_GATE.zh.md) — no automatic npm publish.
+- [DSH Session history persistence vs. UI replay evidence（中文）](docs/DSH_SESSION_REPLAY_EVIDENCE.zh.md) — command events are durable; reload UI rendering remains unresolved.
 - [DSH Web Client unload/reload lifecycle（中文）](docs/DSH_CLIENT_LIFECYCLE.zh.md) — genuine Cordis fiber disposal, no duplicate event listeners.
 - [Offline-installed npm tarball: real DSH Web + multi-tab E2E（中文）](docs/DSH_PACKAGED_WEB_E2E.zh.md) — clean install, browser reload, second-tab commands.
 - [Native Web Client Companion: instant union command notices（中文）](docs/DSH_WEB_COMPANION.zh.md) — fixes feedback in empty sessions via supported client events.

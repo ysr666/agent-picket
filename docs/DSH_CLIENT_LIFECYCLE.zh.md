@@ -20,3 +20,6 @@ tests/dsh-client-lifecycle.real.test.ts 使用 DSH 所带的 Cordis 4 运行时�
 但 DSH Web 0.2.0-rc.2 旧命令卡片在页面重载后**偶尔仍不能显示**，目前尚未区分是 Session 选择、持久化回放还是 UI 渲染。即使点回原 Session，某些测试中仍出现未显示。因此不声称旧命令历史已经可靠恢复，不使用 AgentPicket 自建副本伪造记录。
 
 后续调查需将 Host 持久化的 command/run、command/done 与浏览器 Session 事件回放对照。自动罢工依然关闭，输入、附件恢复问题仍需要独立验收。
+
+
+补充证据：受测 Web Session 的 command/run 和 command/done 在 Host 完整退出后均存在于持久化日志；卡片偶发不可见仍不能说明命令数据丢失。详见 [DSH_SESSION_REPLAY_EVIDENCE.zh.md](DSH_SESSION_REPLAY_EVIDENCE.zh.md)。

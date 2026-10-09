@@ -1,7 +1,8 @@
 import assert from 'node:assert/strict'
 import { spawn, spawnSync } from 'node:child_process'
-import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
 import { get } from 'node:http'
+import { zstdDecompressSync } from 'node:zlib'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
@@ -46,6 +47,44 @@ function packAndInstall(root: string): string {
     /window\.__ModuleLoader__\.load/)
   assert.equal(existsSync(join(installed, 'src')), false)
   return join(installed, 'dist/adapters/dsh/plugin.js')
+}
+
+/**
+ * Inspect ONLY record types from a disposable DSH test Session, never user
+ * content. The pinned JSONL backend appends independent checksummed Zstd frames.
+ * Node's Zstd sync decoder consumes a single frame; splitting at frame magic
+ * is a narrow regression fixture strategy, not a generic file-format reader.
+ */
+function persistedEventCounts(root: string): Map<string, number> {
+  const directory = join(root, 'isolated-home')
+  const files = readdirSync(directory, { recursive: true, withFileTypes: true })
+    .filter(entry => entry.isFile() && /^session\.v[0-9]+\.jsonl\.zstd$/.test(entry.name))
+  assert.equal(files.length, 1, 'Expected one isolated DSH session log for browser E2E')
+  const file = readFileSync(join(files[0]!.parentPath, files[0]!.name))
+  assert.ok(file.length < 1_000_000, 'Synthetic Session unexpectedly large')
+  const magic = Buffer.from([0x28, 0xb5, 0x2f, 0xfd])
+  const starts: number[] = []
+  let cursor = 0
+  while ((cursor = file.indexOf(magic, cursor)) >= 0) {
+    starts.push(cursor)
+    cursor += magic.length
+  }
+  assert.equal(starts[0], 0, 'Expected the first DSH Zstd frame at byte zero')
+  assert.ok(starts.length >= 2, 'Expected at least one persisted event frame')
+  const counts = new Map<string, number>()
+  for (let i=0;i<starts.length;i++) {
+    // Test input is fixed: no user-owned data. A false-positive magic offset
+    // inside compressed data would throw on checksummed frame validation.
+    const buffer = zstdDecompressSync(file.subarray(starts[i], starts[i+1] ?? file.length))
+    for (const row of buffer.toString('utf8').split('\n')) {
+      if (!row.trim()) continue
+      const record = JSON.parse(row) as { type?: string }
+      if (typeof record.type === 'string') {
+        counts.set(record.type, (counts.get(record.type) ?? 0) + 1)
+      }
+    }
+  }
+  return counts
 }
 
 function exchangeCookie(url: string): Promise<{ name: string; value: string }> {
@@ -104,6 +143,7 @@ async function browserE2E(mode: 'source' | 'installed'): Promise<void> {
   child.stdout.on('data', b => { stdout += b.toString() })
   child.stderr.on('data', b => { stdout += b.toString() })
   let browser: any
+  let completedBrowserAssertions = false
   try {
     let secretUrl: string | undefined
     for (let i = 0; i < 170; i++) {
@@ -272,6 +312,7 @@ async function browserE2E(mode: 'source' | 'installed'): Promise<void> {
     assert.deepEqual(externalRequests, [], 'The browser must not contact a third-party host')
     assert.deepEqual(pageErrors, [], 'The client should not crash while executing commands')
     await context.close()
+    completedBrowserAssertions = true
   } finally {
     if (browser) await browser.close().catch(() => {})
     child.kill('SIGTERM')
@@ -280,7 +321,58 @@ async function browserE2E(mode: 'source' | 'installed'): Promise<void> {
       child.once('exit', () => resolve())
       setTimeout(() => { if (child.exitCode === null) child.kill('SIGKILL') }, 1200).unref()
     })
-    rmSync(root, { recursive: true, force: true })
+    if (process.env.AGENT_PICKET_INSPECT_SESSION === '1') {
+      try {
+        const candidates = readdirSync(root, {recursive:true,withFileTypes:true})
+          .filter(e => e.isFile() && e.name.endsWith('.jsonl.zstd'))
+        const safeResults = []
+        for (const c of candidates) {
+          const fileBuffer = readFileSync(join(c.parentPath,c.name))
+          const magic = Buffer.from([0x28,0xb5,0x2f,0xfd])
+          const starts: number[] = []
+          let start = 0
+          while ((start = fileBuffer.indexOf(magic,start)) >= 0) { starts.push(start); start += 4 }
+          const chunks: Buffer[] = []
+          let failures = 0
+          for (let k=0;k<starts.length;k++) {
+            try {
+              chunks.push(zstdDecompressSync(fileBuffer.subarray(starts[k],starts[k+1]??fileBuffer.length)))
+            } catch { failures++ }
+          }
+          const types: Record<string, number> = {}
+          const shapes: string[][] = []
+          for (const line of Buffer.concat(chunks).toString('utf8').split('\n')) {
+            if (!line.trim()) continue
+            const object = JSON.parse(line)
+            if (shapes.length < 3) shapes.push(Object.keys(object))
+            const t = object.event?.type ?? object.type
+            types[t ?? 'unknown'] = (types[t ?? 'unknown'] ?? 0) + 1
+          }
+          safeResults.push({bytes:fileBuffer.length, frames:starts.length, invalid:failures, types, shapes})
+        }
+        console.log('AP_SESSION_METADATA_ONLY', mode, JSON.stringify(safeResults))
+      } catch (e) {
+        console.log('AP_SESSION_METALOG_ERROR',mode, e instanceof Error ? e.name : 'failure')
+      }
+    }
+    // After Host teardown/flush, independently check the durable JSONL stream:
+    // the browser UI may occasionally omit a historical command card after
+    // reload, but the command events MUST still exist in Host-owned storage.
+    try {
+      // Do not mask a real UI failure with a secondary Session-file check.
+      if (completedBrowserAssertions) {
+        const ledger = persistedEventCounts(root)
+        assert.ok((ledger.get('command/run') ?? 0) >= 7, 'DSH did not persist command starts')
+        assert.equal(ledger.get('command/run'), ledger.get('command/done'),
+          'DSH must durably settle every command')
+        assert.ok((ledger.get('user/message') ?? 0) >= 2,
+          'Two synthetic user messages must remain in the Host session')
+        assert.ok((ledger.get('turn/end') ?? 0) >= 2,
+          'Host must record the synthetic no-credential turn conclusions')
+      }
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
   }
 }
 
