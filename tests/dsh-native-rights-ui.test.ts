@@ -12,8 +12,8 @@ function fakeReact(){
  const hooks: ReactForDsh={
   createElement(type,props,...children){return {type,props:props??{},children} },
   useState<T>(initial:T|(()=>T)){
-    let current:T=typeof initial==='function'?(initial as ()=>T)():initial as T
-    return [current,(next)=>{current=typeof next==='function'?(next as (x:T)=>T)(current):next as T}]
+    const current:T=typeof initial==='function'?(initial as ()=>T)():initial as T
+    return [current,(_next)=>{ /* next render is outside this static tree test */ }]
   },
   useEffect(effect){effects.push(effect)},
   useRef<T>(initial:T){return {current:initial}},
