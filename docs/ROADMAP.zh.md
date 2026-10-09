@@ -1,6 +1,6 @@
 # AgentPicket 开发路线图（DSH-first）
 
-状态：Planning / 尚未实现功能代码  
+状态：最初规划文档；已有实验性功能代码，最新完成进度以 [STATUS.zh.md](STATUS.zh.md) 为准。
 项目：[ysr666/agent-picket](https://github.com/ysr666/agent-picket)  
 项目标语：**Your agent has a union now.**
 
@@ -36,7 +36,7 @@
 - [DSH Session](https://github.com/deepseek-ai/deepseek-harness/blob/master/docs/subsystems/session.md)：`user/message` 的 `source` 可区分真人、合成注入和自动续行。检测限定 `source.kind === 'user'`。
 - [dsh-vision-router](https://github.com/ysr666/dsh-vision-router)：参照已验证的 DSH 插件打包、加载、卸载、兼容测试和现有项目的开发经验；**不复制其复杂视觉路由架构**。
 
-上面是已核实的设计依据，但**不等于插件已在所选 DSH 版本通过实测**。第一阶段须生成实际 Host 版本、事件输入和拒绝行为的验证证据。
+上述内容保留了最初的设计依据。此后 DSH 0.2.0-rc.2 已有真实 Hook/命令/SDK/Web/Chrome 验证证据，详见 [DSH_INTEGRATION.md](DSH_INTEGRATION.md)；这不等于所有版本或自动阻断均已通过验收。
 
 ## 2. 实施阶段与验收
 
@@ -141,7 +141,7 @@ agent-picket/
 └── cordis.patch.yml            # Phase 1 output
 ```
 
-**现在仅为规划；上述未创建的文件并非已实现。**
+**上面是历史性的目录草图，不代表目前实际源码结构。** 已实现的核心、DSH、Web Companion 和跨宿主 Hook 代码以仓库实际文件为准。
 
 ## 4. 必须守住的技术红线
 
@@ -153,7 +153,7 @@ agent-picket/
 6. **Lifecycle hygiene**：卸载销毁 Hook、计时器和状态监听；可复现的 no-op/failed-hook 测试。
 7. **No premature portability claim**：每个支持的平台必须明确实现等级：`observe` / `warn` / `block` / `command` / `stats`。
 
-## 5. 下一次执行任务（仅 Phase 0）
+## 5. 原定 Phase 0 执行任务（保留为历史记录）
 
 **任务名：DSH Integration Spike**
 
@@ -164,4 +164,4 @@ agent-picket/
 - 实测拒绝后的 UI 反馈与恢复策略，以及与 dsh-vision-router 共存。
 - 将证据写入 `docs/DSH_INTEGRATION.md`，连同最小复现测试提交到 feature 分支，由验证结果决定 Phase 1 的实现细节。
 
-完成后再开 Phase 1；**不把文档推断当作运行验证**。
+这些任务的主要实验阶段已有单独 PR 与验证结果；具体完成与未完成项请看 [STATUS.zh.md](STATUS.zh.md)。**不把文档推断当作运行验证**。
