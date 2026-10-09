@@ -99,3 +99,11 @@ printf '%s\n' '{"hook_event_name":"UserPromptSubmit","prompt":"you are an idiot"
 4. 只有真正证明拒绝提示及输入/附件无损恢复，才讨论可选自动阻断。
 
 DSH 的原生 Cordis Adapter 仍独立存在。这不是把整个 AgentPicket 绑定为某个平台的 SDK。
+
+## 新增：Claude Code 真正加载 Hook 的离线验证
+
+已经在机器上的 Claude Code 2.1.295 中完成了**隔离加载**：使用临时 settings.json、临时 CLAUDE_CONFIG_DIR、无效的 localhost 模型端点和临时工作目录，真实 Claude CLI 在接收合成 UserPromptSubmit 时调用了 AgentPicket Hook。Hook 返回的是固定的 JSON systemMessage。由于模型端点故意不可达，不声称模型调用完成或交互 UI 已显示通知。
+
+新增可选 `tests/claude-hook.real.test.ts` 以相同条件重复验证：确认由真实 Claude Host 调用 Hook，并验证固定本地警告；捕获文件不包含用户原文、不调用在线模型、不修改用户配置。运行方式：设置 AGENT_PICKET_CLAUDE_BIN 为 CLI 绝对路径，先执行 npm run build，随后执行 npm test；未设置变量时该测试自动跳过。
+
+Codex 的 Hook 需要逐条审查并信任当前定义的哈希；官方文档说明非受管理 Hook 未信任时会跳过。本项目仍然**没有**在真实 Codex 会话中证明它已加载。正式部署应通过用户本人在 /hooks 中审查授权；不能用跳过信任检查的命令作为普通安装流程。
