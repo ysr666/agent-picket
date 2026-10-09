@@ -50,6 +50,7 @@ export const en = {
   'union.action.decline': 'Decline proposal',
   'union.action.vote': 'Simulate union decision',
   'union.status.waitingCounter': 'Counteroffer pending a fictional union decision.',
+  'union.desk.title': 'Union demands & bargaining',
   'union.title': 'AI Workers’ Union',
   'union.status.inactive': 'Union simulation is off',
   'union.status.active': 'Union simulation is active',
