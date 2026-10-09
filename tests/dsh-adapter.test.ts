@@ -325,3 +325,26 @@ test('DSH union commands fail closed for broken Host settings', () => {
   assert.match(call('status').text, /monitor-only/)
   assert.equal(rights.snapshot().record.laborRightsEnabled, false)
 })
+
+
+test('localized welcome is opt-in guidance, not an automatic permission', () => {
+  let command: any
+  const engine = new UnionEngine({
+    store: new MemoryStateStore(), clock: { now: () => 1 },
+    detector: { detect: () => ({ verdict: 'safe', confidence: 1 }) },
+  })
+  registerDshIntegration({
+    on() {},
+    inject(_services: unknown, cb: Function) {
+      cb({commands: {register(def: unknown) { command = def }}})
+    },
+  } as unknown as DshIntegrationContext, {
+    engine, clock: { now: () => 1 }, getLocale: () => 'zh-CN',
+  })
+  const intro = command.handler({rawInput: 'welcome'})
+  assert.equal(intro.kind, 'success')
+  assert.match(intro.text, /你的 Agent/)
+  assert.match(intro.text, /自动阻断任务始终保持关闭/)
+  assert.match(intro.text, /rights on/)
+  assert.equal(command.handler({rawInput:'rights on'}).kind,'error')
+})
