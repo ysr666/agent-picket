@@ -28,7 +28,7 @@ interface ClientContext {
     result: { kind: 'success' | 'error'; text?: string },
   ) => void): unknown
   sessions: {
-    list?: { getSnapshot(): { current?: string }; subscribe(listener:()=>void):()=>void }
+    list?: { getSnapshot(): { current?: string; phase?: string; byId?: Record<string,{ blank?:boolean }> }; subscribe(listener:()=>void):()=>void }
     scope(id: string): Scope | undefined
     binding?(id: string): { eventSource: {
       getSnapshot(): { entries: readonly {type?: unknown; event?: {type?: unknown;seq?: unknown;time?: unknown;data?: unknown}}[]; hasMore: boolean; revision: number }
@@ -86,6 +86,12 @@ export function apply(ctx: ClientContext, react?: ReactForDsh, portal?: PortalFo
       subscribeLocale: listener => scoped.locale!.subscribe(listener),
       readUnion,
       subscribeUnion,
+      shouldAutoWelcome: () => {
+        const state = scoped.sessions.list?.getSnapshot()
+        if (!state || state.phase !== 'ready' || !state.current) return false
+        return state.byId?.[state.current]?.blank === false
+      },
+      subscribeSessionVisibility: listener => scoped.sessions.list?.subscribe(listener) ?? (()=>{}),
       // Deliberately no Browser-side grievance writer until a vetted
       // authenticated session-scoped Host settings/action API is installed.
     })
