@@ -22,3 +22,6 @@ A safe browser-to-Host settings transport must be verified separately before shi
 
 ## Validation
 Eight isolated Node tests exercise private persistence, restart, state separation, symlink refusal, corrupt state failure, lock contention and stale revisions. This file does not certify a live DSH/Chrome/Web Host.
+
+## Verified official DSH settings seam (source inspection, not yet implemented)
+On the DSH source version inspected locally, the Host provides ctx.settings.register(namespace, schema, options) and the Browser Client provides ctx.settingsScope.bind({ namespace }) over its existing authenticated settings pathway. The UI slot registry includes settings.onboarding and settings.section. Prefer this official Host settings service as the **single authoritative state owner** for the final DSH Web version; do not silently run it alongside a separate writable private store with conflicting consent values. A reviewed migration/ownership decision is required before wiring PR #41's Node storage fallback into the production Host plugin. No settings RPC endpoint or React slot is claimed as implemented by this PR.
