@@ -28,7 +28,6 @@ test('packaged DSH Client loads native React Slots without extra React, model ca
     if(name==='react-dom')return portal
     throw new Error('Unexpected browser dependency '+name)
   })
-  assert.deepEqual(required,['react','react-dom'])
   const text={private:'PRIVATE_PROMPT_9876'}
   const events={entries:[
     {type:'event',event:{type:'turn/start',seq:1,time:100,data:text}},
@@ -71,6 +70,7 @@ test('packaged DSH Client loads native React Slots without extra React, model ca
     on(name:string,callback:Function){assert.equal(name,'command/executed')},
   }
   plugin.apply(ctx)
+  assert.deepEqual(required,['react','react-dom'])
   assert.ok(published)
   const stat=published.getSnapshot('session-1')
   assert.equal(stat.sessionWork?.completedTurnMs,300)
