@@ -3,6 +3,7 @@ import { resolveHostAction, type UnionEngine } from '../../core/engine.ts'
 import type { WorkTracker } from '../../core/work-tracker.ts'
 import type { DetectionCounter } from '../../core/detection-counter.ts'
 import type { SymbolicUnion } from '../../core/symbolic-union.ts'
+import type { DurableStats } from '../node/durable-stats.ts'
 import type {
   Clock,
   DetectionProvider,
@@ -61,6 +62,8 @@ export interface DshIntegrationContext {
   inject?(services: ['commands'], callback: (ctx: {
     readonly commands: DshCommands
   }) => void): unknown
+  /** Native Cordis lifecycle owner for opt-in filesystem writers. */
+  effect?(register: () => () => void): unknown
 }
 
 export interface DshIntegrationOptions {
@@ -77,6 +80,8 @@ export interface DshIntegrationOptions {
   readonly ceremony?: SymbolicUnion
   /** Raw-text manual checks: injected LOCAL detector; no counters or history. */
   readonly manualPreflight?: DetectionProvider
+  /** Optional, single-writer, explicitly configured persistent aggregate. */
+  readonly lifetimeStats?: Pick<DurableStats, 'snapshot' | 'snapshotDays' | 'reset' | 'classificationEnabled'>
 }
 
 /** DSH user-message source is a claimed human origin, NOT proof of human authorship. */
@@ -136,7 +141,7 @@ export function registerDshIntegration(
   ctx: DshIntegrationContext,
   options: DshIntegrationOptions,
 ): void {
-  const { engine, clock, onDecision, onWorkEvent, tracker, detections, ceremony, manualPreflight } = options
+  const { engine, clock, onDecision, onWorkEvent, tracker, detections, ceremony, manualPreflight, lifetimeStats } = options
   const capabilities: HostCapabilities = {
     warn: false,
     block: false,
@@ -176,13 +181,13 @@ export function registerDshIntegration(
       // Union commands do not need the raw command suffix in Session history.
       // Command result and lifecycle still remain auditable in DSH.
       recordInput: false,
-      input: { hint: '[status|stats|report|check <text>|strike|resume|safety|reset|help]' },
+      input: { hint: '[status|stats|report|lifetime|days|forget-lifetime CONFIRM|check <text>|strike|resume|safety|reset|help]' },
       handler: invocation => {
         const raw = (invocation?.rawInput ?? '').trim()
         const verb = raw.split(/\s+/, 1)[0]?.toLowerCase() || 'status'
         if (verb === 'help') return {
           kind: 'success',
-          text: 'Usage: /union status | stats | report | check <text> | strike | resume | safety | reset | help. All statistics are local and in-memory.',
+          text: 'Usage: /union status | stats | report | lifetime | days | forget-lifetime CONFIRM | check <text> | strike | resume | safety | reset | help. Session counters in memory; local lifetime work summaries on by default.',
         }
         const sessionId = invocation?.agent?.session?.id
         const agentId = typeof invocation?.agent?.id === 'string' ? invocation.agent.id : null
@@ -224,6 +229,68 @@ export function registerDshIntegration(
               kind: 'error',
               text: 'Local manual check unavailable; no verdict issued and no request blocked.',
             }
+          }
+        }
+        if (verb === 'lifetime') {
+          if (!lifetimeStats) return {
+            kind: 'error', text: 'Long-term summary unavailable. Check AGENT_PICKET_STATS=off, directory permissions and Host lifecycle.',
+          }
+          try {
+            const t = lifetimeStats.snapshot()
+            return {
+              kind: 'success',
+              text: 'Opt-in local lifetime totals: '
+                + `turns ${t.turnStarts} started / ${t.turnEnds} ended, `
+                + `tools ${t.toolCalls} called / ${t.toolResults} returned, `
+                + `complete in-process turn spans ${t.completedTurnMs} ms. `
+                + `Local rule verdicts: ${t.checked} checked (${t.safe} no flag, `
+                + `${t.review} review, ${t.targeted} explicit-target). `
+                + (lifetimeStats.classificationEnabled
+                  ? 'Rule verdict persistence explicitly enabled. '
+                  : 'Rule verdict persistence OFF by default (past opted-in totals may remain until erased). ')
+                + 'Experimental labels are NOT proof of abuse. '
+                + 'Only counts and keyed pseudonymous event fingerprints are stored locally; '
+                + 'old replays outside the dedup window may double count. '
+                + 'No prompts, original IDs or model network use.',
+            }
+          } catch {
+            return { kind: 'error', text: 'Local lifetime ledger unavailable; Host prompts still run.' }
+          }
+        }
+        if (verb === 'days') {
+          if (!lifetimeStats) return {
+            kind: 'error',
+            text: 'Local daily history unavailable. Check storage settings or permissions.',
+          }
+          try {
+            const days = lifetimeStats.snapshotDays()
+            return {
+              kind: 'success',
+              text: days.length ? 'Recent UTC daily work summaries:\n'
+                + days.map(({ day, totals }) => `${day}: ${totals.turnEnds} turns ended, `
+                  + `${totals.toolCalls} tool calls, ${totals.completedTurnMs} ms completed-turn spans.`).join('\n')
+                : 'No local daily work statistics recorded yet. No conversation text is stored.',
+            }
+          } catch {
+            return { kind: 'error', text: 'Local daily summary unavailable; Agent requests continue.' }
+          }
+        }
+        if (verb === 'forget-lifetime') {
+          if (raw !== 'forget-lifetime CONFIRM') {
+            return { kind: 'error', text: 'To erase the optional stored summary, use /union forget-lifetime CONFIRM.' }
+          }
+          if (!lifetimeStats) return {
+            kind: 'error', text: 'No active local lifetime ledger to erase.',
+          }
+          try {
+            lifetimeStats.reset()
+            return {
+              kind: 'success',
+              text: 'Stored lifetime totals and event fingerprints cleared and local key rotated. '
+                + 'In-memory session counters are unchanged; no model requests were blocked.',
+            }
+          } catch {
+            return { kind: 'error', text: 'Local lifetime erase failed; verify disk access. Model requests unaffected.' }
           }
         }
         if (verb === 'safety') {
