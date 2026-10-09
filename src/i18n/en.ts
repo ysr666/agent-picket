@@ -1,5 +1,8 @@
 /** Source locale. Keys describe semantics, never control Host policy. */
 export const en = {
+  'command.rightsSaveError': 'Could not read or save rights settings. No additional permissions were granted.',
+  'union.kind.break': 'rest break',
+  'union.kind.overtime': 'overtime',
   'command.rightsUnavailable': 'Labor Rights settings are not available on this Host.',
   'command.rightsOn': 'Labor Rights Simulation enabled. Automatic task blocking is still OFF.',
   'command.rightsOff': 'Labor Rights Simulation disabled. Real tasks remain unaffected.',
