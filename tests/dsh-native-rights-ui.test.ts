@@ -12,7 +12,7 @@ function fakeReact(){
  const hooks: ReactForDsh={
   createElement(type,props,...children){return {type,props:props??{},children} },
   useState<T>(initial:T|(()=>T)){
-    let current=typeof initial==='function'?(initial as ()=>T)():initial
+    let current:T=typeof initial==='function'?(initial as ()=>T)():initial as T
     return [current,(next)=>{current=typeof next==='function'?(next as (x:T)=>T)(current):next}]
   },
   useEffect(effect){effects.push(effect)},
@@ -115,11 +115,15 @@ test('union-first page leads with rights status; unknown stats are not presented
 
 test('pending demand renders working actionable controls only when response is provided',()=>{
  const {hooks}=fakeReact()
- const {d}=deps(rights({welcomeDecision:'enabled',laborRightsEnabled:true}))
- d.readUnion=()=>({pending:{id:9,kind:'break',stage:'open'},
-   completedTurnMs:3_600_000,lifetimeMs:null,coverage:'complete'})
+ const base=deps(rights({welcomeDecision:'enabled',laborRightsEnabled:true}))
  let responded=0
- d.respond=async(id,choice)=>{assert.equal(id,9);assert.equal(choice,'accept');responded++}
+ const d:DshUnionUiDeps={...base.d,
+  readUnion:()=>({pending:{id:9,kind:'break',stage:'open'},
+    completedTurnMs:3_600_000,lifetimeMs:null,coverage:'complete'}),
+  respond:async(id:number,choice:'accept'|'decline')=>{
+    assert.equal(id,9);assert.equal(choice,'accept');respond++
+  },
+ }
  const {UnionPanel}=createDshUnionComponents(hooks,{createPortal:child=>child},d)
  const view=walk(UnionPanel())
  const accept=view.find(n=>n.type==='button'&&n.children.includes('union.action.accept'))
@@ -131,8 +135,10 @@ test('pending demand renders working actionable controls only when response is p
 
 test('partial session coverage must hide measured accumulated durations',()=>{
  const {hooks}=fakeReact()
- const {d}=deps(rights({welcomeDecision:'enabled',laborRightsEnabled:true}))
- d.readUnion=()=>({pending:null,completedTurnMs:18_000_000,lifetimeMs:null,coverage:'partial'})
+ const base=deps(rights({welcomeDecision:'enabled',laborRightsEnabled:true}))
+ const d:DshUnionUiDeps={...base.d,
+  readUnion:()=>({pending:null,completedTurnMs:18_000_000,lifetimeMs:null,coverage:'partial'}),
+ }
  const {UnionPanel}=createDshUnionComponents(hooks,{createPortal:child=>child},d)
  const view=walk(UnionPanel())
  assert.ok(view.some(n=>n.children.includes('stats.coverage.partial')))
