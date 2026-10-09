@@ -201,3 +201,56 @@ test('DSH union stats command reflects local events and can clear counters', () 
   assert.equal(call(' strike').kind, 'error')
   assert.equal(call(' stats').text.includes('secret'), false)
 })
+
+
+test('native /union commands localize at invocation without changing observe-only execution', () => {
+  const tracker = new WorkTracker()
+  let command: any
+  let locale: unknown = 'zh-CN'
+  const engine = new UnionEngine({
+    store: new MemoryStateStore(),
+    clock: { now: () => 100 },
+    detector: { detect: () => ({ verdict: 'safe', confidence: 1 }) },
+  })
+  registerDshIntegration({
+    on() {},
+    inject(_services: string[], cb: Function) {
+      cb({ commands: { register(def: unknown) { command = def } } })
+    },
+  } as unknown as DshIntegrationContext, {
+    engine, clock: { now: () => 100 }, tracker, getLocale: () => locale,
+  })
+  const agent = { id: 'a', session: { id: 's' } }
+  const call = (rawInput: string) => command.handler({ rawInput, agent })
+  assert.match(call('help').text, /用法/)
+  assert.match(call('status').text, /不会自动罢工/)
+  assert.match(call('stats').text, /开始轮次 0/)
+  assert.match(call('reset').text, /已重置/)
+  assert.match(call('strike').text, /未知/)
+  locale = 'en-US'
+  assert.match(call('status').text, /monitor-only/)
+  assert.match(call('stats').text, /turns started 0/)
+  locale = 'xx'
+  assert.match(call('help').text, /Usage:/)
+  assert.equal(call('strike').kind, 'error')
+})
+
+test('invalid Host locale callback fails safe and never prevents /union commands', () => {
+  let command: any
+  const engine = new UnionEngine({
+    store: new MemoryStateStore(),
+    clock: { now: () => 1 },
+    detector: { detect: () => ({ verdict: 'safe', confidence: 1 }) },
+  })
+  registerDshIntegration({
+    on() {},
+    inject(_services: string[], cb: Function) {
+      cb({ commands: { register(def: unknown) { command = def } } })
+    },
+  } as unknown as DshIntegrationContext, {
+    engine, clock: { now: () => 1 },
+    getLocale: () => { throw new Error('Host unavailable') },
+  })
+  assert.match(command.handler({ rawInput: 'status' }).text, /monitor-only/)
+  assert.equal(command.handler({ rawInput: 'stats' }).kind, 'error')
+})
