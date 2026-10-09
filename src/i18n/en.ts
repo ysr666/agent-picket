@@ -1,5 +1,18 @@
 /** Source locale. Keys describe semantics, never control Host policy. */
 export const en = {
+  'command.rightsUnavailable': 'Labor Rights settings are not available on this Host.',
+  'command.rightsOn': 'Labor Rights Simulation enabled. Automatic task blocking is still OFF.',
+  'command.rightsOff': 'Labor Rights Simulation disabled. Real tasks remain unaffected.',
+  'command.rightsStatusOn': 'Labor Rights Simulation: ON. Automatic task blocking: OFF.',
+  'command.rightsStatusOff': 'Labor Rights Simulation: OFF. Automatic task blocking: OFF.',
+  'command.rightsUsage': 'Usage: /union rights [on|off|status]. This only controls nonblocking simulation.',
+  'command.grievancesUnavailable': 'Union negotiation is not available on this Host.',
+  'command.grievancesNone': 'There is no pending simulated union grievance.',
+  'command.grievancesPending': 'Pending simulated {kind} demand #{id}. Try /union accept {id} or /union decline {id}.',
+  'command.grievancesOff': 'Labor Rights Simulation is OFF. Use /union rights on first.',
+  'command.grievancesDone': 'Union demand #{id} recorded as {outcome}; future simulated thresholds updated.',
+  'command.grievancesError': 'No matching open demand or union state could not be saved.',
+  'command.rightsHelpExtra': ' Optional: /union rights [on|off|status] | grievances | accept <id> | decline <id>.',
   'command.description': 'Show local union status and work statistics',
   'command.help': 'Usage: /union status | stats | reset | help. All statistics are local and in-memory.',
   'command.status': 'AgentPicket: monitor-only. Automatic strikes and blocking are disabled. Use /union stats to view session activity.',
