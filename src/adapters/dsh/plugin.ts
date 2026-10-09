@@ -69,6 +69,11 @@ export function apply(ctx: DshIntegrationContext): void {
       try { lifetime?.recordWork(event) } catch { /* observation only */ }
     },
     lifetimeStats: lifetime,
+    statsStorageState: process.env.AGENT_PICKET_STATS === 'off'
+      ? 'disabled' : 'unavailable',
     ceremony: new SymbolicUnion(clock),
   })
 }
+
+/** Supported package export for UI/data consumers; read-only, no Host mutation. */
+export { readDshDashboardSnapshot } from './integration.ts'

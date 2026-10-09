@@ -5,6 +5,7 @@ import type { DetectionCounter } from '../../core/detection-counter.ts'
 import type { SymbolicUnion } from '../../core/symbolic-union.ts'
 import type { DurableStats } from '../node/durable-stats.ts'
 import { formatWorkTrends } from '../../core/trends.ts'
+import { createDashboardSnapshot, type DashboardSnapshotV1, type DashboardStorageState } from '../../core/dashboard.ts'
 import type {
   Clock,
   DetectionProvider,
@@ -83,6 +84,52 @@ export interface DshIntegrationOptions {
   readonly manualPreflight?: DetectionProvider
   /** Optional, single-writer, explicitly configured persistent aggregate. */
   readonly lifetimeStats?: Pick<DurableStats, 'snapshot' | 'snapshotDays' | 'reset' | 'classificationEnabled'>
+  /** The persistence switch is independent of the user's labor-rights experience. */
+  readonly statsStorageState?: Exclude<DashboardStorageState, 'available'>
+  /** An owner-provided read-only view of the UI preference; never mutates settings. */
+  readonly getLaborRightsEnabled?: () => boolean
+}
+
+/**
+ * Read-only cross-layer bridge. UI integrations can call this exported function
+ * without scraping /union strings or depending on DSH's command transport.
+ * Caller must supply real Agent/Session context; unknown session => null.
+ */
+export function readDshDashboardSnapshot(
+  options: Pick<DshIntegrationOptions,
+    'clock' | 'tracker' | 'detections' | 'ceremony' | 'lifetimeStats'
+    | 'statsStorageState' | 'getLaborRightsEnabled'>,
+  agent?: DshAgent,
+  windowDays: 7 | 30 = 7,
+): DashboardSnapshotV1 {
+  const id = typeof agent?.id === 'string' && agent.id ? agent.id : null
+  const sessionId = typeof agent?.session?.id === 'string' && agent.session.id
+    ? agent.session.id : null
+  const available = options.lifetimeStats !== undefined
+  const storage = available ? 'available' as const
+    : options.statsStorageState ?? 'unavailable'
+  let rights = false
+  try { rights = options.getLaborRightsEnabled?.() === true } catch { /* default off */ }
+  return createDashboardSnapshot({
+    host: 'dsh',
+    generatedAtMs: options.clock.now(),
+    windowDays,
+    laborRightsEnabled: rights,
+    blockingReadiness: inspectBlockingReadiness({
+      warn: false, block: false, commands: true, workEvents: true,
+    }),
+    symbolicPicket: id && sessionId
+      ? options.ceremony?.snapshot(id, sessionId) ?? null : null,
+    // DSH Session event callbacks currently identify the Session, not Agent.
+    // This matches the existing WorkTracker key convention, without guessing.
+    sessionWork: sessionId ? options.tracker?.snapshot(sessionId, sessionId) ?? null : null,
+    sessionRules: id && sessionId
+      ? options.detections?.snapshot(id, sessionId) ?? null : null,
+    storage,
+    lifetime: options.lifetimeStats?.snapshot() ?? null,
+    lifetimeRulePersistence: options.lifetimeStats?.classificationEnabled,
+    daily: options.lifetimeStats?.snapshotDays(31) ?? null,
+  })
 }
 
 /** DSH user-message source is a claimed human origin, NOT proof of human authorship. */
@@ -188,7 +235,7 @@ export function registerDshIntegration(
         const verb = raw.split(/\s+/, 1)[0]?.toLowerCase() || 'status'
         if (verb === 'help') return {
           kind: 'success',
-          text: 'Usage: /union status | stats | report | lifetime | days | trends [7|30] | forget-lifetime CONFIRM | check <text> | strike | resume | safety | reset | help. Session counters in memory; local lifetime work summaries on by default.',
+          text: 'Usage: /union status | stats | report | snapshot [7|30] | lifetime | days | trends [7|30] | forget-lifetime CONFIRM | check <text> | strike | resume | safety | reset | help. Session counters in memory; local lifetime work summaries on by default.',
         }
         const sessionId = invocation?.agent?.session?.id
         const agentId = typeof invocation?.agent?.id === 'string' ? invocation.agent.id : null
@@ -229,6 +276,26 @@ export function registerDshIntegration(
             return {
               kind: 'error',
               text: 'Local manual check unavailable; no verdict issued and no request blocked.',
+            }
+          }
+        }
+        if (verb === 'snapshot') {
+          const window = raw === 'snapshot' || raw === 'snapshot 7' ? 7
+            : raw === 'snapshot 30' ? 30 : null
+          if (window === null) return {
+            kind: 'error', text: 'Usage: /union snapshot [7|30].',
+          }
+          try {
+            // JSON contract, not a translated paragraph. UI text belongs to
+            // the i18n layer; never append prompt or Session identifiers.
+            return {
+              kind: 'success',
+              text: JSON.stringify(readDshDashboardSnapshot(options, invocation?.agent, window)),
+            }
+          } catch {
+            return {
+              kind: 'error',
+              text: 'Local dashboard snapshot unavailable; requests continue normally.',
             }
           }
         }

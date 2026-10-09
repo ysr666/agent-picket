@@ -28,6 +28,13 @@ test('distribution stays private and has explicit zero-dependency exports', () =
   assert.equal(manifest.scripts.prepublishOnly, undefined)
 })
 
+test('published DSH entry re-exports read-only dashboard bridge through stable package path', async () => {
+  const plugin = await import('../dist/adapters/dsh/plugin.js')
+  const core = await import('../dist/core/index.js')
+  assert.equal(typeof plugin.readDshDashboardSnapshot, 'function')
+  assert.equal(typeof core.createDashboardSnapshot, 'function')
+})
+
 test('browser companion is a self-contained DSH loader artifact with a declared manifest', () => {
   assert.equal(manifest.dsh.client.platform, 'web')
   assert.deepEqual(manifest.dsh.client.inject, [
