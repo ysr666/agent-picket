@@ -55,6 +55,23 @@ export interface UnionDecision {
   readonly targetedStreak: number
 }
 
+/**
+ * A host is not allowed to turn a Core block decision into a real rejection
+ * unless it has *tested* every property below with its native input surface.
+ * These are adapter attestations, NOT evidence of human provenance by
+ * themselves. Treat capability claims from untrusted plugins as unverified.
+ */
+export interface BlockingSafetyGuarantees {
+  /** The Host can substantiate direct human origin (not just user role). */
+  readonly verifiedHumanSource: boolean
+  /** An actionable explanation reaches the user BEFORE their input is lost. */
+  readonly clearRejectionNotice: boolean
+  /** The user can recover/re-submit the complete rejected prompt and files. */
+  readonly losslessInputRecovery: boolean
+  /** Blocking was explicitly enabled by the actual user in that Host. */
+  readonly userOptedIn: boolean
+}
+
 export interface HostCapabilities {
   /** Can surface a notification without submitting it to the model. */
   readonly warn: boolean
@@ -62,6 +79,11 @@ export interface HostCapabilities {
   readonly block: boolean
   readonly commands: boolean
   readonly workEvents: boolean
+  /**
+   * Absence of safety guarantees means block requests MUST downgrade to
+   * warn/allow. A native pre-step veto alone is not sufficient.
+   */
+  readonly blockingSafety?: BlockingSafetyGuarantees
 }
 
 export interface ProcessedPrompt {

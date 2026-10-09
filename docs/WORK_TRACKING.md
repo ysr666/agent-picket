@@ -23,7 +23,8 @@ With an integration configured with `new WorkTracker()`:
 - `/union` or `/union status` — safe monitor-only status.
 - `/union stats` — current session's counters and completed-turn elapsed milliseconds.
 - `/union report` — if a local rule detector is configured, show aggregate safe/review/targeted flags **without raw text**.
-- `/union strike` / `/union resume` — manually toggle a **symbolic, non-blocking** mock arbitration state. Real prompts continue normally.
+- `/union strike` / `/union resume` — manually toggle a **symbolic, non-blocking** mock arbitration state.
+- `/union safety` — expose the exact safety guarantees missing from real prompt blocking. Real prompts continue normally.
 - `/union reset` — clear this session's **ephemeral** work and detection counters.
 - `/union help` — command list.
 - `/union strike` **does not interrupt current or future model requests**. Automatic or actual blocking is NOT enabled.

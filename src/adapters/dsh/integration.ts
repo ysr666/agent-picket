@@ -1,3 +1,4 @@
+import { inspectBlockingReadiness } from '../../core/block-readiness.ts'
 import { resolveHostAction, type UnionEngine } from '../../core/engine.ts'
 import type { WorkTracker } from '../../core/work-tracker.ts'
 import type { DetectionCounter } from '../../core/detection-counter.ts'
@@ -44,6 +45,7 @@ export interface DshCommands {
   register(definition: {
     readonly name: string
     readonly description: string
+    readonly recordInput?: boolean
     readonly input?: { readonly hint: string }
     readonly handler: (invocation?: DshCommandInvocation) => DshCommandResult
   }): unknown
@@ -168,15 +170,29 @@ export function registerDshIntegration(
     child.commands.register({
       name: 'union',
       description: 'Show local union status and work statistics',
-      input: { hint: '[status|stats|report|strike|resume|reset|help]' },
+      // Union commands do not need the raw command suffix in Session history.
+      // Command result and lifecycle still remain auditable in DSH.
+      recordInput: false,
+      input: { hint: '[status|stats|report|strike|resume|safety|reset|help]' },
       handler: invocation => {
         const verb = (invocation?.rawInput ?? '').trim().toLowerCase() || 'status'
         if (verb === 'help') return {
           kind: 'success',
-          text: 'Usage: /union status | stats | report | strike | resume | reset | help. All statistics are local and in-memory.',
+          text: 'Usage: /union status | stats | report | strike | resume | safety | reset | help. All statistics are local and in-memory.',
         }
         const sessionId = invocation?.agent?.session?.id
         const agentId = typeof invocation?.agent?.id === 'string' ? invocation.agent.id : null
+        if (verb === 'safety') {
+          const readiness = inspectBlockingReadiness(capabilities)
+          return {
+            kind: 'success',
+            text: 'DSH blocking readiness: ' + (readiness.ready ? 'verified' : 'NOT READY')
+              + '. Missing guarantees: ' + readiness.gaps.join(', ') + '. '
+              + 'The native pre-step reject is insufficient: it cannot reliably '
+              + 'explain a rejected request or preserve it for a complete retry. '
+              + 'AgentPicket is monitor-only; all model prompts continue normally.',
+          }
+        }
         if (verb === 'status') {
           const active = agentId && typeof sessionId === 'string' &&
             ceremony?.snapshot(agentId, sessionId).active

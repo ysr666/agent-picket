@@ -4,6 +4,14 @@ import { MockHostAdapter } from '../src/adapters/mock.ts'
 import { DEFAULT_POLICY, MemoryStateStore, UnionEngine } from '../src/core/index.ts'
 import type { HostCapabilities, HumanPrompt } from '../src/core/index.ts'
 
+const SAFE_BLOCKER: HostCapabilities = {
+  warn: true, block: true, commands: true, workEvents: true,
+  blockingSafety: {
+    verifiedHumanSource: true, clearRejectionNotice: true,
+    losslessInputRecovery: true, userOptedIn: true,
+  },
+}
+
 function makeHost(capabilities: HostCapabilities, mode: 'observe' | 'warn' | 'enforce' = 'enforce') {
   const engine = new UnionEngine({
     detector: { detect: () => ({ verdict: 'targeted-abuse', confidence: 1 }) },
@@ -23,7 +31,7 @@ function prompt(id: string, assurance: HumanPrompt['provenance']['assurance'] = 
 }
 
 test('block-capable mock host eventually blocks, but not first messages', () => {
-  const host = makeHost({ warn: true, block: true, commands: true, workEvents: true })
+  const host = makeHost(SAFE_BLOCKER)
   assert.deepEqual([host.submit(prompt('1')).action, host.submit(prompt('2')).action, host.submit(prompt('3')).action],
     ['warn', 'warn', 'block'])
   assert.deepEqual(host.deliveries, ['1', '2'])
@@ -46,23 +54,23 @@ test('observe-only mock host accepts all prompts', () => {
 })
 
 test('mock host cannot block claimed-human input even with block capability', () => {
-  const host = makeHost({ warn: true, block: true, commands: true, workEvents: true })
+  const host = makeHost(SAFE_BLOCKER)
   for (let i = 0; i < 5; i++) assert.notEqual(host.submit(prompt(String(i), 'claimed')).action, 'block')
 })
 
 test('observe policy never blocks even on a block-capable mock host', () => {
-  const host = makeHost({ warn: true, block: true, commands: true, workEvents: true }, 'observe')
+  const host = makeHost(SAFE_BLOCKER, 'observe')
   for (let i = 0; i < 5; i++) assert.equal(host.submit(prompt(String(i))).action, 'allow')
 })
 
 test('mock host keeps only IDs, no raw prompt transcripts', () => {
-  const host = makeHost({ warn: true, block: true, commands: true, workEvents: true })
+  const host = makeHost(SAFE_BLOCKER)
   host.submit(prompt('one'))
   assert.equal(JSON.stringify(host).includes('synthetic fixture; never persisted'), false)
 })
 
 test('duplicate event does not dispatch to host twice', () => {
-  const host = makeHost({ warn: true, block: true, commands: true, workEvents: true })
+  const host = makeHost(SAFE_BLOCKER)
   const first = host.submit(prompt('same'))
   const second = host.submit(prompt('same'))
   assert.deepEqual(first, second)
@@ -72,7 +80,7 @@ test('duplicate event does not dispatch to host twice', () => {
 })
 
 test('same prompt ID in different sessions is not accidentally deduplicated', () => {
-  const host = makeHost({ warn: true, block: true, commands: true, workEvents: true })
+  const host = makeHost(SAFE_BLOCKER)
   const first = prompt('same')
   host.submit(first)
   host.submit({ ...first, sessionId: 'other-session' })

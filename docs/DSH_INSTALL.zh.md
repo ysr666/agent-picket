@@ -49,6 +49,7 @@ DSH_HOME=/tmp/agent-picket-profile-test \
 | `/union resume` | 结束象征性罢工演示，不影响真实模型运行 |
 | `/union reset` | 清空本会话的内存计数 |
 | `/union help` | 显示可用命令 |
+| `/union safety` | 展示为什么当前版本尚不允许真实阻断（来源、提示、恢复等安全条件） |
 
 **没有实现的能力：** 自动/真实阻断、跨重启持久统计、完整人工来源证明、可自动触发的劳动仲裁。注意 `strike` 和 `resume` 目前只控制会话内存中的**演示状态**。
 
@@ -76,4 +77,4 @@ npm run test:dsh:real
 
 DSH 的 `source.kind:'user'` 目前只作为“声称来自真人”处理，不能作为确证；拒绝输入还可能消耗已领取的消息，且 UI 不一定有清晰可恢复的拒绝提示。因此当前适配器无论规则分类为何，都会继续传递原请求，**不会触发自动罢工**。
 
-详见 [本地检测说明](LOCAL_DETECTION.md)、[工作统计](WORK_TRACKING.md) 和 [DSH 实测证据](DSH_INTEGRATION.md)。
+详见 [真实阻断安全条件](BLOCKING_SAFETY.md)、[本地检测说明](LOCAL_DETECTION.md)、[工作统计](WORK_TRACKING.md) 和 [DSH 实测证据](DSH_INTEGRATION.md)。
