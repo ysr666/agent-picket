@@ -2,7 +2,7 @@
 
 **Status:** real AgentLoop and SDK rejection/recovery proven offline; **Issue #2 stays open** until user-readable rejection feedback, cold-recovery and remaining behavior are validated.
 
-**Scope:** Host-neutral Core from [Issue #1](https://github.com/ysr666/agent-picket/issues/1), Cordis/DHS adapter entry and three real-runtime tests. The adapter is **observe-only**. This is NOT a production installable AI abuse detector or an enabled strike policy.
+**Scope:** Host-neutral Core from [Issue #1](https://github.com/ysr666/agent-picket/issues/1), Cordis/DSH adapter entry and five real-runtime tests. The adapter is **observe-only**. This is NOT a production installable AI abuse detector or an enabled strike policy.
 
 ## Environment and pinned evidence
 
