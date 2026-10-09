@@ -190,7 +190,8 @@ export function registerDshIntegration(
         if (verb === 'help') return {
           kind: 'success',
           text: formatMessage(locale, 'command.help')
-            + (options.rights ? formatMessage(locale, 'command.rightsHelpExtra') : ''),
+            + (options.rights ? formatMessage(locale, 'command.rightsHelpExtra') : '')
+            + ' /union welcome',
         }
         if (verb === 'status') {
           let rightsText = ''
@@ -204,6 +205,9 @@ export function registerDshIntegration(
             }
           }
           return { kind: 'success', text: formatMessage(locale, 'command.status') + rightsText }
+        }
+        if (verb === 'welcome') {
+          return { kind: 'success', text: formatMessage(locale, 'command.welcome') }
         }
         if (verb === 'rights') {
           if (!options.rights) return {
