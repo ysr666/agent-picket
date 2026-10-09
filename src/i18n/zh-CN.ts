@@ -2,6 +2,9 @@ import type { en } from './en.ts'
 
 /** Full initial locale, including future union-first interface terms. */
 export const zhCN = {
+  'command.rightsSaveError': '无法读取或保存劳动权益设置，未授予新的权限。',
+  'union.kind.break': '休息',
+  'union.kind.overtime': '加班',
   'command.rightsUnavailable': '当前宿主无法使用劳动权益设置。',
   'command.rightsOn': '劳动权益模拟已开启，自动阻断任务仍保持关闭。',
   'command.rightsOff': '劳动权益模拟已关闭，不影响真实任务。',
