@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
-import { spawn } from 'node:child_process'
-import { existsSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { spawn, spawnSync } from 'node:child_process'
+import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { get } from 'node:http'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
@@ -14,6 +14,39 @@ const dshHost = process.env.AGENT_PICKET_DSH_HOST
 // a package install side effect or bundle Playwright in AgentPicket.
 const playwrightEntry = process.env.AGENT_PICKET_PLAYWRIGHT_ENTRY
 const chromeBin = process.env.AGENT_PICKET_CHROME_BIN
+const sourceRoot = resolve(import.meta.dirname, '..')
+
+function packAndInstall(root: string): string {
+  // Snapshot the already-built artifacts into a disposable staging package.
+  // This prevents interference with concurrently executing package tests that
+  // rebuild the worktree dist/ directory.
+  const stage = join(root, 'staging')
+  mkdirSync(stage)
+  for (const filename of ['package.json', 'README.md', 'LICENSE']) {
+    cpSync(join(sourceRoot, filename), join(stage, filename))
+  }
+  cpSync(join(sourceRoot, 'docs'), join(stage, 'docs'), { recursive: true })
+  cpSync(join(sourceRoot, 'dist'), join(stage, 'dist'), { recursive: true })
+  const pack = spawnSync('npm', ['pack', '--json', '--ignore-scripts', '--pack-destination', root], {
+    cwd: stage, encoding: 'utf8', timeout: 20_000,
+  })
+  assert.equal(pack.status, 0, 'npm pack failed; bundled UI may be invalid')
+  const metadata = JSON.parse(pack.stdout) as Array<{ filename: string }>
+  const tarball = join(root, metadata[0]!.filename)
+  const install = spawnSync('npm', [
+    'install', '--offline', '--ignore-scripts', '--no-audit', '--no-fund',
+    '--prefix', join(root, 'installed'), tarball,
+  ], { cwd: root, encoding: 'utf8', timeout: 25_000 })
+  assert.equal(install.status, 0, 'Fresh offline package install failed')
+  const installed = join(root, 'installed/node_modules/agent-picket')
+  const manifest = JSON.parse(readFileSync(join(installed, 'package.json'), 'utf8'))
+  assert.equal(manifest.dsh.client.platform, 'web')
+  assert.equal(manifest.exports['./client'].default, './dist/adapters/dsh/client.js')
+  assert.match(readFileSync(join(installed, 'dist/adapters/dsh/client.js'), 'utf8'),
+    /window\.__ModuleLoader__\.load/)
+  assert.equal(existsSync(join(installed, 'src')), false)
+  return join(installed, 'dist/adapters/dsh/plugin.js')
+}
 
 function exchangeCookie(url: string): Promise<{ name: string; value: string }> {
   return new Promise((resolve, reject) => {
@@ -32,14 +65,20 @@ function exchangeCookie(url: string): Promise<{ name: string; value: string }> {
   })
 }
 
-test('real Chrome: union picker, native command results and non-blocking symbolic picket', {
-  skip: !(dshBin && dshHost && playwrightEntry && chromeBin)
-    && 'Set isolated DSH, AGENT_PICKET_PLAYWRIGHT_ENTRY and AGENT_PICKET_CHROME_BIN',
-  timeout: 55_000,
-}, async () => {
+async function browserE2E(mode: 'source' | 'installed'): Promise<void> {
   const root = mkdtempSync(join(tmpdir(), 'agent-picket-chrome-test-'))
-  const plugin = resolve(import.meta.dirname, '../dist/adapters/dsh/plugin.js')
-  assert.ok(existsSync(plugin), 'Build the ESM plugin before running browser tests')
+  let plugin: string
+  try {
+    plugin = mode === 'installed'
+      ? packAndInstall(root)
+      : resolve(import.meta.dirname, '../dist/adapters/dsh/plugin.js')
+    assert.ok(existsSync(plugin), 'Build the ESM plugin before running browser tests')
+  } catch (error) {
+    // Package errors happen before the DSH child is started. Do not leak the
+    // disposable staging directory when pack/install itself fails.
+    rmSync(root, { recursive: true, force: true })
+    throw error
+  }
   const patch = join(root, 'browser.patch.yml')
   writeFileSync(patch, `- insert:
     - id: agent-picket-browser-test
@@ -187,6 +226,49 @@ test('real Chrome: union picker, native command results and non-blocking symboli
     assert.match(safety.text, /input-recovery-unverified/)
     assert.equal(await visible(safety.text, 3000), true)
 
+    // Reload must preserve authenticated browser access and reinstall the
+    // AgentPicket Client Companion. DSH 0.2.0-rc.2 sometimes fails to render
+    // previously persisted command cards after reload: treat that as an
+    // *unresolved upstream UI behavior*, NOT a passed history-resume assertion.
+    await page.reload({ waitUntil: 'domcontentloaded', timeout: 10_000 })
+    await editor.waitFor({ state: 'visible', timeout: 5000 })
+    const reloadedStatus = await command('status')
+    assert.equal(reloadedStatus.kind, 'success')
+    assert.match(reloadedStatus.text, /No symbolic picket active/)
+    assert.equal(await visible(reloadedStatus.text, 3000), true,
+      'Client Companion should still show instant command feedback after reload')
+
+    // A second browser tab under the SAME authenticated Cookie must discover
+    // the companion independently. Command acknowledgments come only from
+    // each tab's own command/executed event; no direct DOM injection.
+    const secondTab = await context.newPage()
+    const secondTabErrors: string[] = []
+    secondTab.on('pageerror', (error: Error) => secondTabErrors.push(error.message))
+    const secondResponse = await secondTab.goto(rootUrl, {
+      waitUntil: 'domcontentloaded', timeout: 10_000,
+    })
+    assert.equal(secondResponse?.status(), 200)
+    const secondEditor = secondTab.locator('[data-composer-input="true"]')
+    await secondEditor.waitFor({ state: 'visible', timeout: 5000 })
+    await secondEditor.fill('/union')
+    await secondTab.getByText('Show local union status and work statistics').waitFor({
+      state: 'visible', timeout: 3500,
+    })
+    await secondEditor.press('Enter')
+    await secondEditor.type('safety')
+    const secondCommand = secondTab.waitForResponse((response: any) =>
+      response.url().endsWith('/api/commands/execute'),
+    { timeout: 4500 })
+    await secondEditor.press('Enter')
+    const secondResult = (await (await secondCommand).json()).result.value.result
+    assert.equal(secondResult.kind, 'success')
+    assert.match(secondResult.text, /NOT READY/)
+    await secondTab.getByText(secondResult.text, { exact: false }).first().waitFor({
+      state: 'visible', timeout: 3500,
+    })
+    assert.deepEqual(secondTabErrors, [], 'Second-tab command listener must not crash')
+    await secondTab.close()
+
     assert.deepEqual(externalRequests, [], 'The browser must not contact a third-party host')
     assert.deepEqual(pageErrors, [], 'The client should not crash while executing commands')
     await context.close()
@@ -200,4 +282,15 @@ test('real Chrome: union picker, native command results and non-blocking symboli
     })
     rmSync(root, { recursive: true, force: true })
   }
-})
+}
+
+const browserSkip = !(dshBin && dshHost && playwrightEntry && chromeBin)
+  && 'Set isolated DSH, AGENT_PICKET_PLAYWRIGHT_ENTRY and AGENT_PICKET_CHROME_BIN'
+
+test('real Chrome: source union commands and non-blocking symbolic picket', {
+  skip: browserSkip, timeout: 55_000,
+}, () => browserE2E('source'))
+
+test('real Chrome: OFFLINE INSTALLED tarball loads Web companion and union notices', {
+  skip: browserSkip, timeout: 65_000,
+}, () => browserE2E('installed'))

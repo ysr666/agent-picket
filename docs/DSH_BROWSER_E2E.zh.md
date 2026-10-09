@@ -1,6 +1,6 @@
 # AgentPicket × DSH Web：真实 Chrome 浏览器回归测试
 
-状态：在隔离 DSH 0.2.0-rc.2、Chrome 154、Node.js 24.5 环境中通过。覆盖原生工会命令从浏览器发现到执行、显示的完整链路。仍不代表真实自动阻断功能已经可用。
+状态：在隔离 DSH 0.2.0-rc.2、Chrome 154、Node.js 24.5 环境中通过，且源码版与离线安装包版两种路径都已跑通。覆盖原生工会命令从浏览器发现到执行、显示的完整链路。仍不代表真实自动阻断功能已经可用。
 
 ## 验证范围
 
@@ -52,3 +52,8 @@ DSH Web 0.2.0-rc.2 的默认行为是在首次普通消息建立聊天视图后�
 安全门槛仍然保持：自动罢工不启用。
 
 参考：DSH_WEB_RUNTIME.zh.md、DSH_WEB_CAPABILITIES.zh.md、BLOCKING_SAFETY.md。
+
+
+## 后续追加：安装包与多标签页
+
+完整的离线打包、全新安装、浏览器重载后命令重新执行、多标签页回归现由同一测试分别以 source / installed 两种模式执行。**历史命令卡片的刷新恢复仍有偶发失败，尚未验收。**见 [DSH_PACKAGED_WEB_E2E.zh.md](DSH_PACKAGED_WEB_E2E.zh.md)。
