@@ -1,0 +1,5 @@
+# AgentPicket source-install preview. Run from this repo's root directory.
+# Never mutates DSH core or an existing plugin, and never enables blocking.
+- insert:
+    - id: agent-picket-monitor
+      name: './src/adapters/dsh/plugin.ts'
