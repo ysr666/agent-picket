@@ -13,7 +13,7 @@ function fakeReact(){
   createElement(type,props,...children){return {type,props:props??{},children} },
   useState<T>(initial:T|(()=>T)){
     let current:T=typeof initial==='function'?(initial as ()=>T)():initial as T
-    return [current,(next)=>{current=typeof next==='function'?(next as (x:T)=>T)(current):next}]
+    return [current,(next)=>{current=typeof next==='function'?(next as (x:T)=>T)(current):next as T}]
   },
   useEffect(effect){effects.push(effect)},
   useRef<T>(initial:T){return {current:initial}},
@@ -121,7 +121,7 @@ test('pending demand renders working actionable controls only when response is p
   readUnion:()=>({pending:{id:9,kind:'break',stage:'open'},
     completedTurnMs:3_600_000,lifetimeMs:null,coverage:'complete'}),
   respond:async(id:number,choice:'accept'|'decline')=>{
-    assert.equal(id,9);assert.equal(choice,'accept');respond++
+    assert.equal(id,9);assert.equal(choice,'accept');responded++
   },
  }
  const {UnionPanel}=createDshUnionComponents(hooks,{createPortal:child=>child},d)
