@@ -29,8 +29,9 @@ test('distribution stays private and has explicit zero-dependency exports', () =
 })
 
 test('published DSH entry re-exports read-only dashboard bridge through stable package path', async () => {
-  const plugin = await import('../dist/adapters/dsh/plugin.js')
-  const core = await import('../dist/core/index.js')
+  // Resolve only at runtime: CI typechecks BEFORE building dist/ in a fresh clone.
+  const plugin = await import(new URL('../dist/adapters/dsh/plugin.js', import.meta.url).href)
+  const core = await import(new URL('../dist/core/index.js', import.meta.url).href)
   assert.equal(typeof plugin.readDshDashboardSnapshot, 'function')
   assert.equal(typeof core.createDashboardSnapshot, 'function')
 })
