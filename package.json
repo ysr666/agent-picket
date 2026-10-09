@@ -1,0 +1,20 @@
+{
+  "name": "agent-picket",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Host-neutral AI agent union core (experimental)",
+  "license": "MIT",
+  "type": "module",
+  "engines": {
+    "node": ">=22.19.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.19.0",
+    "typescript": "~5.9.3"
+  },
+  "scripts": {
+    "test": "node --experimental-strip-types --test tests/*.test.ts",
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "check": "npm run typecheck && npm test"
+  }
+}
