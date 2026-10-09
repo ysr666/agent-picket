@@ -62,3 +62,6 @@ Playwright Core 要单独安装在仓库之外，仅用于测试。没有指定�
 - Claude Code 和 Codex 的独立原生适配器。
 
 这仍是实验性安装预览版，所有 Draft PR 不应当直接视作稳定发布。
+
+
+后续补充：使用实际 Cordis Fiber 验证了多次卸载、重载及并存插件实例的事件监听清理。详见 [DSH_CLIENT_LIFECYCLE.zh.md](DSH_CLIENT_LIFECYCLE.zh.md)。旧命令卡片回放仍是未解决问题。
