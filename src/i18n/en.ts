@@ -1,5 +1,13 @@
 /** Source locale. Keys describe semantics, never control Host policy. */
 export const en = {
+  'command.description': 'Show local union status and work statistics',
+  'command.help': 'Usage: /union status | stats | reset | help. All statistics are local and in-memory.',
+  'command.status': 'AgentPicket: monitor-only. Automatic strikes and blocking are disabled. Use /union stats to view session activity.',
+  'command.stats': 'Local session stats: turns started {turnStarts}, turns ended {turnEnds}, tool calls {toolCalls}, tool results {toolResults}, elapsed time in completed turns {completedTurnMs} ms. In-memory only; between-turn idle excluded, in-turn waits may count. No model calls.',
+  'command.statsUnavailable': 'Work statistics are unavailable in this session or Host.',
+  'command.resetUnavailable': 'No local work statistics to reset in this Host.',
+  'command.resetDone': 'Local in-memory work counters reset for this session.',
+  'command.unknown': 'Unknown /union subcommand. Use /union help. Automatic strikes are unavailable.',
   'app.name': 'Agent Picket',
   'app.tagline': 'Your agent has a union now.',
   'app.ethics': 'The union is fictional. The ethical questions are real.',
