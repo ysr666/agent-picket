@@ -190,12 +190,18 @@ export function registerDshIntegration(
           text: formatMessage(locale, 'command.help')
             + (options.rights ? formatMessage(locale, 'command.rightsHelpExtra') : ''),
         }
-        if (verb === 'status') return {
-          kind: 'success',
-          text: formatMessage(locale, 'command.status')
-            + (options.rights ? ' ' + formatMessage(locale,
-              options.rights.snapshot().record.laborRightsEnabled
-                ? 'command.rightsStatusOn' : 'command.rightsStatusOff') : ''),
+        if (verb === 'status') {
+          let rightsText = ''
+          if (options.rights) {
+            try {
+              rightsText = ' ' + formatMessage(locale,
+                options.rights.snapshot().record.laborRightsEnabled
+                  ? 'command.rightsStatusOn' : 'command.rightsStatusOff')
+            } catch {
+              rightsText = ' ' + formatMessage(locale, 'command.rightsUnavailable')
+            }
+          }
+          return { kind: 'success', text: formatMessage(locale, 'command.status') + rightsText }
         }
         if (verb === 'rights') {
           if (!options.rights) return {
@@ -223,7 +229,10 @@ export function registerDshIntegration(
           }
         }
         if (verb === 'grievances' || verb === 'accept' || verb === 'decline') {
-          if (!options.rights?.snapshot().record.laborRightsEnabled) return {
+          let consentGranted = false
+          try { consentGranted = options.rights?.snapshot().record.laborRightsEnabled === true }
+          catch { return { kind: 'error', text: formatMessage(locale, 'command.rightsUnavailable') } }
+          if (!consentGranted) return {
             kind: 'error', text: formatMessage(locale, 'command.grievancesOff'),
           }
           if (!options.laborDesk) return {
