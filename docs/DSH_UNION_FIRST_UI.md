@@ -26,3 +26,7 @@ Rights simulation remains OFF by default. No API here authorizes real task block
 4. Real DSH/Chrome end-to-end visual, keyboard, focus containment, screen reader, dark/light theme, unload/reload tests.
 
 Current verification is strict TypeScript plus six deterministic component/registration tests on a synthetic React tree. This is a Draft component PR, not a claim that DSH already displays the modal.
+
+## Existing-session first launch
+
+DSH's settings.onboarding coordinator is only active when no session is selected or the current session is blank. The new native sidebar.footer.action Slot provides a persistent union entry and an alternative first-install welcome for users already inside active sessions; it only auto-invites when the Host's session list confirms a non-blank current session. This prevents duplicate modals on blank/new sessions. The sidebar button also opens the union-first drawer. UI controls remain subject to the same Host consent and capability checks as the settings page. Focus containment for the two welcome choices and bilingual close affordances are implemented, but real browser accessibility verification remains pending.
