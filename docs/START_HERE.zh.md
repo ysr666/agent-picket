@@ -8,12 +8,12 @@
 
 开发者可以克隆仓库，检出要审查的功能分支。由于目前采用叠加 PR，不能假定 main 已包含所有代码。
 
-最新版开发功能目前在 feat/cross-host-observe-hooks（PR #21），后续分支可能在未来加入更改，请以 GitHub PR 的 Head 为准。
+完整的最新代码和本轮更新的文档在 docs/current-status-and-merge-gates（PR #22）；跨宿主 Hook 的独立功能分支为 feat/cross-host-observe-hooks（PR #21）。后续如新增分支，请以 GitHub PR Head 为准。
 
 ```sh
 git clone https://github.com/ysr666/agent-picket.git
 cd agent-picket
-git switch feat/cross-host-observe-hooks
+git switch docs/current-status-and-merge-gates
 npm ci
 npm run check
 ```
