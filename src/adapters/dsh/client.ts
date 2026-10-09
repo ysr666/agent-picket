@@ -79,7 +79,9 @@ export function apply(ctx: ClientContext, react?: ReactForDsh, portal?: PortalFo
     }
     registerDshNativeRightsSlots(scoped as { slots: DshSlots }, react, portal, {
       rights: owner,
-      t: (key, params) => formatMessage(uiLocale(), key, ...(params ? [params] : []) as never),
+      t: (key, params) => (formatMessage as unknown as
+        (locale: ReturnType<typeof uiLocale>, key: typeof key, params?: typeof params) => string)(
+          uiLocale(), key, params),
       getLocale: () => uiLocale(),
       subscribeLocale: listener => scoped.locale!.subscribe(listener),
       readUnion,
