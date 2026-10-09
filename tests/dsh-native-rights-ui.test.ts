@@ -145,3 +145,32 @@ test('partial session coverage must hide measured accumulated durations',()=>{
  assert.ok(view.some(n=>n.children.includes('—')))
  assert.ok(!view.some(n=>n.children.includes('5h 0m')))
 })
+
+
+test('welcome keyboard Tab cycles between explicit Enable and Not Now choices',()=>{
+  const {hooks}=fakeReact()
+  const {d}=deps(rights())
+  const old=(globalThis as any).document
+  ;(globalThis as any).document={body:{},getElementById:()=>({inert:false})}
+  try{
+    const ui=createDshUnionComponents(hooks,{createPortal:child=>child},d)
+    const nodes=walk(ui.Welcome({complete:()=>{}}))
+    const dialog=nodes.find(n=>n.props.role==='dialog')!
+    const buttons=nodes.filter(n=>n.type==='button')
+    let focused=''
+    const first={focus(){focused='first'}}
+    const second={focus(){focused='second'}}
+    buttons[0]!.props.ref(first)
+    buttons[1]!.props.ref(second)
+    let prevented=false
+    dialog.props.onKeyDown({key:'Tab',shiftKey:false,target:second,
+      preventDefault(){prevented=true}})
+    assert.equal(focused,'first')
+    assert.equal(prevented,true)
+    prevented=false
+    dialog.props.onKeyDown({key:'Tab',shiftKey:true,target:first,
+      preventDefault(){prevented=true}})
+    assert.equal(focused,'second')
+    assert.equal(prevented,true)
+  }finally{(globalThis as any).document=old}
+})
