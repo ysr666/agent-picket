@@ -5,11 +5,11 @@ import {
 } from '../src/adapters/dsh/rights-settings.ts'
 
 test('DSH Host schema defaults fictional rights to unseen/OFF and rejects malformed choices', () => {
-  assert.deepEqual(RightsSettingsSchema({}), {welcomeDecision:'unseen'})
+  assert.deepEqual(RightsSettingsSchema({}), {welcomeDecision:'unseen',unionLedger:''})
   assert.deepEqual(RightsSettingsSchema({welcomeDecision:'enabled'}),
-    {welcomeDecision:'enabled'})
+    {welcomeDecision:'enabled',unionLedger:''})
   assert.deepEqual(RightsSettingsSchema({welcomeDecision:'not-now'}),
-    {welcomeDecision:'not-now'})
+    {welcomeDecision:'not-now',unionLedger:''})
   assert.throws(() => RightsSettingsSchema({welcomeDecision:'automatic-strike' as never}))
   assert.throws(() => RightsSettingsSchema({welcomeDecision:true as never}))
 })
