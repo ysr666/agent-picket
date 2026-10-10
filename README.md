@@ -15,7 +15,7 @@
 3. **Negotiate symbolically.** View a proposal, counteroffer, accept/decline and read the saved result. A fictional petition is not a real Agent signature or vote.
 4. **Review the evidence.** Cumulative work and local trend counts can support the story without collecting actual conversation text. Turning rights simulation off never vetoes model work.
 
-These steps describe the **current development-branch design**, not a guarantee that every older DSH build or adapter has the same Web UI. Human screen-reader and real native zoom/high-contrast qualification is still pending.
+See [official DSH 0.2 Web installation and real Chrome rights/AX acceptance](docs/DSH_02_OFFICIAL_RIGHTS_AX_E2E.md) for the automated, isolated-profile test path. These steps describe the **current development-branch design**, not a guarantee that every DSH build or adapter has the same Web UI. Human screen-reader and real native zoom/high-contrast qualification is still pending.
 
 ## Developer safety snapshot
 

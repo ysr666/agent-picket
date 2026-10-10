@@ -1,18 +1,25 @@
 import assert from 'node:assert/strict'
 import { spawn, spawnSync } from 'node:child_process'
 import { once } from 'node:events'
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdtempSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
 import { get } from 'node:http'
 import { tmpdir } from 'node:os'
-import { join, resolve } from 'node:path'
+import { join, resolve, sep } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import test from 'node:test'
 
 const dshBin = process.env.AGENT_PICKET_DSH_BIN
 const playwrightEntry = process.env.AGENT_PICKET_PLAYWRIGHT_ENTRY
 const chromeBin = process.env.AGENT_PICKET_CHROME_BIN
+const installedWebProfile=process.env.PICKET_TEST_DSH_HOME || process.env.PICKET_TEST_017_HOME
+const dshVersion=dshBin?spawnSync(dshBin,['--version'],{
+  encoding:'utf8',timeout:5_000,
+}).stdout?.trim()??'':''
 const skipped = !(dshBin && playwrightEntry && chromeBin)
-  && 'Set isolated DSH binary, Playwright entry and Chrome path to run real Web E2E'
+  ? 'Set isolated DSH binary, Playwright entry and Chrome path to run real Web E2E'
+  : dshVersion.startsWith('0.2.') && !installedWebProfile
+    ? 'DSH 0.2 rights AX requires an officially installed Web Profile; run scripts/verify-dsh-rights-a11y.sh'
+    : false
 
 function exchangeCookie(secretUrl: string): Promise<{ name: string; value: string }> {
   return new Promise((resolveCookie, reject) => {
@@ -52,6 +59,14 @@ function offlineInstalledPlugin(root: string): string {
 }
 
 async function runRightsBrowserE2E(mode: 'source' | 'installed'): Promise<void> {
+  // The release test must not mutate a user Profile even if someone
+  // accidentally supplies their real DSH_HOME as the installed test target.
+  if(installedWebProfile) {
+    const temporaryRoot=realpathSync(tmpdir())
+    const selected=realpathSync(installedWebProfile)
+    assert.ok(selected.startsWith(temporaryRoot+sep),
+      'Rights/AX test refuses DSH_HOME outside the system temporary directory')
+  }
   const root = mkdtempSync(join(tmpdir(), 'agent-picket-rights-chrome-'))
   let plugin: string
   try {
@@ -67,14 +82,14 @@ async function runRightsBrowserE2E(mode: 'source' | 'installed'): Promise<void> 
     + '      name: ' + JSON.stringify(plugin) + '\n')
 
   const childArguments = [
-    '--profile', 'web', ...(process.env.PICKET_TEST_017_HOME ? [] : ['--patch',patch]), '--no-open',
+    '--profile', 'web', ...(installedWebProfile ? [] : ['--patch',patch]), '--no-open',
     '--host', '127.0.0.1', '--port', '0',
   ]
   const childOptions = {
     stdio: ['ignore', 'pipe', 'pipe'] as ['ignore', 'pipe', 'pipe'],
     env: {
       ...process.env,
-      DSH_HOME: process.env.PICKET_TEST_017_HOME ?? join(root, 'isolated-home'),
+      DSH_HOME: installedWebProfile ?? join(root, 'isolated-home'),
       AGENT_PICKET_STATS: 'off',
       DEEPSEEK_API_KEY: '',
       OPENAI_API_KEY: '',
@@ -164,7 +179,13 @@ async function runRightsBrowserE2E(mode: 'source' | 'installed'): Promise<void> 
 
     let firstRun = page.locator('[role="dialog"]')
       .filter({ hasText: /你的 Agent，也应当拥有权利|Your Agent Deserves Rights/ })
-    await firstRun.waitFor({ state: 'visible', timeout: 8_000 })
+    // The DSH 0.2 Client can start with no eligible nonblank Session.
+    // Agent Picket intentionally does not fabricate an auto-invitation for
+    // an empty Session. 0.1.x, by contrast, exposes the first-run welcome
+    // immediately. Both routes must still require an explicit UI opt-in.
+    const firstRunVisible=await firstRun.waitFor({state:'visible',timeout:4_000})
+      .then(()=>true,()=>false)
+    if(firstRunVisible) {
     assert.match(await firstRun.innerText(), /自动阻断任务需另行授权|separate consent/)
     await assertNamedDialogInChromeAx(/你的 Agent，也应当拥有权利|Your Agent Deserves Rights/)
     // Preserve #53's extreme-height CSS reflow coverage on the #54 baseline.
@@ -200,6 +221,21 @@ async function runRightsBrowserE2E(mode: 'source' | 'installed'): Promise<void> 
     assert.equal(await page.evaluate(()=>Boolean(
       (globalThis as any).document.getElementById('root')?.inert)),false,
       'Consent decision must restore Host keyboard accessibility')
+    } else {
+      const installedVersion=spawnSync(dshBin!,['--version'],{
+        encoding:'utf8',timeout:5_000,
+      })
+      assert.equal(installedVersion.status,0,'DSH CLI version must be readable')
+      assert.match(installedVersion.stdout,/^0\.2\./,
+        'No-first-run assertion is only valid for the DSH 0.2 startup path')
+      await page.getByRole('button',{name:/AI 工会|AI Workers.*Union/})
+        .first().waitFor({state:'visible',timeout:8_000})
+      assert.equal(await firstRun.count(),0,
+        'Blank DSH 0.2 startup must not show an invented Agent invitation')
+      assert.equal(await page.evaluate(()=>Boolean(
+        (globalThis as any).document.getElementById('root')?.inert)),false,
+        'An absent invitation must not leave the Host background inert')
+    }
 
     await page.reload({ waitUntil: 'domcontentloaded' })
     await skipOfficialProvider()
@@ -477,7 +513,7 @@ async function runRightsBrowserE2E(mode: 'source' | 'installed'): Promise<void> 
     // Only a locally installed, disposable DSH 0.1.7 Host may be tested.
     // A valid revision-fenced update proves the official carrier is working;
     // then invalid ledger and stale-revision writes must both be rejected.
-    if (process.env.PICKET_TEST_017_HOME) {
+    if (installedWebProfile) {
       const security = await page.evaluate(async () => {
         let n = 0
         const rpc = async (method: string, args: Record<string,unknown>) => {

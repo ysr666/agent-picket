@@ -1,3 +1,5 @@
+> **2026-10-10 晚间复核：当前有 58 个 PR（55 个开放 Draft、3 个已合并）。** 本文最初的“52 Draft”是早先时间点的历史快照。#53/#54 与 #37–#43 的最新逐文件验收见 [并行分支功能对账](PARALLEL_BRANCH_PARITY_2026_10_10.md)；不要把备用授权存储与官方 DSH Host 设置一起合并。
+
 # Agent Picket — Draft PR integration, package and release audit
 
 > Checked against live GitHub on 2026-10-10. **REVIEW ONLY: do not merge, close, push, publish, or enable real task blocking without explicit authorization.** Canonical current candidate: [Draft PR #67](https://github.com/ysr666/agent-picket/pull/67).
@@ -56,3 +58,7 @@ Existing automated Chrome AX tree, 320×200 CSS reflow and forced-colors emulati
 5. Finish union-first README, clear demo of **opt-in → fictional grievance → counteroffer → agreement → separate stats**, and restrained marketing/privacy claims. Review social mechanism with real users before implementing autonomous/collective voting; do not imply agents independently consented.
 
 **Decision today:** No merges/PR closures, no public release, no default-on simulation and no actual Agent task blocking.
+
+## Follow-up: corrected DSH 0.2 real Chrome Rights/AX testing (2026-10-10)
+
+The earlier 0.2 `--patch` 0/2 Web test is a deprecated fixture path rather than proof of a user-visible accessibility defect. The newly tested official Web plugin installation, with an independent temporary Profile for source-built and offline-installed candidate modes, completed **2/2 PASS on DSH 0.2.0-rc.2 and 2/2 PASS on DSH 0.2.1-alpha.2**. The old DSH 0.1.2 `--patch` test remains **2/2 PASS**. The 0.2 no-invite blank-Session branch is explicitly tested as OFF, then rights are enabled only through the visible union desk. No human screen-reader or native browser/OS zoom sign-off is implied. Repro: [DSH_02_OFFICIAL_RIGHTS_AX_E2E.md](DSH_02_OFFICIAL_RIGHTS_AX_E2E.md).
