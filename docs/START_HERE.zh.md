@@ -1,6 +1,6 @@
 # AgentPicket — 从这里开始
 
-> 本指南已更新至 2026-10-09 的开发分支进度。项目已有可运行的 DSH 监测预览和 Claude Code/Codex 非阻断 Hook 研究入口；但它们**尚未合并到 main，也未公开发布 npm**。
+> **2026-10-10 更新：** 本文以下内容是早期历史研发指南，不代表当前分支状态。**请先读 [52 个 Draft 的真实依赖、#23 主线冲突及安装审计](PR_STACK_RELEASE_AUDIT_2026_10_10.md)**、[工会参与机制草案](UNION_PARTICIPATION_V1.zh.md)和[人工无障碍验收单](HUMAN_ACCESSIBILITY_SIGNOFF.zh.md)。最新候选代码仍在未合并的 Draft PR 中；`main` 没有正式插件，npm 未公开发行。以下旧版 CLI/Branch 示例不能替代最新版安装说明。
 
 **先读 [当前研发状态、全部 PR 关系与发布门槛](STATUS.zh.md)。** 旧的“Phase 0 尚未写代码”描述不再准确。
 
@@ -8,14 +8,16 @@
 
 开发者可以克隆仓库，检出要审查的功能分支。由于目前采用叠加 PR，不能假定 main 已包含所有代码。
 
-完整的最新代码和本轮更新的文档在 docs/current-status-and-merge-gates（PR #22）；跨宿主 Hook 的独立功能分支为 feat/cross-host-observe-hooks（PR #21）。后续如新增分支，请以 GitHub PR Head 为准。
+PR #22 是早期历史文档分支，并不是当前完整工会入口。**目前最新受测工会候选是 Draft #67 的 Head**，但它仍需要从 #23 开始的正式依赖链审查。跨宿主 Hook 的单独试验仍在 PR #21/#24，不能据此宣称正式支持 Codex/Claude。请先阅读 [最新总审计](PR_STACK_RELEASE_AUDIT_2026_10_10.md)。
 
 ```sh
 git clone https://github.com/ysr666/agent-picket.git
 cd agent-picket
-git switch docs/current-status-and-merge-gates
-npm ci
+git fetch origin test/67-keyboard-option-ready-gate-20261010
+git switch --detach FETCH_HEAD
+npm ci --ignore-scripts
 npm run check
+# 这只是实验性审查分支，不要从这里自动发布或合并。
 ```
 
 普通 CI 不需要 DSH、Claude Code 或 Codex。受测 Node 最低版本 22.19.0。DSH 真实测试需要先独立安装受测 Host，再显式指定 Host 路径；详见 [DSH 安装指南](DSH_INSTALL.zh.md) 和 [浏览器回归](DSH_BROWSER_E2E.zh.md)。
