@@ -22,9 +22,12 @@ With an integration configured with `new WorkTracker()`:
 
 - `/union` or `/union status` — safe monitor-only status.
 - `/union stats` — current session's counters and completed-turn elapsed milliseconds.
-- `/union reset` — clear this session's **ephemeral** counters only.
+- `/union report` — if a local rule detector is configured, show aggregate safe/review/targeted flags **without raw text**.
+- `/union strike` / `/union resume` — manually toggle a **symbolic, non-blocking** mock arbitration state.
+- `/union safety` — expose the exact safety guarantees missing from real prompt blocking. Real prompts continue normally.
+- `/union reset` — clear this session's **ephemeral** work and detection counters.
 - `/union help` — command list.
-- `/union strike` — returns a clear unsupported-command error; real blocking is NOT enabled.
+- `/union strike` **does not interrupt current or future model requests**. Automatic or actual blocking is NOT enabled.
 
 All commands are native DSH commands, not model messages. The Adapter never proactively blocks requests or upgrades unverified human provenance. SDK/headless clients might not provide the command plane; Core statistics are still accessible to a Host Adapter programmatically.
 

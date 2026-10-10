@@ -104,3 +104,8 @@ npm run check
 [Issue #2: Verify DSH integration contracts](https://github.com/ysr666/agent-picket/issues/2). Build a **thin** Cordis adapter for the above contract in a disposable isolated DSH profile, then test real events and prompts. Only after verified evidence should we implement the actual classifier / strike behavior.
 
 See [ROADMAP.zh.md](ROADMAP.zh.md) and [START_HERE.zh.md](START_HERE.zh.md).
+
+
+## Cross-Host Hook CLI preview (stacked PR)
+
+The portable LocalRuleDetector now also powers a standalone, ephemeral UserPromptSubmit command hook for Claude Code and Codex. The default Hook only returns a user-visible JSON systemMessage for high-confidence direct-target rules. It does not persist prompts, store counters, alter request admission, or claim verified human origin. This path is kept separate from the native DSH Cordis entry and has independent Node subprocess tests; live Claude Code / Codex integration remains to be validated. See docs/HOOK_ADAPTERS.zh.md.

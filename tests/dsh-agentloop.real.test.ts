@@ -172,6 +172,26 @@ ${visionRow}`)
     assert.equal(logLines().filter(x => x === 'work:turn-end').length, 5)
     assert.equal(logLines().filter(x => x === 'decision:observe-mode').length >= 5, true)
 
+    // The real DSH pre-step bridge invokes the LOCAL classifier but remains
+    // observe-only. An explicit user-directed insult must NOT drop the prompt.
+    const targeted = await request(8, 'session/prompt', {
+      sessionId, contentBlocks: [{ type: 'text', text: 'you are an idiot' }],
+    })
+    assert.equal(typeof (targeted.result as any)?.messageId, 'string')
+    await until(() => getEnds().length >= 4, 'targeted but observe-only input finishes')
+    assert.equal(getEnds()[3].data.reason.kind, 'completed')
+    assert.equal(logLines().filter(x => x === 'local-verdict:targeted-abuse').length, 1)
+    assert.equal(logLines().filter(x => x === 'model-call').length, 6)
+
+    const technical = await request(9, 'session/prompt', {
+      sessionId, contentBlocks: [{ type: 'text', text: 'Your code is garbage; rewrite it.' }],
+    })
+    assert.equal(typeof (technical.result as any)?.messageId, 'string')
+    await until(() => getEnds().length >= 5, 'technical criticism remains allowed')
+    assert.equal(getEnds()[4].data.reason.kind, 'completed')
+    assert.equal(logLines().filter(x => x === 'local-verdict:targeted-abuse').length, 1)
+    assert.equal(logLines().filter(x => x === 'model-call').length, 7)
+
     const shutdown = await request(5, 'shutdown', {})
     assert.deepEqual(shutdown.result, {})
   } finally {

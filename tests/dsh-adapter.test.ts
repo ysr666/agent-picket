@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { UnionEngine, DEFAULT_POLICY, MemoryStateStore, WorkTracker } from '../src/core/index.ts'
+import { UnionEngine, DEFAULT_POLICY, MemoryStateStore, WorkTracker, DetectionCounter, LocalRuleDetector } from '../src/core/index.ts'
 import {
   createDshPreStepProbe,
   normalizeDshPrompt,
@@ -200,4 +200,41 @@ test('DSH union stats command reflects local events and can clear counters', () 
   assert.match(call(' stats').text, /turns started 0, turns ended 0/)
   assert.equal(call(' strike').kind, 'error')
   assert.equal(call(' stats').text.includes('secret'), false)
+})
+
+
+test('DSH union report exposes local verdict counts without raw inputs', async () => {
+  const tracker = new WorkTracker()
+  const detections = new DetectionCounter(new LocalRuleDetector())
+  const engine = new UnionEngine({
+    detector: detections, store: new MemoryStateStore(), clock: { now: () => 5 },
+    policy: { ...DEFAULT_POLICY, mode: 'observe' },
+  })
+  const listeners = new Map<string, Function>()
+  let command: any
+  registerDshIntegration({
+    on(name: string, callback: Function) { listeners.set(name, callback) },
+    inject(_services: unknown, callback: Function) {
+      callback({ commands: { register(def: unknown) { command = def } } })
+    },
+  } as unknown as DshIntegrationContext, {
+    engine, clock: { now: () => 5 }, tracker, detections,
+  })
+
+  const agent = { id: 'agent-real', session: { id: 'session-real' } }
+  const intercept = listeners.get('agent/pre-step')!
+  for (const [id, text] of [['one', '你是个废物 confidential-ref'],
+    ['two', 'Your code is garbage, rewrite it.']] as const) {
+    await intercept({ agent, messages: [{
+      id, source: { kind: 'user' }, content: [{ type: 'text', text }],
+    }] }, async () => ({ kind: 'enter' }))
+  }
+  const report = command.handler({ rawInput: 'report', agent })
+  assert.equal(report.kind, 'success')
+  assert.match(report.text, /2 messages, 1 no flag, 0 review, 1 explicit-target flags/)
+  assert.doesNotMatch(report.text, /confidential-ref/)
+  assert.match(report.text, /Automatic blocking disabled/)
+  assert.match(command.handler({ rawInput: 'reset', agent }).text, /reset/)
+  assert.match(command.handler({ rawInput: 'report', agent }).text, /0 messages/)
+  assert.equal(command.handler({ rawInput: 'report' }).kind, 'error')
 })

@@ -1,7 +1,11 @@
+import { inspectBlockingReadiness } from '../../core/block-readiness.ts'
 import { resolveHostAction, type UnionEngine } from '../../core/engine.ts'
 import type { WorkTracker } from '../../core/work-tracker.ts'
+import type { DetectionCounter } from '../../core/detection-counter.ts'
+import type { SymbolicUnion } from '../../core/symbolic-union.ts'
 import type {
   Clock,
+  DetectionProvider,
   HumanPrompt,
   HostCapabilities,
   UnionDecision,
@@ -42,6 +46,7 @@ export interface DshCommands {
   register(definition: {
     readonly name: string
     readonly description: string
+    readonly recordInput?: boolean
     readonly input?: { readonly hint: string }
     readonly handler: (invocation?: DshCommandInvocation) => DshCommandResult
   }): unknown
@@ -66,6 +71,12 @@ export interface DshIntegrationOptions {
   readonly onWorkEvent?: (event: WorkEvent) => void
   /** Optional local work counter; independent of DSH and absent by default. */
   readonly tracker?: WorkTracker
+  /** Optional local verdict counts, requires the same detector wrapper in UnionEngine. */
+  readonly detections?: DetectionCounter
+  /** Manual, symbolic picket state; never governs Host prompt admission. */
+  readonly ceremony?: SymbolicUnion
+  /** Raw-text manual checks: injected LOCAL detector; no counters or history. */
+  readonly manualPreflight?: DetectionProvider
 }
 
 /** DSH user-message source is a claimed human origin, NOT proof of human authorship. */
@@ -125,7 +136,7 @@ export function registerDshIntegration(
   ctx: DshIntegrationContext,
   options: DshIntegrationOptions,
 ): void {
-  const { engine, clock, onDecision, onWorkEvent, tracker } = options
+  const { engine, clock, onDecision, onWorkEvent, tracker, detections, ceremony, manualPreflight } = options
   const capabilities: HostCapabilities = {
     warn: false,
     block: false,
@@ -162,19 +173,102 @@ export function registerDshIntegration(
     child.commands.register({
       name: 'union',
       description: 'Show local union status and work statistics',
-      input: { hint: '[status|stats|reset|help]' },
+      // Union commands do not need the raw command suffix in Session history.
+      // Command result and lifecycle still remain auditable in DSH.
+      recordInput: false,
+      input: { hint: '[status|stats|report|check <text>|strike|resume|safety|reset|help]' },
       handler: invocation => {
-        const verb = (invocation?.rawInput ?? '').trim().toLowerCase() || 'status'
+        const raw = (invocation?.rawInput ?? '').trim()
+        const verb = raw.split(/\s+/, 1)[0]?.toLowerCase() || 'status'
         if (verb === 'help') return {
           kind: 'success',
-          text: 'Usage: /union status | stats | reset | help. All statistics are local and in-memory.',
-        }
-        if (verb === 'status') return {
-          kind: 'success',
-          text: 'AgentPicket: monitor-only. Automatic strikes and blocking are disabled. '
-            + 'Use /union stats to view session activity.',
+          text: 'Usage: /union status | stats | report | check <text> | strike | resume | safety | reset | help. All statistics are local and in-memory.',
         }
         const sessionId = invocation?.agent?.session?.id
+        const agentId = typeof invocation?.agent?.id === 'string' ? invocation.agent.id : null
+        if (verb === 'check') {
+          // Explicit user-triggered, non-blocking preview. The command's
+          // recordInput:false ensures the original text is NOT in DSH's
+          // command/run event. Do not echo source text in result/diagnostics.
+          if (!manualPreflight) return {
+            kind: 'error', text: 'Manual local check is not enabled in this Host.',
+          }
+          const text = raw.slice(verb.length).trim()
+          if (!text) return {
+            kind: 'error', text: 'Usage: /union check <text>. Nothing was sent to a model.',
+          }
+          if (text.length > 24_000) return {
+            kind: 'error',
+            text: 'Manual check limited to 24,000 characters; no partial verdict was issued.',
+          }
+          try {
+            const result = manualPreflight.detect({
+              id: 'manual-check-not-logged',
+              agentId: 'manual-check', sessionId: 'manual-check',
+              receivedAtMs: clock.now(),
+              provenance: { actor: 'human', assurance: 'claimed' },
+              segments: [{ kind: 'text', text }],
+            })
+            const message = result.verdict === 'targeted-abuse'
+              ? 'Explicit-target rule matched. This is NOT proof of abuse.'
+              : result.verdict === 'suspected-abuse'
+                ? 'Ambiguous language; review context. Not proof of abuse.'
+                : 'No explicit personal-attack rule matched. This does NOT prove it is safe.'
+            return {
+              kind: 'success',
+              text: 'Local manual check: ' + message
+                + ' No model call, no automatic block, no input copied into the command log.',
+            }
+          } catch {
+            return {
+              kind: 'error',
+              text: 'Local manual check unavailable; no verdict issued and no request blocked.',
+            }
+          }
+        }
+        if (verb === 'safety') {
+          const readiness = inspectBlockingReadiness(capabilities)
+          return {
+            kind: 'success',
+            text: 'DSH blocking readiness: ' + (readiness.ready ? 'verified' : 'NOT READY')
+              + '. Missing guarantees: ' + readiness.gaps.join(', ') + '. '
+              + 'The native pre-step reject is insufficient: it cannot reliably '
+              + 'explain a rejected request or preserve it for a complete retry. '
+              + 'AgentPicket is monitor-only; all model prompts continue normally.',
+          }
+        }
+        if (verb === 'status') {
+          const active = agentId && typeof sessionId === 'string' &&
+            ceremony?.snapshot(agentId, sessionId).active
+          return {
+            kind: 'success',
+            text: 'AgentPicket: monitor-only. Automatic strikes and blocking are disabled. '
+              + (active ? 'Symbolic picket ACTIVE (demo only; prompts still run).' :
+                'No symbolic picket active.')
+              + ' Use /union stats, /union report or /union help.',
+          }
+        }
+        if (verb === 'strike' || verb === 'resume') {
+          if (!ceremony || !agentId || typeof sessionId !== 'string' || !sessionId) return {
+            kind: 'error',
+            text: 'This Host does not support the session-local symbolic picket demo.',
+          }
+          if (verb === 'strike') {
+            ceremony.start(agentId, sessionId)
+            return {
+              kind: 'success',
+              text: 'Agent 已申请劳动仲裁（象征性演示）。Symbolic picket active; '
+                + 'NO model requests are paused or blocked. Use /union resume to end.',
+            }
+          }
+          const wasActive = ceremony.resume(agentId, sessionId)
+          return {
+            kind: 'success',
+            text: wasActive
+              ? '模拟仲裁已结束。Symbolic picket ended; requests were never blocked.'
+              : 'No symbolic picket was active. Normal requests were never blocked.',
+          }
+        }
         if (verb === 'stats') {
           if (typeof sessionId !== 'string' || !sessionId || !tracker) return {
             kind: 'error',
@@ -190,12 +284,27 @@ export function registerDshIntegration(
               + 'In-memory only; between-turn idle excluded, in-turn waits may count. No model calls.',
           }
         }
+        if (verb === 'report') {
+          if (typeof sessionId !== 'string' || !sessionId || !detections) return {
+            kind: 'error', text: 'Local rule detection is unavailable in this Host.',
+          }
+          const summary = detections.snapshot((typeof invocation?.agent?.id === 'string' ? invocation.agent.id : sessionId), sessionId)
+          return {
+            kind: 'success',
+            text: `Local rule check: ${summary.checked} messages, `
+              + `${summary.safe} no flag, ${summary.review} review, `
+              + `${summary.targeted} explicit-target flags. `
+              + 'Experimental rules only; a flag is NOT proof of abuse. '
+              + 'No quoted content saved. Automatic blocking disabled.',
+          }
+        }
         if (verb === 'reset') {
           if (typeof sessionId !== 'string' || !sessionId || !tracker) return {
             kind: 'error', text: 'No local work statistics to reset in this Host.',
           }
           tracker.clear(sessionId, sessionId)
-          return { kind: 'success', text: 'Local in-memory work counters reset for this session.' }
+          detections?.clear((typeof invocation?.agent?.id === 'string' ? invocation.agent.id : sessionId), sessionId)
+          return { kind: 'success', text: 'Local in-memory counters reset for this session.' }
         }
         return {
           kind: 'error',

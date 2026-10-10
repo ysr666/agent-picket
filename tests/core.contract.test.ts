@@ -8,6 +8,7 @@ import {
   MemoryStateStore,
   UnionEngine,
   resolveHostAction,
+  inspectBlockingReadiness,
   sessionKey,
 } from '../src/core/index.ts'
 import type {
@@ -67,7 +68,13 @@ function fixture(
   }
 }
 
-const FULL: HostCapabilities = { warn: true, block: true, commands: true, workEvents: true }
+const FULL: HostCapabilities = {
+  warn: true, block: true, commands: true, workEvents: true,
+  blockingSafety: {
+    verifiedHumanSource: true, clearRejectionNotice: true,
+    losslessInputRecovery: true, userOptedIn: true,
+  },
+}
 const OBSERVE: HostCapabilities = { warn: false, block: false, commands: false, workEvents: false }
 
 test('default policy is observe only, even for repeated synthetic attacks', () => {
@@ -232,6 +239,48 @@ test('capability resolver only downgrades actions, never upgrades', () => {
     segments: [{ kind: 'text', text: 'fix code' }],
   }))
   assert.equal(resolveHostAction(allowed, FULL), 'allow')
+})
+
+test('a Host veto alone cannot authorize blocking without all safety guarantees', () => {
+  const f = fixture()
+  f.engine.evaluate(prompt('one'))
+  f.engine.evaluate(prompt('two'))
+  const blocked = f.engine.evaluate(prompt('three'))
+  const supported = { ...FULL }
+  assert.equal(blocked.requestedAction, 'block')
+  assert.equal(resolveHostAction(blocked, { ...supported, blockingSafety: undefined }), 'warn')
+  for (const required of ['verifiedHumanSource', 'clearRejectionNotice',
+    'losslessInputRecovery', 'userOptedIn'] as const) {
+    assert.equal(resolveHostAction(blocked, {
+      ...supported, blockingSafety: { ...FULL.blockingSafety!, [required]: false },
+    }), 'warn', `Missing ${required} must never lead to a rejected prompt`)
+  }
+  assert.equal(resolveHostAction(blocked, {
+    ...supported, warn: false, blockingSafety: undefined,
+  }), 'allow')
+  assert.equal(resolveHostAction(blocked, supported), 'block')
+})
+
+test('readiness reports all missing safeguards, and each requirement is necessary', () => {
+  const unsafe = inspectBlockingReadiness({
+    warn: true, block: true, workEvents: true, commands: true,
+  })
+  assert.equal(unsafe.ready, false)
+  assert.deepEqual(unsafe.gaps, [
+    'human-source-unverified', 'no-rejection-notice',
+    'input-recovery-unverified', 'user-opt-in-missing',
+  ])
+  assert.deepEqual(inspectBlockingReadiness(FULL), { ready: true, gaps: [] })
+  const noVeto = inspectBlockingReadiness({ ...FULL, block: false })
+  assert.deepEqual(noVeto, { ready: false, gaps: ['native-block-unavailable'] })
+  for (const feature of ['verifiedHumanSource', 'clearRejectionNotice',
+    'losslessInputRecovery', 'userOptedIn'] as const) {
+    const incomplete = inspectBlockingReadiness({
+      ...FULL, blockingSafety: { ...FULL.blockingSafety!, [feature]: false },
+    })
+    assert.equal(incomplete.ready, false, feature)
+    assert.equal(incomplete.gaps.length, 1, feature)
+  }
 })
 
 test('invalid confidence rejects atomically before writing state', () => {

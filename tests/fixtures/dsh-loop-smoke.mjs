@@ -2,7 +2,7 @@ import { appendFileSync } from 'node:fs'
 import { pathToFileURL } from 'node:url'
 import { join } from 'node:path'
 import { registerDshIntegration } from '../../src/adapters/dsh/integration.ts'
-import { UnionEngine, DEFAULT_POLICY, MemoryStateStore, WorkTracker } from '../../src/core/index.ts'
+import { UnionEngine, DEFAULT_POLICY, MemoryStateStore, WorkTracker, DetectionCounter, LocalRuleDetector } from '../../src/core/index.ts'
 
 export const name = 'agent-picket-offline-agentloop-smoke'
 export const inject = ['llm', 'tools']
@@ -56,15 +56,23 @@ export function apply(ctx) {
       return Promise.resolve('pong:' + args.value)
     }
   }))
+  const detections = new DetectionCounter(new LocalRuleDetector())
   const engine = new UnionEngine({
     store: new MemoryStateStore(),
     clock: { now: () => Date.now() },
-    detector: { detect: () => ({verdict:'safe',confidence:1}) },
+    detector: {
+      detect(prompt) {
+        const result = detections.detect(prompt)
+        record('local-verdict:' + result.verdict)
+        return result
+      },
+    },
     policy: { ...DEFAULT_POLICY, mode:'observe' }
   })
   registerDshIntegration(ctx, {
     engine, clock: { now: () => Date.now() },
     tracker: new WorkTracker(),
+    detections,
     onWorkEvent: item => record('work:' + item.type),
     onDecision: decision => record('decision:' + decision.reason),
   })

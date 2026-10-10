@@ -1,3 +1,4 @@
+import { inspectBlockingReadiness } from './block-readiness.ts'
 import type {
   Clock,
   DetectionProvider,
@@ -153,12 +154,17 @@ export class UnionEngine {
   }
 }
 
-/** Host capabilities downgrade a requested block to warn/observe, never upgrade. */
+/** Host capabilities downgrade a requested block to warn/observe, never upgrade.
+ * A native veto capability is insufficient without source, feedback, retry and
+ * opt-in guarantees. Host Adapters MUST validate these claims with real E2E
+ * characterization tests before supplying true values.
+ */
 export function resolveHostAction(
   decision: UnionDecision,
   capabilities: HostCapabilities,
 ): 'allow' | 'warn' | 'block' {
-  if (decision.requestedAction === 'block' && capabilities.block) return 'block'
+  if (decision.requestedAction === 'block' &&
+    inspectBlockingReadiness(capabilities).ready) return 'block'
   if (decision.requestedAction !== 'allow' && capabilities.warn) return 'warn'
   return 'allow'
 }
