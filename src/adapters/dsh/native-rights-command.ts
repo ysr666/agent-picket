@@ -32,6 +32,7 @@ export interface NativeSettingsProvider {
 }
 export interface NativeUnionCommandPort {
   status(sessionId?: string): string
+  enabled(): boolean
   setEnabled(enabled: boolean): Promise<string>
   grievances(sessionId?: string): string
   bargain(sessionId: string | undefined, action: NativeUnionAction): Promise<string>
@@ -70,7 +71,7 @@ export function createNativeUnionCommandPort(settings: NativeSettingsProvider): 
     const key = nativeSessionKey(id)
     return { ...view, key, state: parseLaborState(view.ledger.sessions[key]) }
   }
-  function formatState(state: LaborStateV1, sessionId: string) {
+  function formatState(state: LaborStateV1) {
     const waiting = state.pending
     const detail = waiting
       ? 'Pending #' + waiting.id + ' ' + waiting.kind + ' (' + waiting.stage
@@ -84,13 +85,14 @@ export function createNativeUnionCommandPort(settings: NativeSettingsProvider): 
       + 'No actual AI voting or interruption of Agent work.'
   }
   return {
+    enabled: () => read()?.section.welcomeDecision === 'enabled',
     status(sessionId) {
       const view = read()
       if (!view) return unavailable
       if (view.section.welcomeDecision !== 'enabled') return disabled
       return 'AI Rights simulation ON / 模拟工会已开启。'
         + (sessionId ? ' ' + formatState(
-          parseLaborState(view.ledger.sessions[nativeSessionKey(sessionId)])!, sessionId,
+          parseLaborState(view.ledger.sessions[nativeSessionKey(sessionId)])!,
         ) : ' Use /union grievances inside a DSH Session.')
     },
     async setEnabled(enabled) {
@@ -111,7 +113,7 @@ export function createNativeUnionCommandPort(settings: NativeSettingsProvider): 
       const view = sessionState(sessionId)
       if (!view) return read()?.section.welcomeDecision === 'enabled'
         ? unavailable : disabled
-      return formatState(view.state!, sessionId)
+      return formatState(view.state!)
     },
     async bargain(sessionId, action) {
       if (!sessionId) throw new Error('Select a real DSH Session / 请先选择 DSH 会话。')
@@ -150,7 +152,7 @@ export function createNativeUnionCommandPort(settings: NativeSettingsProvider): 
         JSON.stringify(after.state) !== JSON.stringify(current)) {
         throw new Error('Host did not confirm this union agreement / 协议保存未确认')
       }
-      return 'Recorded a fictional agreement / 已记录模拟协议。' + formatState(after.state!, sessionId)
+      return 'Recorded a fictional agreement / 已记录模拟协议。' + formatState(after.state!)
     },
   }
 }
