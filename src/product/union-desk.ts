@@ -97,6 +97,7 @@ export function parseLaborState(value: unknown): LaborStateV1 | null {
     hasExactlyKeys(h, ['id', 'kind', 'outcome']) && validTime(h.id)
     && kinds.includes(h.kind) && outcomes.includes(h.outcome))) return null
   const p = s.pending
+  if (p === undefined) return null
   if (p !== null && (!hasExactlyKeys(p, [
     'id', 'kind', 'raisedAtElapsedMs', 'stage', 'counterOfferMs',
   ]) || !validTime(p.id)
