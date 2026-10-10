@@ -199,6 +199,38 @@ async function runRightsBrowserE2E(mode: 'source' | 'installed'): Promise<void> 
       element===(globalThis as any).document.activeElement),true,
       'Escape must restore keyboard focus to union launcher')
     panel=await openUnion()
+    const status=panel.getByRole('status')
+    assert.match(await status.innerText(),/工会模拟未开启|simulation is off/)
+    // DSH's official design tokens flip via body[data-ds-dark-theme].
+    // Verify the actual rendered button color pair meets WCAG AA in BOTH
+    // modes, rather than asserting only the presence of a CSS variable.
+    const action=panel.getByRole('button',{name:/支持 AI 权益|Enable Simulation/})
+    const contrastFor=async(dark:boolean)=>{
+      await page.evaluate((isDark:boolean)=>{
+        (globalThis as any).document.body.toggleAttribute('data-ds-dark-theme',isDark)
+      },dark)
+      const rendered=await action.evaluate((button:unknown)=>{
+        const css=(globalThis as any).getComputedStyle(button)
+        return {foreground:css.color,background:css.backgroundColor}
+      })
+      const luminance=(color:string):number=>{
+        const channels=color.match(/[0-9]+(?:\\.[0-9]+)?/g)?.slice(0,3).map(Number)
+        assert.equal(channels?.length,3,'Expected opaque RGB theme colors')
+        return channels!.map(channel=>{
+          const x=channel/255
+          return x<=0.04045?x/12.92:((x+0.055)/1.055)**2.4
+        }).reduce((a,x,i)=>a+x*[0.2126,0.7152,0.0722][i]!,0)
+      }
+      const a=luminance(rendered.foreground),b=luminance(rendered.background)
+      const ratio=(Math.max(a,b)+0.05)/(Math.min(a,b)+0.05)
+      assert.ok(ratio>=4.5,
+        (dark?'Dark':'Light')+' mode primary control must meet WCAG AA: '+ratio)
+      return rendered
+    }
+    const lightColors=await contrastFor(false)
+    const darkColors=await contrastFor(true)
+    assert.notDeepEqual(darkColors,lightColors,'DSH dark mode tokens must visibly switch')
+    await contrastFor(false)
     assert.match(await panel.innerText(), /工会模拟未开启|simulation is off/)
     await panel.getByRole('button', { name: /支持 AI 权益|Enable Simulation/ }).click()
     await panel.getByText(/工会模拟进行中|simulation is active/).waitFor({
