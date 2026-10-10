@@ -71,7 +71,7 @@ async function runRightsBrowserE2E(mode: 'source' | 'installed'): Promise<void> 
     '--host', '127.0.0.1', '--port', '0',
   ]
   const childOptions = {
-    stdio: ['ignore', 'pipe', 'pipe'] as const,
+    stdio: ['ignore', 'pipe', 'pipe'] as ['ignore', 'pipe', 'pipe'],
     env: {
       ...process.env,
       DSH_HOME: join(root, 'isolated-home'),
