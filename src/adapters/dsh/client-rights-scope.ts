@@ -6,6 +6,7 @@
 export type RightsWelcomeChoice = 'enabled' | 'not-now'
 export interface RightsSection {
   readonly welcomeDecision: 'unseen' | RightsWelcomeChoice
+  readonly unionLedger?: string
 }
 export interface SettingsScopeSnapshot<T> {
   readonly status: 'loading' | 'ready' | 'unavailable'
