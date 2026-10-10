@@ -184,7 +184,7 @@ async function realComposerParity(mode: 'source'|'installed') {
       await panel.waitFor({state:'detached',timeout:5_000})
     }
 
-    assert.match((await command('rights')).text,/simulation ON|工会已开启|模拟工会已开启/)
+    assert.match((await command('rights')).text,/Labor Rights Simulation: ON|simulation ON|工会已开启|模拟工会已开启/)
     const off=await command('rights off')
     assert.equal(off.kind,'success')
     let panel=await panelOpen()
@@ -212,6 +212,28 @@ async function realComposerParity(mode: 'source'|'installed') {
     panel=await panelOpen()
     assert.match(await panel.innerText(),/当前模拟休息间隔：30 分钟|break interval: 30 minutes/)
     assert.match(await panel.innerText(),/协商记录|Negotiation history/)
+    await close(panel)
+
+    // Native locale is Host-owned, unlike the independently localized React
+    // Client. Actual typed commands must switch language without affecting
+    // negotiated agreements or reenabling blocked model tasks.
+    assert.equal((await command('language zh-CN')).kind,'success')
+    // The language preference is Host-owned and must survive a real Client
+    // reload without reenabling any permission or changing the agreement.
+    await page.reload({waitUntil:'domcontentloaded',timeout:12_000})
+    await providerSkip.waitFor({state:'visible',timeout:5_000}).catch(()=>{})
+    if(await providerSkip.count())await providerSkip.click({timeout:5_000})
+    await editor.waitFor({state:'visible',timeout:10_000})
+    assert.match((await command('language')).text,/工会命令语言/)
+    assert.match((await command('rights')).text,/劳动权益模拟：开启/)
+    assert.match((await command('grievances')).text,/休息间隔 30 分钟/)
+    assert.match((await command('help')).text,/用法/)
+    assert.equal((await command('language fr')).kind,'error')
+    assert.match((await command('counter 99 nan')).text,/用法/)
+    assert.equal((await command('language en')).kind,'success')
+    assert.match((await command('rights')).text,/Labor Rights Simulation: ON/)
+    panel=await panelOpen()
+    assert.match(await panel.innerText(),/当前模拟休息间隔：30 分钟|break interval: 30 minutes/)
     await close(panel)
 
     const snapshot=await command('snapshot')

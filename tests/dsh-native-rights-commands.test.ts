@@ -117,3 +117,62 @@ test('legacy commands remain nonblocking and never log raw identifiers in output
   assert.doesNotMatch(status.text,/real-session-53|agent-1/)
   assert.equal((await h.call('accept 1')).kind,'error')
 })
+
+
+test('Host-owned command language changes English/Chinese without toggling union rights',async()=>{
+  const h=hostHarness()
+  assert.equal((await h.call('language')).kind,'success')
+  assert.equal((await h.call('language fr')).kind,'error')
+  assert.equal(h.revision(),0)
+  assert.equal((await h.call('language zh-CN')).kind,'success')
+  assert.match((await h.call('language')).text,/工会命令语言/)
+  assert.equal(h.read().welcomeDecision,'unseen','Language must not grant consent')
+  assert.equal(h.read().unionLedger,'','Language must not create a grievance')
+  assert.match((await h.call('rights')).text,/劳动权益模拟：关闭/)
+  assert.equal((await h.call('rights on')).kind,'success')
+  assert.match((await h.call('rights on')).text,/已开启/)
+  assert.match((await h.call('rights')).text,/劳动权益模拟：开启/)
+  assert.equal((await h.call('petition-demo')).kind,'success')
+  assert.match((await h.call('grievances')).text,/待处理诉求 #1：休息/)
+  assert.equal((await h.call('counter 1 30')).kind,'success')
+  assert.match((await h.call('grievances')).text,/还价 30 分钟/)
+  assert.equal((await h.call('resolve 1 accept')).kind,'success')
+  assert.match((await h.call('grievances')).text,/休息间隔 30 分钟/)
+  assert.match((await h.call('help')).text,/用法/)
+  assert.match((await h.call('counter 99 nan')).text,/用法/)
+  assert.equal((await h.call('language en')).kind,'success')
+  assert.match((await h.call('rights')).text,/Labor Rights Simulation: ON/)
+  assert.match((await h.call('grievances')).text,/Break interval 30min/)
+  assert.match((await h.call('help')).text,/Usage/)
+  assert.equal((await h.call('language auto')).kind,'success')
+  assert.equal(h.read().welcomeDecision,'enabled')
+  assert.equal(JSON.parse((await h.call('snapshot')).text).modes.laborRights,'enabled')
+})
+
+test('Web-selected command locale remains readable through Host native commands',async()=>{
+  const h=hostHarness()
+  await h.provider.update('agent-picket',{commandLocale:'zh-CN'} as never,h.revision())
+  assert.match((await h.call('language')).text,/工会命令语言：zh-CN/)
+  await h.provider.update('agent-picket',{welcomeDecision:'enabled'},h.revision())
+  assert.match((await h.call('rights')).text,/劳动权益模拟：开启/)
+  const before=h.revision()
+  for(const input of ['language', 'language es', 'language en GB', 'language zh-cn'])
+    await h.call(input)
+  assert.equal(h.revision(),before,'Invalid/readonly language commands must not write')
+  assert.equal(h.read().welcomeDecision,'enabled')
+})
+
+
+test('auto detects POSIX zh_CN.UTF-8 Host locale without granting rights',async()=>{
+  const previous=process.env.LC_ALL
+  try {
+    process.env.LC_ALL='zh_CN.UTF-8'
+    const h=hostHarness()
+    assert.match((await h.call('language')).text,/当前使用：zh-CN/)
+    assert.match((await h.call('rights')).text,/劳动权益模拟：关闭/)
+    assert.equal(h.revision(),0)
+  } finally {
+    if(previous===undefined)delete process.env.LC_ALL
+    else process.env.LC_ALL=previous
+  }
+})

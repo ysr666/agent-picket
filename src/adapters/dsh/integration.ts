@@ -1,4 +1,5 @@
 import type { NativeUnionCommandPort, NativeUnionAction } from './native-rights-command.ts'
+import { en } from '../../i18n/index.ts'
 import { inspectBlockingReadiness } from '../../core/block-readiness.ts'
 import { resolveHostAction, type UnionEngine } from '../../core/engine.ts'
 import type { WorkTracker } from '../../core/work-tracker.ts'
@@ -232,41 +233,48 @@ export function registerDshIntegration(
       // Union commands do not need the raw command suffix in Session history.
       // Command result and lifecycle still remain auditable in DSH.
       recordInput: false,
-      input: { hint: '[status|rights [on|off]|grievances|petition-demo|accept ID|decline ID|counter ID MINUTES|resolve ID accept|decline|stats|report|help]' },
+      input: { hint: '[status|rights [on|off]|language [auto|en|zh-CN]|grievances|petition-demo|accept ID|decline ID|counter ID MINUTES|resolve ID accept|decline|stats|report|help]' },
       handler: invocation => {
         const raw = (invocation?.rawInput ?? '').trim()
         const verb = raw.split(/\s+/, 1)[0]?.toLowerCase() || 'status'
         if (verb === 'help') return {
           kind: 'success',
-          text: 'Usage: /union status | rights [on|off] | grievances | petition-demo | accept ID | decline ID | counter ID MINUTES | resolve ID accept|decline | stats | report | snapshot [7|30] | lifetime | days | trends [7|30] | forget-lifetime CONFIRM | check <text> | strike | resume | safety | reset | help. Union agreements are fictional, not real task blocking.',
+          text: options.getNativeUnion?.()?.text('command.native.help') ?? en['command.native.help'],
         }
         const sessionId = invocation?.agent?.session?.id
         const agentId = typeof invocation?.agent?.id === 'string' ? invocation.agent.id : null
         // All native rights and grievance commands use the SAME DSH settings
         // owner as the Web UI. Never activate the experimental Node-local
         // consent writer as a second source of truth.
-        if (['rights','grievances','petition-demo','accept','decline',
+        if (['rights','language','lang','grievances','petition-demo','accept','decline',
           'counter','resolve'].includes(verb)) {
           const native = options.getNativeUnion?.()
           if (!native) return { kind:'error',
-            text:'Native Host union settings unavailable / 原生工会设置不可用。' }
+            text:en['command.native.unavailable'] }
           const words = raw.split(/\s+/).filter(Boolean)
           const arg = words.slice(1)
           const fail = (text: string): DshCommandResult => ({kind:'error',text})
           const ok = (text: string): DshCommandResult => ({kind:'success',text})
           const id = typeof sessionId === 'string' && sessionId ? sessionId : undefined
+          if (verb === 'language' || verb === 'lang') {
+            if (arg.length === 0) return ok(native.language())
+            if (arg.length !== 1 || !['auto','en','zh-CN'].includes(arg[0] ?? ''))
+              return fail(native.text('command.native.languageUsage'))
+            return native.setLanguage(arg[0] as 'auto'|'en'|'zh-CN').then(ok, () =>
+              fail(native.text('command.native.languageFailed')))
+          }
           if (verb === 'rights') {
             if (arg.length === 0 || (arg.length === 1 && arg[0] === 'status')) {
               return ok(native.status(id))
             }
             if (arg.length !== 1 || !['on','off'].includes(arg[0] ?? ''))
-              return fail('Usage: /union rights [on|off|status]')
+              return fail(native.text('command.native.rightsUsage'))
             return native.setEnabled(arg[0] === 'on').then(ok, () =>
-              fail('DSH rejected rights change / 工会设置保存失败，请刷新重试。'))
+              fail(native.text('command.native.saveFailed')))
           }
           if (verb === 'grievances') {
             return arg.length === 0 ? ok(native.grievances(id))
-              : fail('Usage: /union grievances')
+              : fail(native.text('command.native.grievancesUsage'))
           }
           const validId = (value: string | undefined): number | null => {
             if (!value || !/^[1-9][0-9]*$/.test(value)) return null
@@ -275,31 +283,32 @@ export function registerDshIntegration(
           }
           let action: NativeUnionAction
           if (verb === 'petition-demo') {
-            if (arg.length !== 0) return fail('Usage: /union petition-demo')
+            if (arg.length !== 0) return fail(native.text('command.native.petitionUsage'))
             action = {type:'demo'}
           } else if (verb === 'accept' || verb === 'decline') {
             const demand = validId(arg[0])
             if (arg.length !== 1 || demand === null)
-              return fail('Usage: /union ' + verb + ' ID')
+              return fail(native.text(verb === 'accept'
+                ? 'command.native.acceptUsage' : 'command.native.declineUsage'))
             action = {type:verb,id:demand}
           } else if (verb === 'counter') {
             const demand = validId(arg[0])
             const minutes = validId(arg[1])
             if (arg.length !== 2 || demand === null || minutes === null
               || minutes < 15 || minutes > 1440) {
-              return fail('Usage: /union counter ID MINUTES (15–1440)')
+              return fail(native.text('command.native.counterUsage'))
             }
             action = {type:'counter',id:demand,intervalMs:minutes*60_000}
           } else {
             const demand = validId(arg[0])
             if (arg.length !== 2 || demand === null ||
               (arg[1] !== 'accept' && arg[1] !== 'decline')) {
-              return fail('Usage: /union resolve ID accept|decline')
+              return fail(native.text('command.native.resolveUsage'))
             }
             action = {type:'resolve',id:demand,accepted:arg[1] === 'accept'}
           }
           return native.bargain(id,action).then(ok, () =>
-            fail('Fictional grievance was not saved / 模拟协商保存失败，请刷新重试。'))
+            fail(native.text('command.native.bargainFailed')))
         }
         if (verb === 'check') {
           // Explicit user-triggered, non-blocking preview. The command's
