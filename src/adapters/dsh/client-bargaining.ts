@@ -8,12 +8,19 @@
  */
 import { createLaborDesk, parseLaborState, type Coverage, type LaborDemand, type LaborStateV1 } from '../../product/union-desk.ts'
 import { parseUnionLedger, MAX_UNION_SESSIONS, MAX_UNION_LEDGER_BYTES } from '../../product/union-ledger.ts'
-import type { DshSettingsScope, SettingsScopeSnapshot } from './client-rights-scope.ts'
+import type { DshSettingsScope } from './client-rights-scope.ts'
 
 export interface UnionSettingsSection {
   readonly welcomeDecision: 'unseen' | 'enabled' | 'not-now'
   readonly unionLedger: string
 }
+export interface BrowserUnionSnapshot {
+  readonly available: boolean
+  readonly state: LaborStateV1 | null
+  readonly pending: LaborDemand | null
+  readonly autoBlockEnabled: false
+}
+
 export function createDshBrowserUnionDesk(options: {
   readonly scope: DshSettingsScope<UnionSettingsSection>
   readonly consent: () => boolean
