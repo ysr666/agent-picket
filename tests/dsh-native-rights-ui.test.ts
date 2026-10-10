@@ -161,6 +161,9 @@ test('welcome keyboard Tab cycles between explicit Enable and Not Now choices',(
     const ui=createDshUnionComponents(hooks,{createPortal:child=>child},d)
     const nodes=walk(ui.Welcome({complete:()=>{}}))
     const dialog=nodes.find(n=>n.props.role==='dialog')!
+    assert.equal(dialog.props.style.maxHeight,'calc(100dvh - 24px)')
+    assert.equal(dialog.props.style.overflowY,'auto',
+      'Welcome consent choices must be reachable in a tiny zoomed viewport')
     const buttons=nodes.filter(n=>n.type==='button')
     let focused=''
     const first={focus(){focused='first'}}
@@ -225,6 +228,8 @@ test('sidebar modal enforces keyboard focus cycle, Escape and restores Host root
     assert.equal(launcher.props['aria-expanded'],true)
     assert.equal(launcher.props['aria-controls'],modal.props.id)
     assert.equal(modal.props['aria-modal'],'true')
+    assert.equal(modal.props.style.maxHeight,'calc(100dvh - 24px)')
+    assert.equal(modal.props.style.overflowY,'auto')
     let focus=''
     const trigger={focus(){focus='launcher'}}
     const first={focus(){focus='close'}}
@@ -269,4 +274,25 @@ test('union work/rights status has an accessible polite announcement',()=>{
   assert.ok(status,'The current union simulation mode needs a status role')
   assert.equal(status.props['aria-live'],'polite')
   assert.ok(status.children.includes('union.status.active'))
+})
+
+
+test('changing grievance stage exposes stable keyboard destination and polite announcement',()=>{
+  const {hooks}=fakeReact()
+  const base=deps(rights({welcomeDecision:'enabled',laborRightsEnabled:true}))
+  const ui=createDshUnionComponents(hooks,{createPortal:child=>child},{
+    ...base.d,
+    readUnion:()=>({pending:{id:17,kind:'break',stage:'countered',counterOfferMs:1_800_000},
+      completedTurnMs:null,lifetimeMs:null,coverage:'not-loaded'}),
+    resolveCounter:async()=>{},
+  })
+  const nodes=walk(ui.UnionPanel())
+  const heading=nodes.find(node=>node.type==='h3'&&node.children.includes('union.desk.title'))
+  assert.ok(heading,'The negotiation heading must remain after action button replacement')
+  assert.equal(heading.props.tabIndex,-1,'Heading can receive focus but not interrupt Tab')
+  assert.equal(typeof heading.props.ref,'function')
+  const grievance=nodes.find(node=>node.props.role==='status' &&
+    node.props['aria-atomic']==='true')
+  assert.ok(grievance,'The pending demand stage should be announced atomically')
+  assert.equal(grievance.props['aria-live'],'polite')
 })
