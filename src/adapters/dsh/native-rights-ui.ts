@@ -346,6 +346,48 @@ export function createDshUnionComponents(
     const rights=useRight()
     useLanguage()
     const [opened,setOpened]=react.useState(false)
+    const opener=react.useRef<{focus():void}|null>(null)
+    const closeButton=react.useRef<{focus():void}|null>(null)
+    const dialog=react.useRef<{
+      querySelectorAll(selector:string):ArrayLike<{focus():void}>
+    }|null>(null)
+    // DSH normally renders the application inside #root. The modal portal
+    // lives directly under body: mark the application inert while the union
+    // dialog is open, focus its close control, and restore the trigger on exit.
+    react.useEffect(()=>{
+      if(!opened)return
+      const app=(globalThis as {document?:{
+        getElementById(id:string):{inert:boolean}|null
+      }}).document?.getElementById('root')
+      const previous=app?.inert??false
+      if(app)app.inert=true
+      closeButton.current?.focus()
+      return ()=>{
+        if(app)app.inert=previous
+        opener.current?.focus()
+      }
+    },[opened])
+    const onDialogKeyDown=(event:{
+      key:string,shiftKey:boolean,target:unknown,preventDefault():void
+    })=>{
+      if(event.key==='Escape'){
+        event.preventDefault()
+        setOpened(false)
+        return
+      }
+      if(event.key!=='Tab')return
+      const controls=Array.from(dialog.current?.querySelectorAll(
+        'button:not(:disabled), select:not(:disabled), summary, [tabindex]:not([tabindex="-1"])'
+      )??[])
+      if(!controls.length)return
+      if(event.shiftKey&&event.target===controls[0]){
+        event.preventDefault()
+        controls[controls.length-1]?.focus()
+      }else if(!event.shiftKey&&event.target===controls[controls.length-1]){
+        event.preventDefault()
+        controls[0]?.focus()
+      }
+    }
     const [_sessionRevision,bumpSession]=react.useState(0)
     react.useEffect(()=>deps.subscribeSessionVisibility?.(()=>bumpSession(n=>n+1)),[])
     const showInvitation=getWelcomeState(rights)==='invite'
@@ -353,7 +395,10 @@ export function createDshUnionComponents(
     const page=(globalThis as {document?:{body:unknown}}).document
     return h('div',{style:{position:'relative',display:'flex',alignItems:'center',justifyContent:'center'}},
       h('button',{type:'button','aria-label':deps.t('union.title'),
-        title:deps.t('union.title'),onClick:()=>setOpened(v=>!v),
+        title:deps.t('union.title'),'aria-haspopup':'dialog',
+        'aria-controls':'picket-union-dialog','aria-expanded':opened,
+        ref:(node:{focus():void}|null)=>{opener.current=node},
+        onClick:()=>setOpened(v=>!v),
         style:{...quiet,padding:'9px 12px',fontWeight:650}},
         props.wide?'⚑ '+deps.t('union.title'):'⚑'),
       showInvitation?h(Welcome,{complete:()=>{ /* consent readback hides this on next update */ }}):null,
@@ -361,12 +406,14 @@ export function createDshUnionComponents(
         style:{position:'fixed',inset:0,zIndex:2147482000,
           background:'rgba(6,12,26,.5)',display:'flex',justifyContent:'center',
           alignItems:'center',padding:'20px'},
-      },h('section',{role:'dialog','aria-modal':'true',
-        'aria-label':deps.t('union.title'),
+      },h('section',{id:'picket-union-dialog',role:'dialog','aria-modal':'true',
+        'aria-label':deps.t('union.title'),onKeyDown:onDialogKeyDown,
+        ref:(node:typeof dialog.current)=>{dialog.current=node},
         style:{...card,width:'min(96vw,800px)',maxHeight:'85vh',overflowY:'auto'}},
         h('div',{style:{display:'flex',justifyContent:'flex-end'}},
           h('button',{type:'button',style:quiet,
             'aria-label':deps.t('union.action.close'),
+            ref:(node:{focus():void}|null)=>{closeButton.current=node},
             onClick:()=>setOpened(false)},'×')),
         h(UnionPanel,{}),
       )),page.body):null,
