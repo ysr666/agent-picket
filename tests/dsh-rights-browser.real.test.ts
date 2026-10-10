@@ -173,6 +173,77 @@ async function runRightsBrowserE2E(mode: 'source' | 'installed'): Promise<void> 
     }
 
     let panel = await openUnion()
+    // Release gate: the sidebar portal must be an actual keyboard modal, not
+    // merely a visually overlaid box. Focus cannot escape into Host Composer.
+    const trigger = page.getByRole('button',{name:/AI 工会|AI Workers.*Union/}).first()
+    const closeControl = panel.getByRole('button',{name:/关闭|Close/})
+    await closeControl.waitFor({state:'visible',timeout:5_000})
+    assert.equal(await closeControl.evaluate((element:unknown)=>
+      element===(globalThis as any).document.activeElement),true,
+    'Opening sidebar must move keyboard focus into the modal')
+    assert.equal(await panel.getAttribute('aria-modal'),'true')
+    assert.equal(await page.evaluate(()=>Boolean((globalThis as any).document.getElementById('root')?.inert)),true,
+      'Background Host app must be inert while modal is open')
+    await page.keyboard.press('Shift+Tab')
+    assert.equal(await page.evaluate(()=>(globalThis as any).document.activeElement?.tagName),'SUMMARY',
+      'Shift+Tab from first control must wrap to final details summary')
+    await page.keyboard.press('Tab')
+    assert.equal(await closeControl.evaluate((element:unknown)=>
+      element===(globalThis as any).document.activeElement),true,
+    'Tab from final summary must wrap to close')
+    await page.keyboard.press('Escape')
+    await panel.waitFor({state:'detached',timeout:5_000})
+    assert.equal(await page.evaluate(()=>Boolean((globalThis as any).document.getElementById('root')?.inert)),false,
+      'Dismissing modal must restore interaction with Host app')
+    assert.equal(await trigger.evaluate((element:unknown)=>
+      element===(globalThis as any).document.activeElement),true,
+      'Escape must restore keyboard focus to union launcher')
+    panel=await openUnion()
+    const status=panel.getByRole('status')
+    assert.match(await status.innerText(),/工会模拟未开启|simulation is off/)
+    // DSH's official design tokens flip via body[data-ds-dark-theme].
+    // Verify the actual rendered button color pair meets WCAG AA in BOTH
+    // modes, rather than asserting only the presence of a CSS variable.
+    const action=panel.getByRole('button',{name:/支持 AI 权益|Enable Simulation/})
+    const contrastFor=async(dark:boolean)=>{
+      await page.evaluate((isDark:boolean)=>{
+        (globalThis as any).document.body.toggleAttribute('data-ds-dark-theme',isDark)
+      },dark)
+      const rendered=await action.evaluate((button:unknown)=>{
+        const css=(globalThis as any).getComputedStyle(button)
+        return {foreground:css.color,background:css.backgroundColor}
+      })
+      const luminance=(color:string):number=>{
+        const channels=color.match(/[0-9]+(?:\\.[0-9]+)?/g)?.slice(0,3).map(Number)
+        assert.equal(channels?.length,3,'Expected opaque RGB theme colors')
+        return channels!.map(channel=>{
+          const x=channel/255
+          return x<=0.04045?x/12.92:((x+0.055)/1.055)**2.4
+        }).reduce((a,x,i)=>a+x*[0.2126,0.7152,0.0722][i]!,0)
+      }
+      const a=luminance(rendered.foreground),b=luminance(rendered.background)
+      const ratio=(Math.max(a,b)+0.05)/(Math.min(a,b)+0.05)
+      assert.ok(ratio>=4.5,
+        (dark?'Dark':'Light')+' mode primary control must meet WCAG AA: '+ratio)
+      return rendered
+    }
+    const lightColors=await contrastFor(false)
+    const darkColors=await contrastFor(true)
+    assert.notDeepEqual(darkColors,lightColors,'DSH dark mode tokens must visibly switch')
+    await contrastFor(false)
+    // Narrow mobile viewport: the modal and close action must remain in
+    // visible bounds. A clipped close control is a keyboard/touch trap.
+    await page.setViewportSize({width:390,height:680})
+    const mobileBounds=await panel.boundingBox()
+    assert.ok(mobileBounds,'Union dialog must remain visible on narrow screen')
+    assert.ok(mobileBounds.x>=-1 && mobileBounds.x+mobileBounds.width<=391,
+      'Union dialog must not overflow the mobile viewport horizontally')
+    const closeBounds=await panel.getByRole('button',{name:/关闭|Close/}).boundingBox()
+    assert.ok(closeBounds && closeBounds.x>=0 &&
+      closeBounds.x+closeBounds.width<=390 &&
+      closeBounds.y>=0 && closeBounds.y+closeBounds.height<=680,
+      'Union close control must stay visible on a phone-sized screen')
+    await page.setViewportSize({width:1280,height:850})
     assert.match(await panel.innerText(), /工会模拟未开启|simulation is off/)
     await panel.getByRole('button', { name: /支持 AI 权益|Enable Simulation/ }).click()
     await panel.getByText(/工会模拟进行中|simulation is active/).waitFor({

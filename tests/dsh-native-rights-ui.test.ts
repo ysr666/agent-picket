@@ -193,3 +193,80 @@ test('sidebar footer welcomes existing-session installs but defers to blank-sess
   const other=createDshUnionComponents(hooks,{createPortal:child=>child},blank)
   assert.equal(walk(other.SidebarAction({wide:true})).some(node=>node.type===other.Welcome),false)
 })
+
+
+test('sidebar modal enforces keyboard focus cycle, Escape and restores Host root',()=>{
+  const original=(globalThis as any).document
+  const root={inert:false}
+  ;(globalThis as any).document={body:{},getElementById:(id:string)=>id==='root'?root:null}
+  try{
+    const {hooks,effects}=fakeReact()
+    const {d}=deps(rights({welcomeDecision:'not-now'}))
+    let stateCall=0
+    let closed=false
+    const openedHooks:ReactForDsh={
+      ...hooks,
+      useState<T>(initial:T|(()=>T)){
+        const [value,set]=hooks.useState(initial)
+        stateCall++
+        if(stateCall===3) return [true as T,
+          (_next:T|((before:T)=>T))=>{closed=true}]
+        return [value,set]
+      },
+    }
+    const ui=createDshUnionComponents(openedHooks,{createPortal:child=>child},d)
+    const nodes=walk(ui.SidebarAction({wide:true}))
+    const launcher=nodes.find(n=>n.type==='button'&&n.props['aria-haspopup']==='dialog')!
+    const modal=nodes.find(n=>n.props.role==='dialog')!
+    const close=nodes.find(n=>n.type==='button'&&n.children.includes('×'))!
+    assert.ok(launcher)
+    assert.ok(modal)
+    assert.ok(close)
+    assert.equal(launcher.props['aria-expanded'],true)
+    assert.equal(launcher.props['aria-controls'],modal.props.id)
+    assert.equal(modal.props['aria-modal'],'true')
+    let focus=''
+    const trigger={focus(){focus='launcher'}}
+    const first={focus(){focus='close'}}
+    const last={focus(){focus='last'}}
+    launcher.props.ref(trigger)
+    close.props.ref(first)
+    modal.props.ref({querySelectorAll:()=>[first,last]})
+    const mounted=effects.map(fn=>fn())
+    assert.equal(root.inert,true,'Host must be inert when modal opens')
+    assert.equal(focus,'close','Close receives initial focus')
+    let prevented=false
+    modal.props.onKeyDown({key:'Tab',shiftKey:true,target:first,
+      preventDefault(){prevented=true}})
+    assert.equal(prevented,true)
+    assert.equal(focus,'last')
+    prevented=false
+    modal.props.onKeyDown({key:'Tab',shiftKey:false,target:last,
+      preventDefault(){prevented=true}})
+    assert.equal(prevented,true)
+    assert.equal(focus,'close')
+    prevented=false
+    modal.props.onKeyDown({key:'Escape',shiftKey:false,target:first,
+      preventDefault(){prevented=true}})
+    assert.equal(prevented,true)
+    assert.equal(closed,true)
+    // DSH's subscribed rights cleanup runs before the modal cleanup.
+    const modalCleanup=mounted[2]
+    assert.equal(typeof modalCleanup,'function')
+    ;(modalCleanup as ()=>void)()
+    assert.equal(root.inert,false)
+    assert.equal(focus,'launcher','Escape returns focus to the original trigger')
+  }finally{
+    (globalThis as any).document=original
+  }
+})
+
+test('union work/rights status has an accessible polite announcement',()=>{
+  const {hooks}=fakeReact()
+  const {d}=deps(rights({welcomeDecision:'enabled',laborRightsEnabled:true}))
+  const nodes=walk(createDshUnionComponents(hooks,{createPortal:child=>child},d).UnionPanel())
+  const status=nodes.find(n=>n.props.role==='status')
+  assert.ok(status,'The current union simulation mode needs a status role')
+  assert.equal(status.props['aria-live'],'polite')
+  assert.ok(status.children.includes('union.status.active'))
+})
