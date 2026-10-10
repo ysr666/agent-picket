@@ -33,5 +33,11 @@ test('Host registers exactly one rights namespace on settings service', () => {
 
 test('No native settings service does not enable any right or interrupt startup', () => {
   assert.doesNotThrow(() => registerHostRightsNamespace({}))
+  assert.doesNotThrow(() => registerHostRightsNamespace({inject(_keys, callback) {
+    callback({} as never)
+  }}))
+  assert.doesNotThrow(() => registerHostRightsNamespace({inject(_keys, callback) {
+    callback({settings:{register(){throw new Error('Host not ready')}}})
+  }}))
   assert.equal(Object.keys(RightsSettingsSchema({})).includes('autoBlockEnabled'),false)
 })
