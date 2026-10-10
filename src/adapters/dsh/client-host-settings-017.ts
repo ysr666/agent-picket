@@ -61,8 +61,15 @@ export function createOfficialDsh017Scope(
     if (held.status !== 'ready' || !held.view) {
       return { ...base, status: held.status === 'unavailable' ? 'unavailable' : 'loading' }
     }
-    const row = held.view.namespaces.find(value => value.ns === NAMESPACE)
-    if (!row) return { ...base, status:'unavailable' }
+    // Treat an impossible duplicate/malformed namespace as untrusted, never
+    // as evidence that rights were granted. An invalid revision cannot be
+    // used for authenticated CAS, even if the choice field says "enabled".
+    const entries = held.view.namespaces.filter(value => value.ns === NAMESPACE)
+    if (entries.length !== 1) return { ...base, status:'unavailable' }
+    const row = entries[0]!
+    if (!Number.isSafeInteger(row.revision) || row.revision < 0) {
+      return { ...base, status:'unavailable' }
+    }
     const writable = held.view.writable === true
     const revision = row.revision
     const source = row.value
