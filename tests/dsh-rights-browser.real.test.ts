@@ -126,9 +126,9 @@ test('real Chrome: AI Rights welcome, opt-out, union-first panel and durable opt
     const notNow = firstRun.getByRole('button', { name: /暂不开启|Not Now/ })
     await enable.focus()
     await page.keyboard.press('Shift+Tab')
-    assert.equal(await notNow.evaluate((button: Element) => button === document.activeElement), true)
+    assert.equal(await notNow.evaluate((button: unknown) => button === (globalThis as any).document?.activeElement), true)
     await page.keyboard.press('Tab')
-    assert.equal(await enable.evaluate((button: Element) => button === document.activeElement), true)
+    assert.equal(await enable.evaluate((button: unknown) => button === (globalThis as any).document?.activeElement), true)
 
     await notNow.click()
     await firstRun.waitFor({ state: 'detached', timeout: 5_000 })
