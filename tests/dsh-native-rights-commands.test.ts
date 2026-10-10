@@ -205,9 +205,9 @@ test('native Chinese technical commands localize only text, never model/Host pol
   const afterSnapshot=JSON.parse((await h.call('snapshot')).text)
   // Each snapshot gets an independent wall-clock timestamp. Compare only
   // locale-invariant data, not generatedAtMs.
-  assert.ok(afterSnapshot.generatedAtMs>=beforeSnapshot.generatedAtMs)
   const {generatedAtMs: beforeGenerated, ...beforeData}=beforeSnapshot
   const {generatedAtMs: afterGenerated, ...afterData}=afterSnapshot
+  assert.ok(afterGenerated>=beforeGenerated)
   assert.deepEqual(afterData,beforeData,'Locale cannot mutate snapshot schema or data')
   assert.equal(h.read().unionLedger,'','No command persisted a fictional grievance')
 })
