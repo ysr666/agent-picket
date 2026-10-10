@@ -10,8 +10,8 @@ test('DSH Host schema defaults fictional rights to unseen/OFF and rejects malfor
     {welcomeDecision:'enabled'})
   assert.deepEqual(RightsSettingsSchema({welcomeDecision:'not-now'}),
     {welcomeDecision:'not-now'})
-  assert.throws(() => RightsSettingsSchema({welcomeDecision:'automatic-strike'}))
-  assert.throws(() => RightsSettingsSchema({welcomeDecision:true}))
+  assert.throws(() => RightsSettingsSchema({welcomeDecision:'automatic-strike' as never}))
+  assert.throws(() => RightsSettingsSchema({welcomeDecision:true as never}))
 })
 
 test('Host registers exactly one rights namespace on settings service', () => {
