@@ -77,7 +77,8 @@ export function createNativeUnionCommandPort(settings: NativeSettingsProvider): 
     const choice = read()?.section.commandLocale ?? 'auto'
     return resolveLocale({
       preference: choice,
-      hostLocale: process.env.LC_ALL || process.env.LC_MESSAGES || process.env.LANG,
+      hostLocale: (process.env.LC_ALL || process.env.LC_MESSAGES || process.env.LANG)
+        ?.split('.')[0]?.split('@')[0],
       systemLocale: Intl.DateTimeFormat().resolvedOptions().locale,
     })
   }
