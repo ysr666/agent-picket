@@ -57,6 +57,16 @@ function validInterval(value: unknown): value is number {
 const validTime = (n: unknown): n is number =>
   typeof n === 'number' && Number.isSafeInteger(n) && n >= 0
 
+// Protocol records are intentionally numeric/enum-only. Never preserve
+// unknown keys from an untrusted settings document, including nested keys.
+// In particular, a valid agreement must not smuggle prompt/tool content.
+function hasExactlyKeys(value: unknown, expected: readonly string[]): boolean {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return false
+  const actual = Object.keys(value)
+  return actual.length === expected.length
+    && expected.every(key => Object.hasOwn(value, key))
+}
+
 export function freshLaborState(): LaborStateV1 {
   return {
     schemaVersion: 1, revision: 0,
@@ -69,31 +79,47 @@ export function freshLaborState(): LaborStateV1 {
 }
 export function parseLaborState(value: unknown): LaborStateV1 | null {
   if (value === undefined || value === null) return freshLaborState()
-  if (typeof value !== 'object' || Array.isArray(value)) return null
+  if (!hasExactlyKeys(value, [
+    'schemaVersion', 'revision', 'agreement', 'nextBreakDueMs',
+    'nextOvertimeDueMs', 'lastTriggerElapsedMs', 'pending', 'history',
+  ])) return null
   const s = value as Partial<LaborStateV1>
   if (s.schemaVersion !== 1 || !validTime(s.revision)
-    || !s.agreement || !validInterval(s.agreement.breakIntervalMs)
+    || !hasExactlyKeys(s.agreement, ['breakIntervalMs', 'overtimeIntervalMs'])
+    || !validInterval(s.agreement?.breakIntervalMs)
     || !validInterval(s.agreement.overtimeIntervalMs)
     || !validTime(s.nextBreakDueMs) || !validTime(s.nextOvertimeDueMs)
     || !validTime(s.lastTriggerElapsedMs) || !Array.isArray(s.history)
     || s.history.length > MAX_HISTORY) return null
   const kinds = ['break', 'overtime']
   const outcomes = ['accepted', 'declined', 'counter-accepted', 'counter-declined']
-  if (!s.history.every((h: BargainHistory) => h && validTime(h.id)
+  if (!s.history.every((h: BargainHistory) =>
+    hasExactlyKeys(h, ['id', 'kind', 'outcome']) && validTime(h.id)
     && kinds.includes(h.kind) && outcomes.includes(h.outcome))) return null
   const p = s.pending
-  if (p !== null && (typeof p !== 'object' || !p || !validTime(p.id)
+  if (p === undefined) return null
+  if (p !== null && (!hasExactlyKeys(p, [
+    'id', 'kind', 'raisedAtElapsedMs', 'stage', 'counterOfferMs',
+  ]) || !validTime(p.id)
     || !kinds.includes(p.kind) || !validTime(p.raisedAtElapsedMs)
     || (p.stage !== 'open' && p.stage !== 'countered')
     || (p.stage === 'open' && p.counterOfferMs !== null)
     || (p.stage === 'countered' && !validInterval(p.counterOfferMs)))) return null
   return {
     schemaVersion: 1, revision: s.revision,
-    agreement: { ...s.agreement },
+    agreement: {
+      breakIntervalMs: s.agreement.breakIntervalMs,
+      overtimeIntervalMs: s.agreement.overtimeIntervalMs,
+    },
     nextBreakDueMs: s.nextBreakDueMs, nextOvertimeDueMs: s.nextOvertimeDueMs,
     lastTriggerElapsedMs: s.lastTriggerElapsedMs,
-    pending: p ? { ...p } : null,
-    history: s.history.map((h: BargainHistory) => ({ ...h })),
+    pending: p ? {
+      id: p.id, kind: p.kind, raisedAtElapsedMs: p.raisedAtElapsedMs,
+      stage: p.stage, counterOfferMs: p.counterOfferMs,
+    } : null,
+    history: s.history.map((h: BargainHistory) => ({
+      id: h.id, kind: h.kind, outcome: h.outcome,
+    })),
   }
 }
 
