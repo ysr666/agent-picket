@@ -27,23 +27,27 @@ Enabling simulated labor rights has no effect on Host admission/safety policy; t
 
 The explicit zero-dependency source bundler inlines our own i18n and UI modules into the DSH Client factory, then uses DSH's existing platform module table for react and react-dom. No remote JavaScript is fetched. The import graph is statically allowlisted and fails build on unexpected new dependencies.
 
-## Tested versus pending
+## Tested versus pending (2026-10-10)
 
-Verified in isolated Node 24.5.0 environment:
-- TypeScript compilation of the Client + Host schema files
-- DSH browser factory compilation into a self-contained ~40 KB JS artifact and node --check
-- Native Host rights settings schema tests (3/3)
-- Built Browser module test with fake DSH services: React platform imports, original data privacy, Session stats and both Slot registrations
-- Six original Slot component tests and six authenticated settings-scope adapter tests from the corresponding UI branches
+Verified on a connected macOS development machine (Node 24.5.0) with **real DSH 0.1.2-rc.1 + headless Google Chrome + Playwright**, all under new disposable DSH_HOME directories, no API keys, disabled external network routes, and no changes to existing user sessions:
 
-**Not verified**: DSH installed-package/Chrome Web E2E, real Host initialization timing, modal focus trapping/a11y on physical browser, interaction persistence across true Host restarts, multi-Host compatibility, and union grievance mutation in Browser UI. The Host settings service is optional; unsupported Hosts remain observation-only. Keep this PR Draft until these checks pass.
+- TypeScript compilation, the bundled DSH Client factory, and Host namespace validation
+- Private offline npm pack + offline npm install with Schemastery as the **only** Host-side runtime dependency; Host-neutral Core has no runtime imports
+- **Two real Chrome E2E runs passed:** source plugin and separately offline-installed tarball plugin
+- Actual DSH initial notice → provider skip → localized AI Rights first-run dialog
+- Explicit "Not Now" persists through Browser reload without another AI Rights modal
+- Persistent DSH sidebar union entry opens the **union-first panel** in an otherwise blank/no-workspace Host
+- Opt-in, Browser reload retaining opt-in, opt-out and Browser reload retaining opt-out: all verified against native DSH settings
+- Keyboard Shift+Tab / Tab cycles between welcome choices; no uncaught page errors in these test runs
+- Statistics remain unknown when no session event window exists; no fake cumulative work or lifetime total
+- The focused real Host E2E lives in tests/dsh-rights-browser.real.test.ts, opt-in through AGENT_PICKET_DSH_BIN, AGENT_PICKET_PLAYWRIGHT_ENTRY and AGENT_PICKET_CHROME_BIN.
 
-## Next user-visible release step
+**Important limits:** These tests verify **Browser reload**, not a full DSH Host process restart. They do NOT verify genuine session-driven grievance creation/accept/decline in the Browser (that requires an authenticated Host action path), multi-tab reconciliation, all keyboard/screen-reader accessibility requirements, dark/light visual QA, or other DSH versions. The historical command-oriented tests/dsh-browser.real.test.ts also assumes an initialized Host workspace; on a completely empty disposable DSH_HOME, the Composer is inert until a workspace is selected. This fixture limitation remains separate from the now-passing no-workspace AI Rights onboarding tests.
 
-Run the real DSH Chrome test harness against a disposable installed plugin (with all external access blocked), check enabling, decline, restart, dark/light, and unloading. Then review integration of the already-built simulated grievance engine from PR #39 with a narrowly authorized Host action channel. No ad hoc HTTP or scraping.
+Keep PR #44 Draft until its stacked merge path, real bargaining state ownership, full accessibility testing and cross-version checks are reviewed.
 
 ## Existing-session first install and union access
 
 DSH's default settings.onboarding coordinator runs only for no/blank selected sessions. Agent Picket therefore ALSO registers the supported sidebar.footer.action Slot. That action is visible as a persistent union entry in both collapsed and expanded sidebars and can open the union-first drawer. When a current Host Session is explicitly ready and nonblank, and rights preference is still unseen, that entry shows the same first-use invitation; blank/no-session views defer to native onboarding to avoid two simultaneous invitations. No dialog is shown before authenticated writable preference state is ready. The union's verified elapsed-time progress against the fictional eight-hour target is visible only when coverage is complete. Incomplete history never produces a bogus progress bar.
 
-Extra validation: six original native UI tests expanded to eight; bundled Browser factory/Slot test, Host schema tests, full TypeScript compilation, and a clean offline npm-ci install of Schemastery + its declared transitive dependencies passed on Node 24.5.0. A real DSH Chrome/Host render remains a separate release gate.
+Extra validation: six original native UI tests expanded to eight; bundled Browser factory/Slot test, Host schema tests, full TypeScript compilation, and a clean offline npm-ci install of Schemastery + its declared transitive dependencies passed on Node 24.5.0. Real DSH Chrome/Host rendering and offline-installed first-run consent **have now passed**. Full Host restart, cross-version accessibility and authenticated Browser bargaining still require review.
