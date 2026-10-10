@@ -2,6 +2,12 @@ import type { en } from './en.ts'
 
 /** Full initial locale, including future union-first interface terms. */
 export const zhCN = {
+  'command.legacy.trendTitle': '本地工作趋势（UTC 日历，过去 {days} 天，今天的数据尚未完整）',
+  'command.legacy.trendSummary': '有记录天数：{active}/{days}；完成轮次：{turns}；工具调用：{tools}；已完成轮次经过时间：{duration} 毫秒。',
+  'command.legacy.trendBars': '每日工具调用量（相对刻度）：{plot}',
+  'command.legacy.trendLastSeven': '最近七天：',
+  'command.legacy.trendDay': '{day}：完成轮次 {turns} 次，工具调用 {tools} 次',
+  'command.legacy.trendDisclaimer': '本地仅保留计数，不保存提示词原文；轮次经过时间可能包含等待。',
   'command.legacy.checkUnavailable': '当前宿主未启用本地人工检查。',
   'command.legacy.checkUsage': '用法：/union check 文本。不会向模型发送内容。',
   'command.legacy.checkTooLong': '本地检查最多接受 24000 个字符，超出时不会返回部分结论。',
