@@ -1,3 +1,5 @@
+> **2026-10-10 晚间复核：当前有 58 个 PR（55 个开放 Draft、3 个已合并）。** 本文最初的“52 Draft”是早先时间点的历史快照。#53/#54 与 #37–#43 的最新逐文件验收见 [并行分支功能对账](PARALLEL_BRANCH_PARITY_2026_10_10.md)；不要把备用授权存储与官方 DSH Host 设置一起合并。
+
 # Agent Picket — Draft PR integration, package and release audit
 
 > Checked against live GitHub on 2026-10-10. **REVIEW ONLY: do not merge, close, push, publish, or enable real task blocking without explicit authorization.** Canonical current candidate: [Draft PR #67](https://github.com/ysr666/agent-picket/pull/67).
