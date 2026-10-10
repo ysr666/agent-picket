@@ -151,9 +151,10 @@ async function realComposerParity(mode: 'source'|'installed') {
     const choose=page.getByRole('button',{name:/选择工作区|Choose workspace|Select workspace/})
     await choose.first().click({timeout:6_000})
     await page.getByText(basename(workspace),{exact:true}).last().click({timeout:6_000})
-    const editor=page.locator('[data-composer-input="true"]')
-    await editor.waitFor({state:'visible',timeout:10_000})
-    assert.equal(await editor.isEnabled(),true,'Workspace selection must enable Composer')
+    // The Composer may be mounted but initially inert during async workspace
+    // selection: isEnabled() is not enough for a contenteditable div.
+    const editor=page.locator('[data-composer-input="true"][contenteditable="true"]')
+    await editor.waitFor({state:'visible',timeout:12_000})
 
     async function command(args:string) {
       await editor.fill('/union')
