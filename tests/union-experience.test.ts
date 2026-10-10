@@ -24,6 +24,8 @@ test('score is bounded, deterministic and depends on real ledger outcomes', () =
       {id:4,kind:'break' as const,outcome:'accepted' as const}]}
   const r=projectUnionExperience({enabled:true,state,completedTurnMs:4*3600_000,coverage:'complete'})
   assert.equal(r.discontent,47) // 17 load + 25 pending + 10 declined - 5 accepted
+  assert.deepEqual(r.factors,{workLoad:17,pendingGrievance:25,rejectedProposals:10,resolvedProposals:-5})
+  assert.equal(r.nextDemandInWorkMs,null)
   assert.deepEqual(r.activity.map(e=>e.kind),['counteroffer','accepted','declined'])
   assert.equal(r.status,'negotiating')
   assert.deepEqual(projectUnionExperience({enabled:true,state,completedTurnMs:4*3600_000,coverage:'complete'}),r)
@@ -40,4 +42,11 @@ test('malformed measured time must not produce a score', () => {
     const r=projectUnionExperience({enabled:true,state:fresh(),completedTurnMs:value,coverage:'complete'})
     assert.equal(r.discontent,null)
   }
+})
+
+test('projected next petition requires more observed work, never idle wall time',()=>{
+  const r=projectUnionExperience({enabled:true,state:fresh(),completedTurnMs:60*60_000,coverage:'complete'})
+  assert.equal(r.nextDemandInWorkMs,60*60_000)
+  assert.equal(projectUnionExperience({enabled:true,state:fresh(),
+    completedTurnMs:60*60_000,coverage:'partial'}).nextDemandInWorkMs,null)
 })

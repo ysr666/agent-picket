@@ -15,9 +15,19 @@ export interface UnionActivity {
   readonly kind: UnionActivityKind
   readonly demand: 'break' | 'overtime'
 }
+export interface DiscontentFactors {
+  readonly workLoad: number
+  readonly pendingGrievance: number
+  readonly rejectedProposals: number
+  readonly resolvedProposals: number
+}
 export interface UnionExperience {
   readonly enabled: boolean
   readonly discontent: number | null
+  /** Auditable explanation of the fictional index, unavailable with partial metrics. */
+  readonly factors: DiscontentFactors | null
+  /** Work milliseconds remaining until the next simulated labor threshold. */
+  readonly nextDemandInWorkMs: number | null
   /** Meaningful observed work time; never estimates the live open turn. */
   readonly verifiedCompletedTurnMs: number | null
   readonly status: 'off' | 'unavailable' | 'negotiating' | 'working'
@@ -38,12 +48,14 @@ export interface UnionExperienceInput {
  */
 export function projectUnionExperience(input: UnionExperienceInput): UnionExperience {
   if (!input.enabled) {
-    return { enabled: false, discontent: null, verifiedCompletedTurnMs: null,
+    return { enabled: false, discontent: null, factors: null,
+      nextDemandInWorkMs: null, verifiedCompletedTurnMs: null,
       status: 'off', activity: [] }
   }
   const state = input.state
   if (!state) {
-    return { enabled: true, discontent: null, verifiedCompletedTurnMs: null,
+    return { enabled: true, discontent: null, factors: null,
+      nextDemandInWorkMs: null, verifiedCompletedTurnMs: null,
       status: 'unavailable', activity: [] }
   }
   const verified = input.coverage === 'complete'
@@ -64,19 +76,28 @@ export function projectUnionExperience(input: UnionExperienceInput): UnionExperi
   }
   // No provisional score when recent Host work coverage is missing/partial.
   let discontent: number | null = null
+  let factors: DiscontentFactors | null = null
+  let nextDemandInWorkMs: number | null = null
   if (verified !== null) {
-    const load = Math.min(35, Math.floor(verified / (8 * 60 * 60_000) * 35))
     const recent = state.history.slice(-5)
-    const declined = recent.filter(h => h.outcome === 'declined'
-      || h.outcome === 'counter-declined').length
-    const accepted = recent.filter(h => h.outcome === 'accepted'
-      || h.outcome === 'counter-accepted').length
-    discontent = Math.max(0, Math.min(100,
-      load + (state.pending ? 25 : 0) + Math.min(30, declined * 10)
-      - Math.min(10, accepted * 5)))
+    factors = {
+      workLoad: Math.min(35, Math.floor(verified / (8 * 60 * 60_000) * 35)),
+      pendingGrievance: state.pending ? 25 : 0,
+      rejectedProposals: Math.min(30, recent.filter(h =>
+        h.outcome === 'declined' || h.outcome === 'counter-declined').length * 10),
+      resolvedProposals: -Math.min(10, recent.filter(h =>
+        h.outcome === 'accepted' || h.outcome === 'counter-accepted').length * 5),
+    }
+    discontent = Math.max(0, Math.min(100, Object.values(factors)
+      .reduce((sum, item) => sum + item, 0)))
+    if (!state.pending) {
+      nextDemandInWorkMs = Math.max(0,
+        Math.min(state.nextBreakDueMs, state.nextOvertimeDueMs) - verified)
+    }
   }
   return {
-    enabled: true, discontent, verifiedCompletedTurnMs: verified,
+    enabled: true, discontent, factors, nextDemandInWorkMs,
+    verifiedCompletedTurnMs: verified,
     status: state.pending ? 'negotiating' : 'working', activity,
   }
 }

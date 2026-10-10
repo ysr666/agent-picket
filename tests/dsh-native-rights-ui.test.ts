@@ -401,3 +401,28 @@ test('Union HQ does not show a discontent index or fictional activity when disab
  assert.equal(texts.includes('hq.score'),false)
  assert.equal(texts.includes('hq.activity'),false)
 })
+
+test('explainable Union HQ index reveals factors and the next evidence-based petition threshold',()=>{
+ const {hooks}=fakeReact()
+ const base=deps(rights({welcomeDecision:'enabled',laborRightsEnabled:true}))
+ const d:DshUnionUiDeps={...base.d,readUnion:()=>({
+  pending:null,coverage:'complete',completedTurnMs:60*60_000,
+  lifetimeMs:null,available:true,state:{
+   schemaVersion:1,revision:0,agreement:{
+    breakIntervalMs:2*3_600_000,overtimeIntervalMs:8*3_600_000,
+   },nextBreakDueMs:2*3_600_000,nextOvertimeDueMs:8*3_600_000,
+   lastTriggerElapsedMs:0,pending:null,history:[],
+  },
+ })}
+ const {UnionPanel}=createDshUnionComponents(hooks,{createPortal:child=>child},d)
+ const nodes=walk(UnionPanel())
+ const strings=nodes.flatMap(n=>n.children.filter(x=>typeof x==='string'))
+ assert.ok(strings.includes('hq.message.working'))
+ assert.ok(strings.includes('hq.score.explain'))
+ assert.ok(strings.includes('hq.score.privacy'))
+ assert.ok(strings.includes('hq.nextDemand.note'))
+ assert.ok(strings.includes('4 / 100')) // 1h / 8h * 35 -> 4
+ assert.equal(nodes.find(n=>n.type==='meter')?.props.value,4)
+ assert.ok(nodes.find(n=>n.type==='details'&&n.children.some(x=>typeof x==='object'
+  &&x!==null&&(x as Node).children?.includes('hq.score.explain'))))
+})

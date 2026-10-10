@@ -371,6 +371,10 @@ async function runRightsBrowserE2E(mode: 'source' | 'installed'): Promise<void> 
     })
     const enabledText = await panel.innerText()
     assert.match(enabledText, /工会诉求与协商|Union demands/)
+    assert.match(enabledText, /工会今日照常营业|union is on duty/i,
+      'Real Chrome must render the actual Union HQ narrative, not the old settings-only shell')
+    assert.match(enabledText, /工会公告栏|Union bulletin board/,
+      'Real Chrome must display the ledger-driven bulletin surface')
     // Legacy DSH has no selected Session during first-run. DSH 0.1.7 may
     // already have a main-view retained blank Session with zero completed work;
     // this is measured zero, never a fabricated nonzero hour claim.
@@ -387,6 +391,8 @@ async function runRightsBrowserE2E(mode: 'source' | 'installed'): Promise<void> 
       .click({ timeout: 7_000 })
     await panel.getByText(/工会提出了模拟休息申请|simulated rest break/)
       .waitFor({ state: 'visible', timeout: 7_000 })
+    assert.match(await panel.innerText(),/谈判桌上还有一份提案|proposal is on the table/,
+      'A real authorized grievance should change the Union HQ scene')
     const unionHeading=panel.getByRole('heading',{name:/工会诉求与协商|Union demands/})
     await unionHeading.waitFor({state:'visible'})
     assert.equal(await unionHeading.evaluate((element:unknown)=>
