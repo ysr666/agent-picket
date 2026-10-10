@@ -17,6 +17,7 @@ interface Scope {
   } | undefined
 }
 interface ClientContext {
+  effect?(register: () => () => void): unknown
   inject?(services: string[], cb: (ctx: ClientContext) => void): unknown
   slots?: DshSlots
   settingsScope?: { bind<T>(spec: { namespace: string }): DshSettingsScope<T> }
@@ -100,6 +101,16 @@ export function apply(ctx: ClientContext, react?: ReactForDsh, portal?: PortalFo
         stopSettings()
         stopDesk()
       }
+    }
+    // Background observer is lifecycle-owned and works while the drawer is
+    // closed. In unsupported Hosts with no fiber teardown, fall back to
+    // panel-scoped observation instead of creating a leaking global listener.
+    if (typeof scoped.effect === 'function') {
+      const stopBackground = subscribeUnion(() => {})
+      scoped.effect(() => () => {
+        stopBackground()
+        desk.dispose()
+      })
     }
     registerDshNativeRightsSlots(scoped as { slots: DshSlots }, react, portal, {
       rights: owner,
