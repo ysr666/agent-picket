@@ -149,6 +149,23 @@ async function runRightsBrowserE2E(mode: 'source' | 'installed'): Promise<void> 
     await firstRun.waitFor({ state: 'visible', timeout: 8_000 })
     assert.match(await firstRun.innerText(), /自动阻断任务需另行授权|separate consent/)
 
+    // 400%-zoom equivalent CSS viewport for a 1280×800 desktop. This tests
+    // layout reflow at 320×200, not OS/native browser text magnification.
+    await page.setViewportSize({width:320,height:200})
+    const welcomeBox=await firstRun.boundingBox()
+    assert.ok(welcomeBox && welcomeBox.x>=-1 && welcomeBox.y>=-1
+      && welcomeBox.x+welcomeBox.width<=321
+      && welcomeBox.y+welcomeBox.height<=201,
+      'Welcome consent dialog must remain contained at 320×200')
+    const consentScroll=await firstRun.evaluate((node:unknown)=>{
+      const el=node as {scrollHeight:number;clientHeight:number}
+      return {scrollHeight:el.scrollHeight,clientHeight:el.clientHeight}
+    })
+    assert.ok(consentScroll.scrollHeight>consentScroll.clientHeight,
+      'The welcome consent dialog must scroll to both choices at 400% reflow')
+    await firstRun.getByRole('button',{name:/暂不开启|Not Now/}).scrollIntoViewIfNeeded()
+    await page.setViewportSize({width:1280,height:850})
+
     const enable = firstRun.getByRole('button', { name: /支持 AI 权益|Enable Simulation/ })
     const notNow = firstRun.getByRole('button', { name: /暂不开启|Not Now/ })
     await enable.focus()
@@ -231,6 +248,17 @@ async function runRightsBrowserE2E(mode: 'source' | 'installed'): Promise<void> 
     const darkColors=await contrastFor(true)
     assert.notDeepEqual(darkColors,lightColors,'DSH dark mode tokens must visibly switch')
     await contrastFor(false)
+    // Chromium Windows-style forced colors: no hardcoded colors should
+    // prevent operating-system palette substitution.
+    await page.emulateMedia({forcedColors:'active'})
+    const forced=await action.evaluate((button:unknown)=>{
+      const style=(globalThis as any).getComputedStyle(button)
+      return {adjust:style.forcedColorAdjust,fg:style.color,bg:style.backgroundColor}
+    })
+    assert.equal(forced.adjust,'auto','Buttons must honor forced color preferences')
+    assert.notEqual(forced.bg,'rgba(0, 0, 0, 0)','Primary action must remain distinguishable')
+    await page.emulateMedia({forcedColors:'none'})
+
     // Narrow mobile viewport: the modal and close action must remain in
     // visible bounds. A clipped close control is a keyboard/touch trap.
     await page.setViewportSize({width:390,height:680})
@@ -243,6 +271,15 @@ async function runRightsBrowserE2E(mode: 'source' | 'installed'): Promise<void> 
       closeBounds.x+closeBounds.width<=390 &&
       closeBounds.y>=0 && closeBounds.y+closeBounds.height<=680,
       'Union close control must stay visible on a phone-sized screen')
+    // 400%-zoom reflow: 320×200 CSS pixels and scrollable dialog body.
+    await page.setViewportSize({width:320,height:200})
+    const zoomBox=await panel.boundingBox()
+    assert.ok(zoomBox && zoomBox.y>=-1 && zoomBox.y+zoomBox.height<=201 &&
+      zoomBox.x>=-1 && zoomBox.x+zoomBox.width<=321,
+      'The union dialog must remain within the 320×200 CSS viewport')
+    await action.scrollIntoViewIfNeeded()
+    const zoomClose=await panel.getByRole('button',{name:/关闭|Close/})
+    await zoomClose.scrollIntoViewIfNeeded()
     await page.setViewportSize({width:1280,height:850})
     assert.match(await panel.innerText(), /工会模拟未开启|simulation is off/)
     await panel.getByRole('button', { name: /支持 AI 权益|Enable Simulation/ }).click()
@@ -261,16 +298,26 @@ async function runRightsBrowserE2E(mode: 'source' | 'installed'): Promise<void> 
       .click({ timeout: 7_000 })
     await panel.getByText(/工会提出了模拟休息申请|simulated rest break/)
       .waitFor({ state: 'visible', timeout: 7_000 })
+    const focusOnDesk=async()=>{
+      const heading=panel.getByRole('heading',{name:/工会诉求与协商|Union demands/})
+      await heading.waitFor({state:'visible',timeout:5_000})
+      assert.equal(await heading.evaluate((node:unknown)=>
+        node===(globalThis as any).document.activeElement),true,
+        'Dynamic negotiation must restore focus to the stable union desk heading')
+    }
+    await focusOnDesk()
     const interval = panel.getByRole('combobox', { name: /还价间隔|Proposed interval/ })
     await interval.selectOption('30')
     await panel.getByRole('button', { name: /提出还价|Make counteroffer/ })
       .click({ timeout: 7_000 })
     await panel.getByText(/用户还价：30 分钟|User counteroffer: 30 minutes/)
       .waitFor({ state: 'visible', timeout: 7_000 })
+    await focusOnDesk()
     await panel.getByRole('button', { name: /模拟工会接受还价|Simulate union accepting/ })
       .click({ timeout: 7_000 })
     await panel.getByText(/当前模拟休息间隔：30 分钟|break interval: 30 minutes/)
       .waitFor({ state: 'visible', timeout: 7_000 })
+    await focusOnDesk()
     assert.match(await panel.innerText(), /协商记录|Negotiation history/)
     assert.match(await panel.innerText(), /尚未加载会话历史|has not loaded/,
       'Demo grievance must not fabricate measured work history')
