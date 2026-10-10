@@ -17,6 +17,21 @@ interface Scope {
     input: { for(context: Scope): { notify(level: 'info' | 'error', message: string): void } }
   } | undefined
 }
+/** DSH 0.1.2 exposes `current`; DSH 0.1.7 exposes main-view retainers.
+ * If multiple rows claim main-view retention, fail closed instead of
+ * attributing one Agent's fictional grievance to another Session. */
+export function currentDshUnionSession(state?: {
+  current?: string
+  byId?: Record<string, { retainedBy?: {mainView?: number} }>
+}): string | undefined {
+  if (!state) return undefined
+  if (typeof state.current === 'string' && state.current) return state.current
+  const retained = Object.entries(state.byId ?? {})
+    .filter(([,row]) => Number.isSafeInteger(row.retainedBy?.mainView)
+      && (row.retainedBy?.mainView ?? 0) > 0)
+  return retained.length === 1 ? retained[0]?.[0] : undefined
+}
+
 interface ClientContext {
   effect?(register: () => () => void): unknown
   inject?(services: string[], cb: (ctx: ClientContext) => void): unknown
@@ -33,7 +48,7 @@ interface ClientContext {
     result: { kind: 'success' | 'error'; text?: string },
   ) => void): unknown
   sessions: {
-    list?: { getSnapshot(): { current?: string; phase?: string; byId?: Record<string,{ blank?:boolean }> }; subscribe(listener:()=>void):()=>void }
+    list?: { getSnapshot(): { current?: string; phase?: string; byId?: Record<string,{ blank?:boolean; retainedBy?:{mainView?:number} }> }; subscribe(listener:()=>void):()=>void }
     scope(id: string): Scope | undefined
     binding?(id: string): { eventSource: {
       getSnapshot(): { entries: readonly {type?: unknown; event?: {type?: unknown;seq?: unknown;time?: unknown;data?: unknown}}[]; hasMore: boolean; revision: number }
@@ -72,7 +87,7 @@ export function apply(ctx: ClientContext, react?: ReactForDsh, portal?: PortalFo
       consent: () => owner.snapshot().laborRightsEnabled,
     })
     const uiLocale = () => resolveLocale({ hostLocale: scoped.locale?.getLocale().active })
-    const activeId = () => scoped.sessions.list?.getSnapshot().current
+    const activeId = () => currentDshUnionSession(scoped.sessions.list?.getSnapshot())
     const readUnion = () => {
       const id = activeId()
       const data = id ? bridge?.getSnapshot(id) : undefined

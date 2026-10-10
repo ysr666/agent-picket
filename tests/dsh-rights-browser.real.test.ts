@@ -329,7 +329,13 @@ async function runRightsBrowserE2E(mode: 'source' | 'installed'): Promise<void> 
     })
     const enabledText = await panel.innerText()
     assert.match(enabledText, /工会诉求与协商|Union demands/)
-    assert.match(enabledText, /尚未加载会话历史|has not loaded/)
+    // Legacy DSH has no selected Session during first-run. DSH 0.1.7 may
+    // already have a main-view retained blank Session with zero completed work;
+    // this is measured zero, never a fabricated nonzero hour claim.
+    assert.match(enabledText,
+      /尚未加载会话历史|has not loaded|0 小时 0 分钟|0 hours? 0 minutes?/)
+    assert.doesNotMatch(enabledText,/1 小时|2 小时|3 小时|1 hour|2 hours/,
+      'A fresh isolated blank Session must not invent measured work')
     assert.match(enabledText, /宿主长期累计统计尚未接入|not connected/)
     assert.doesNotMatch(enabledText, /自动阻断任务：开启|Automatic task blocking: ON/)
 
@@ -361,8 +367,12 @@ async function runRightsBrowserE2E(mode: 'source' | 'installed'): Promise<void> 
     assert.equal(await unionHeading.evaluate((element:unknown)=>
       element===(globalThis as any).document.activeElement),true,
     'When a negotiated demand resolves and its buttons disappear, keep keyboard focus inside dialog')
-    assert.match(await panel.innerText(), /尚未加载会话历史|has not loaded/,
-      'Demo grievance must not fabricate measured work history')
+    const postBargain=await panel.innerText()
+    assert.match(postBargain,
+      /尚未加载会话历史|has not loaded|0 小时 0 分钟|0 hours? 0 minutes?/,
+      'Demo grievance must not invent completed work for a blank Session')
+    assert.doesNotMatch(postBargain, /1 小时|2 小时|3 小时|1 hour|2 hours/,
+      'Fictional agreement must not increase measured work counters')
 
     await panel.getByRole('button', { name: /关闭|Close/ }).click()
     await panel.waitFor({ state: 'detached', timeout: 5_000 })
@@ -457,6 +467,82 @@ async function runRightsBrowserE2E(mode: 'source' | 'installed'): Promise<void> 
       'Opt-in must persist through COMPLETE DSH Host process restart')
     assert.match(await panel.innerText(), /当前模拟休息间隔：30 分钟|break interval: 30 minutes/,
       'Agreement must persist through COMPLETE DSH Host process restart')
+
+    // Only a locally installed, disposable DSH 0.1.7 Host may be tested.
+    // A valid revision-fenced update proves the official carrier is working;
+    // then invalid ledger and stale-revision writes must both be rejected.
+    if (process.env.PICKET_TEST_017_HOME) {
+      const security = await page.evaluate(async () => {
+        let n = 0
+        const rpc = async (method: string, args: Record<string,unknown>) => {
+          const rpcId = 'picket-security-probe-' + ++n
+          const response = await fetch('/api/' + method, {
+            method:'POST', headers:{'content-type':'application/json'},
+            body:JSON.stringify({type:'client-request',rpcId,method,payload:{args}}),
+          })
+          if(response.status!==200)throw new Error('Official Host settings HTTP '+response.status)
+          const envelope=await response.json() as {rpcId:string,result:{ok:boolean,value?:any}}
+          if(envelope.rpcId!==rpcId)throw new Error('Official Host RPC correlation mismatch')
+          return envelope.result as {ok:boolean,value?:any}
+        }
+        const beforeResult=await rpc('settings/describe',{})
+        const before=beforeResult.value?.namespaces?.find(
+          (v:any)=>v.ns==='agent-picket')
+        if(!beforeResult.ok || !before || !Number.isSafeInteger(before.revision)
+          || before.value?.welcomeDecision!=='enabled') {
+          throw new Error('Official Host agent-picket settings unavailable')
+        }
+        const initialLocale=before.value.commandLocale ?? 'auto'
+        const changedLocale=initialLocale==='en'?'zh-CN':'en'
+        const valid=await rpc('settings/mutate',{
+          ns:'agent-picket',
+          ops:[{op:'set',path:['commandLocale'],value:changedLocale}],
+          expectedRevision:before.revision,
+        })
+        if(!valid.ok || valid.value?.ns!=='agent-picket'
+          || !Number.isSafeInteger(valid.value.revision)) {
+          throw new Error('Official Host refused safe CAS control write')
+        }
+        const revision=valid.value.revision
+        const malformed=await rpc('settings/mutate',{
+          ns:'agent-picket',
+          ops:[{op:'set',path:['unionLedger'],
+            value:'{"schemaVersion":1,"sessions":{},"prompt":"DUMMY_FIXTURE_ONLY"}'}],
+          expectedRevision:revision,
+        })
+        const stale=await rpc('settings/mutate',{
+          ns:'agent-picket',
+          ops:[{op:'set',path:['welcomeDecision'],value:'not-now'}],
+          expectedRevision:before.revision,
+        })
+        const afterResult=await rpc('settings/describe',{})
+        const after=afterResult.value?.namespaces?.find(
+          (v:any)=>v.ns==='agent-picket')
+        // Restore the initial locale in this throwaway Host via the same
+        // official CAS API; never leave even a harmless test preference behind.
+        const restored=await rpc('settings/mutate',{
+          ns:'agent-picket',
+          ops:[{op:'set',path:['commandLocale'],value:initialLocale}],
+          expectedRevision:after?.revision,
+        })
+        const finalResult=await rpc('settings/describe',{})
+        const final=finalResult.value?.namespaces?.find(
+          (v:any)=>v.ns==='agent-picket')
+        return {
+          versionAdvanced:revision>before.revision,
+          malformedRejected:!malformed.ok, staleRejected:!stale.ok,
+          revisionUnchanged:after?.revision===revision,
+          consentUnchanged:after?.value?.welcomeDecision==='enabled',
+          ledgerUnchanged:after?.value?.unionLedger===valid.value?.value?.unionLedger,
+          localeRestored:restored.ok && final?.value?.commandLocale===initialLocale,
+        }
+      })
+      assert.deepEqual(security,{
+        versionAdvanced:true,malformedRejected:true,staleRejected:true,
+        revisionUnchanged:true,consentUnchanged:true,ledgerUnchanged:true,
+        localeRestored:true,
+      },'Real native Host must reject forbidden ledger fields and stale revision')
+    }
 
     await panel.getByRole('button', { name: /劳动权益模拟 · OFF|Labor Rights Simulation · OFF/ })
       .click()
