@@ -459,7 +459,9 @@ export function registerDshIntegration(
             text: 'AgentPicket: monitor-only. Automatic strikes and blocking are disabled. '
               + (active ? 'Symbolic picket ACTIVE (demo only; prompts still run).' :
                 'No symbolic picket active.')
-              + ' Use /union stats, /union report or /union help.',
+              + ' ' + (options.getNativeUnion?.()?.status(typeof sessionId === 'string' ? sessionId : undefined)
+                ?? 'AI Rights settings unavailable / 模拟工会设置暂不可用。')
+              + ' Use /union rights, /union grievances or /union help.',
           }
         }
         if (verb === 'strike' || verb === 'resume') {
