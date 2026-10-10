@@ -5,13 +5,15 @@ import {
 } from '../src/adapters/dsh/rights-settings.ts'
 
 test('DSH Host schema defaults fictional rights to unseen/OFF and rejects malformed choices', () => {
-  assert.deepEqual(RightsSettingsSchema({}), {welcomeDecision:'unseen',unionLedger:''})
+  assert.deepEqual(RightsSettingsSchema({}), {welcomeDecision:'unseen',unionLedger:'',commandLocale:'auto'})
   assert.deepEqual(RightsSettingsSchema({welcomeDecision:'enabled'}),
-    {welcomeDecision:'enabled',unionLedger:''})
+    {welcomeDecision:'enabled',unionLedger:'',commandLocale:'auto'})
   assert.deepEqual(RightsSettingsSchema({welcomeDecision:'not-now'}),
-    {welcomeDecision:'not-now',unionLedger:''})
+    {welcomeDecision:'not-now',unionLedger:'',commandLocale:'auto'})
   assert.throws(() => RightsSettingsSchema({welcomeDecision:'automatic-strike' as never}))
   assert.throws(() => RightsSettingsSchema({welcomeDecision:true as never}))
+  assert.equal(RightsSettingsSchema({commandLocale:'zh-CN'}).commandLocale,'zh-CN')
+  assert.throws(() => RightsSettingsSchema({commandLocale:'es' as never}))
 })
 
 test('Host registers exactly one rights namespace on settings service', () => {
