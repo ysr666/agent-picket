@@ -91,11 +91,13 @@ function getDataLabel(
     default: return t('stats.coverage.unavailable')
   }
 }
-const card = { background:'var(--dsw-alias-bg-layer-1, #ffffff)',
+const card = { boxSizing:'border-box' as const, minWidth:0, overflowWrap:'anywhere' as const,
+  background:'var(--dsw-alias-bg-layer-1, #ffffff)',
   border:'1px solid var(--dsw-alias-border-l1, #dadde4)', borderRadius:'14px',
   padding:'20px', color:'var(--dsw-alias-label-primary, #222b37)' }
 const secondary = { color:'var(--dsw-alias-label-secondary, #647082)', fontSize:'13px' }
-const primary = { border:0, borderRadius:'9px', padding:'11px 16px',
+const primary = { border:'1px solid var(--dsw-alias-border-l1, transparent)',
+  borderRadius:'9px', padding:'11px 16px',
   // These are a paired DSH theme token pair: brand-primary can be nearly
   // white in dark mode, so hard-coding white button text is unreadable.
   background:'var(--dsw-alias-button-primary-fill, #385be8)',
@@ -165,7 +167,8 @@ export function createDshUnionComponents(
     const text = (key: MessageKey) => deps.t(key)
     return portal.createPortal(h('div', { style: {
       position:'fixed',inset:0,zIndex:2147483000,display:'flex',alignItems:'center',
-      justifyContent:'center',padding:'20px',background:'rgba(6,12,26,.66)' },
+      justifyContent:'center',padding:'min(3vw, 20px)',overflowY:'auto',
+      background:'rgba(6,12,26,.66)' },
     },
       h('section', { role:'dialog','aria-modal':'true','aria-labelledby':'picket-welcome-title',
         onKeyDown:(event:{key:string,shiftKey:boolean,target:unknown,preventDefault():void})=>{
@@ -176,7 +179,8 @@ export function createDshUnionComponents(
             event.preventDefault();primaryFocus.current?.focus()
           }
         },
-        style:{...card,width:'min(100%, 520px)',boxShadow:'0 18px 65px rgba(0,0,0,.25)'} },
+        style:{...card,width:'min(100%, 520px)',maxHeight:'100%',overflowY:'auto',
+          boxShadow:'0 18px 65px rgba(0,0,0,.25)'} },
         h('p',{style:{...secondary,fontWeight:700,letterSpacing:'1.5px',margin:'0 0 16px'}},
           'AGENT PICKET · AI WORKERS’ UNION'),
         h('h2',{id:'picket-welcome-title',style:{fontSize:'26px',margin:'0 0 12px'}},
@@ -206,6 +210,21 @@ export function createDshUnionComponents(
     const [error, setError] = react.useState(false)
     const [busy, setBusy] = react.useState(false)
     const [counterMinutes, setCounterMinutes] = react.useState(60)
+    const lastActionNeedsFocus=react.useRef(false)
+    const deskHeading=react.useRef<{focus():void}|null>(null)
+    react.useEffect(()=>{
+      if(!lastActionNeedsFocus.current)return
+      lastActionNeedsFocus.current=false
+      const doc=(globalThis as {document?:{
+        getElementById(id:string):{contains(node:unknown):boolean}|null,
+        activeElement:unknown
+      }}).document
+      const modal=doc?.getElementById('picket-union-dialog')
+      // A completed action may remove its focused button. Restore focus to a
+      // stable heading only in our open modal, never in the Settings page or
+      // after unrelated cross-tab updates.
+      if(modal && !modal.contains(doc?.activeElement))deskHeading.current?.focus()
+    },[data.pending?.id,data.pending?.stage,data.state?.history.length])
     react.useEffect(() => deps.subscribeUnion?.(() => setData(safeUnion(deps))), [])
     const enabled = rightsIsActive(rights)
     const label = (key:MessageKey) => deps.t(key)
@@ -220,7 +239,7 @@ export function createDshUnionComponents(
     const bargain = async (action: () => Promise<void>) => {
       if (busy || !enabled) return
       setBusy(true);setError(false)
-      try { await action();setData(safeUnion(deps)) }
+      try { await action();lastActionNeedsFocus.current=true;setData(safeUnion(deps)) }
       catch { setError(true) }
       finally { setBusy(false) }
     }
@@ -229,6 +248,7 @@ export function createDshUnionComponents(
       setBusy(true);setError(false)
       try {
         await deps.respond(data.pending.id,kind)
+        lastActionNeedsFocus.current=true
         setData(safeUnion(deps))
       } catch {setError(true)}
       finally {setBusy(false)}
@@ -266,7 +286,8 @@ export function createDshUnionComponents(
             formatDuration(data.lifetimeMs, deps.getLocale?.() ?? 'en')),
       ),
       enabled ? h('div',{style:card},
-        h('h3',{style:{marginTop:0}},label('union.desk.title')),
+        h('h3',{ref:(node:{focus():void}|null)=>{deskHeading.current=node},
+          tabIndex:-1,style:{marginTop:0}},label('union.desk.title')),
         data.available === false ?
           h('p',{style:secondary},label('union.desk.unavailable')):null,
         data.state ? h('div',{style:{...secondary,marginBottom:'12px'}},
@@ -284,7 +305,8 @@ export function createDshUnionComponents(
             h('p',{style:secondary},label('union.demo.note')),
           ):null,
         data.pending ? h('div',{},
-          h('p',{},label(data.pending.kind==='break'?'union.demand.break':'union.demand.overtime')),
+          h('p',{'aria-live':'polite','aria-atomic':'true'},
+            label(data.pending.kind==='break'?'union.demand.break':'union.demand.overtime')),
           h('p',{style:secondary},'#'+data.pending.id),
           data.pending.stage==='open' ? h('div',{},
             deps.respond ? h('div',{style:{display:'flex',gap:'10px',flexWrap:'wrap'}},
@@ -408,11 +430,12 @@ export function createDshUnionComponents(
       opened && page?portal.createPortal(h('div',{
         style:{position:'fixed',inset:0,zIndex:2147482000,
           background:'rgba(6,12,26,.5)',display:'flex',justifyContent:'center',
-          alignItems:'center',padding:'20px'},
+          alignItems:'center',padding:'min(3vw, 20px)',overflowY:'auto'},
+
       },h('section',{id:'picket-union-dialog',role:'dialog','aria-modal':'true',
         'aria-label':deps.t('union.title'),onKeyDown:onDialogKeyDown,
         ref:(node:typeof dialog.current)=>{dialog.current=node},
-        style:{...card,width:'min(96vw,800px)',maxHeight:'85vh',overflowY:'auto'}},
+        style:{...card,width:'min(100%,800px)',maxHeight:'min(85vh,100%)',overflowY:'auto'}},
         h('div',{style:{display:'flex',justifyContent:'flex-end'}},
           h('button',{type:'button',style:quiet,
             'aria-label':deps.t('union.action.close'),

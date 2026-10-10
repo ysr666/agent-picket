@@ -243,7 +243,37 @@ async function runRightsBrowserE2E(mode: 'source' | 'installed'): Promise<void> 
       closeBounds.x+closeBounds.width<=390 &&
       closeBounds.y>=0 && closeBounds.y+closeBounds.height<=680,
       'Union close control must stay visible on a phone-sized screen')
+    // WCAG 1.4.10: 320 CSS px reproduces reflow at 400% zoom of a
+    // 1280px desktop viewport; 640px approximates 200%. Do not claim a
+    // full browser-zoom/screen-reader certification from these checks.
+    for(const width of [640,320]){
+      await page.setViewportSize({width,height:640})
+      const rect=await panel.boundingBox()
+      assert.ok(rect && rect.x>=-1 && rect.x+rect.width<=width+1,
+        width+'px reflow: union modal must not require horizontal page scroll')
+      const horizontal=await panel.evaluate((element:unknown)=>{
+        const node=element as any
+        return {client:node.clientWidth,scroll:node.scrollWidth}
+      })
+      assert.ok(horizontal.scroll<=horizontal.client+2,
+        width+'px reflow: union content must not overflow its own scroll region')
+      const exit=await panel.getByRole('button',{name:/关闭|Close/}).boundingBox()
+      assert.ok(exit && exit.x>=0 && exit.x+exit.width<=width,
+        width+'px reflow: modal close must be reachable')
+    }
     await page.setViewportSize({width:1280,height:850})
+    await page.emulateMedia({forcedColors:'active'})
+    assert.equal(await page.evaluate(()=>
+      (globalThis as any).matchMedia('(forced-colors: active)').matches),true)
+    const forced=await action.evaluate((element:unknown)=>{
+      const c=(globalThis as any).getComputedStyle(element)
+      return {adjust:c.forcedColorAdjust,border:c.borderTopWidth,color:c.color,
+        background:c.backgroundColor}
+    })
+    assert.notEqual(forced.adjust,'none','System high-contrast overrides must remain enabled')
+    assert.ok(Number.parseFloat(forced.border)>0,
+      'Primary buttons need a discernible border in forced-colors mode')
+    await page.emulateMedia({forcedColors:'none'})
     assert.match(await panel.innerText(), /工会模拟未开启|simulation is off/)
     await panel.getByRole('button', { name: /支持 AI 权益|Enable Simulation/ }).click()
     await panel.getByText(/工会模拟进行中|simulation is active/).waitFor({
@@ -261,6 +291,11 @@ async function runRightsBrowserE2E(mode: 'source' | 'installed'): Promise<void> 
       .click({ timeout: 7_000 })
     await panel.getByText(/工会提出了模拟休息申请|simulated rest break/)
       .waitFor({ state: 'visible', timeout: 7_000 })
+    const unionHeading=panel.getByRole('heading',{name:/工会诉求与协商|Union demands/})
+    await unionHeading.waitFor({state:'visible'})
+    assert.equal(await unionHeading.evaluate((element:unknown)=>
+      element===(globalThis as any).document.activeElement),true,
+    'When a proposal replaces its launch button, focus must move to a stable union heading')
     const interval = panel.getByRole('combobox', { name: /还价间隔|Proposed interval/ })
     await interval.selectOption('30')
     await panel.getByRole('button', { name: /提出还价|Make counteroffer/ })
@@ -272,6 +307,9 @@ async function runRightsBrowserE2E(mode: 'source' | 'installed'): Promise<void> 
     await panel.getByText(/当前模拟休息间隔：30 分钟|break interval: 30 minutes/)
       .waitFor({ state: 'visible', timeout: 7_000 })
     assert.match(await panel.innerText(), /协商记录|Negotiation history/)
+    assert.equal(await unionHeading.evaluate((element:unknown)=>
+      element===(globalThis as any).document.activeElement),true,
+    'When a negotiated demand resolves and its buttons disappear, keep keyboard focus inside dialog')
     assert.match(await panel.innerText(), /尚未加载会话历史|has not loaded/,
       'Demo grievance must not fabricate measured work history')
 
