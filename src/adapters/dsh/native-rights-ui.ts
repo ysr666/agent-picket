@@ -96,7 +96,10 @@ const card = { background:'var(--dsw-alias-bg-layer-1, #ffffff)',
   padding:'20px', color:'var(--dsw-alias-label-primary, #222b37)' }
 const secondary = { color:'var(--dsw-alias-label-secondary, #647082)', fontSize:'13px' }
 const primary = { border:0, borderRadius:'9px', padding:'11px 16px',
-  background:'var(--dsw-alias-brand-primary, #385be8)', color:'#fff',
+  // These are a paired DSH theme token pair: brand-primary can be nearly
+  // white in dark mode, so hard-coding white button text is unreadable.
+  background:'var(--dsw-alias-button-primary-fill, #385be8)',
+  color:'var(--dsw-alias-label-primary-foreground, #fff)',
   fontWeight:650, cursor:'pointer' }
 const quiet = { border:'1px solid var(--dsw-alias-border-l1, #cfd4dc)',
   borderRadius:'9px', padding:'11px 16px', background:'transparent',
@@ -183,7 +186,7 @@ export function createDshUnionComponents(
           text('welcome.body')),
         h('p',{style:{...secondary,fontSize:'12px',margin:'0 0 20px'}},
           text('welcome.disclaimer')),
-        error ? h('p',{role:'alert',style:{color:'#b91c1c'}},text('welcome.saveError')):null,
+        error ? h('p',{role:'alert',style:{color:'var(--dsw-alias-state-error-primary, #b91c1c)'}},text('welcome.saveError')):null,
         h('div',{style:{display:'flex',flexWrap:'wrap',gap:'10px'}},
           h('button',{type:'button',ref:(node:{focus():void}|null)=>{primaryFocus.current=node},
             style:primary,disabled:busy,onClick:()=>{void choose('enabled')}},
@@ -235,7 +238,7 @@ export function createDshUnionComponents(
         h('p',{style:{...secondary,letterSpacing:'.12em',fontWeight:700}},
           'AGENT PICKET · AI WORKERS’ UNION'),
         h('h2',{style:{fontSize:'25px',margin:'0 0 10px'}},label('union.title')),
-        h('p',{style:{margin:'0 0 12px'}},
+        h('p',{role:'status','aria-live':'polite',style:{margin:'0 0 12px'}},
           enabled?label('union.status.active'):label('union.status.inactive')),
         h('p',{style:secondary},label('safety.simulationOnly')),
         !enabled && rights.state==='ready' && rights.writable?
@@ -328,7 +331,7 @@ export function createDshUnionComponents(
             })))),
         ):null,
       ):null,
-      error?h('p',{role:'alert',style:{color:'#b91c1c'}},label('settings.saveError')):null,
+      error?h('p',{role:'alert',style:{color:'var(--dsw-alias-state-error-primary, #b91c1c)'}},label('settings.saveError')):null,
       h('details',{style:{...card,padding:'16px'}},
         h('summary',{style:{cursor:'pointer'}},label('stats.title')),
         h('p',{style:secondary},getDataLabel(deps.t,data)),
