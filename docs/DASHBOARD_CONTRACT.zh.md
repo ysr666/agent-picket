@@ -105,3 +105,8 @@ Core 只输出字段与枚举，不输出中文或英文用户文案。界面负
 - `tests/dsh-dashboard.test.ts`：原生 DSH 命令只返回 JSON，不暴露敏感 Prompt/ID、未知 Session 不串号、权益授权 reader 失败安全回退。
 - `tests/dsh-browser.real.test.ts`：真实 Chrome + DSH 源码及已安装 npm tarball 下直接运行 `/union snapshot [7|30]`。
 - **后续**：把结构化值通过 Host 官方服务暴露给 Web Client Companion，让真正的仪表盘不依赖聊天命令调用；再让国际化页面接入并完成浏览器 E2E。
+
+
+## DSH Browser 实时桥接的当前边界
+
+已加入 [DSH_WEB_DATA_BRIDGE.zh.md](DSH_WEB_DATA_BRIDGE.zh.md)：`agentPicketDashboard` Cordis Browser 服务可以直接订阅 **SessionEventSource 已加载事件窗口**的计数，不经过聊天命令或 UI 文案。但此服务当前不持有 Host 的跨会话长期账本；`lifetime: null` 表示 Client **不可见**，不是长期存储关闭。跨端 Lifetime RPC 仍需单独的安全鉴权设计与测试。

@@ -46,6 +46,7 @@ test('browser companion is a self-contained DSH loader artifact with a declared 
   const code = readFileSync(resolve(root, 'dist/adapters/dsh/client.js'), 'utf8')
   assert.match(code, /window\.__ModuleLoader__\.load\(/)
   assert.match(code, /id:\s*"agent-picket"/)
+  assert.match(code, /agentPicketDashboard/)
   assert.doesNotMatch(code, /^import\s/m)
   assert.doesNotMatch(code, /sourceMappingURL/)
   assert.equal(existsSync(resolve(root, 'dist/adapters/dsh/client.js.map')), false)
