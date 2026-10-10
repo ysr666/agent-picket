@@ -8,7 +8,7 @@ import { DurableStats } from '../node/durable-stats.ts'
 import type { DetectionProvider } from '../../core/types.ts'
 import { homedir } from 'node:os'
 import { join, resolve } from 'node:path'
-import { registerHostRightsNamespace } from './rights-settings.ts'
+import { registerHostRightsNamespace, DshProfileRightsConfig } from './rights-settings.ts'
 import { createNativeUnionCommandPort, type NativeUnionCommandPort } from './native-rights-command.ts'
 
 /**
@@ -19,6 +19,8 @@ import { createNativeUnionCommandPort, type NativeUnionCommandPort } from './nat
  * can block, reject, cancel or rewrite an Agent step.
  */
 export const name = 'agent-picket'
+/** DSH 0.1.7+ officially extracts live settings from this Config export. */
+export const Config = DshProfileRightsConfig
 
 export function apply(ctx: DshIntegrationContext): void {
   // Native DSH settings namespace, independent of default-on local work stats.

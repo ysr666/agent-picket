@@ -22,7 +22,7 @@ test('distribution stays private and limits runtime dependencies to Host-side sc
   }
   // DSH's native settings registry requires a validated Schemastery schema.
   // Core remains Host-neutral and has no other runtime dependencies.
-  assert.deepEqual(manifest.dependencies, { '@deepseek-ai/schemastery': '^3.18.1' })
+  assert.deepEqual(manifest.dependencies, { '@deepseek-ai/schemastery': '3.18.4' })
   const core = readFileSync(resolve(root, 'dist/core/index.js'), 'utf8')
   assert.doesNotMatch(core, /schemastery|@deepseek-ai/)
   const host = readFileSync(resolve(root, 'dist/adapters/dsh/rights-settings.js'), 'utf8')
@@ -43,6 +43,10 @@ test('published DSH entry re-exports read-only dashboard bridge through stable p
 })
 
 test('browser companion is a self-contained DSH loader artifact with a declared manifest', () => {
+  assert.deepEqual(manifest.dsh.bundle, { patch: './cordis.patch.yml' })
+  const bundle = readFileSync(resolve(root, 'cordis.patch.yml'), 'utf8')
+  assert.match(bundle, /id:\s*agent-picket/)
+  assert.match(bundle, /name:\s*'agent-picket\/dsh'/)
   assert.equal(manifest.dsh.client.platform, 'web')
   assert.deepEqual(manifest.dsh.client.inject, [
     '@deepseek-ai/dsh-api-session-controller',
@@ -69,6 +73,7 @@ test('npm dry-run tarball contains prebuilt plugin and no source, tests, or runt
   const files = new Set(meta.files.map(f => f.path))
   for (const expected of [
     'dist/core/index.js', 'dist/core/index.d.ts',
+    'cordis.patch.yml',
     'dist/adapters/dsh/plugin.js', 'dist/adapters/dsh/client.js',
     'dist/adapters/hooks/entry.js', 'dist/adapters/hooks/evaluate.js',
     'README.md', 'LICENSE', 'package.json',
