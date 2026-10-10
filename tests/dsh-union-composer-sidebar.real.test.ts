@@ -117,12 +117,12 @@ async function realComposerParity(mode: 'source'|'installed') {
     // Only test-fixture bootstrap uses the authenticated DSH public RPC.
     // Every actual /union invocation below is typed through the real Composer.
     const created=await page.evaluate(async(path:string)=>{
-      const response=await fetch('/api/workspace.create',{
+      const response=await fetch('/api/workspace/create',{
         method:'POST',
         headers:{'Content-Type':'application/json'},
         body:JSON.stringify({
           type:'client-request',rpcId:'agent-picket-workspace-fixture',
-          method:'workspace.create',payload:{path},
+          method:'workspace/create',payload:{args:{request:{path}}},
         }),
       })
       return {status:response.status,body:await response.json()}
