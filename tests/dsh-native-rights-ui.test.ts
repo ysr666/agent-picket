@@ -250,7 +250,6 @@ test('sidebar modal enforces keyboard focus cycle, Escape and restores Host root
       preventDefault(){prevented=true}})
     assert.equal(prevented,true)
     assert.equal(closed,true)
-    const cleanup=mounted.find(fn=>typeof fn==='function' && fn!==undefined)
     // DSH's subscribed rights cleanup runs before the modal cleanup.
     const modalCleanup=mounted[2]
     assert.equal(typeof modalCleanup,'function')
