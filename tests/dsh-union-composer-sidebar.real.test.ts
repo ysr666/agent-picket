@@ -45,7 +45,7 @@ function offlineInstalledEntry(root: string): string {
   return join(root, 'installed/node_modules/agent-picket/dist/adapters/dsh/plugin.js')
 }
 
-async function realComposerParity(mode: 'source'|'installed') {
+async function realComposerParity(mode: 'source'|'installed', selection: 'pointer'|'keyboard'='pointer') {
   const root = mkdtempSync(join(tmpdir(), 'agent-picket-composer-parity-'))
   const workspace = join(root, 'fixture-project')
   mkdirSync(workspace, { recursive:true, mode:0o700 })
@@ -179,15 +179,41 @@ async function realComposerParity(mode: 'source'|'installed') {
     await editor.waitFor({state:'visible',timeout:12_000})
 
     async function command(args:string) {
-      await editor.fill('/union')
+      if(selection==='keyboard') {
+        // Genuine keyboard text entry, not Playwright fill() replacing the
+        // Lexical DOM value in a single synthetic input event.
+        await editor.press('ControlOrMeta+A')
+        await editor.press('Backspace')
+        await editor.type('/union')
+      } else {
+        await editor.fill('/union')
+      }
       // Native DSH /union menu arbitration can dismiss on Enter while
       // leaving Lexical in phase=plain. Select the visible official menu
       // result using real DOM interaction, then verify the claim before
       // sending any command. No RPC injection, retries or implicit submits.
       const unionSuggestion=page.getByText('Show local union status and work statistics')
       await unionSuggestion.waitFor({state:'visible',timeout:5_000})
-      await unionSuggestion.click({timeout:5_000})
-      // The click is only a menu pick; claimed is the Host Client's own state.
+      if(selection==='keyboard') {
+        // The visible description alone can outlive the menu's ready rows:
+        // DSH refreshes results asynchronously and may show a pending shell.
+        // Wait for the *real option* to exist, rather than assuming any
+        // visible text implies Enter has a selectable candidate.
+        const options=page.locator('[data-trigger-menu] [role="option"]')
+        const target=options.filter({hasText:'Show local union status and work statistics'})
+        await target.waitFor({state:'visible',timeout:12_000})
+        const count=await options.count()
+        assert.ok(count>0 && count<100,'Bounded native DSH slash candidate list')
+        for(let i=0;i<count && await target.getAttribute('aria-selected')!=='true';i++) {
+          await editor.press('ArrowDown')
+        }
+        assert.equal(await target.getAttribute('aria-selected'),'true',
+          'Keyboard highlighting must select exactly /union')
+        await editor.press('Enter')
+      } else {
+        await unionSuggestion.click({timeout:5_000})
+      }
+      // The official Client must claim the selected command before any send.
       try {
         await page.waitForFunction(() => {
           const el=(globalThis as any).document.querySelector('[data-composer-input="true"]')
@@ -321,3 +347,14 @@ test('real DSH Chrome Composer → union sidebar parity: compiled source', {
 test('real DSH Chrome Composer → union sidebar parity: offline-installed package', {
   skip:missing,timeout:110_000,
 },()=>realComposerParity('installed'))
+
+// Intentionally opt-in: real DSH 0.1.7-rc.2 menu Enter intermittently drops
+// an already highlighted command while its candidate source refreshes. This
+// is a release blocker (Issue #62), NOT a passing generic CI requirement.
+// Unlike the stable pointer-selection E2E, this test exercises EVERY command
+// with arrow-key selection + Enter, and fails before RPC if claim is absent.
+test('real DSH Chrome KEYBOARD slash-menu → union Host parity (Issue #62)', {
+  skip:missing || (process.env.PICKET_RUN_DSH_KEYBOARD_E2E!=='1'
+    && 'DSH 0.1.7 keyboard-only menu regression: opt in explicitly'),
+  timeout:150_000,
+},()=>realComposerParity('installed','keyboard'))
