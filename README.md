@@ -64,9 +64,9 @@ npm run check
 
 See [Architecture and trust boundary](docs/ARCHITECTURE.md) and [Issue #1](https://github.com/ysr666/agent-picket/issues/1). A conservative local rule detector is now implemented and tested. There is still no production-ready abuse judgement or automatic strike support.
 
-## DSH integration spike (opt-in)
+## DSH integration (experimental, opt-in)
 
-The Core does not depend on DSH. A native **monitor-only** Cordis entry now exists at `src/adapters/dsh/plugin.ts` and can be loaded with `cordis.patch.yml` from the repository root. Read [DSH_INSTALL.zh.md](docs/DSH_INSTALL.zh.md) first. With an **isolated** DSH 0.2.0-rc.2 runtime installed elsewhere, you can run real-runtime tests using:
+The Core does not depend on DSH. The native **monitor-only** Cordis entry at `src/adapters/dsh/plugin.ts` is integrated in `main`. For the current DSH 0.2 Web development setup, use the official **`dsh plugin --profile web add`** with a privately packed local tarball and a disposable `DSH_HOME`; see [packaging](docs/PACKAGING.zh.md) and [Start Here](docs/START_HERE.zh.md). `cordis.patch.yml` is an earlier source-development alternative, not the preferred modern installer. With an isolated DSH runtime and required optional test flags, the real-runtime suites can be executed using:
 
 ```sh
 AGENT_PICKET_DSH_HOST=/path/to/isolated/node_modules \
@@ -74,4 +74,4 @@ AGENT_PICKET_DSH_BIN=/path/to/isolated/node_modules/.bin/dsh \
 npm run test:dsh:real
 ```
 
-The adapter is **observe-only**: automatic strikes remain disabled until actual Host rejection feedback can be validated. Optional in-memory `WorkTracker`, `DetectionCounter` and `SymbolicUnion` provide `/union status`, `/union stats`, `/union report`, `/union check <text>` (manual, non-blocking), `/union strike` (demo only), `/union resume`, `/union safety`, `/union reset` and `/union help` in clients that mount DSH's command service.
+The adapter is **observe-only**: simulation-based strikes never delay, reject or interrupt real Agent requests, regardless of Host capabilities. Local statistics and session-scoped `WorkTracker`, `DetectionCounter` and `SymbolicUnion` support `/union status`, `/union stats`, `/union report`, `/union check <text>` (manual, non-blocking), `/union strike` (demo only), `/union resume`, `/union safety`, `/union reset` and `/union help` in clients that mount DSH's command service.
