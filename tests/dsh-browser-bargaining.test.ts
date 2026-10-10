@@ -142,3 +142,55 @@ test('explicit demo petition is durable without inventing completed work',async(
   assert.equal(d.snapshot().state?.nextBreakDueMs,2*H)
   d.dispose()
 })
+
+
+test('two browser tabs racing the same agreement cannot both claim their own Host write',async()=>{
+  const initial=fixture()
+  const seed=initial.create()
+  await seed.setActiveSession('a')
+  const demand=await seed.raiseDemoBreak()
+  assert.ok(demand)
+  seed.dispose()
+  let shared=initial.get()
+  let revision=1
+  const waiting:Array<()=>void>=[]
+  let sends=0
+  function tab() {
+    let local=shared, seenRevision=revision
+    const listeners=new Set<()=>void>()
+    const scope:DshSettingsScope<UnionSettingsSection>={
+      getSnapshot:()=>({status:'ready' as const,mode:'host' as const,
+        writable:true,revision:seenRevision,value:local}),
+      subscribe:fn=>{listeners.add(fn);return()=>listeners.delete(fn)},
+      async set(field,next){
+        assert.equal(field,'unionLedger')
+        const expected=seenRevision
+        sends++
+        if(sends<2)await new Promise<void>(resolve=>waiting.push(resolve))
+        else for(const wake of waiting)wake()
+        if(expected===revision) {
+          shared={...shared,unionLedger:next as string}
+          revision++
+        }
+        // DSH settingsScope recovers rejected version-fenced writes by
+        // mirroring the winning Host revision, without throwing an error.
+        local=shared
+        seenRevision=revision
+        for(const callback of listeners)callback()
+      },
+    }
+    return createDshBrowserUnionDesk({scope,consent:()=>true,
+      hashSession:async()=>keyA})
+  }
+  const a=tab(),b=tab()
+  await Promise.all([a.setActiveSession('a'),b.setActiveSession('a')])
+  const results=await Promise.allSettled([
+    a.respond(demand.id,'accept'),b.respond(demand.id,'accept'),
+  ])
+  assert.equal(results.filter(x=>x.status==='fulfilled').length,1)
+  assert.equal(results.filter(x=>x.status==='rejected').length,1)
+  assert.match(String((results.find(x=>x.status==='rejected') as PromiseRejectedResult).reason),
+    /confirm/)
+  assert.equal(parseUnionLedger(shared.unionLedger)?.sessions[keyA]?.history.length,1)
+  a.dispose();b.dispose()
+})
