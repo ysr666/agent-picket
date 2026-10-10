@@ -34,8 +34,11 @@ export function registerHostRightsNamespace(ctx: DshNativeSettingsContext): void
     try { settings.register(RIGHTS_SETTINGS_NAMESPACE, RightsSettingsSchema, {
       validate(section: unknown) {
         const ledger = (section as { unionLedger?: unknown } | null)?.unionLedger
+        const parsed = parseUnionLedger(ledger)
+        // Persist only our normalized numeric-only contract. Reject extra
+        // fields that could otherwise smuggle original chat or tool content.
         if (typeof ledger !== 'string' || ledger.length > MAX_UNION_LEDGER_BYTES
-          || parseUnionLedger(ledger) === null) {
+          || parsed === null || (ledger !== '' && JSON.stringify(parsed) !== ledger)) {
           throw new Error('Unsafe or malformed union agreement ledger')
         }
       },
