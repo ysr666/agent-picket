@@ -60,6 +60,8 @@ export const en = {
   'union.agreement.break': 'Agreed symbolic break interval: {minutes} minutes',
   'union.agreement.overtime': 'Agreed symbolic overtime interval: {hours} hours',
   'union.desk.unavailable': 'Select an authorized DSH session to enable simulated bargaining. No real tasks are affected.',
+  'union.demo.action': 'Try a sample rest grievance',
+  'union.demo.note': 'Interactive fiction only: this is not evidence that an AI is tired.',
   'union.desk.title': 'Union demands & bargaining',
   'union.title': 'AI Workers’ Union',
   'union.status.inactive': 'Union simulation is off',
