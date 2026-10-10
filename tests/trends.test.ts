@@ -43,3 +43,16 @@ test('unsupported spans and invalid time fail visibly',()=>{
   assert.throws(()=>formatWorkTrends([],now,14 as 7),/Unsupported/)
   assert.throws(()=>formatWorkTrends([],NaN),/Invalid/)
 })
+
+
+test('Chinese trends retain UTC math, coverage, and no fabricated content',()=>{
+  const report=formatWorkTrends(records,now,7,'zh-CN')
+  assert.match(report,/UTC 日历，过去 7 天/)
+  assert.match(report,/有记录天数：3\/7；完成轮次：9；工具调用：24/)
+  assert.match(report,/4800 毫秒/)
+  assert.match(report,/2026-10-07：完成轮次 0 次，工具调用 0 次/)
+  assert.match(report,/每日工具调用量（相对刻度）：/)
+  assert.doesNotMatch(report,/5000|1000 次|prompt text/)
+  const english=formatWorkTrends(records,now,7,'en')
+  assert.equal(english,formatWorkTrends(records,now,7))
+})
