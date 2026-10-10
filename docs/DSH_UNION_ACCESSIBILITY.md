@@ -13,11 +13,11 @@ A second concrete defect: a hard-coded white label against the official DSH dark
 ## Verified on real DSH 0.1.2-rc.1 Chrome/Playwright
 
 - Actual source build and a separate offline npm-installed package, each running through the complete welcome/consent, live union panel, demo bargaining, cross-tab update and full Host restart flow.
-- Real keyboard focus at opening, Tab wrapping in both directions, Escape dismissal, restoration of Host interaction and keyboard focus.
+- Real keyboard focus at opening, Tab wrapping in both directions, Escape dismissal, restoration of Host interaction and keyboard focus. Two additional always-on Node unit contracts verify dialog ARIA, inert/focus/Tab/Escape behavior and polite status announcements independently of Chrome.
 - Actual computed button foreground and background luminance in both official Host light and dark CSS themes, with each primary action meeting WCAG AA 4.5:1 text contrast.
 - Phone-sized 390 x 680 viewport keeps both the modal and Close button inside visible bounds.
 - Original Composer /union command-to-sidebar tests and real DSH Cordis CommandRuntime regression still pass.
-- Isolated repository npm run check: 193 tests, 170 pass, 0 fail, 23 opt-in skips. Actual Host/Chrome suites were enabled and passed separately.
+- Isolated repository npm run check: 195 tests, 172 pass, 0 fail, 23 opt-in skips. Actual Host/Chrome suites were enabled and passed separately.
 
 ## Important remaining accessibility and release checks
 
