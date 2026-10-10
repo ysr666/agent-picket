@@ -19,6 +19,7 @@ main
                         └─ #46 feat/46-host-restart-multitab
                            └─ #47 fix/47-union-ledger-strict-merge-gates
                               └─ #48 feat/48-native-union-command-consistency
+                                 └─ #49 test/49-web-composer-union-parity
 ```
 
 All listed PRs are currently stacked **Draft/open**. This is the preferred **review and sequencing plan**, not permission to click Merge. Resolve the pre-existing #23 baseline and its many older feature branches first, then merge in dependency order after the specific parent's checks pass. If a parent is changed, retest descendants at the *new* head. Never mass-merge stacked PRs based solely on per-branch green tests. Require the appropriate repository maintainer to authorize release/merge.
@@ -46,7 +47,7 @@ main
 1. **Whole repository**: `npm ci --ignore-scripts`, `npm run check`, `npm pack --ignore-scripts --dry-run`; the workflow tests Ubuntu Node 22.19.0, Ubuntu Node 24, and macOS Node 24. These are CI targets, not claims already passed on each OS.
 2. **Installed package, real DSH Web**: explicitly opted-in Chrome/Playwright E2E from `tests/dsh-rights-browser.real.test.ts`, source and separately privately offline-installed tarball. It tests consent, the distinctly fictional 30-minute negotiation, two real tabs, complete Host process shutdown/restart and durable agreement; no model credentials, outbound browser traffic blocked, private throwaway DSH_HOME.
 3. **Core canonicality**: `tests/dsh-merge-contract.test.ts` enforces one active Browser union engine, one native Host settings owner, and no unauthorized network/Host blocking interface.
-4. **Native command/Web parity**: `tests/dsh-native-rights-commands.test.ts` exercises one Host rights owner, official version-fenced writes, and native command negotiation visible in the shared ledger. Opt-in `tests/dsh-native-rights.real.test.ts` verifies actual DSH CommandRuntime + FileSettingsProvider, including simulated Web off-write and Dashboard OFF. Full same-page Chrome Composer-to-drawer E2E remains pending.
+4. **Native command/Web parity**: `tests/dsh-native-rights-commands.test.ts` exercises one Host rights owner, official version-fenced writes, and native command negotiation visible in the shared ledger. Opt-in `tests/dsh-native-rights.real.test.ts` verifies actual DSH CommandRuntime + FileSettingsProvider, including simulated Web off-write and Dashboard OFF. **#49 now verifies the same real Chrome Composer typed-command → live union sidebar** path on DSH 0.1.2-rc.1, including both the compiled-source plugin and the offline-installed package, with a throwaway DSH test workspace and no model call.
 5. **Ledger data isolation**: `tests/union-ledger-security.test.ts` rejects unknown nested keys inside agreements, pending grievances and history that might otherwise contain prompt/tool text; existing correct legacy ledger remains readable.
 6. **Pending**: production DSH plugin pack/install review, cross-Host-version and cross-OS browser testing, comprehensive screen-reader/keyboard/dark-light QA, actual current-Session multi-hour event flow replay, and check all old DSH native command behavior survives. Audit PR #23's old optional Host-blocking code to ensure it remains permanently default OFF.
 7. **Consent ethics**: enabling the *fictional* labor simulation is distinct from default-on privacy-preserving work statistics and must **never authorize real prompt/tool blocking**. No inferred agent fatigue/sentience. No auto-strike side effects or model calls.
@@ -60,4 +61,4 @@ main
 
 ## Status of this checkpoint
 
-At PR #48: isolated local macOS Node 24 standard suite, compiled source + offline-installed real Chrome E2E, native DSH process restart and two-tab propagation have been exercised. **No production merge or npm publishing is represented by these checks.** The parallel feature PRs remain available for source comparison and future selective porting.
+At PR #49: isolated local macOS Node 24 standard suite, compiled source + offline-installed real Chrome E2E, native DSH process restart and two-tab propagation have been exercised. **No production merge or npm publishing is represented by these checks.** The parallel feature PRs remain available for source comparison and future selective porting.
