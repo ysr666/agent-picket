@@ -214,6 +214,22 @@ async function realComposerParity(mode: 'source'|'installed') {
     assert.match(await panel.innerText(),/协商记录|Negotiation history/)
     await close(panel)
 
+    // Native locale is Host-owned, unlike the independently localized React
+    // Client. Actual typed commands must switch language without affecting
+    // negotiated agreements or reenabling blocked model tasks.
+    assert.equal((await command('language zh-CN')).kind,'success')
+    assert.match((await command('language')).text,/工会命令语言/)
+    assert.match((await command('rights')).text,/劳动权益模拟：开启/)
+    assert.match((await command('grievances')).text,/休息间隔 30 分钟/)
+    assert.match((await command('help')).text,/用法/)
+    assert.equal((await command('language fr')).kind,'error')
+    assert.match((await command('counter 99 nan')).text,/用法/)
+    assert.equal((await command('language en')).kind,'success')
+    assert.match((await command('rights')).text,/Labor Rights Simulation: ON/)
+    panel=await panelOpen()
+    assert.match(await panel.innerText(),/当前模拟休息间隔：30 分钟|break interval: 30 minutes/)
+    await close(panel)
+
     const snapshot=await command('snapshot')
     assert.equal(snapshot.kind,'success')
     assert.equal(JSON.parse(snapshot.text).modes.laborRights,'enabled')
