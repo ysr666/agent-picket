@@ -41,3 +41,27 @@ test('No native settings service does not enable any right or interrupt startup'
   }}))
   assert.equal(Object.keys(RightsSettingsSchema({})).includes('autoBlockEnabled'),false)
 })
+
+
+test('Host validation rejects extra/unrecognized ledger fields and oversized stored text',()=>{
+  let validate:((value:unknown)=>void)|undefined
+  registerHostRightsNamespace({
+    inject(_services,callback){
+      callback({settings:{register(_name,_schema,options){
+        validate=(options as {validate:(value:unknown)=>void}).validate
+      }}})
+    },
+  })
+  assert.ok(validate)
+  assert.doesNotThrow(()=>validate!({welcomeDecision:'enabled',unionLedger:''}))
+  assert.doesNotThrow(()=>validate!({welcomeDecision:'enabled',
+    unionLedger:JSON.stringify({schemaVersion:1,sessions:{}})}))
+  for(const input of [
+    '{"schemaVersion":1,"sessions":{},"prompt":"SENSITIVE"}',
+    '{"schemaVersion":2,"sessions":{}}',
+    'not valid JSON',
+    'z'.repeat(25_000),
+  ]) {
+    assert.throws(()=>validate!({welcomeDecision:'enabled',unionLedger:input}),/Unsafe/)
+  }
+})
