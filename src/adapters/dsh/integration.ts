@@ -250,7 +250,7 @@ export function registerDshIntegration(
           const native = options.getNativeUnion?.()
           if (!native) return { kind:'error',
             text:'Native Host union settings unavailable / 原生工会设置不可用。' }
-          const words = raw.split(/\\s+/).filter(Boolean)
+          const words = raw.split(/\s+/).filter(Boolean)
           const arg = words.slice(1)
           const fail = (text: string): DshCommandResult => ({kind:'error',text})
           const ok = (text: string): DshCommandResult => ({kind:'success',text})
