@@ -56,3 +56,9 @@ Human accessibility sign-off, full canonical parent diff/security audit, end-use
 A review found the sidebar-owned Welcome modal already trapped focus and released Host inertness after consent, but did not explicitly restore focus to the persistent Union launcher when its two action buttons were removed. The candidate adds an optional sidebar-only restoreFocus callback and keeps it in a ref, so React rerenders changing callback identity cannot trigger unintended cleanup. It runs only after restoring the previous Host inert state and never when the Host was already inert.
 
 Added automated coverage: two lifecycle unit tests for inert cleanup/focus ownership; and a real isolated DSH Chrome assertion that the background returns to interactive after Not Now. Human VoiceOver/NVDA, native zoom and OS High Contrast remain mandatory NO-GO gates.
+
+## Candidate Host receipt lifecycle gate (after #61; 2026-10-10)
+
+The DSH 0.1.7 Host settings adapter now validates the full mutation receipt **before** publishing it to the official shared mirror and rejects a late result after disconnect, scope teardown, or a newer revision from another tab. New fault-injection tests cover forged success, stale same-revision change, interrupted connectivity, cross-tab supersession, disposal, and valid no-op. See [DSH_017_HOST_RECEIPT_LIFECYCLE_GATE.md](DSH_017_HOST_RECEIPT_LIFECYCLE_GATE.md). This is not proof the real Host ever emits malformed receipts.
+
+**Known open blocker:** [Issue #62](https://github.com/ysr666/agent-picket/issues/62), intermittent *first typed* DSH 0.1.7 Composer command-response timeout. One fresh isolated E2E failed and two separately installed E2Es passed on the candidate. **Do not describe typed Composer 0.1.7 as reliably green until it is root-caused and repeated qualification passes.** Legacy DSH 0.1.2 5/5 and newer real Web/Host CAS 1/1 passed independently. Human accessibility and parent-stack merge review remain separate NO-GO gates.
