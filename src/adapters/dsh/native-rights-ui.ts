@@ -165,7 +165,8 @@ export function createDshUnionComponents(
     const text = (key: MessageKey) => deps.t(key)
     return portal.createPortal(h('div', { style: {
       position:'fixed',inset:0,zIndex:2147483000,display:'flex',alignItems:'center',
-      justifyContent:'center',padding:'20px',background:'rgba(6,12,26,.66)' },
+      justifyContent:'center',padding:'12px',boxSizing:'border-box',
+      overflowY:'auto',background:'rgba(6,12,26,.66)' },
     },
       h('section', { role:'dialog','aria-modal':'true','aria-labelledby':'picket-welcome-title',
         onKeyDown:(event:{key:string,shiftKey:boolean,target:unknown,preventDefault():void})=>{
@@ -176,7 +177,11 @@ export function createDshUnionComponents(
             event.preventDefault();primaryFocus.current?.focus()
           }
         },
-        style:{...card,width:'min(100%, 520px)',boxShadow:'0 18px 65px rgba(0,0,0,.25)'} },
+        // WCAG reflow: at 400% zoom the CSS viewport may be only 320x200.
+        // Keep both consent buttons reachable by scrolling inside the dialog.
+        style:{...card,width:'min(100%, 520px)',boxSizing:'border-box',
+          maxHeight:'calc(100dvh - 24px)',overflowY:'auto',flexShrink:0,
+          boxShadow:'0 18px 65px rgba(0,0,0,.25)'} },
         h('p',{style:{...secondary,fontWeight:700,letterSpacing:'1.5px',margin:'0 0 16px'}},
           'AGENT PICKET · AI WORKERS’ UNION'),
         h('h2',{id:'picket-welcome-title',style:{fontSize:'26px',margin:'0 0 12px'}},
@@ -408,11 +413,12 @@ export function createDshUnionComponents(
       opened && page?portal.createPortal(h('div',{
         style:{position:'fixed',inset:0,zIndex:2147482000,
           background:'rgba(6,12,26,.5)',display:'flex',justifyContent:'center',
-          alignItems:'center',padding:'20px'},
+          alignItems:'center',padding:'12px',boxSizing:'border-box',overflowY:'auto'},
       },h('section',{id:'picket-union-dialog',role:'dialog','aria-modal':'true',
         'aria-label':deps.t('union.title'),onKeyDown:onDialogKeyDown,
         ref:(node:typeof dialog.current)=>{dialog.current=node},
-        style:{...card,width:'min(96vw,800px)',maxHeight:'85vh',overflowY:'auto'}},
+        style:{...card,boxSizing:'border-box',flexShrink:0,
+          width:'min(100%,800px)',maxHeight:'calc(100dvh - 24px)',overflowY:'auto'}},
         h('div',{style:{display:'flex',justifyContent:'flex-end'}},
           h('button',{type:'button',style:quiet,
             'aria-label':deps.t('union.action.close'),
