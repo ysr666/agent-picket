@@ -56,3 +56,14 @@ Agent Picket's normal Composer integration remains pointer-selected in its setup
 ### Genuine keyboard input cross-check
 
 The opt-in test was subsequently strengthened so its keyboard-only branch uses ControlOrMeta+A, Backspace and per-character Playwright keyboard typing of the slash command instead of a single contenteditable fill operation. The initial independent new profile **failed 0/1** before attempting Host RPC: the exact native suggestion had appeared but the candidate list disappeared by the subsequent selection check (no option rows). This shows the race is **not confined to instantaneous fill() events**, but does not prove how a human using a specific screen reader or typing speed would experience it. The default pointer-based Composer parity path still uses its already verified test fixture.
+
+
+## Upstream submission and refined diagnosis (2026-10-10)
+
+- Published the report to the official DSH General Discussion: https://github.com/deepseek-ai/deepseek-harness/discussions/9354. Source-analysis follow-up: https://github.com/deepseek-ai/deepseek-harness/discussions/9354#discussioncomment-18850028.
+- Compared DSH 0.1.7 against upstream master d743267388641bc76f17c45ce8b4c231aed1d32c; package ui-input-trigger reports version 0.2.1-alpha.2. This was source inspection, NOT a runtime test of the newer DSH.
+- Master already includes an explicit test in tests/service.client.spec.ts (around line 1080): Enter during pending refinement is consumed, performs no pick, and KEEPS THE MENU OPEN. Thus this intentional branch alone does NOT explain the observed menu-closed + phase-plain failure.
+- A more precise alternative hypothesis: controller.ts settle() (around lines 562-593) closes the menu before trying execute(outcome, hit.span). The conversation composer beginCommand() has a stale draft revision guard and can refuse an edit, so a stale span could leave a closed menu without a claimed command. This must be directly instrumented upstream, not assumed as the sole root cause.
+- The opt-in keyboard regression now includes privacy-safe structural snapshots immediately before Enter and after a failed command claim (phase, focus, menu existence, option/highlight counts, inertness). Never logs editor text, credentials, raw Session IDs or Host command payloads.
+
+Keyboard-only release qualification remains NO-GO pending upstream resolution and manual screen reader testing.
