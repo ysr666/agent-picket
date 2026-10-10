@@ -1,4 +1,5 @@
 import Schema from '@deepseek-ai/schemastery'
+import { parseUnionLedger, MAX_UNION_LEDGER_BYTES } from '../../product/union-ledger.ts'
 
 /**
  * DSH Host-native durable, version-fenced user settings. One authoritative
@@ -13,6 +14,7 @@ export const RightsSettingsSchema = Schema.object({
 })
 export interface HostRightsSection {
   readonly welcomeDecision: 'unseen' | 'enabled' | 'not-now'
+  readonly unionLedger: string
 }
 export interface DshNativeSettingsContext {
   inject?(services: string[], callback: (ctx: {
@@ -29,7 +31,15 @@ export function registerHostRightsNamespace(ctx: DshNativeSettingsContext): void
     // Preserve normal Agent execution and never grant fictional consent in that case.
     const settings = child?.settings
     if (typeof settings?.register !== 'function') return
-    try { settings.register(RIGHTS_SETTINGS_NAMESPACE, RightsSettingsSchema) }
+    try { settings.register(RIGHTS_SETTINGS_NAMESPACE, RightsSettingsSchema, {
+      validate(section: unknown) {
+        const ledger = (section as { unionLedger?: unknown } | null)?.unionLedger
+        if (typeof ledger !== 'string' || ledger.length > MAX_UNION_LEDGER_BYTES
+          || parseUnionLedger(ledger) === null) {
+          throw new Error('Unsafe or malformed union agreement ledger')
+        }
+      },
+    }) }
     catch { /* Host settings unavailable: UI remains OFF/read-only */ }
   })
 }
