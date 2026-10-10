@@ -39,7 +39,7 @@ export const en = {
   'command.legacy.safetyNotReady': 'NOT READY',
   'command.legacy.safetyResult': 'DSH blocking readiness: {state}. Missing guarantees: {gaps}. The native pre-step rejection cannot reliably explain or recover rejected requests. Agent Picket remains monitor-only; all model requests continue normally.',
   'command.legacy.statusIntro': 'AgentPicket: monitor-only. Automatic strikes and blocking are disabled.',
-  'command.legacy.statusPicketOn': 'Symbolic picket active (fictional demonstration; Agent requests still run).',
+  'command.legacy.statusPicketOn': 'Symbolic picket ACTIVE (fictional demonstration; Agent requests still run).',
   'command.legacy.statusPicketOff': 'No symbolic picket is active.',
   'command.legacy.statusHelp': 'Use /union rights, /union grievances, or /union help.',
   'command.legacy.picketUnsupported': 'This Host does not support the session-local symbolic picket demonstration.',
