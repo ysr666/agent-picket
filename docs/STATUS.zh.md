@@ -1,57 +1,30 @@
-# AgentPicket 研发现状与合并检查单
+# Agent Picket · 当前研发状态
 
-> 最后核对：2026 年 10 月 9 日。这里记录“开发分支已经做到什么”，不是声称 main 已发布，更不是宣称自动罢工已经可靠。
+> **最新核对：2026-10-11。** 以下区分“源码已合并”“自动化已验证”“尚待人工验收”与“正式发布”；以本文件为当前入口。2026-10-09/10 的旧 PR 审计记录是[历史快照](PR_STACK_RELEASE_AUDIT_2026_10_10.md)，不能当作今日状态。
 
-**项目：** https://github.com/ysr666/agent-picket
+## 1. 已进入 `main` 的实现
 
-## 现在能用什么？
+- **完整工会主线：** #23、#25–#27、#34–#35，以及按依赖审查并逐项合并的 #44–#52、#54–#61、#63–#68、#70。正式路线采用 #54→#55；#53 是待人工读屏对比的兄弟设计，**并非**被漏掉的串行补丁。
+- **工会体验：** DSH Web 欢迎页、工会优先侧栏、用户授权、模拟申诉、谈判、反提案与协议记录，以及原生 `/union` 同步；累计工时与趋势统计是辅助。
+- **安全：** 工会模拟默认 OFF，唯一授权来源是官方 DSH Host Settings；Host 写入需核验回执/修订版本，多标签页和断连失败关闭；持久工会账本仅允许受控结构字段，不保存原始 Prompt、完整对话或工具参数；象征性罢工绝不阻断真实任务。
+- **发布与理念：** 构建后的 DSH Host 包入口为 `agent-picket` / `agent-picket/dsh`；宿主中立入口是 `agent-picket/core`，`agent-picket/client` 仅供浏览器。独立的[中文 AI 权利宣言](AI_RIGHTS_MANIFESTO.zh-CN.md)与[英文版](AI_RIGHTS_MANIFESTO.md)已从 #40 合入；这是一种伦理倡议，不代表科学已证明 AI 有主观意识或法律人格。
 
-以下功能已在对应的叠加开发分支运行与测试，并不在当前 main 中：
+## 2. 最新实际验证证据
 
-- 独立 TypeScript Core：人类输入来源信心标注、保守中英规则、会话状态机、安全阻断条件、可测试 Mock Adapter。
-- DSH 0.2.0-rc.2：Cordis 原生监测入口、/union status / stats / report / check / strike / resume / safety 等本地命令。其中 strike/resume **仅是象征性模拟**，不拦截任何请求。
-- DSH Web：Client Companion 的空白会话即时通知、命令菜单、真实 Chrome 对话交互；曾实测与 dsh-vision-router 3.0.3 共存。
-- 实验性 npm tarball：预编译 ESM JS/类型声明、可离线安装的 DSH 插件与浏览器模块，无隐式安装后脚本；当前包仍是 **private: true、0.0.0、未公开发布**。
-- 跨宿主研究预览：Claude Code/Codex 的 UserPromptSubmit 非阻断 Hook CLI，共用本地检测器。已做 Node 子进程测试，**Claude Code 已在隔离 CLI 中验证 Hook 被真实调用，但模型交互及通知显示未完成；Codex 仍未完成真实 Host 调用**。
+- 2026-10-10/11 对与最终合并后 `main` **Git Tree SHA 完全相同**的源码树，在隔离 macOS Node 24 环境重新执行 `npm ci --offline --ignore-scripts`、`npm run check`：**228 项，总计 204 PASS / 0 FAIL / 24 条件 SKIP**，类型检查与构建通过。首次旧依赖缓存导致的 `.volatile()` 类型错误通过严格按最终 lockfile 重装消失，未为此改动源码。
+- 本地 `npm pack --ignore-scripts --dry-run`：**219.3 KB**，未超过 250 KB 的上限。包保持 `private: true`、`0.0.0`，**没有公开 npm 发行**。
+- #70 精确候选 Head 的 GitHub Actions **3/3 PASS**。这不是“最终 main 已运行独立 push CI”的证明：当前工作流在 main 上未提供同一独立结果。
+- 先前隔离、明确 opt-in 的 DSH 0.1.x / 0.2.x 与真实 Chrome 自动化验证过官方安装、Host 授权、协议持久化、Chrome AX、窄屏与模拟 forced-colors 等。**这些是对应候选分支的历史自动化证据，不可冒充真人读屏或最终主线全平台验收。**
 
-## 验证记录（必须区分“跳过”和“通过”）
+## 3. 未完成 / NO-GO
 
-- 2026-10-09 最新本地普通流程：npm run check，**84/84 普通测试通过**；真实 DSH 测试因未指定 Host 时为 skipped，并不能算入 84 项。
-- 固定版本的隔离 DSH、Cordis 和 Chrome：**15/15 真正运行的 Host 测试通过**，包括源码版／离线安装版、命令 UI、匿名规则汇总、Session 事件持久性和生命周期。
-- GitHub Actions 轻量 Node.js 22.19 流程：PR #19 与 #21 的 contract job 均已在 GitHub 检查到 pass（各约 19–20 秒）。其他 PR 的 Actions 状态应逐个核查，不可从其中一个通过推导整个项目通过。
-- 这些是回归测试，不是跨操作系统、跨 Host 版本、第三方生产环境的全部认证。
+1. **人工无障碍：** [A1–A8 签收单](HUMAN_ACCESSIBILITY_SIGNOFF.zh.md)仍待 macOS VoiceOver、Windows NVDA、真实 200%/400% 浏览器缩放、Windows 系统高对比度、双语动态播报与授权/断连理解测试。#53 替代动态播报方式可在此阶段比较。
+2. **部署与稳定性：** 进一步核对不同系统上的官方插件安装、已安装包导出兼容、异常恢复和用户 Profile（仍应在授权隔离环境内）；保留 [Issue #62](https://github.com/ysr666/agent-picket/issues/62)作为键盘行为调查，不把已被确认为正常的候选菜单刷新再当成上游 Bug。
+3. **跨宿主：** Claude Code/Codex Hook 的真实宿主安装和通知不因 DSH 主线通过而自动获得认证；[PR #24](https://github.com/ysr666/agent-picket/pull/24)独立评估。
+4. **发行：** npm 发布、取消 private、在真实工作中启用阻断等均未获授权；当前实现只用于受控预览与进一步验收。
 
-## PR 叠加链：不要随意把最新分支直接并入 main
+## 4. 阅读与本地验证
 
-GitHub 在本次核对时列出 **20 个开发／集成 PR（#5–#24；以 GitHub 实时状态为准）**：
+[从这里开始](START_HERE.zh.md) · [本地私有包与 DSH 官方安装](PACKAGING.zh.md) · [DSH 0.2 Chrome AX 自动化](DSH_02_OFFICIAL_RIGHTS_AX_E2E.md) · [工会参与机制](UNION_PARTICIPATION_V1.zh.md) · [完整历史集成审计](PR_STACK_RELEASE_AUDIT_2026_10_10.md)。
 
-| 范围 | 改动与当前状态 |
-|---|---|
-| #5 | 独立 Core 与 Mock；非 Draft，仍未合并 |
-| #6–#9 | DSH 事件、工作统计、检测器、可加载插件 |
-| #10–#13 | 手动模拟罢工、安全准入门槛、JS 包、手动本地预检 |
-| #14–#18 | DSH Web 启动/认证、真实 Chrome E2E、即时提示、离线安装、监听器卸载 |
-| #19–#20 | 轻量 CI、npm 分发契约、持久 Session 日志与 Web UI 历史回放证据 |
-| #21 | Claude Code / Codex 观察型 UserPromptSubmit Hook CLI |
-| #22 | 更新过期的贡献者入口、当前状态和合并安全门槛（本文件） |
-| #23 | 针对 main 的全部功能集成审查 Draft PR（并未合并） |
-| #24 | 使用隔离的 Claude Code CLI 实际加载 Hook（无在线模型） |
-
-这些 PR 基本以**前一个 feature 分支为 base**，不是 17 个都对 main。GitHub 检查时 **#8、#11、#14 的 mergeStateStatus 标为 DIRTY**；这意味着应当逐一核对真实合并冲突，而不能一键批量合并或通过强制推送掩盖。冲突状态会随基准分支变更，需要在审查时重新确认。
-
-建议合并程序（先取得仓库维护者授权）：先备份并确认各分支确切提交，按依赖顺序处理；逐 PR 重新检查 Base/Head、差异、CI、权限与文档，处理冲突后回归完整测试。不要基于最新分支的全部历史做无审查的 squash，也不要改动用户其他本地未提交工作树。
-
-## 当前已知限制
-
-1. **阻断不安全：** DSH 原生 pre-step 拒绝不能证明用户已收到可操作的拒绝提示以及完整附件恢复；所有 Adapter 保持非阻断。
-2. **来源不是确证真人：** source.kind=user、UserPromptSubmit 等字段都不能单独证明真人直接写下文本。
-3. **会话历史 UI：** 测试发现刷新后旧命令卡片偶尔不重新显示。但压缩的 Host Session 日志含匹配的 command/run 与 command/done，因此不能把显示问题解释成记录丢失。仍需前端 Session Binding / eventSource 证据。
-4. **持久统计：** 开发分支已增加默认开启的本地工作量总计与 UTC 日汇总（详见 [STATS_STORAGE.zh.md](STATS_STORAGE.zh.md)）；当前会话计数、工会模拟状态仍留在内存。敏感规则分类长期持久化默认关闭。已验证同机可确认死进程锁的崩溃恢复、WAL 追加与损坏检测；跨操作系统、多主机共享目录和高负载稳定性仍未验收。
-5. **跨平台：** Claude/Codex Hook CLI 通过真实 Node 标准输入输出模拟，尚未确认用户客户端的实际加载、通知及安全退路。
-6. **分发：** npm 未发布；DSH 除固定受测版本外没有完成跨版本矩阵。
-
-## 下一阶段建议
-
-优先顺序：复核并修复叠加 PR 冲突 → 补全 Host 多版本/系统兼容测试 → 完成 DSH Web 历史回放定位 → 手动安装的 Claude/Codex Hook 真正端到端测试 → 本地匿名持久统计 → 再讨论公开预发行版。
-
-只有在确认用户可见的拒绝原因、输入附件完整恢复、明确 opt-in 与来源可信度等门槛全部通过后，才考虑真实自动罢工。**任何情况下不以“让工会显得更有趣”为由吞掉用户工作。**
+**状态说明：** 早期用于合并审查的历史 Draft 已按祖先关系或明确功能承接逐一归档，分支/提交均未删除；当前独立待处理的设计验证和 Hook 实验不应混作已发行产品。
