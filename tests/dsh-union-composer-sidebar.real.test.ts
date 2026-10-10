@@ -226,8 +226,26 @@ async function realComposerParity(mode: 'source'|'installed', selection: 'pointe
           throw new Error('Native /union option disappeared before keyboard selection: '
             +JSON.stringify(await keyboardStructure()),{cause:error})
         }
+        // A previously visible option can become a pending/loading shell
+        // during DSH's asynchronous candidate refresh. Waiting for a real
+        // ready DOM row is a test setup observation, NOT a command retry.
+        // MenuView only renders role=option rows for ready groups.
+        try {
+          await page.waitForFunction(()=>{
+            const doc=(globalThis as any).document
+            const menu=doc.querySelector('[data-trigger-menu]')
+            const rows=[...(menu?.querySelectorAll('[role="option"]')??[])]
+            return rows.length>0 && rows.length<100 &&
+              rows.some((row:any)=>row.textContent?.includes(
+                'Show local union status and work statistics'))
+          },undefined,{timeout:12_000})
+        } catch(error) {
+          throw new Error('Native /union options did not return to ready state: '
+            +JSON.stringify(await keyboardStructure()),{cause:error})
+        }
         const count=await options.count()
-        assert.ok(count>0 && count<100,'Bounded native DSH slash candidate list')
+        assert.ok(count>0 && count<100,
+          'Native /union candidate rows disappeared again during keyboard selection')
         for(let i=0;i<count && await target.getAttribute('aria-selected')!=='true';i++) {
           await editor.press('ArrowDown')
         }
@@ -373,13 +391,14 @@ test('real DSH Chrome Composer → union sidebar parity: offline-installed packa
   skip:missing,timeout:110_000,
 },()=>realComposerParity('installed'))
 
-// Intentionally opt-in: real DSH 0.1.7-rc.2 menu Enter intermittently drops
-// an already highlighted command while its candidate source refreshes. This
-// is a release blocker (Issue #62), NOT a passing generic CI requirement.
-// Unlike the stable pointer-selection E2E, this test exercises EVERY command
-// with arrow-key selection + Enter, and fails before RPC if claim is absent.
+// Intentionally opt-in: actual keyboard-only Composer selection is a
+// separate release qualification, not a passing generic CI requirement.
+// DSH may transiently have no rows while its source is pending; wait for
+// the ready option before navigating. Unlike pointer-picked parity, this
+// test uses ArrowDown + Enter for every command and fails if claim is absent.
+// A historical no-claim report (Issue #62) remains under investigation.
 test('real DSH Chrome KEYBOARD slash-menu → union Host parity (Issue #62)', {
   skip:missing || (process.env.PICKET_RUN_DSH_KEYBOARD_E2E!=='1'
-    && 'DSH 0.1.7 keyboard-only menu regression: opt in explicitly'),
+    && 'Real DSH keyboard-only release gate: opt in explicitly'),
   timeout:150_000,
 },()=>realComposerParity('installed','keyboard'))

@@ -67,3 +67,10 @@ The opt-in test was subsequently strengthened so its keyboard-only branch uses C
 - The opt-in keyboard regression now includes privacy-safe structural snapshots immediately before Enter and after a failed command claim (phase, focus, menu existence, option/highlight counts, inertness). Never logs editor text, credentials, raw Session IDs or Host command payloads.
 
 Keyboard-only release qualification remains NO-GO pending upstream resolution and manual screen reader testing.
+
+
+## Later verification correction: current DSH pending candidate is not necessarily a defect
+
+When the DSH 0.2 real Chrome keyboard E2E waited for an actual ready-rendered `role=option` row **immediately before** ArrowDown/Enter, both 0.2.0-rc.2 and 0.2.1-alpha.2 passed **12/12 independent full installed-profile tests each** (batches 4/4 + 8/8). The previous pre-Enter zero-row checks were susceptible to normal asynchronous `pending` rendering and **do not prove a current-version bug**. Historical after-Enter `plain` traces remain data points, but at least one had zero candidates before Enter, and no unique DSH root cause is confirmed. The earlier title/diagnosis in this historical report must be read subject to this correction; do not quote it alone as proof that current DSH versions are broken.
+
+Full detail: [DSH_02_MENU_REFRESH_READY_REVIEW.md](DSH_02_MENU_REFRESH_READY_REVIEW.md); upstream Discussion #9354 should reflect the same correction.

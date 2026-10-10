@@ -81,3 +81,6 @@ main
 ## Status of this checkpoint
 
 At the #54 base: isolated local macOS Node 24 standard suite, compiled source + offline-installed real Chrome E2E, native DSH process restart and two-tab propagation have been exercised. **No production merge or npm publishing is represented by these checks.** The parallel feature PRs remain available for source comparison and future selective porting.
+
+
+**Further stacked Draft candidate (2026-10-10):** `test/67-keyboard-option-ready-gate-20261010` is based on `test/66-dsh-02-current-release-keyboard-matrix-20261010` and corrects an E2E sampling race between visible slash suggestions and ready candidate rows. This branch changes only tests and release-evidence documentation; it does not change Agent Picket production consent, Host command handling, or DSH. Review its actual GitHub PR base/head rather than inferring ancestry from this sentence.
