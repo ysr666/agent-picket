@@ -126,7 +126,7 @@ export function createDshUnionComponents(
     return version
   }
 
-  function Welcome(props: { complete: () => void }): unknown {
+  function Welcome(props: {complete: () => void; restoreFocus?: () => void}): unknown {
     const state = useRight()
     useLanguage()
     const [busy, setBusy] = react.useState(false)
@@ -134,6 +134,11 @@ export function createDshUnionComponents(
     const finished = react.useRef(false)
     const primaryFocus = react.useRef<{ focus(): void } | null>(null)
     const secondaryFocus = react.useRef<{ focus(): void } | null>(null)
+    // A sidebar-invited dialog must return focus to its persistent launcher.
+    // Keep this callback in a ref: SidebarAction supplies a new function on
+    // re-render, and effect teardown must NOT run merely because it changed.
+    const restoreFocus = react.useRef(props.restoreFocus)
+    restoreFocus.current = props.restoreFocus
     const complete = () => {
       if (finished.current) return
       finished.current = true
@@ -149,7 +154,13 @@ export function createDshUnionComponents(
       const previous = root?.inert ?? false
       if (root) root.inert = true
       primaryFocus.current?.focus()
-      return () => { if (root) root.inert = previous }
+      return () => {
+        if (root) root.inert = previous
+        // Only restore when our dialog was the owner that made the app inert.
+        // DSH's settings.onboarding controls its own focus and does not pass
+        // restoreFocus; never pull focus out of an already-inert Host root.
+        if (!previous && !root?.inert) restoreFocus.current?.()
+      }
     }, [mode])
     const page = (globalThis as { document?: { body: unknown } }).document
     if (mode !== 'invite' || !page) return null
@@ -430,7 +441,10 @@ export function createDshUnionComponents(
         onClick:()=>setOpened(v=>!v),
         style:{...quiet,padding:'9px 12px',fontWeight:650}},
         props.wide?'⚑ '+deps.t('union.title'):'⚑'),
-      showInvitation?h(Welcome,{complete:()=>{ /* consent readback hides this on next update */ }}):null,
+      showInvitation?h(Welcome,{
+        complete:()=>{ /* Host readback hides this on next update */ },
+        restoreFocus:()=>opener.current?.focus(),
+      }):null,
       opened && page?portal.createPortal(h('div',{
         style:{position:'fixed',inset:0,zIndex:2147482000,
           background:'rgba(6,12,26,.5)',display:'flex',justifyContent:'center',
