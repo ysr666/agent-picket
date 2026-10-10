@@ -7,7 +7,7 @@ import { createHash, randomBytes } from 'node:crypto'
 import { createLaborDesk, parseLaborState, type LaborStateV1 } from '../../product/union-desk.ts'
 import { MAX_UNION_LEDGER_BYTES, MAX_UNION_SESSIONS, parseUnionLedger } from '../../product/union-ledger.ts'
 import {
-  formatMessage, resolveLocale,
+  en, formatMessage, resolveLocale,
   type SupportedLocale, type LocalePreference,
 } from '../../i18n/index.ts'
 
