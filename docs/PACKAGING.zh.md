@@ -8,8 +8,9 @@ DSH 的独立插件可以使用 Node.js/Cordis 原生插件机制加载。开发
 
 AgentPicket 提供编译好的 JavaScript 入口，不需要消费者安装 TypeScript、不需要 postinstall、也无需修改 DSH 核心：
 
-- `agent-picket` / `agent-picket/core`：宿主中立 Core；
-- `agent-picket/dsh`：DSH/Cordis 插件入口；
+- `agent-picket` / `agent-picket/dsh`：**DSH/Cordis Host 插件入口**，两者是同一入口；
+- `agent-picket/core`：**宿主中立 Core**，不能把包根入口当成 Core；
+- `agent-picket/client`：**仅供 DSH Web 浏览器加载**，直接在 Node/SSR 中导入会因缺少 `window` 失败；
 - `dist/**/*.d.ts`：对应类型声明；
 - 包内不存在 `src`、`tests`、`node_modules`、测试 Mock Adapter。
 
@@ -22,8 +23,10 @@ Core 仍是独立代码；引入 Cordis 的只有专门的 DSH Adapter。
 ```sh
 git clone https://github.com/ysr666/agent-picket.git
 cd agent-picket
-# PR #12 合并到 main 之前，使用构建预览分支：
-git switch feat/distributable-preview
+# 当前 main 尚无完整工会。只能检出准备审查的最新 Draft Head，示例：
+git fetch origin test/67-keyboard-option-ready-gate-20261010
+git switch --detach FETCH_HEAD
+# 此分支是实验候选，不代表已发布或适合安装到真实用户配置。
 
 npm ci
 npm run check
@@ -85,7 +88,7 @@ AGENT_PICKET_DSH_BIN=/path/to/dsh/bin/dsh \
 npm run test:dsh:real
 ```
 
-尚未完成：npm 官方公开发布、DSH Web UI 正式兼容测试、多版本/多系统矩阵、跨进程统计持久化以及完整安全的自动阻断。
+尚未完成：npm 官方发布授权、**DSH 0.2 新版首次授权场景的完整浏览器无障碍验收**、真人 VoiceOver/NVDA 与真实缩放、正式主线合并及多平台一致性验证。自动阻断不在当前发行范围；不应当把它列作即将打开的功能。
 
 ## 五、安全与卸载
 
@@ -98,3 +101,20 @@ npm run test:dsh:real
 ## 已追加：完整 Web 包安装测试
 
 现在还通过了本地 tarball **离线安装后在真实 DSH Web 中启动 Chrome** 的端到端测试，并分别在源码加载版和安装包版验证了多标签页、浏览器刷新、空白会话即时通知。详见 [DSH_PACKAGED_WEB_E2E.zh.md](DSH_PACKAGED_WEB_E2E.zh.md)。
+
+## 当前 DSH 0.2 官方插件安装方式（隔离 Profile）
+
+前面的 `sdk-minimal`/手动 patch 示例保留给研究用途。对已测试的 DSH 0.2 Web，**优先使用 DSH 官方 `plugin --profile web add`**，不要误以为必须手工编辑系统补丁文件：
+
+```sh
+# 先独立安装并检查 DSH 版本，不要覆盖现有用户 DSH。
+DSH_BIN=/absolute/path/to/isolated/node_modules/.bin/dsh
+PACK=/tmp/agent-picket-dist/agent-picket-0.0.0.tgz
+TEST_HOME="$(mktemp -d /tmp/agent-picket-test-home-XXXXXXXX)"
+DSH_HOME="$TEST_HOME" "$DSH_BIN" plugin --profile web add "$PACK"
+DSH_HOME="$TEST_HOME" "$DSH_BIN" plugin --profile web list
+```
+
+安装测试使用临时 `DSH_HOME` 和编译后的本地 tarball，**不连接真实模型，不覆盖已有 Profile**。只有在独立 Host + 浏览器运行时经过验证之后，才可进入 Web UI 测试。删除测试目录前务必结束它自己的 DSH 进程，避免误删正在使用的数据。
+
+导出兼容性：`agent-picket` 和 `agent-picket/dsh` 是 DSH Host 插件；`agent-picket/core` 才是无 Host 依赖的核心库；`agent-picket/client` 只能由 DSH Web 浏览器加载，Node/SSR 中导入 `window is not defined` 不属于受支持行为。更完整的分支依赖、人工无障碍缺口和隐私审计见 [合并及发布审计](PR_STACK_RELEASE_AUDIT_2026_10_10.md)。
