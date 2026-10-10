@@ -73,7 +73,7 @@ async function realComposerParity(mode: 'source'|'installed') {
     // Do not log output: a one-time authentication token is present.
     let output = ''
     for(const stream of [child.stdout,child.stderr])
-      stream.on('data',(buf:Buffer)=>{output=(output+buf.toString('utf8')).slice(-24_000)})
+      stream?.on('data',(buf:Buffer)=>{output=(output+buf.toString('utf8')).slice(-24_000)})
     let tokenUrl:string|undefined
     for(let i=0;i<160;i++){
       tokenUrl=output.match(/http:\/\/127\.0\.0\.1:\d+\/\?token=[A-Za-z0-9_-]+/)?.[0]
