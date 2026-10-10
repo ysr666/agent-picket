@@ -47,3 +47,9 @@ These are automated samples, **not proof of zero flakiness** across hardware, OS
 3. No automatic replays of user commands, default-on rights simulation, real prompt/tool blocking, second consent owner, raw Session ID/transcript storage, or npm publication without explicit authorization.
 
 This document and test should **not** be used to turn Issue #62 into a closed issue or release approval.
+
+## Later keyboard-only evidence, intentionally distinct from pointer parity
+
+An opt-in **pure keyboard** E2E was added as a separate test rather than silently switching the previously stable pointer-picked parity test. With official DSH 0.1.7 slash menu Enter, it demonstrated **2/3 pass, 1/3 fail before RPC** despite waiting for a real visible highlighted `/union` row and the official `claimed` state. One additional opt-in run passed, so the defect is intermittent. The test remains off by default and must be run independently for release. Its full issue-ready report is [DSH_017_KEYBOARD_ENTER_UPSTREAM_REPRO.md](DSH_017_KEYBOARD_ENTER_UPSTREAM_REPRO.md). The earlier 4/4 **pointer** runs are still real command tests, but must never be relabelled as keyboard-only evidence.
+
+A later control also replaced the keyboard test's slash-token `fill` with per-character keyboard entry, and **1/1 separate trial still failed before RPC** when the candidate list was replaced asynchronously. See the upstream report for the exact limitation.
