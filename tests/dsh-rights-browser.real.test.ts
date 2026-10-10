@@ -66,7 +66,7 @@ test('real Chrome: AI Rights welcome, opt-out, union-first panel and durable opt
     })
   }
 
-  let browser: { close(): Promise<void> } | undefined
+  let browser: any
   try {
     let secretUrl: string | undefined
     for (let i = 0; i < 160; i++) {
@@ -86,7 +86,7 @@ test('real Chrome: AI Rights welcome, opt-out, union-first panel and durable opt
       args: ['--no-proxy-server', '--no-first-run', '--disable-background-networking',
         '--disable-sync', '--disable-extensions'],
     })
-    const context = await chromium.newContext({
+    const context = await browser.newContext({
       viewport: { width: 1280, height: 850 },
     })
     await context.addCookies([{
