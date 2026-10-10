@@ -53,3 +53,14 @@ Master `d7432673` with `ui-input-trigger` version 0.2.1-alpha.2 contains an **in
 ## Release blockers
 
 A fail-closed upstream keyboard Enter fix or independently validated accessible alternative; repeated tests on the exact proposed shipping DSH release; physical NVDA/VoiceOver, native 200%/400% browser zoom and Windows OS High Contrast; full canonical stacked Draft PR review and package-root import compatibility; and explicit maintainer approval. No merge to `main`, npm publish, new Host RPC, real Agent task blocking or optimistic consent.
+
+
+## Correction: distinguish menu refresh from keyboard failure (2026-10-10)
+
+**This section supersedes the earlier interpretation of pre-Enter missing-option counts as confirmed current-version defects.** The installed DSH input-trigger MenuView deliberately renders no `role=option` rows during asynchronous `pending` refinement. Our first E2E waited for a visible option and then immediately made a separate `options.count()` check; the menu could transition to `pending` between those two reads. It was a **test-sampling race**, not enough to establish a production keyboard or Host command failure.
+
+The corrected E2E now waits, with a finite timeout, for an actual *ready rendered* native option before navigating it. It never replays an uncertain command. Two independently installed runs using the corrected gate each passed **4/4 and 8/8** on **DSH 0.2.0-rc.2** and likewise **4/4 and 8/8** on **DSH 0.2.1-alpha.2**: **12/12 valid end-to-end keyboard runs per version, zero failures observed**. Every run used a fresh Web Profile and official local plugin installation. All previous failed runs are retained as historical test evidence, but the two pre-Enter zero-row assertions no longer support a claim of a confirmed current DSH bug.
+
+Older observations of Enter followed by `phase=plain` remain unresolved. In at least one earlier trace the menu had **zero ready option rows immediately before Enter**, so the cause might likewise be refresh timing; a genuine claim/CAS failure from an actually ready highlighted candidate has **not** been conclusively established. We will not close that investigative question solely on a small clean test set. See [DSH_02_MENU_REFRESH_READY_REVIEW.md](DSH_02_MENU_REFRESH_READY_REVIEW.md).
+
+**Do not label default CI or these finite samples as human keyboard/screen-reader certification.** Real manual VoiceOver/NVDA and other release gates remain open.
