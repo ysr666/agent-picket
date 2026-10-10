@@ -19,6 +19,8 @@ export interface DshSettingsScope<T> {
   getSnapshot(): SettingsScopeSnapshot<T>
   subscribe(listener: () => void): () => void
   set(field: string, value: unknown): Promise<void>
+  /** Official DSH settingsScope also owns an async lifecycle disposer. */
+  dispose?(): Promise<void>
 }
 export interface ClientRightsSnapshot {
   readonly state: 'loading' | 'ready' | 'unavailable' | 'invalid'
