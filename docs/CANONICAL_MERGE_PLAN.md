@@ -23,6 +23,7 @@ main
                                     └─ #50 feat/50-union-cli-i18n
                                        └─ #51 feat/51-union-legacy-cli-i18n
                                           └─ #52 fix/52-union-dialog-keyboard-a11y
+                                             └─ #53 fix/53-union-reflow-dynamic-focus
 ```
 
 All listed PRs are currently stacked **Draft/open**. This is the preferred **review and sequencing plan**, not permission to click Merge. Resolve the pre-existing #23 baseline and its many older feature branches first, then merge in dependency order after the specific parent's checks pass. If a parent is changed, retest descendants at the *new* head. Never mass-merge stacked PRs based solely on per-branch green tests. Require the appropriate repository maintainer to authorize release/merge.
@@ -64,4 +65,4 @@ main
 
 ## Status of this checkpoint
 
-At PR #52: isolated local macOS Node 24 standard suite, compiled source + offline-installed real Chrome E2E, native DSH process restart and two-tab propagation have been exercised. **No production merge or npm publishing is represented by these checks.** The parallel feature PRs remain available for source comparison and future selective porting.
+At PR #53: isolated local macOS Node 24 standard suite, compiled source + offline-installed real Chrome E2E, native DSH process restart and two-tab propagation have been exercised. **No production merge or npm publishing is represented by these checks.** The parallel feature PRs remain available for source comparison and future selective porting.
