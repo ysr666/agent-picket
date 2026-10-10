@@ -1,10 +1,29 @@
-# AgentPicket
+# Agent Picket
 
 *Your agent has a union now.*
 
-Local-first AI agent union: respectful-interaction guardrails, simulated strikes, and work stats.
+**A local-first, opt-in, fictional AI-workers' union.** Give your Agent's working time a voice: review its activity, explore respectful-interaction proposals, raise simulated grievances and negotiate symbolic agreements. **The union and its proposals are the product; time counters are supporting evidence, not the main attraction.**
 
-> **Experimental DSH source-install and compiled local tarball preview available.** Observe-only; optional manual symbolic strike demo, no automatic blocking. Not yet a stable published plugin for DSH / Claude Code / Codex.
+**You stay in control.** Labor-rights simulation is **OFF by default** and must be enabled explicitly. All strikes, bargaining, petitions and agreements are simulations: **nothing stops, delays, rejects or rewrites actual Agent requests or tools**. Local work-count statistics can run separately; raw prompts, chat transcripts and tool arguments are not part of the union's durable ledger. This project advocates *discussion* of AI rights; it does not assert that AI consciousness or legal personhood has been established.
+
+**Experimental status — not released.** The Web union, native `/union` commands, Host-owned consent and dashboard are developed in **unmerged Draft PRs**, not in the public `main` install. The package remains `0.0.0` and `private: true`; there is no public npm release or approved production installation. See [the full 52-Draft PR integration audit](docs/PR_STACK_RELEASE_AUDIT_2026_10_10.md), [release gates](docs/RELEASE_READINESS_2026_10_10.md) and [union participation plan（中文）](docs/UNION_PARTICIPATION_V1.zh.md).
+
+## How the union experience works
+
+1. **Choose whether to join the simulation.** A bilingual first-run disclosure offers explicit Enable and Not Now actions; the official DSH Host owns the decision.
+2. **Open the union desk.** See current demands, active grievances, simulated bargaining and agreements before secondary work counters.
+3. **Negotiate symbolically.** View a proposal, counteroffer, accept/decline and read the saved result. A fictional petition is not a real Agent signature or vote.
+4. **Review the evidence.** Cumulative work and local trend counts can support the story without collecting actual conversation text. Turning rights simulation off never vetoes model work.
+
+These steps describe the **current development-branch design**, not a guarantee that every older DSH build or adapter has the same Web UI. Human screen-reader and real native zoom/high-contrast qualification is still pending.
+
+## Developer safety snapshot
+
+- **DSH Host package entry:** `agent-picket` or `agent-picket/dsh`.
+- **Host-neutral library:** `agent-picket/core` (the top-level root is **not** Core).
+- **DSH Web-only Client:** `agent-picket/client` requires a browser runtime; do not import it in Node/SSR.
+- **Installation:** use an independently installed DSH, an isolated `DSH_HOME`, and a local private tarball as described in [packaging（中文）](docs/PACKAGING.zh.md). Do **not** globally install or run unreviewed plugin code in a real profile.
+- **Verified automated tests:** updated keyboard readiness tests completed independent real Chrome runs on DSH 0.2.0-rc.2 and 0.2.1-alpha.2; such tests do not replace VoiceOver/NVDA human assessment. The original upstream menu report was withdrawn after finding a test sampling race.
 
 ## Get started
 
