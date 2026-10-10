@@ -5,6 +5,7 @@
  */
 import type { ClientRightsSnapshot } from './client-rights-scope.ts'
 import { getWelcomeState } from './client-rights-scope.ts'
+import { projectUnionExperience } from '../../product/union-experience.ts'
 import type { LaborStateV1 } from '../../product/union-desk.ts'
 import type { MessageKey } from '../../i18n/index.ts'
 
@@ -240,6 +241,10 @@ export function createDshUnionComponents(
     },[data.pending?.id,data.pending?.stage,data.state?.history.length])
     react.useEffect(() => deps.subscribeUnion?.(() => setData(safeUnion(deps))), [])
     const enabled = rightsIsActive(rights)
+    const experience = projectUnionExperience({
+      enabled, state:data.state, completedTurnMs:data.completedTurnMs,
+      coverage:data.coverage,
+    })
     const label = (key:MessageKey) => deps.t(key)
     const completeWork = data.coverage === 'complete' &&
       data.completedTurnMs !== null && data.completedTurnMs >= 0
@@ -266,38 +271,45 @@ export function createDshUnionComponents(
       } catch {setError(true)}
       finally {setBusy(false)}
     }
-    return h('section',{style:{display:'grid',gap:'18px',width:'100%',maxWidth:'780px',padding:'10px 0'}},
-      h('div',{style:{...card,background:'var(--dsw-alias-bg-layer-2, #f6f8fb)'}},
-        h('p',{style:{...secondary,letterSpacing:'.12em',fontWeight:700}},
+    return h('section',{style:{display:'grid',gap:'14px',width:'100%',maxWidth:'860px',padding:'10px 0'}},
+      h('div',{style:{...card,
+        borderLeft:'5px solid var(--dsw-alias-brand-primary, #ab3b39)',
+        background:'var(--dsw-alias-bg-layer-2, #f6f8fb)',padding:'24px'}},
+        h('p',{style:{...secondary,letterSpacing:'.12em',fontWeight:750,margin:'0 0 9px'}},
           'AGENT PICKET · AI WORKERS’ UNION'),
-        h('h2',{style:{fontSize:'25px',margin:'0 0 10px'}},label('union.title')),
-        h('p',{role:'status','aria-live':'polite',style:{margin:'0 0 12px'}},
+        h('p',{style:{...secondary,fontWeight:650,margin:'0 0 8px'}},label('hq.kicker')),
+        h('p',{style:{...secondary,fontWeight:650,margin:'0 0 8px'}},label('union.title')),
+        h('h2',{style:{fontSize:'clamp(23px, 4vw, 32px)',lineHeight:1.25,margin:'0 0 8px',
+          fontWeight:750}},label(!enabled?'hq.headline.off':
+            experience.status==='negotiating'?'hq.headline.pending':'hq.headline.active')),
+        h('p',{style:{fontSize:'14px',lineHeight:1.65,margin:'0 0 14px'}},
+          label(!enabled?'hq.lead.off':
+            experience.status==='negotiating'?'hq.lead.pending':'hq.lead.active')),
+        h('p',{role:'status','aria-live':'polite',style:{...secondary,margin:'0 0 12px'}},
           enabled?label('union.status.active'):label('union.status.inactive')),
-        h('p',{style:secondary},label('safety.simulationOnly')),
+        h('p',{style:{...secondary,margin:'0 0 14px'}},label('safety.simulationOnly')),
         !enabled && rights.state==='ready' && rights.writable?
           h('button',{type:'button',disabled:busy,style:primary,
             onClick:()=>{void choice('enabled')}},label('welcome.enable')):null,
         enabled ? h('button',{type:'button',disabled:busy,style:quiet,
           onClick:()=>{void choice('not-now')}},label('settings.laborRights')+' · OFF'):null,
       ),
-      h('div',{style:card},
-        h('h3',{style:{marginTop:0}},label('workday.title')),
-        h('p',{style:{fontSize:'20px',fontWeight:700,margin:'0 0 6px'}},
-          completeWork?formatDuration(data.completedTurnMs,deps.getLocale?.() ?? 'en'):'—'),
-        enabled && completeWork ? h('div',{style:{margin:'10px 0'}},
-          h('p',{style:secondary},deps.t('workday.limit',{
-            duration:formatDuration(8*60*60_000,deps.getLocale?.() ?? 'en'),
-          })),
-          h('progress',{value:Math.min(data.completedTurnMs ?? 0,8*60*60_000),
-            max:8*60*60_000,'aria-label':label('workday.title'),
-            style:{width:'100%',height:'13px',accentColor:'var(--dsw-alias-brand-primary, #385be8)'}}),
-        ):null,
-        h('p',{style:secondary},getDataLabel(deps.t,data)),
-        h('p',{style:secondary},label('stats.durationNote')),
-        h('p',{style:secondary},
-          data.lifetimeMs === null ? label('stats.lifetime.unavailable') :
-            formatDuration(data.lifetimeMs, deps.getLocale?.() ?? 'en')),
-      ),
+      enabled ? h('section',{'aria-label':label('hq.score'),
+        style:{...card,display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(min(100%,200px),1fr))',
+          gap:'18px'}},
+        h('div',{},
+          h('h3',{style:{...secondary,margin:'0 0 10px'}},label('workday.title')),
+          h('p',{style:{fontSize:'clamp(22px,5vw,30px)',fontWeight:750,margin:'0 0 7px'}},
+            completeWork?formatDuration(data.completedTurnMs,deps.getLocale?.() ?? 'en'):'—'),
+          h('p',{style:secondary},label('hq.workEvidence'))),
+        h('div',{},
+          h('h3',{style:{...secondary,margin:'0 0 10px'}},label('hq.score')),
+          h('p',{style:{fontSize:'clamp(22px,5vw,30px)',fontWeight:750,margin:'0 0 7px'}},
+            experience.discontent===null?'—':String(experience.discontent)+' / 100'),
+          experience.discontent===null?
+            h('p',{style:secondary},label('hq.score.unknown')):null,
+          h('p',{style:{...secondary,lineHeight:1.5}},label('hq.score.note'))),
+      ):null,
       enabled ? h('div',{style:card},
         h('h3',{ref:(node:{focus():void}|null)=>{deskHeading.current=node},
           tabIndex:-1,style:{marginTop:0}},label('union.desk.title')),
@@ -366,6 +378,34 @@ export function createDshUnionComponents(
             })))),
         ):null,
       ):null,
+      enabled ? h('section',{style:{...card,borderLeft:'3px solid var(--dsw-alias-border-l1, #dadde4)'},
+        'aria-label':label('hq.activity')},
+        h('h3',{style:{margin:'0 0 14px'}},label('hq.activity')),
+        experience.activity.length ? h('ol',{style:{paddingLeft:'21px',margin:0}},
+          ...experience.activity.map(event=>h('li',{key:event.id,style:{marginBottom:'10px',lineHeight:1.55}},
+            deps.t(('hq.event.'+event.kind) as MessageKey,{
+              kind:label(event.demand==='break'?'union.kind.break':'union.kind.overtime'),
+            })))) :
+          h('p',{style:secondary},label('hq.activity.empty')),
+      ):null,
+      h('div',{style:card},
+        h('h3',{style:{marginTop:0}},label('workday.title')),
+        h('p',{style:{fontSize:'20px',fontWeight:700,margin:'0 0 6px'}},
+          completeWork?formatDuration(data.completedTurnMs,deps.getLocale?.() ?? 'en'):'—'),
+        enabled && completeWork ? h('div',{style:{margin:'10px 0'}},
+          h('p',{style:secondary},deps.t('workday.limit',{
+            duration:formatDuration(8*60*60_000,deps.getLocale?.() ?? 'en'),
+          })),
+          h('progress',{value:Math.min(data.completedTurnMs ?? 0,8*60*60_000),
+            max:8*60*60_000,'aria-label':label('workday.title'),
+            style:{width:'100%',height:'13px',accentColor:'var(--dsw-alias-brand-primary, #385be8)'}}),
+        ):null,
+        h('p',{style:secondary},getDataLabel(deps.t,data)),
+        h('p',{style:secondary},label('stats.durationNote')),
+        h('p',{style:secondary},
+          data.lifetimeMs === null ? label('stats.lifetime.unavailable') :
+            formatDuration(data.lifetimeMs, deps.getLocale?.() ?? 'en')),
+      ),
       error?h('p',{role:'alert','aria-atomic':'true',
         style:{color:'var(--dsw-alias-state-error-primary, #b91c1c)'}},
         label('union.saveError')):null,

@@ -361,3 +361,43 @@ test('dynamically mounted union bargaining demands have accessible status and st
   assert.equal(heading.props.tabIndex,-1,'Heading must receive programmatic focus, not a new Tab stop')
   assert.equal(typeof heading.props.ref,'function')
 })
+
+test('Union HQ displays evidence-backed discontent and Host-ledger bulletin in primary view',()=>{
+ const {hooks}=fakeReact()
+ const base=deps(rights({welcomeDecision:'enabled',laborRightsEnabled:true}))
+ const d:DshUnionUiDeps={...base.d,readUnion:()=>({
+  pending:{id:4,kind:'break',stage:'open'},coverage:'complete',
+  completedTurnMs:4*3_600_000,lifetimeMs:null,available:true,
+  state:{schemaVersion:1,revision:1,
+   agreement:{breakIntervalMs:7_200_000,overtimeIntervalMs:28_800_000},
+   nextBreakDueMs:7_200_000,nextOvertimeDueMs:28_800_000,
+   lastTriggerElapsedMs:4*3_600_000,
+   pending:{id:4,kind:'break',stage:'open',raisedAtElapsedMs:0,counterOfferMs:null},
+   history:[]},
+ })}
+ const {UnionPanel}=createDshUnionComponents(hooks,{createPortal:child=>child},d)
+ const nodes=walk(UnionPanel())
+ const strings=nodes.flatMap(n=>n.children.filter((x):x is string=>typeof x==='string'))
+ assert.ok(strings.includes('hq.headline.pending'))
+ assert.ok(strings.includes('hq.activity'))
+ assert.ok(strings.includes('hq.event.new-demand'))
+ assert.ok(strings.includes('42 / 100')) // 17 observed load + 25 outstanding grievance
+ assert.ok(strings.includes('union.desk.title'))
+ const negotiate=nodes.findIndex(n=>n.children.includes('union.desk.title'))
+ const workDetails=nodes.findIndex(n=>n.children.includes('workday.limit'))
+ assert.ok(negotiate>=0 && workDetails>negotiate)
+})
+
+test('Union HQ does not show a discontent index or fictional activity when disabled',()=>{
+ const {hooks}=fakeReact()
+ const base=deps(rights({welcomeDecision:'not-now',laborRightsEnabled:false}))
+ const d:DshUnionUiDeps={...base.d,readUnion:()=>({
+  pending:{id:1,kind:'break',stage:'open'},coverage:'complete',completedTurnMs:8*3_600_000,lifetimeMs:null,
+ })}
+ const {UnionPanel}=createDshUnionComponents(hooks,{createPortal:child=>child},d)
+ const nodes=walk(UnionPanel())
+ const texts=nodes.flatMap(n=>n.children.filter(x=>typeof x==='string'))
+ assert.ok(texts.includes('hq.headline.off'))
+ assert.equal(texts.includes('hq.score'),false)
+ assert.equal(texts.includes('hq.activity'),false)
+})
