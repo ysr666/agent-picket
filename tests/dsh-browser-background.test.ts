@@ -7,7 +7,7 @@ test('live DSH Client monitors complete work in background with drawer CLOSED an
   let value={welcomeDecision:'enabled',unionLedger:''}
   const listeners=new Set<()=>void>()
   const statsListeners=new Set<()=>void>()
-  let writes=0,cleanup:(()=>void)|undefined
+  let writes=0,scopeDisposals=0,cleanup:(()=>void)|undefined
   let eventSource={entries:[
     {type:'event',event:{type:'turn/start',seq:1,time:100}},
     {type:'event',event:{type:'turn/end',seq:2,time:2*3_600_000+100}},
@@ -27,6 +27,7 @@ test('live DSH Client monitors complete work in background with drawer CLOSED an
     settingsScope:{bind:()=>({
       getSnapshot:()=>({status:'ready',mode:'host',writable:true,revision:writes+1,value}),
       subscribe:(fn:()=>void)=>{listeners.add(fn);return()=>{listeners.delete(fn)}},
+      dispose:async()=>{scopeDisposals++},
       set:async(field:string,next:string)=>{
         assert.equal(field,'unionLedger')
         value={...value,unionLedger:next}
@@ -51,6 +52,7 @@ test('live DSH Client monitors complete work in background with drawer CLOSED an
   cleanup!()
   assert.equal(statsListeners.size,0)
   assert.equal(listeners.size,0)
+  assert.equal(scopeDisposals,2)
   assert.equal(writes,1)
   assert.equal(JSON.stringify(value).includes('prompt'),false)
 })
