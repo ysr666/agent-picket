@@ -125,3 +125,20 @@ test('racing asynchronous session hash resolutions cannot cross sessions',async(
   assert.deepEqual(Object.keys(parseUnionLedger(f.get().unionLedger)!.sessions),[keyB])
   d.dispose()
 })
+
+
+test('explicit demo petition is durable without inventing completed work',async()=>{
+  const f=fixture(),d=f.create()
+  await d.setActiveSession('a')
+  assert.equal(d.snapshot().pending,null)
+  const demo=await d.raiseDemoBreak()
+  assert.equal(demo?.kind,'break')
+  assert.equal(demo?.raisedAtElapsedMs,0)
+  assert.equal(d.snapshot().state?.lastTriggerElapsedMs,0)
+  assert.equal(await d.raiseDemoBreak(),null)
+  await d.respond(demo!.id,'accept')
+  assert.equal(d.snapshot().pending,null)
+  assert.equal(d.snapshot().state?.history.at(-1)?.outcome,'accepted')
+  assert.equal(d.snapshot().state?.nextBreakDueMs,2*H)
+  d.dispose()
+})
