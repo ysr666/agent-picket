@@ -29,6 +29,7 @@ main
                                                       └─ fix/dsh-017-host-compatibility-20261010 (experimental Host/profile only)
                                                          └─ fix/dsh-017-client-official-settings-20261010 (Web rights verified, Composer pending)
                                                             └─ fix/dsh017-composer-native-parity-20261010 (Composer parity + real Host CAS proof)
+                                                               └─ test/release-privacy-a11y-gates-20261010 (candidate pre-release audit)
 ```
 
 **Sibling warning:** PR #53 (`fix/53-union-reflow-dynamic-focus`) and PR #54 (`fix/53-union-reflow-forced-colors`) both target #52. They are *not* sequential commits. This proposal builds on the #54 head and selectively ports #53's real Chrome accessibility-tree assertion, extending it to the welcome dialog and 320px reflow. Do not merge #53 and #54 serially or close either as merged on the strength of this proposal. The proposed test branch is also Draft-only, not a release.
