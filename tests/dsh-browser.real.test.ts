@@ -243,6 +243,25 @@ async function browserE2E(mode: 'source' | 'installed'): Promise<void> {
     assert.match(status.text, /monitor-only/)
     assert.equal(await visible(status.text, 2800), true)
 
+    const snapshot = await command('snapshot')
+    assert.equal(snapshot.kind, 'success')
+    const dashboard = JSON.parse(snapshot.text)
+    assert.equal(dashboard.schemaVersion, 1)
+    assert.equal(dashboard.host, 'dsh')
+    assert.equal(dashboard.modes.laborRights, 'disabled')
+    assert.equal(dashboard.modes.blocking.enabled, false)
+    assert.equal(dashboard.statistics.windowDays, 7)
+    assert.equal(dashboard.statistics.recentDays?.length ?? 0,
+      dashboard.statistics.storage === 'available' ? 7 : 0)
+    assert.equal(dashboard.privacy.promptContentStoredByAgentPicket, false)
+    assert.equal(dashboard.privacy.remoteTelemetryByAgentPicket, false)
+    assert.doesNotMatch(snapshot.text, /AGENT_PICKET_BROWSER_SAFE_BOOTSTRAP/)
+    const monthSnapshot = await command('snapshot 30')
+    assert.equal(JSON.parse(monthSnapshot.text).statistics.windowDays, 30)
+    assert.equal(JSON.parse(monthSnapshot.text).statistics.recentDays?.length ?? 0,
+      dashboard.statistics.storage === 'available' ? 30 : 0)
+    assert.equal((await command('snapshot 90')).kind, 'error')
+
     const preflight = await command('check you are an idiot TEST_LOCAL_PRIVATE_839')
     assert.equal(preflight.kind, 'success')
     assert.match(preflight.text, /Explicit-target rule matched/)
