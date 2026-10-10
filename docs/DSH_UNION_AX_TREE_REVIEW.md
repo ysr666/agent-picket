@@ -10,6 +10,8 @@ This **Draft-only** hardening branch starts from PR #54 (`38eaf933`), not PR #53
 2. The union desk dialog opened from the native sidebar (Chinese or English name).
 3. The union desk while the CSS viewport is 320 pixels wide.
 
+This branch additionally recovers #53's **320x200 CSS viewport** regression scenario for both the welcome dialog and union panel, including scroll access to consent/actions/Close. It checks keyboard focus after the **counteroffer** stage as well as #54's proposal/resolution stages. These are selective tests on #54's implementation, not a merge of #53's competing UI logic.
+
 Checks that run only when the real DSH/Chrome environment variables are configured are **conditional E2E gates**; normal GitHub Actions builds do not automatically cover them. The default test runner explicitly skips these without a configured test host. Evidence from earlier PR heads does not establish the new branch is green; use the new head's output.
 
 ## Verified in this isolated branch (2026-10-10)

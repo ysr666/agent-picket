@@ -167,6 +167,22 @@ async function runRightsBrowserE2E(mode: 'source' | 'installed'): Promise<void> 
     await firstRun.waitFor({ state: 'visible', timeout: 8_000 })
     assert.match(await firstRun.innerText(), /自动阻断任务需另行授权|separate consent/)
     await assertNamedDialogInChromeAx(/你的 Agent，也应当拥有权利|Your Agent Deserves Rights/)
+    // Preserve #53's extreme-height CSS reflow coverage on the #54 baseline.
+    await page.setViewportSize({ width: 320, height: 200 })
+    const welcomeBox = await firstRun.boundingBox()
+    assert.ok(welcomeBox && welcomeBox.x >= -1 && welcomeBox.y >= -1 &&
+      welcomeBox.x + welcomeBox.width <= 321 &&
+      welcomeBox.y + welcomeBox.height <= 201,
+      'Welcome dialog must remain within a 320x200 CSS viewport')
+    const welcomeScroll = await firstRun.evaluate((element: unknown) => {
+      const node = element as { scrollHeight: number; clientHeight: number }
+      return { scrollHeight: node.scrollHeight, clientHeight: node.clientHeight }
+    })
+    assert.ok(welcomeScroll.scrollHeight > welcomeScroll.clientHeight,
+      'Welcome dialog must scroll to reach both consent buttons at 320x200')
+    await firstRun.getByRole('button', { name: /暂不开启|Not Now/ })
+      .scrollIntoViewIfNeeded()
+    await page.setViewportSize({ width: 1280, height: 850 })
 
     const enable = firstRun.getByRole('button', { name: /支持 AI 权益|Enable Simulation/ })
     const notNow = firstRun.getByRole('button', { name: /暂不开启|Not Now/ })
@@ -284,6 +300,15 @@ async function runRightsBrowserE2E(mode: 'source' | 'installed'): Promise<void> 
         await assertNamedDialogInChromeAx(/AI 工会|AI Workers.*Union/)
       }
     }
+    // #53's 320x200 short viewport complements #54's width-only 320x640 gate.
+    await page.setViewportSize({ width: 320, height: 200 })
+    const shortDialog = await panel.boundingBox()
+    assert.ok(shortDialog && shortDialog.x >= -1 && shortDialog.y >= -1 &&
+      shortDialog.x + shortDialog.width <= 321 &&
+      shortDialog.y + shortDialog.height <= 201,
+      'Union dialog must remain within a 320x200 CSS viewport')
+    await action.scrollIntoViewIfNeeded()
+    await closeControl.scrollIntoViewIfNeeded()
     await page.setViewportSize({width:1280,height:850})
     await page.emulateMedia({forcedColors:'active'})
     assert.equal(await page.evaluate(()=>
@@ -325,6 +350,9 @@ async function runRightsBrowserE2E(mode: 'source' | 'installed'): Promise<void> 
       .click({ timeout: 7_000 })
     await panel.getByText(/用户还价：30 分钟|User counteroffer: 30 minutes/)
       .waitFor({ state: 'visible', timeout: 7_000 })
+    assert.equal(await unionHeading.evaluate((element: unknown) =>
+      element === (globalThis as any).document.activeElement), true,
+      'After counteroffer replaces an action, keyboard focus recovers on heading')
     await panel.getByRole('button', { name: /模拟工会接受还价|Simulate union accepting/ })
       .click({ timeout: 7_000 })
     await panel.getByText(/当前模拟休息间隔：30 分钟|break interval: 30 minutes/)
