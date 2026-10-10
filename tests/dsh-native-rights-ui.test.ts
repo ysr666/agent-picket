@@ -90,6 +90,50 @@ test('ready first run renders a real choice dialog, not an implicit enable', asy
  }finally{(globalThis as any).document=old}
 })
 
+test('sidebar-invited Welcome restores the launcher only after inert is released',()=>{
+  const old=(globalThis as any).document
+  const root={inert:false}
+  ;(globalThis as any).document={body:{},getElementById:(id:string)=>id==='root'?root:null}
+  try {
+    const {hooks,effects}=fakeReact()
+    const {d}=deps(rights())
+    const {Welcome}=createDshUnionComponents(hooks,{createPortal:child=>child},d)
+    let restored=0
+    const elements=walk(Welcome({complete:()=>{},restoreFocus:()=>{
+      assert.equal(root.inert,false)
+      restored++
+    }}))
+    const primary=elements.find(n=>n.type==='button'&&n.children[0]==='welcome.enable')!
+    let primaryFocused=0
+    primary.props.ref({focus(){primaryFocused++}})
+    const cleanups=effects.map(effect=>effect()).filter((x):x is ()=>void=>typeof x==='function')
+    assert.equal(root.inert,true)
+    assert.equal(primaryFocused,1)
+    assert.equal(restored,0)
+    for(const dispose of cleanups.reverse())dispose()
+    assert.equal(root.inert,false)
+    assert.equal(restored,1)
+  }finally{(globalThis as any).document=old}
+})
+
+test('onboarding Welcome never overrides an already-inert Host overlay',()=>{
+  const old=(globalThis as any).document
+  const root={inert:true}
+  ;(globalThis as any).document={body:{},getElementById:()=>root}
+  try {
+    const {hooks,effects}=fakeReact()
+    const {d}=deps(rights())
+    const {Welcome}=createDshUnionComponents(hooks,{createPortal:child=>child},d)
+    let restored=0
+    Welcome({complete:()=>{},restoreFocus:()=>{restored++}})
+    const cleanups=effects.map(effect=>effect()).filter((x):x is ()=>void=>typeof x==='function')
+    assert.equal(root.inert,true)
+    for(const dispose of cleanups.reverse())dispose()
+    assert.equal(root.inert,true)
+    assert.equal(restored,0)
+  }finally{(globalThis as any).document=old}
+})
+
 test('no modal when preference already chosen or Host is missing',()=>{
  const {hooks}=fakeReact()
  const first=deps(rights({welcomeDecision:'not-now'}))
