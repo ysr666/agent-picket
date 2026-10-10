@@ -105,3 +105,24 @@ test('malformed Host readback never becomes fictional consent',()=>{
   assert.equal(rights.snapshot().laborRightsEnabled,false)
   assert.equal(rights.snapshot().autoBlockEnabled,false)
 })
+
+test('corrupted Host revision and duplicate namespace never present fake opt-in',()=>{
+  for(const revision of [-1, 1.5, NaN, Number.POSITIVE_INFINITY, '2']) {
+    const row={ns:'agent-picket',revision,value:{welcomeDecision:'enabled',unionLedger:''}}
+    const mirror={
+      getSnapshot:()=>({status:'ready' as const,view:{writable:true,namespaces:[row]}}),
+      subscribe:()=>()=>{},async ensure(){},acceptView:()=>{},
+    }
+    const scope=createOfficialDsh017Scope(mirror as never,{$host:{isLoopback:true}})
+    assert.equal(createDshClientRightsScope(scope).snapshot().laborRightsEnabled,false)
+    assert.equal(scope.getSnapshot().status,'unavailable')
+  }
+  const row={ns:'agent-picket',revision:1,value:{welcomeDecision:'enabled',unionLedger:''}}
+  const duplicate={
+    getSnapshot:()=>({status:'ready' as const,view:{writable:true,namespaces:[row,row]}}),
+    subscribe:()=>()=>{},async ensure(){},acceptView:()=>{},
+  }
+  const scope=createOfficialDsh017Scope(duplicate,{$host:{isLoopback:true}})
+  assert.equal(createDshClientRightsScope(scope).snapshot().laborRightsEnabled,false)
+  assert.equal(scope.getSnapshot().status,'unavailable')
+})
