@@ -20,3 +20,7 @@ Date: 2026-10-10. **Draft #58 candidate only.** Work was performed exclusively w
 - Root package-export change from core to Host entry is deliberately marked **breaking before first release**. Audit consumers before merging. The library's supported stable core entry is `agent-picket/core`.
 
 **No main merge, npm publish, real blocking, external telemetry, alternate browser store, insecure permission bypass, or user profile modifications occurred.**
+
+## Successor evidence (Draft child of #58; do not rewrite this historical baseline)
+
+The newer isolated branch `fix/dsh017-composer-native-parity-20261010` provides a single-active-Session fix, genuine typed Composer-to-sidebar negotiation parity and real authenticated Host CAS/ledger rejection. The **earlier Composer failure above describes only the #58 baseline**, not the successor branch. See `docs/DSH_017_COMPOSER_HOST_CAS_VALIDATION.md` for current, separately verified facts and remaining release gates. This is still a stacked Draft and not a release or merge authorization.
