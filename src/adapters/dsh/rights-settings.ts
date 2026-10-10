@@ -12,10 +12,13 @@ export const RightsSettingsSchema = Schema.object({
   welcomeDecision: Schema.union(['unseen', 'enabled', 'not-now']).default('unseen'),
   // Structured, size-bounded fictional bargaining records; no transcripts.
   unionLedger: Schema.string().default(''),
+  // Command output is Host-owned; browser Client's UI locale is independent.
+  commandLocale: Schema.union(['auto', 'en', 'zh-CN']).default('auto'),
 })
 export interface HostRightsSection {
   readonly welcomeDecision: 'unseen' | 'enabled' | 'not-now'
   readonly unionLedger: string
+  readonly commandLocale: 'auto' | 'en' | 'zh-CN'
 }
 export interface DshNativeSettingsContext {
   inject?(services: string[], callback: (ctx: {
