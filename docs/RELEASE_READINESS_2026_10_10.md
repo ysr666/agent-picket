@@ -1,5 +1,8 @@
 # Agent Picket — Release readiness and manual accessibility gate
 
+> **2026-10-11 当前状态提示：** 本文记录各阶段原始发布门槛与历史测试，不是当前 GitHub PR 状态。#23–#70 既定主线和 #40 宣言已并入 `main`；最终源码树的常规检查为 **228 项 / 204 PASS / 0 FAIL / 24 条件 SKIP**，包仍为 `private: true`、无公开 npm 发行。**真人无障碍 A1–A8 仍 PENDING，因此总体发布状态仍 NO-GO。** 参阅[当前研发状态](STATUS.zh.md)和[人工验收单](HUMAN_ACCESSIBILITY_SIGNOFF.zh.md)。
+
+
 **Review date: 2026-10-10. Status: NO-GO / experimental stacked Draft.** Evidence is anchored to [PR #59](https://github.com/ysr666/agent-picket/pull/59) and a subsequent unreleased candidate. Do **not** claim npm availability, installed release, WCAG certification, or permission to merge. No real prompt/tool admission may be vetoed by this plugin; symbolic union, strikes, grievances and agreements are simulations, not evidence that any AI has consciousness or legal personhood.
 
 ## Canonical ancestry and branch decision
