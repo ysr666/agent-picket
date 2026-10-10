@@ -184,7 +184,7 @@ async function realComposerParity(mode: 'source'|'installed') {
       await panel.waitFor({state:'detached',timeout:5_000})
     }
 
-    assert.match((await command('rights')).text,/simulation ON|工会已开启|模拟工会已开启/)
+    assert.match((await command('rights')).text,/Labor Rights Simulation: ON|simulation ON|工会已开启|模拟工会已开启/)
     const off=await command('rights off')
     assert.equal(off.kind,'success')
     let panel=await panelOpen()
