@@ -57,3 +57,8 @@ Even when a rules fixture is high confidence, `UnionEngine` cannot automatically
 Optional `npm run test:dsh:real` checks that the actual DSH SDK AgentLoop invokes the local rules, doesn't block a flagged prompt, permits code criticism, and sends zero extra model requests for classification. These tests use a local fake provider with real DSH 0.2.0-rc.2 and optionally coexist with `dsh-vision-router@3.0.3`.
 
 For future improvements, collect **opt-in, anonymized** adversarial fixtures (no raw private prompts), evaluate ambiguous examples and compare a separately enabled on-device classifier. Never silently add a cloud inference fallback.
+
+
+## Local lifetime storage distinction
+
+The normal per-session DetectionCounter remains **in-memory only**. An optional long-term classification count can be enabled with `AGENT_PICKET_STATS_RULES=on`; it records only verdict counters and HMAC event fingerprints, never text or unkeyed IDs. Work and tool counts are persisted by default, unlike the more sensitive rule classifications. See [STATS_STORAGE.zh.md](STATS_STORAGE.zh.md).

@@ -46,7 +46,7 @@ GitHub 在本次核对时列出 **20 个开发／集成 PR（#5–#24；以 GitH
 1. **阻断不安全：** DSH 原生 pre-step 拒绝不能证明用户已收到可操作的拒绝提示以及完整附件恢复；所有 Adapter 保持非阻断。
 2. **来源不是确证真人：** source.kind=user、UserPromptSubmit 等字段都不能单独证明真人直接写下文本。
 3. **会话历史 UI：** 测试发现刷新后旧命令卡片偶尔不重新显示。但压缩的 Host Session 日志含匹配的 command/run 与 command/done，因此不能把显示问题解释成记录丢失。仍需前端 Session Binding / eventSource 证据。
-4. **持久统计：** DSH WorkTracker、DetectionCounter、模拟仲裁状态仍为进程内存状态，跨重启计数尚未完成。
+4. **持久统计：** 开发分支已增加默认开启的本地工作量总计与 UTC 日汇总（详见 [STATS_STORAGE.zh.md](STATS_STORAGE.zh.md)）；当前会话计数、工会模拟状态仍留在内存。敏感规则分类长期持久化默认关闭。跨进程高负载与意外崩溃恢复尚未验收。
 5. **跨平台：** Claude/Codex Hook CLI 通过真实 Node 标准输入输出模拟，尚未确认用户客户端的实际加载、通知及安全退路。
 6. **分发：** npm 未发布；DSH 除固定受测版本外没有完成跨版本矩阵。
 
