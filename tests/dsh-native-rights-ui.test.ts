@@ -153,6 +153,11 @@ test('union-first page leads with rights status; unknown stats are not presented
  assert.ok(labels.includes('union.title'))
  assert.ok(labels.includes('union.status.active'))
  assert.ok(labels.includes('workday.title'))
+ // Interactive union bargaining must precede passive worktime evidence.
+ const headings=rendered.filter(n=>n.type==='h3').map(n=>n.children[0])
+ assert.ok(headings.indexOf('union.desk.title')>=0)
+ assert.ok(headings.indexOf('union.desk.title')<headings.indexOf('workday.title'),
+   'Bargaining must be reachable before worktime on an enabled union panel')
  assert.ok(labels.includes('stats.lifetime.unavailable'))
  assert.ok(labels.includes('—'))
  assert.equal(rendered.filter(n=>n.type==='details').length,1)
