@@ -47,6 +47,7 @@ export interface DshUnionUiDeps {
   readonly shouldAutoWelcome?: () => boolean
   readonly subscribeSessionVisibility?: (listener: () => void) => () => void
   readonly respond?: (id: number, choice: 'accept' | 'decline') => Promise<void>
+  readonly demoBreak?: () => Promise<void>
   readonly counter?: (id: number, intervalMs: number) => Promise<void>
   readonly resolveCounter?: (id: number, accepts: boolean) => Promise<void>
 }
@@ -273,6 +274,12 @@ export function createDshUnionComponents(
             hours:data.state.agreement.overtimeIntervalMs / 3_600_000,
           })),
         ):null,
+        !data.pending && data.available && deps.demoBreak ?
+          h('div',{style:{marginBottom:'14px'}},
+            h('button',{type:'button',style:primary,disabled:busy,
+              onClick:()=>{void bargain(deps.demoBreak!)}},label('union.demo.action')),
+            h('p',{style:secondary},label('union.demo.note')),
+          ):null,
         data.pending ? h('div',{},
           h('p',{},label(data.pending.kind==='break'?'union.demand.break':'union.demand.overtime')),
           h('p',{style:secondary},'#'+data.pending.id),
