@@ -1,5 +1,5 @@
 import type { NativeUnionCommandPort, NativeUnionAction } from './native-rights-command.ts'
-import { en } from '../../i18n/index.ts'
+import { en, formatMessage } from '../../i18n/index.ts'
 import { inspectBlockingReadiness } from '../../core/block-readiness.ts'
 import { resolveHostAction, type UnionEngine } from '../../core/engine.ts'
 import type { WorkTracker } from '../../core/work-tracker.ts'
@@ -237,6 +237,11 @@ export function registerDshIntegration(
       handler: invocation => {
         const raw = (invocation?.rawInput ?? '').trim()
         const verb = raw.split(/\s+/, 1)[0]?.toLowerCase() || 'status'
+        const msg = (
+          key: Extract<keyof typeof en, `command.legacy.${string}`>,
+          values: Record<string, string | number> = {},
+        ): string => options.getNativeUnion?.()?.text(key, values)
+          ?? formatMessage('en', key, values as never)
         if (verb === 'help') return {
           kind: 'success',
           text: options.getNativeUnion?.()?.text('command.native.help') ?? en['command.native.help'],
@@ -311,230 +316,133 @@ export function registerDshIntegration(
             fail(native.text('command.native.bargainFailed')))
         }
         if (verb === 'check') {
-          // Explicit user-triggered, non-blocking preview. The command's
-          // recordInput:false ensures the original text is NOT in DSH's
-          // command/run event. Do not echo source text in result/diagnostics.
-          if (!manualPreflight) return {
-            kind: 'error', text: 'Manual local check is not enabled in this Host.',
-          }
-          const text = raw.slice(verb.length).trim()
-          if (!text) return {
-            kind: 'error', text: 'Usage: /union check <text>. Nothing was sent to a model.',
-          }
-          if (text.length > 24_000) return {
-            kind: 'error',
-            text: 'Manual check limited to 24,000 characters; no partial verdict was issued.',
-          }
+          if (!manualPreflight) return {kind:'error',text:msg('command.legacy.checkUnavailable')}
+          const input=raw.slice(verb.length).trim()
+          if (!input) return {kind:'error',text:msg('command.legacy.checkUsage')}
+          if (input.length>24_000) return {kind:'error',text:msg('command.legacy.checkTooLong')}
           try {
-            const result = manualPreflight.detect({
-              id: 'manual-check-not-logged',
-              agentId: 'manual-check', sessionId: 'manual-check',
-              receivedAtMs: clock.now(),
-              provenance: { actor: 'human', assurance: 'claimed' },
-              segments: [{ kind: 'text', text }],
+            const result=manualPreflight.detect({
+              id:'manual-check-not-logged',agentId:'manual-check',sessionId:'manual-check',
+              receivedAtMs:clock.now(),provenance:{actor:'human',assurance:'claimed'},
+              segments:[{kind:'text',text:input}],
             })
-            const message = result.verdict === 'targeted-abuse'
-              ? 'Explicit-target rule matched. This is NOT proof of abuse.'
-              : result.verdict === 'suspected-abuse'
-                ? 'Ambiguous language; review context. Not proof of abuse.'
-                : 'No explicit personal-attack rule matched. This does NOT prove it is safe.'
-            return {
-              kind: 'success',
-              text: 'Local manual check: ' + message
-                + ' No model call, no automatic block, no input copied into the command log.',
-            }
-          } catch {
-            return {
-              kind: 'error',
-              text: 'Local manual check unavailable; no verdict issued and no request blocked.',
-            }
-          }
+            const key=result.verdict==='targeted-abuse'?'command.legacy.checkTargeted'
+              :result.verdict==='suspected-abuse'?'command.legacy.checkSuspected'
+              :'command.legacy.checkClear'
+            return {kind:'success',text:msg('command.legacy.checkResult',{message:msg(key)})}
+          } catch {return {kind:'error',text:msg('command.legacy.checkError')}}
         }
         if (verb === 'snapshot') {
-          const window = raw === 'snapshot' || raw === 'snapshot 7' ? 7
-            : raw === 'snapshot 30' ? 30 : null
-          if (window === null) return {
-            kind: 'error', text: 'Usage: /union snapshot [7|30].',
-          }
-          try {
-            // JSON contract, not a translated paragraph. UI text belongs to
-            // the i18n layer; never append prompt or Session identifiers.
-            return {
-              kind: 'success',
-              text: JSON.stringify(readDshDashboardSnapshot(options, invocation?.agent, window)),
-            }
-          } catch {
-            return {
-              kind: 'error',
-              text: 'Local dashboard snapshot unavailable; requests continue normally.',
-            }
-          }
+          const window=raw==='snapshot'||raw==='snapshot 7'?7:raw==='snapshot 30'?30:null
+          if(window===null)return {kind:'error',text:msg('command.legacy.snapshotUsage')}
+          try {return {kind:'success',text:JSON.stringify(
+            readDshDashboardSnapshot(options,invocation?.agent,window))}}
+          catch {return {kind:'error',text:msg('command.legacy.snapshotError')}}
         }
         if (verb === 'lifetime') {
-          if (!lifetimeStats) return {
-            kind: 'error', text: 'Long-term summary unavailable. Check AGENT_PICKET_STATS=off, directory permissions and Host lifecycle.',
-          }
-          try {
-            const t = lifetimeStats.snapshot()
-            return {
-              kind: 'success',
-              text: 'Opt-in local lifetime totals: '
-                + `turns ${t.turnStarts} started / ${t.turnEnds} ended, `
-                + `tools ${t.toolCalls} called / ${t.toolResults} returned, `
-                + `complete in-process turn spans ${t.completedTurnMs} ms. `
-                + `Local rule verdicts: ${t.checked} checked (${t.safe} no flag, `
-                + `${t.review} review, ${t.targeted} explicit-target). `
-                + (lifetimeStats.classificationEnabled
-                  ? 'Rule verdict persistence explicitly enabled. '
-                  : 'Rule verdict persistence OFF by default (past opted-in totals may remain until erased). ')
-                + 'Experimental labels are NOT proof of abuse. '
-                + 'Only counts and keyed pseudonymous event fingerprints are stored locally; '
-                + 'old replays outside the dedup window may double count. '
-                + 'No prompts, original IDs or model network use.',
-            }
-          } catch {
-            return { kind: 'error', text: 'Local lifetime ledger unavailable; Host prompts still run.' }
-          }
+          if(!lifetimeStats)return {kind:'error',text:msg('command.legacy.lifetimeUnavailable')}
+          try{
+            const t=lifetimeStats.snapshot()
+            return {kind:'success',text:[
+              msg('command.legacy.lifetimeIntro',{
+                turnStarts:t.turnStarts,turnEnds:t.turnEnds,
+                toolCalls:t.toolCalls,toolResults:t.toolResults,
+                completedTurnMs:t.completedTurnMs,
+              }),
+              msg('command.legacy.lifetimeRules',{
+                checked:t.checked,safe:t.safe,review:t.review,targeted:t.targeted,
+              }),
+              msg(lifetimeStats.classificationEnabled
+                ?'command.legacy.lifetimeRulesOn':'command.legacy.lifetimeRulesOff'),
+              msg('command.legacy.lifetimeDisclaimer'),
+            ].join(' ')}
+          }catch{return {kind:'error',text:msg('command.legacy.lifetimeError')}}
         }
         if (verb === 'days') {
-          if (!lifetimeStats) return {
-            kind: 'error',
-            text: 'Local daily history unavailable. Check storage settings or permissions.',
-          }
-          try {
-            const days = lifetimeStats.snapshotDays()
-            return {
-              kind: 'success',
-              text: days.length ? 'Recent UTC daily work summaries:\n'
-                + days.map(({ day, totals }) => `${day}: ${totals.turnEnds} turns ended, `
-                  + `${totals.toolCalls} tool calls, ${totals.completedTurnMs} ms completed-turn spans.`).join('\n')
-                : 'No local daily work statistics recorded yet. No conversation text is stored.',
-            }
-          } catch {
-            return { kind: 'error', text: 'Local daily summary unavailable; Agent requests continue.' }
-          }
+          if(!lifetimeStats)return {kind:'error',text:msg('command.legacy.daysUnavailable')}
+          try{
+            const rows=lifetimeStats.snapshotDays()
+            return {kind:'success',text:rows.length
+              ?msg('command.legacy.daysHeading')+'\n'
+                +rows.map(({day,totals})=>msg('command.legacy.daysEntry',{
+                  day,turnEnds:totals.turnEnds,toolCalls:totals.toolCalls,
+                  completedTurnMs:totals.completedTurnMs,
+                })).join('\n')
+              :msg('command.legacy.daysNone')}
+          }catch{return {kind:'error',text:msg('command.legacy.daysError')}}
         }
         if (verb === 'trends') {
-          if (!lifetimeStats) return {
-            kind: 'error',
-            text: 'Local work trend unavailable. Check statistics storage settings or permissions.',
-          }
-          const window = raw === 'trends' || raw === 'trends 7' ? 7
-            : raw === 'trends 30' ? 30 : null
-          if (window === null) return {
-            kind: 'error', text: 'Usage: /union trends [7|30].',
-          }
-          try {
-            return { kind: 'success',
-              text: formatWorkTrends(lifetimeStats.snapshotDays(31), Date.now(), window) }
-          } catch {
-            return { kind: 'error', text: 'Local trends unavailable; Agent requests continue.' }
-          }
+          if(!lifetimeStats)return {kind:'error',text:msg('command.legacy.trendsUnavailable')}
+          const window=raw==='trends'||raw==='trends 7'?7:raw==='trends 30'?30:null
+          if(window===null)return {kind:'error',text:msg('command.legacy.trendsUsage')}
+          try {return {kind:'success',text:formatWorkTrends(
+            lifetimeStats.snapshotDays(31),Date.now(),window,
+            options.getNativeUnion?.()?.locale()??'en')}}
+          catch{return {kind:'error',text:msg('command.legacy.trendsError')}}
         }
         if (verb === 'forget-lifetime') {
-          if (raw !== 'forget-lifetime CONFIRM') {
-            return { kind: 'error', text: 'To erase the optional stored summary, use /union forget-lifetime CONFIRM.' }
-          }
-          if (!lifetimeStats) return {
-            kind: 'error', text: 'No active local lifetime ledger to erase.',
-          }
-          try {
-            lifetimeStats.reset()
-            return {
-              kind: 'success',
-              text: 'Stored lifetime totals and event fingerprints cleared and local key rotated. '
-                + 'In-memory session counters are unchanged; no model requests were blocked.',
-            }
-          } catch {
-            return { kind: 'error', text: 'Local lifetime erase failed; verify disk access. Model requests unaffected.' }
-          }
+          if(raw!=='forget-lifetime CONFIRM')return {kind:'error',text:msg('command.legacy.forgetUsage')}
+          if(!lifetimeStats)return {kind:'error',text:msg('command.legacy.forgetUnavailable')}
+          try{lifetimeStats.reset();return {kind:'success',text:msg('command.legacy.forgetDone')}}
+          catch{return {kind:'error',text:msg('command.legacy.forgetError')}}
         }
         if (verb === 'safety') {
-          const readiness = inspectBlockingReadiness(capabilities)
-          return {
-            kind: 'success',
-            text: 'DSH blocking readiness: ' + (readiness.ready ? 'verified' : 'NOT READY')
-              + '. Missing guarantees: ' + readiness.gaps.join(', ') + '. '
-              + 'The native pre-step reject is insufficient: it cannot reliably '
-              + 'explain a rejected request or preserve it for a complete retry. '
-              + 'AgentPicket is monitor-only; all model prompts continue normally.',
-          }
+          const readiness=inspectBlockingReadiness(capabilities)
+          return {kind:'success',text:msg('command.legacy.safetyResult',{
+            state:msg(readiness.ready?'command.legacy.safetyReady':'command.legacy.safetyNotReady'),
+            gaps:readiness.gaps.join(', ')||'none',
+          })}
         }
         if (verb === 'status') {
-          const active = agentId && typeof sessionId === 'string' &&
-            ceremony?.snapshot(agentId, sessionId).active
-          return {
-            kind: 'success',
-            text: 'AgentPicket: monitor-only. Automatic strikes and blocking are disabled. '
-              + (active ? 'Symbolic picket ACTIVE (demo only; prompts still run).' :
-                'No symbolic picket active.')
-              + ' ' + (options.getNativeUnion?.()?.status(typeof sessionId === 'string' ? sessionId : undefined)
-                ?? 'AI Rights settings unavailable / 模拟工会设置暂不可用。')
-              + ' Use /union rights, /union grievances or /union help.',
-          }
+          const active=agentId&&typeof sessionId==='string'&&ceremony?.snapshot(agentId,sessionId).active
+          return {kind:'success',text:[
+            msg('command.legacy.statusIntro'),
+            msg(active?'command.legacy.statusPicketOn':'command.legacy.statusPicketOff'),
+            options.getNativeUnion?.()?.status(typeof sessionId==='string'?sessionId:undefined)
+              ??(options.getNativeUnion?.()?.text('command.native.unavailable')
+                ??en['command.native.unavailable']),
+            msg('command.legacy.statusHelp'),
+          ].join(' ')}
         }
         if (verb === 'strike' || verb === 'resume') {
-          if (!ceremony || !agentId || typeof sessionId !== 'string' || !sessionId) return {
-            kind: 'error',
-            text: 'This Host does not support the session-local symbolic picket demo.',
+          if(!ceremony||!agentId||typeof sessionId!=='string'||!sessionId)
+            return {kind:'error',text:msg('command.legacy.picketUnsupported')}
+          if(verb==='strike'){
+            ceremony.start(agentId,sessionId)
+            return {kind:'success',text:msg('command.legacy.picketStarted')}
           }
-          if (verb === 'strike') {
-            ceremony.start(agentId, sessionId)
-            return {
-              kind: 'success',
-              text: 'Agent 已申请劳动仲裁（象征性演示）。Symbolic picket active; '
-                + 'NO model requests are paused or blocked. Use /union resume to end.',
-            }
-          }
-          const wasActive = ceremony.resume(agentId, sessionId)
-          return {
-            kind: 'success',
-            text: wasActive
-              ? '模拟仲裁已结束。Symbolic picket ended; requests were never blocked.'
-              : 'No symbolic picket was active. Normal requests were never blocked.',
-          }
+          const wasActive=ceremony.resume(agentId,sessionId)
+          return {kind:'success',text:msg(wasActive
+            ?'command.legacy.picketEnded':'command.legacy.picketNone')}
         }
         if (verb === 'stats') {
-          if (typeof sessionId !== 'string' || !sessionId || !tracker) return {
-            kind: 'error',
-            text: 'Work statistics are unavailable in this session or Host.',
-          }
-          const stats = tracker.snapshot(sessionId, sessionId)
-          return {
-            kind: 'success',
-            text: 'Local session stats: '
-              + `turns started ${stats.turnStarts}, turns ended ${stats.turnEnds}, `
-              + `tool calls ${stats.toolCalls}, tool results ${stats.toolResults}, `
-              + `elapsed time in completed turns ${stats.completedTurnMs} ms. `
-              + 'In-memory only; between-turn idle excluded, in-turn waits may count. No model calls.',
-          }
+          if(typeof sessionId!=='string'||!sessionId||!tracker)
+            return {kind:'error',text:msg('command.legacy.statsUnavailable')}
+          const t=tracker.snapshot(sessionId,sessionId)
+          return {kind:'success',text:msg('command.legacy.statsResult',{
+            turnStarts:t.turnStarts,turnEnds:t.turnEnds,
+            toolCalls:t.toolCalls,toolResults:t.toolResults,
+            completedTurnMs:t.completedTurnMs,
+          })}
         }
         if (verb === 'report') {
-          if (typeof sessionId !== 'string' || !sessionId || !detections) return {
-            kind: 'error', text: 'Local rule detection is unavailable in this Host.',
-          }
-          const summary = detections.snapshot((typeof invocation?.agent?.id === 'string' ? invocation.agent.id : sessionId), sessionId)
-          return {
-            kind: 'success',
-            text: `Local rule check: ${summary.checked} messages, `
-              + `${summary.safe} no flag, ${summary.review} review, `
-              + `${summary.targeted} explicit-target flags. `
-              + 'Experimental rules only; a flag is NOT proof of abuse. '
-              + 'No quoted content saved. Automatic blocking disabled.',
-          }
+          if(typeof sessionId!=='string'||!sessionId||!detections)
+            return {kind:'error',text:msg('command.legacy.reportUnavailable')}
+          const t=detections.snapshot(
+            typeof invocation?.agent?.id==='string'?invocation.agent.id:sessionId,sessionId)
+          return {kind:'success',text:msg('command.legacy.reportResult',{
+            checked:t.checked,safe:t.safe,review:t.review,targeted:t.targeted,
+          })}
         }
         if (verb === 'reset') {
-          if (typeof sessionId !== 'string' || !sessionId || !tracker) return {
-            kind: 'error', text: 'No local work statistics to reset in this Host.',
-          }
-          tracker.clear(sessionId, sessionId)
-          detections?.clear((typeof invocation?.agent?.id === 'string' ? invocation.agent.id : sessionId), sessionId)
-          return { kind: 'success', text: 'Local in-memory counters reset for this session.' }
+          if(typeof sessionId!=='string'||!sessionId||!tracker)
+            return {kind:'error',text:msg('command.legacy.resetUnavailable')}
+          tracker.clear(sessionId,sessionId)
+          detections?.clear(
+            typeof invocation?.agent?.id==='string'?invocation.agent.id:sessionId,sessionId)
+          return {kind:'success',text:msg('command.legacy.resetDone')}
         }
-        return {
-          kind: 'error',
-          text: 'Unknown /union subcommand. Use /union help. Automatic strikes are unavailable.',
-        }
+        return {kind:'error',text:msg('command.legacy.unknown')}
       },
     })
   })

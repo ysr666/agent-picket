@@ -33,7 +33,7 @@ export interface NativeSettingsProvider {
   update(namespace: string, patch: object, expectedRevision?: number): Promise<void>
 }
 
-type CommandMessageKey = Extract<keyof typeof en, `command.native.${string}`>
+type CommandMessageKey = Extract<keyof typeof en, `command.native.${string}` | `command.legacy.${string}`>
 export interface NativeUnionCommandPort {
   status(sessionId?: string): string
   enabled(): boolean
