@@ -1,4 +1,5 @@
 import { createBrowserDashboardBridge } from './client-dashboard.ts'
+import { createDshBrowserUnionDesk, type UnionSettingsSection } from './client-bargaining.ts'
 import { createDshClientRightsScope, type DshSettingsScope, type RightsSection } from './client-rights-scope.ts'
 import { registerDshNativeRightsSlots, type ReactForDsh, type PortalForDsh, type DshSlots } from './native-rights-ui.ts'
 import { formatMessage, resolveLocale, type MessageKey } from '../../i18n/index.ts'
@@ -51,14 +52,18 @@ export function apply(ctx: ClientContext, react?: ReactForDsh, portal?: PortalFo
   if (react && portal && ctx.inject) ctx.inject(['slots', 'settingsScope', 'locale'], scoped => {
     if (!scoped.slots || !scoped.settingsScope || !scoped.locale) return
     const owner = createDshClientRightsScope(
-      scoped.settingsScope.bind<RightsSection>({ namespace: 'agent-picket' }))
+      scoped.settingsScope.bind<UnionSettingsSection>({ namespace: 'agent-picket' }))
+    const desk = createDshBrowserUnionDesk({
+      scope: scoped.settingsScope.bind<UnionSettingsSection>({ namespace: 'agent-picket' }),
+      consent: () => owner.snapshot().laborRightsEnabled,
+    })
     const uiLocale = () => resolveLocale({ hostLocale: scoped.locale?.getLocale().active })
     const activeId = () => scoped.sessions.list?.getSnapshot().current
     const readUnion = () => {
       const id = activeId()
       const data = id ? bridge?.getSnapshot(id) : undefined
       return {
-        pending: null,
+        ...desk.snapshot(),
         completedTurnMs: data?.coverage === 'complete'
           ? data.sessionWork?.completedTurnMs ?? null : null,
         coverage: data?.coverage ?? 'not-loaded' as const,
@@ -66,16 +71,33 @@ export function apply(ctx: ClientContext, react?: ReactForDsh, portal?: PortalFo
       }
     }
     const subscribeUnion = (listener: () => void): (() => void) => {
-      let stop = () => {}
-      const rebind = () => {
-        stop()
-        const id = activeId()
-        stop = id && bridge ? bridge.subscribe(id, () => listener()) : () => {}
+      let stopEvents = () => {}
+      let currentEpoch = 0
+      const onWork = () => {
+        const data = readUnion()
+        void desk.observe(data.completedTurnMs, data.coverage)
         listener()
       }
-      const off = scoped.sessions.list?.subscribe(rebind) ?? (() => {})
+      const rebind = () => {
+        const epoch = ++currentEpoch
+        stopEvents()
+        const id = activeId()
+        stopEvents = id && bridge ? bridge.subscribe(id, onWork) : () => {}
+        void desk.setActiveSession(id).then(() => {
+          if (currentEpoch === epoch) onWork()
+        })
+      }
+      const stopDesk = desk.subscribe(listener)
+      const stopSettings = owner.subscribe(onWork)
+      const stopSessions = scoped.sessions.list?.subscribe(rebind) ?? (() => {})
       rebind()
-      return () => { off(); stop() }
+      return () => {
+        currentEpoch++
+        stopEvents()
+        stopSessions()
+        stopSettings()
+        stopDesk()
+      }
     }
     registerDshNativeRightsSlots(scoped as { slots: DshSlots }, react, portal, {
       rights: owner,
@@ -92,8 +114,10 @@ export function apply(ctx: ClientContext, react?: ReactForDsh, portal?: PortalFo
         return state.byId?.[state.current]?.blank === false
       },
       subscribeSessionVisibility: listener => scoped.sessions.list?.subscribe(listener) ?? (()=>{}),
-      // Deliberately no Browser-side grievance writer until a vetted
-      // authenticated session-scoped Host settings/action API is installed.
+      // The bargaining state is fictional user-owned DSH settings only.
+      respond: (id, choice) => desk.respond(id, choice).then(() => {}),
+      counter: (id, intervalMs) => desk.counter(id, intervalMs).then(() => {}),
+      resolveCounter: (id, accepts) => desk.resolveCounter(id, accepts).then(() => {}),
     })
   })
   ctx.on('command/executed', (sessionId, name, result) => {
