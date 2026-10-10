@@ -60,6 +60,7 @@ export function createDshBrowserUnionDesk(options: {
   const unsubscribe = scope.subscribe(notify)
   let activeKey: string | null = null
   let serial: Promise<unknown> = Promise.resolve()
+  let sessionEpoch = 0
   const consent = () => {
     try { return options.consent() === true } catch { return false }
   }
@@ -126,14 +127,14 @@ export function createDshBrowserUnionDesk(options: {
     async setActiveSession(sessionId?: string): Promise<void> {
       // Invalidate the previous session immediately: async hashing MUST NOT
       // leak a previous session's state to the new session.
+      const epoch = ++sessionEpoch
       activeKey = null
       notify()
       if (typeof sessionId !== 'string' || !sessionId) return
       const scopedId = sessionId
       let key: string
       try { key = await hashSession(scopedId) } catch { return }
-      if (!KEY_PATTERN.test(key)) return
-      // Session switches can race; the invoking integration serializes changes.
+      if (!KEY_PATTERN.test(key) || sessionEpoch !== epoch) return
       activeKey = key
       notify()
     },
