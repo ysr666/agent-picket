@@ -191,7 +191,7 @@ test('native Chinese technical commands localize only text, never model/Host pol
     ['days',/每日工作记录不可用/],
     ['trends',/工作趋势不可用/],
     ['forget-lifetime',/清除已保存的工作汇总/],
-    ['check',/本地人工检查/],
+    ['check',/用法：\/union check/],
     ['what-is-this',/未知.*子命令/],
   ] as const
   for(const [command,expected] of checks)
