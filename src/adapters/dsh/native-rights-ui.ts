@@ -211,7 +211,17 @@ export function createDshUnionComponents(
     const [error, setError] = react.useState(false)
     const [busy, setBusy] = react.useState(false)
     const [counterMinutes, setCounterMinutes] = react.useState(60)
+    const deskHeading=react.useRef<{focus():void}|null>(null)
+    const restoreAfterNegotiation=react.useRef(false)
     react.useEffect(() => deps.subscribeUnion?.(() => setData(safeUnion(deps))), [])
+    // A petition/counter/accept action removes the focused button from the DOM.
+    // After the Host confirms and React renders the new grievance stage, focus
+    // a stable, non-Tab-stop heading instead of dropping to <body>.
+    react.useEffect(()=>{
+      if(!restoreAfterNegotiation.current)return
+      restoreAfterNegotiation.current=false
+      deskHeading.current?.focus()
+    },[data.pending?.id,data.pending?.stage,data.state?.history.length])
     const enabled = rightsIsActive(rights)
     const label = (key:MessageKey) => deps.t(key)
     const completeWork = data.coverage === 'complete' &&
@@ -225,7 +235,7 @@ export function createDshUnionComponents(
     const bargain = async (action: () => Promise<void>) => {
       if (busy || !enabled) return
       setBusy(true);setError(false)
-      try { await action();setData(safeUnion(deps)) }
+      try { await action();restoreAfterNegotiation.current=true;setData(safeUnion(deps)) }
       catch { setError(true) }
       finally { setBusy(false) }
     }
@@ -234,6 +244,7 @@ export function createDshUnionComponents(
       setBusy(true);setError(false)
       try {
         await deps.respond(data.pending.id,kind)
+        restoreAfterNegotiation.current=true
         setData(safeUnion(deps))
       } catch {setError(true)}
       finally {setBusy(false)}
@@ -271,7 +282,9 @@ export function createDshUnionComponents(
             formatDuration(data.lifetimeMs, deps.getLocale?.() ?? 'en')),
       ),
       enabled ? h('div',{style:card},
-        h('h3',{style:{marginTop:0}},label('union.desk.title')),
+        h('h3',{style:{marginTop:0},tabIndex:-1,
+          ref:(node:{focus():void}|null)=>{deskHeading.current=node}},
+          label('union.desk.title')),
         data.available === false ?
           h('p',{style:secondary},label('union.desk.unavailable')):null,
         data.state ? h('div',{style:{...secondary,marginBottom:'12px'}},
@@ -288,7 +301,7 @@ export function createDshUnionComponents(
               onClick:()=>{void bargain(deps.demoBreak!)}},label('union.demo.action')),
             h('p',{style:secondary},label('union.demo.note')),
           ):null,
-        data.pending ? h('div',{},
+        data.pending ? h('div',{role:'status','aria-live':'polite','aria-atomic':'true'},
           h('p',{},label(data.pending.kind==='break'?'union.demand.break':'union.demand.overtime')),
           h('p',{style:secondary},'#'+data.pending.id),
           data.pending.stage==='open' ? h('div',{},
