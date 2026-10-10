@@ -28,3 +28,5 @@
 5. Keep human VoiceOver/NVDA, native 200%/400% zoom, OS high-contrast, strict whitelist/privacy review and the canonical parent PR merge audit as blockers.
 
 **No real task blocking, hidden telemetry, session raw IDs, prompt/tool payloads, alternate settings writers, npm publish or merge were introduced.** Treat this as an incomplete experimental compatibility branch and keep its PR Draft.
+
+**Follow-up:** Draft child branch `fix/dsh-017-client-official-settings-20261010` has real DSH 0.1.7 Web consent/bargaining PASS, but full Composer parity is still NOT VERIFIED. See `docs/DSH_017_OFFICIAL_CLIENT_WEB_VALIDATION.md`. Historical failures above describe the *parent* state, not the newest candidate.

@@ -56,15 +56,15 @@ async function realComposerParity(mode: 'source'|'installed') {
       ? resolve(import.meta.dirname,'../dist/adapters/dsh/plugin.js')
       : offlineInstalledEntry(root)
     const patch = join(root,'picket.patch.yml')
-    writeFileSync(patch, '- insert:\n    - id: agent-picket-real-composer-parity\n      name: '
+    writeFileSync(patch, '- insert:\n    - id: agent-picket\n      name: '
       + JSON.stringify(entry) + '\n')
     child = spawn(bin!, [
-      '--profile','web','--patch',patch,'--no-open',
+      '--profile','web',...(process.env.PICKET_TEST_017_HOME ? [] : ['--patch',patch]),'--no-open',
       '--host','127.0.0.1','--port','0',
     ], {
       stdio:['ignore','pipe','pipe'],
       env: {
-        ...process.env, DSH_HOME:join(root,'isolated-home'),
+        ...process.env, DSH_HOME:process.env.PICKET_TEST_017_HOME ?? join(root,'isolated-home'),
         AGENT_PICKET_STATS:'off', DEEPSEEK_API_KEY:'', OPENAI_API_KEY:'',
         HTTP_PROXY:'http://127.0.0.1:9',HTTPS_PROXY:'http://127.0.0.1:9',
         ALL_PROXY:'http://127.0.0.1:9',
@@ -162,8 +162,11 @@ async function realComposerParity(mode: 'source'|'installed') {
         .waitFor({state:'visible',timeout:5_000})
       await editor.press('Enter')
       await editor.type(args)
-      const ack=page.waitForResponse((r:any)=>r.url()
-        ===new URL('/api/commands/execute',origin).toString(),{timeout:6_000})
+      const ack=page.waitForResponse((r:any)=>{
+        const url=new URL(r.url())
+        return url.origin===new URL(origin).origin &&
+          /\/api\/commands(?:\/|\.)execute$/.test(url.pathname)
+      },{timeout:8_000})
       await editor.press('Enter')
       const response=await ack
       assert.equal(response.status(),200,'DSH command RPC transport')

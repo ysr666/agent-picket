@@ -1,6 +1,7 @@
 import { createBrowserDashboardBridge } from './client-dashboard.ts'
 import { createDshBrowserUnionDesk, type UnionSettingsSection } from './client-bargaining.ts'
-import { createDshClientRightsScope, type DshSettingsScope, type RightsSection } from './client-rights-scope.ts'
+import { createDshClientRightsScope, type DshSettingsScope } from './client-rights-scope.ts'
+import { createOfficialDsh017Scope, type OfficialHostMirror, type OfficialHostSettings } from './client-host-settings-017.ts'
 import { registerDshNativeRightsSlots, type ReactForDsh, type PortalForDsh, type DshSlots } from './native-rights-ui.ts'
 import { formatMessage, resolveLocale, type MessageKey } from '../../i18n/index.ts'
 
@@ -21,6 +22,8 @@ interface ClientContext {
   inject?(services: string[], cb: (ctx: ClientContext) => void): unknown
   slots?: DshSlots
   settingsScope?: { bind<T>(spec: { namespace: string }): DshSettingsScope<T> }
+  configForms?: { describe(): OfficialHostMirror }
+  remote?: OfficialHostSettings
   locale?: { getLocale(): { active: string }; subscribe(listener:()=>void):()=>void }
   /** Public Cordis service registration; removed with the client plugin fiber. */
   provide?(name: string, value: unknown): () => void
@@ -50,14 +53,19 @@ export function apply(ctx: ClientContext, react?: ReactForDsh, portal?: PortalFo
   // Native React Slots are installed only when DSH's own services are present.
   // Their settings writes use the Host's authenticated settingsScope, never
   // the read-only agentPicketDashboard service.
-  if (react && portal && ctx.inject) ctx.inject(['slots', 'settingsScope', 'locale'], scoped => {
-    if (!scoped.slots || !scoped.settingsScope || !scoped.locale) return
-    const rightsScope = scoped.settingsScope.bind<UnionSettingsSection>({
-      namespace: 'agent-picket',
-    })
-    const ledgerScope = scoped.settingsScope.bind<UnionSettingsSection>({
-      namespace: 'agent-picket',
-    })
+  // Two official Host versions, one Client registration and one Host writer.
+  let unionRegistered = false
+  const registerUnion = (scoped: ClientContext, version: 'old'|'new') => {
+    if (unionRegistered || !scoped.slots || !scoped.locale) return
+    if (version === 'old' && !scoped.settingsScope) return
+    if (version === 'new' && !scoped.configForms) return
+    const rightsScope: DshSettingsScope<UnionSettingsSection> = version === 'new'
+      ? createOfficialDsh017Scope(scoped.configForms!.describe(), scoped.remote ?? {})
+      : scoped.settingsScope!.bind<UnionSettingsSection>({namespace:'agent-picket'})
+    const ledgerScope: DshSettingsScope<UnionSettingsSection> = version === 'new'
+      ? rightsScope // One native ConfigForms mirror and one Host CAS write queue.
+      : scoped.settingsScope!.bind<UnionSettingsSection>({namespace:'agent-picket'})
+    unionRegistered = true
     const owner = createDshClientRightsScope(rightsScope)
     const desk = createDshBrowserUnionDesk({
       scope: ledgerScope,
@@ -121,7 +129,7 @@ export function apply(ctx: ClientContext, react?: ReactForDsh, portal?: PortalFo
         void ledgerScope.dispose?.().catch(() => {})
       })
     }
-    registerDshNativeRightsSlots(scoped as { slots: DshSlots }, react, portal, {
+    registerDshNativeRightsSlots(scoped as { slots: DshSlots }, react!, portal!, {
       rights: owner,
       t: (key, params) => (formatMessage as unknown as
         (locale: ReturnType<typeof uiLocale>, key: MessageKey, params?: Record<string, string | number>) => string)(
@@ -142,7 +150,12 @@ export function apply(ctx: ClientContext, react?: ReactForDsh, portal?: PortalFo
       counter: (id, intervalMs) => desk.counter(id, intervalMs).then(() => {}),
       resolveCounter: (id, accepts) => desk.resolveCounter(id, accepts).then(() => {}),
     })
-  })
+  }
+  if (react && portal && ctx.inject) {
+    ctx.inject(['slots','configForms','remote','remote.settings','locale'],
+      scoped => registerUnion(scoped,'new'))
+    ctx.inject(['slots', 'settingsScope', 'locale'], scoped => registerUnion(scoped, 'old'))
+  }
   ctx.on('command/executed', (sessionId, name, result) => {
     // This is a local acknowledgment from this browser, not a cross-tab event.
     if (name !== 'union' || !result.text || result.kind !== 'success') return

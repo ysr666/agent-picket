@@ -19,12 +19,12 @@
     "test:dsh:real": "node scripts/run-real-tests.mjs",
     "build": "node scripts/clean-build.mjs && tsc -p tsconfig.build.json && node scripts/build-dsh-client.mjs"
   },
-  "main": "./dist/core/index.js",
-  "types": "./dist/core/index.d.ts",
+  "main": "./dist/adapters/dsh/plugin.js",
+  "types": "./dist/adapters/dsh/plugin.d.ts",
   "exports": {
     ".": {
-      "types": "./dist/core/index.d.ts",
-      "default": "./dist/core/index.js"
+      "types": "./dist/adapters/dsh/plugin.d.ts",
+      "default": "./dist/adapters/dsh/plugin.js"
     },
     "./core": {
       "types": "./dist/core/index.d.ts",
@@ -47,7 +47,9 @@
     "docs/"
   ],
   "dsh": {
-    "bundle": { "patch": "./cordis.patch.yml" },
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
     "client": {
       "inject": [
         "@deepseek-ai/dsh-api-session-controller",

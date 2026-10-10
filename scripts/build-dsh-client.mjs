@@ -13,6 +13,7 @@ const modules = [
   'i18n/zh-CN.js',
   'i18n/index.js',
   'adapters/dsh/client-rights-scope.js',
+  'adapters/dsh/client-host-settings-017.js',
   'product/union-desk.js',
   'product/union-ledger.js',
   'adapters/dsh/client-bargaining.js',
@@ -23,13 +24,14 @@ const modules = [
 const allowedImports = new Map([
   ['i18n/index.js', new Set(['./en.js', './zh-CN.js'])],
   ['adapters/dsh/native-rights-ui.js', new Set(['./client-rights-scope.js'])],
+  ['adapters/dsh/client-host-settings-017.js', new Set(['../../product/union-ledger.js'])],
   ['product/union-ledger.js', new Set(['./union-desk.js'])],
   ['adapters/dsh/client-bargaining.js', new Set([
     '../../product/union-desk.js', '../../product/union-ledger.js',
   ])],
   ['adapters/dsh/client.js', new Set([
     './client-dashboard.js', './client-rights-scope.js', './client-bargaining.js',
-    './native-rights-ui.js', '../../i18n/index.js',
+    './native-rights-ui.js', './client-host-settings-017.js', '../../i18n/index.js',
   ])],
 ])
 const blocks = []
