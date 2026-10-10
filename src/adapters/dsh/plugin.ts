@@ -9,6 +9,7 @@ import type { DetectionProvider } from '../../core/types.ts'
 import { homedir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { registerHostRightsNamespace } from './rights-settings.ts'
+import { createNativeUnionCommandPort, type NativeUnionCommandPort } from './native-rights-command.ts'
 
 /**
  * Native DeepSeek Harness/Cordis plugin entry. Node 22.19+ TypeScript stripping
@@ -21,7 +22,11 @@ export const name = 'agent-picket'
 
 export function apply(ctx: DshIntegrationContext): void {
   // Native DSH settings namespace, independent of default-on local work stats.
-  registerHostRightsNamespace(ctx as unknown as Parameters<typeof registerHostRightsNamespace>[0])
+  let nativeUnion: NativeUnionCommandPort | undefined
+  registerHostRightsNamespace(
+    ctx as unknown as Parameters<typeof registerHostRightsNamespace>[0],
+    provider => { nativeUnion = createNativeUnionCommandPort(provider) },
+  )
   const rules = new LocalRuleDetector()
   // Work-only lifetime summaries are local and ON by default, as expected
   // from a session analytics plugin. All text/classification persistence is
@@ -75,6 +80,8 @@ export function apply(ctx: DshIntegrationContext): void {
     statsStorageState: process.env.AGENT_PICKET_STATS === 'off'
       ? 'disabled' : 'unavailable',
     ceremony: new SymbolicUnion(clock),
+    getNativeUnion: () => nativeUnion,
+    getLaborRightsEnabled: () => nativeUnion?.enabled() === true,
   })
 }
 

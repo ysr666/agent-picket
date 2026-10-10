@@ -1,4 +1,5 @@
 import Schema from '@deepseek-ai/schemastery'
+import type { NativeSettingsProvider } from './native-rights-command.ts'
 import { parseUnionLedger, MAX_UNION_LEDGER_BYTES } from '../../product/union-ledger.ts'
 
 /**
@@ -23,7 +24,10 @@ export interface DshNativeSettingsContext {
     }
   }) => void): unknown
 }
-export function registerHostRightsNamespace(ctx: DshNativeSettingsContext): void {
+export function registerHostRightsNamespace(
+  ctx: DshNativeSettingsContext,
+  onRegistered?: (provider: NativeSettingsProvider) => void,
+): void {
   // Optional injection: unsupported Hosts remain observation-only. Do not
   // initialize a second independent writable consent state as fallback.
   ctx.inject?.(['settings'], child => {
@@ -31,7 +35,8 @@ export function registerHostRightsNamespace(ctx: DshNativeSettingsContext): void
     // Preserve normal Agent execution and never grant fictional consent in that case.
     const settings = child?.settings
     if (typeof settings?.register !== 'function') return
-    try { settings.register(RIGHTS_SETTINGS_NAMESPACE, RightsSettingsSchema, {
+    try {
+      settings.register(RIGHTS_SETTINGS_NAMESPACE, RightsSettingsSchema, {
       validate(section: unknown) {
         const ledger = (section as { unionLedger?: unknown } | null)?.unionLedger
         const parsed = parseUnionLedger(ledger)
@@ -42,7 +47,15 @@ export function registerHostRightsNamespace(ctx: DshNativeSettingsContext): void
           throw new Error('Unsafe or malformed union agreement ledger')
         }
       },
-    }) }
+      })
+      // Commands are optional: the only writer remains the Host's registered
+      // settings namespace. Missing older-Host APIs degrade read-only.
+      const host = settings as unknown as Partial<NativeSettingsProvider>
+      if (typeof host.get === 'function' && typeof host.describe === 'function'
+        && typeof host.update === 'function') {
+        onRegistered?.(host as NativeSettingsProvider)
+      }
+    }
     catch { /* Host settings unavailable: UI remains OFF/read-only */ }
   })
 }
