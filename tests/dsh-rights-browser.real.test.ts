@@ -250,8 +250,14 @@ async function runRightsBrowserE2E(mode: 'source' | 'installed'): Promise<void> 
     page = await context.newPage()
     page.on('pageerror', (error: Error) => browserErrors.push(error.name))
     await page.goto(origin, { waitUntil: 'domcontentloaded', timeout: 15_000 })
-    await page.getByRole('button', { name: /^(继续|Continue)$/ }).click({ timeout: 8_000 })
-    await skipOfficialProvider()
+    // DSH may remember its own onboarding across full Host restarts; do not
+    // require first-run buttons to reappear when its provider is already set.
+    const restartedContinue = page.getByRole('button', { name: /^(继续|Continue)$/ })
+    if (await restartedContinue.count()) await restartedContinue.click({ timeout: 6_000 })
+    const restartedSkip = page.getByRole('button', {
+      name: /稍后配置|Skip for now|Configure later/,
+    })
+    if (await restartedSkip.count()) await restartedSkip.click({ timeout: 6_000 })
     firstRun = page.locator('[role="dialog"]')
       .filter({ hasText: /你的 Agent，也应当拥有权利|Your Agent Deserves Rights/ })
     assert.equal(await firstRun.count(), 0, 'Restart cannot re-enable first-run invitation')
