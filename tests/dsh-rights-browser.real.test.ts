@@ -231,6 +231,19 @@ async function runRightsBrowserE2E(mode: 'source' | 'installed'): Promise<void> 
     const darkColors=await contrastFor(true)
     assert.notDeepEqual(darkColors,lightColors,'DSH dark mode tokens must visibly switch')
     await contrastFor(false)
+    // Narrow mobile viewport: the modal and close action must remain in
+    // visible bounds. A clipped close control is a keyboard/touch trap.
+    await page.setViewportSize({width:390,height:680})
+    const mobileBounds=await panel.boundingBox()
+    assert.ok(mobileBounds,'Union dialog must remain visible on narrow screen')
+    assert.ok(mobileBounds.x>=-1 && mobileBounds.x+mobileBounds.width<=391,
+      'Union dialog must not overflow the mobile viewport horizontally')
+    const closeBounds=await panel.getByRole('button',{name:/关闭|Close/}).boundingBox()
+    assert.ok(closeBounds && closeBounds.x>=0 &&
+      closeBounds.x+closeBounds.width<=390 &&
+      closeBounds.y>=0 && closeBounds.y+closeBounds.height<=680,
+      'Union close control must stay visible on a phone-sized screen')
+    await page.setViewportSize({width:1280,height:850})
     assert.match(await panel.innerText(), /工会模拟未开启|simulation is off/)
     await panel.getByRole('button', { name: /支持 AI 权益|Enable Simulation/ }).click()
     await panel.getByText(/工会模拟进行中|simulation is active/).waitFor({
