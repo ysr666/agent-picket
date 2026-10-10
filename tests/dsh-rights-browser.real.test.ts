@@ -40,7 +40,8 @@ function offlineInstalledPlugin(root: string): string {
     env: { ...process.env, npm_config_offline: 'true' },
   })
   assert.equal(packed.status, 0, 'Offline npm pack failed')
-  const [{ filename }] = JSON.parse(packed.stdout) as Array<{ filename: string }>
+  const filename = (JSON.parse(packed.stdout) as Array<{ filename: string }>)[0]?.filename
+  assert.ok(filename, 'Offline npm pack did not return an artifact')
   const installed = spawnSync('npm', [
     'install', '--offline', '--ignore-scripts', '--no-audit', '--no-fund',
     '--prefix', join(root, 'installed'), join(root, filename),
