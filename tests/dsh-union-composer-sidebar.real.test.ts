@@ -104,9 +104,12 @@ async function realComposerParity(mode: 'source'|'installed', selection: 'pointe
     const pageErrors:string[]=[]
     page.on('pageerror',(e:Error)=>pageErrors.push(e.name+': '+e.message.slice(0,150)))
     await page.goto(origin,{waitUntil:'domcontentloaded',timeout:15_000})
-    await page.getByRole('button',{name:/^(继续|Continue)$/}).click({timeout:7_000})
-    await page.getByRole('button',{name:/稍后配置|Skip for now|Configure later/})
-      .click({timeout:7_000})
+    const cont=page.getByRole('button',{name:/^(继续|Continue)$/})
+    await cont.waitFor({state:'visible',timeout:5_000}).catch(()=>{})
+    if(await cont.isVisible()) await cont.click({timeout:7_000})
+    const skip=page.getByRole('button',{name:/稍后配置|Skip for now|Configure later/})
+    await skip.waitFor({state:'visible',timeout:5_000}).catch(()=>{})
+    if(await skip.isVisible()) await skip.click({timeout:7_000})
     const firstRun=page.locator('[role="dialog"]')
       .filter({hasText:/你的 Agent，也应当拥有权利|Your Agent Deserves Rights/})
     // This test covers typed Composer execution, not first-install popup
@@ -194,6 +197,22 @@ async function realComposerParity(mode: 'source'|'installed', selection: 'pointe
       // sending any command. No RPC injection, retries or implicit submits.
       const unionSuggestion=page.getByText('Show local union status and work statistics')
       await unionSuggestion.waitFor({state:'visible',timeout:5_000})
+      // Capture only the opt-in keyboard menu's safe structural state.
+      // Never record editable text, credentials, raw Session IDs or RPC args.
+      const keyboardStructure=()=>page.evaluate(()=>{
+        const doc=(globalThis as any).document
+        const composer=doc.querySelector('[data-composer-input="true"]')
+        const menu=doc.querySelector('[data-trigger-menu]')
+        return {
+          phase:composer?.getAttribute('data-phase')??null,
+          focused:doc.activeElement===composer,
+          menuMounted:!!menu,
+          optionCount:menu?.querySelectorAll('[role="option"]').length??0,
+          highlightedCount:menu?.querySelectorAll('[role="option"][aria-selected="true"]').length??0,
+          rootInert:doc.getElementById('root')?.inert===true,
+        }
+      })
+      let preEnterKeyboardState:Awaited<ReturnType<typeof keyboardStructure>>|undefined
       if(selection==='keyboard') {
         // The visible description alone can outlive the menu's ready rows:
         // DSH refreshes results asynchronously and may show a pending shell.
@@ -201,7 +220,12 @@ async function realComposerParity(mode: 'source'|'installed', selection: 'pointe
         // visible text implies Enter has a selectable candidate.
         const options=page.locator('[data-trigger-menu] [role="option"]')
         const target=options.filter({hasText:'Show local union status and work statistics'})
-        await target.waitFor({state:'visible',timeout:12_000})
+        try {
+          await target.waitFor({state:'visible',timeout:12_000})
+        }catch(error){
+          throw new Error('Native /union option disappeared before keyboard selection: '
+            +JSON.stringify(await keyboardStructure()),{cause:error})
+        }
         const count=await options.count()
         assert.ok(count>0 && count<100,'Bounded native DSH slash candidate list')
         for(let i=0;i<count && await target.getAttribute('aria-selected')!=='true';i++) {
@@ -209,6 +233,7 @@ async function realComposerParity(mode: 'source'|'installed', selection: 'pointe
         }
         assert.equal(await target.getAttribute('aria-selected'),'true',
           'Keyboard highlighting must select exactly /union')
+        preEnterKeyboardState=await keyboardStructure()
         await editor.press('Enter')
       } else {
         await unionSuggestion.click({timeout:5_000})
@@ -236,7 +261,7 @@ async function realComposerParity(mode: 'source'|'installed', selection: 'pointe
           }
         })
         throw new Error('Official Composer command claim did not settle: '
-          +JSON.stringify(observed),{cause:error})
+          +JSON.stringify({preEnterKeyboardState,afterEnter:observed}),{cause:error})
       }
       await editor.type(args)
       const ack=page.waitForResponse((r:any)=>{
