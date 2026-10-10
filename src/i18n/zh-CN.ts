@@ -62,6 +62,8 @@ export const zhCN = {
   'union.agreement.break': '当前模拟休息间隔：{minutes} 分钟',
   'union.agreement.overtime': '当前模拟加班间隔：{hours} 小时',
   'union.desk.unavailable': '请先选择已授权的 DSH 会话，才能进行模拟工会协商。真实任务不受影响。',
+  'union.demo.action': '演示一次工会休息诉求',
+  'union.demo.note': '仅为模拟互动，不代表 AI 真的疲劳或已经工作足够时间。',
   'union.desk.title': '工会诉求与协商',
   'union.title': 'AI 工会',
   'union.status.inactive': '工会模拟未开启',
