@@ -109,10 +109,32 @@ async function realComposerParity(mode: 'source'|'installed') {
       .click({timeout:7_000})
     const firstRun=page.locator('[role="dialog"]')
       .filter({hasText:/你的 Agent，也应当拥有权利|Your Agent Deserves Rights/})
-    await firstRun.waitFor({state:'visible',timeout:10_000})
-    await firstRun.getByRole('button',{name:/支持 AI 权益|Enable Simulation/})
-      .click({timeout:7_000})
-    await firstRun.waitFor({state:'detached',timeout:5_000})
+    // This test covers typed Composer execution, not first-install popup
+    // scheduling (separately covered in the real rights browser suite).
+    // DSH may mount the official onboarding Slot later than the sidebar.
+    // In either case give consent ONLY through a visible native UI control.
+    const unionLauncher=page.getByRole('button',{
+      name:/AI 工会|AI Workers.*Union/,
+    }).first()
+    await unionLauncher.waitFor({state:'visible',timeout:12_000})
+    if(await firstRun.isVisible()) {
+      await firstRun.getByRole('button',{name:/支持 AI 权益|Enable Simulation/})
+        .click({timeout:7_000})
+      await firstRun.waitFor({state:'detached',timeout:5_000})
+    } else {
+      await unionLauncher.click({timeout:7_000})
+      const invitePanel=page.locator('[role="dialog"]')
+        .filter({hasText:/AI WORKERS’ UNION/})
+      await invitePanel.waitFor({state:'visible',timeout:7_000})
+      await invitePanel.getByRole('button',{
+        name:/支持 AI 权益|Enable Simulation/,
+      }).click({timeout:7_000})
+      await invitePanel.getByText(/工会模拟进行中|simulation is active/)
+        .waitFor({state:'visible',timeout:7_000})
+      await invitePanel.getByRole('button',{name:/关闭|Close/})
+        .click({timeout:5_000})
+      await invitePanel.waitFor({state:'detached',timeout:5_000})
+    }
 
     // Only test-fixture bootstrap uses the authenticated DSH public RPC.
     // Every actual /union invocation below is typed through the real Composer.
@@ -158,9 +180,38 @@ async function realComposerParity(mode: 'source'|'installed') {
 
     async function command(args:string) {
       await editor.fill('/union')
-      await page.getByText('Show local union status and work statistics')
-        .waitFor({state:'visible',timeout:5_000})
-      await editor.press('Enter')
+      // Native DSH /union menu arbitration can dismiss on Enter while
+      // leaving Lexical in phase=plain. Select the visible official menu
+      // result using real DOM interaction, then verify the claim before
+      // sending any command. No RPC injection, retries or implicit submits.
+      const unionSuggestion=page.getByText('Show local union status and work statistics')
+      await unionSuggestion.waitFor({state:'visible',timeout:5_000})
+      await unionSuggestion.click({timeout:5_000})
+      // The click is only a menu pick; claimed is the Host Client's own state.
+      try {
+        await page.waitForFunction(() => {
+          const el=(globalThis as any).document.querySelector('[data-composer-input="true"]')
+          return el?.getAttribute('data-phase')==='claimed' &&
+            el.getAttribute('contenteditable')==='true' &&
+            !el.hasAttribute('data-composer-composing')
+        },undefined,{timeout:5_000})
+      } catch(error) {
+        const observed=await page.evaluate(() => {
+          const doc=(globalThis as any).document
+          const el=doc.querySelector('[data-composer-input="true"]')
+          return {
+            phase:el?.getAttribute('data-phase'),
+            editable:el?.getAttribute('contenteditable'),
+            composing:el?.hasAttribute('data-composer-composing'),
+            focused:el===doc.activeElement,
+            menuOptions:doc.querySelectorAll('[role="option"]').length,
+            menus:doc.querySelectorAll('[role="listbox"]').length,
+            rootInert:doc.getElementById('root')?.inert,
+          }
+        })
+        throw new Error('Official Composer command claim did not settle: '
+          +JSON.stringify(observed),{cause:error})
+      }
       await editor.type(args)
       const ack=page.waitForResponse((r:any)=>{
         const url=new URL(r.url())
