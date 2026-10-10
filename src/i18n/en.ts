@@ -1,5 +1,11 @@
 /** Source locale. Keys describe semantics, never control Host policy. */
 export const en = {
+  'command.legacy.trendTitle': 'Local work trend (UTC calendar; {days} days, current day incomplete)',
+  'command.legacy.trendSummary': 'Active days: {active}/{days}; completed turns: {turns}; tool calls: {tools}; completed-turn spans: {duration} ms.',
+  'command.legacy.trendBars': 'Tool calls per day (relative scale): {plot}',
+  'command.legacy.trendLastSeven': 'Latest seven days:',
+  'command.legacy.trendDay': '{day}: {turns} finished turns, {tools} tool calls',
+  'command.legacy.trendDisclaimer': 'Count-only local history, no prompt text. Turn spans may include waiting time.',
   'command.legacy.checkUnavailable': 'Manual local check is not enabled on this Host.',
   'command.legacy.checkUsage': 'Usage: /union check TEXT. Nothing was sent to a model.',
   'command.legacy.checkTooLong': 'Manual check is limited to 24,000 characters; no partial verdict was issued.',
