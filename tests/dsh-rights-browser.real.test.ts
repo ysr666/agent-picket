@@ -194,6 +194,12 @@ async function runRightsBrowserE2E(mode: 'source' | 'installed'): Promise<void> 
 
     await notNow.click()
     await firstRun.waitFor({ state: 'detached', timeout: 5_000 })
+    // Regardless of whether DSH displayed this via its onboarding Slot or
+    // the sidebar, choosing No must release the inert background. Merely
+    // detaching the portal must not leave keyboard navigation locked.
+    assert.equal(await page.evaluate(()=>Boolean(
+      (globalThis as any).document.getElementById('root')?.inert)),false,
+      'Consent decision must restore Host keyboard accessibility')
 
     await page.reload({ waitUntil: 'domcontentloaded' })
     await skipOfficialProvider()
