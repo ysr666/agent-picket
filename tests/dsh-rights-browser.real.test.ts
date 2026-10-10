@@ -369,6 +369,17 @@ async function runRightsBrowserE2E(mode: 'source' | 'installed'): Promise<void> 
     await panel.getByText(/工会模拟进行中|simulation is active/).waitFor({
       state: 'visible', timeout: 5_000,
     })
+    // Functional union actions take priority over passive worktime evidence.
+    // An enabled union should not hide its negotiation desk beneath metrics.
+    const bargainPosition=await panel.getByRole('heading',{
+      name:/工会诉求与协商|Union demands/,
+    }).boundingBox()
+    const worktimePosition=await panel.getByRole('heading',{
+      name:/工作日与劳动权益|Workday/,
+    }).boundingBox()
+    assert.ok(bargainPosition && worktimePosition
+      && bargainPosition.y < worktimePosition.y,
+      'Real Chrome layout must prioritize the union negotiation desk')
     const enabledText = await panel.innerText()
     assert.match(enabledText, /工会诉求与协商|Union demands/)
     // Legacy DSH has no selected Session during first-run. DSH 0.1.7 may
