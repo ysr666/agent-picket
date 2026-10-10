@@ -1,3 +1,4 @@
+import { formatMessage, type SupportedLocale } from '../i18n/index.ts'
 /**
  * Host-neutral report composition from count-only UTC daily aggregates.
  * Deliberately never accepts user prompts, transcripts or text segments.
@@ -18,6 +19,7 @@ export function formatWorkTrends(
   historical: readonly WorkDay[],
   nowMs: number,
   horizon: TrendHorizon = 7,
+  locale: SupportedLocale = 'en',
 ): string {
   if (horizon !== 7 && horizon !== 30) throw new Error('Unsupported trend window')
   if (!Number.isFinite(nowMs) || nowMs < 0 || nowMs > 8_640_000_000_000_000) {
@@ -43,6 +45,22 @@ export function formatWorkTrends(
   const plot = days.map(day => maxTools === 0 ? BARS[0]!
     : BARS[Math.min(7, Math.floor(day.tools * 7 / maxTools))]!).join('')
   const lastSeven = days.slice(-7)
+  if (locale === 'zh-CN') {
+    const title = formatMessage(locale, 'command.legacy.trendTitle', { days: horizon })
+    const summary = formatMessage(locale, 'command.legacy.trendSummary', {
+      active: total.active, days: horizon, turns: total.turns,
+      tools: total.tools, duration: total.duration,
+    })
+    const bars = formatMessage(locale, 'command.legacy.trendBars', { plot })
+    const details = lastSeven.map(day =>
+      formatMessage(locale, 'command.legacy.trendDay', {
+        day: day.day, turns: day.turns, tools: day.tools,
+      })).join('\n')
+    return title + '\n' + days[0]!.day + ' → ' + days[days.length - 1]!.day
+      + '\n' + summary + '\n' + bars + '\n'
+      + formatMessage(locale, 'command.legacy.trendLastSeven') + '\n'
+      + details + '\n' + formatMessage(locale, 'command.legacy.trendDisclaimer')
+  }
   const detail = lastSeven.map(day =>
     `${day.day}: ${day.turns} finished turns, ${day.tools} tool calls`).join('\n')
   return `Local work trend (UTC calendar; ${horizon} days, current day incomplete)\n`
