@@ -85,6 +85,8 @@ test('npm dry-run tarball contains prebuilt plugin and no source, tests, or runt
     assert.equal(/^(?:src|tests|scripts|node_modules|\.github)\//.test(file), false,
       'Unsafe/dev-only file leaked into npm package: ' + file)
     assert.equal(file.endsWith('.tgz'), false)
+    assert.equal(file.endsWith('.map'), false,
+      'Development source maps must not enter the private npm distribution')
   }
   assert.ok(meta.size < 250_000, 'Package unexpectedly large: review for bundled user files')
 })
