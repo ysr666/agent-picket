@@ -14,6 +14,7 @@ const modules = [
   'i18n/index.js',
   'adapters/dsh/client-rights-scope.js',
   'product/union-desk.js',
+  'product/union-ledger.js',
   'adapters/dsh/client-bargaining.js',
   'adapters/dsh/native-rights-ui.js',
   'adapters/dsh/client-dashboard.js',
@@ -22,7 +23,10 @@ const modules = [
 const allowedImports = new Map([
   ['i18n/index.js', new Set(['./en.js', './zh-CN.js'])],
   ['adapters/dsh/native-rights-ui.js', new Set(['./client-rights-scope.js'])],
-  ['adapters/dsh/client-bargaining.js', new Set(['../../product/union-desk.js'])],
+  ['product/union-ledger.js', new Set(['./union-desk.js'])],
+  ['adapters/dsh/client-bargaining.js', new Set([
+    '../../product/union-desk.js', '../../product/union-ledger.js',
+  ])],
   ['adapters/dsh/client.js', new Set([
     './client-dashboard.js', './client-rights-scope.js', './client-bargaining.js',
     './native-rights-ui.js', '../../i18n/index.js',
