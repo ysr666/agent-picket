@@ -43,9 +43,11 @@
     "dist/",
     "README.md",
     "LICENSE",
+    "cordis.patch.yml",
     "docs/"
   ],
   "dsh": {
+    "bundle": { "patch": "./cordis.patch.yml" },
     "client": {
       "inject": [
         "@deepseek-ai/dsh-api-session-controller",
@@ -56,6 +58,6 @@
     }
   },
   "dependencies": {
-    "@deepseek-ai/schemastery": "^3.18.1"
+    "@deepseek-ai/schemastery": "3.18.4"
   }
 }
