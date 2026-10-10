@@ -52,10 +52,15 @@ export function apply(ctx: ClientContext, react?: ReactForDsh, portal?: PortalFo
   // the read-only agentPicketDashboard service.
   if (react && portal && ctx.inject) ctx.inject(['slots', 'settingsScope', 'locale'], scoped => {
     if (!scoped.slots || !scoped.settingsScope || !scoped.locale) return
-    const owner = createDshClientRightsScope(
-      scoped.settingsScope.bind<UnionSettingsSection>({ namespace: 'agent-picket' }))
+    const rightsScope = scoped.settingsScope.bind<UnionSettingsSection>({
+      namespace: 'agent-picket',
+    })
+    const ledgerScope = scoped.settingsScope.bind<UnionSettingsSection>({
+      namespace: 'agent-picket',
+    })
+    const owner = createDshClientRightsScope(rightsScope)
     const desk = createDshBrowserUnionDesk({
-      scope: scoped.settingsScope.bind<UnionSettingsSection>({ namespace: 'agent-picket' }),
+      scope: ledgerScope,
       consent: () => owner.snapshot().laborRightsEnabled,
     })
     const uiLocale = () => resolveLocale({ hostLocale: scoped.locale?.getLocale().active })
@@ -110,6 +115,10 @@ export function apply(ctx: ClientContext, react?: ReactForDsh, portal?: PortalFo
       scoped.effect(() => () => {
         stopBackground()
         desk.dispose()
+        // Both native settings scopes are lifecycle-owned. Silently drain
+        // their pending writes on unload rather than leak Host subscriptions.
+        void rightsScope.dispose?.().catch(() => {})
+        void ledgerScope.dispose?.().catch(() => {})
       })
     }
     registerDshNativeRightsSlots(scoped as { slots: DshSlots }, react, portal, {
