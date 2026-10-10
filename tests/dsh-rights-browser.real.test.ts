@@ -215,6 +215,33 @@ async function runRightsBrowserE2E(mode: 'source' | 'installed'): Promise<void> 
     assert.match(await panel.innerText(), /当前模拟休息间隔：30 分钟|break interval: 30 minutes/,
       'Simulated negotiated interval must persist through real Browser reload')
 
+    // Independent Chrome tab/React fiber: both panels must derive rights and
+    // agreements from the same authoritative, version-fenced Host settings.
+    const otherPage = await context.newPage()
+    otherPage.on('pageerror', (error: Error) => browserErrors.push(error.name))
+    await otherPage.goto(origin, { waitUntil: 'domcontentloaded', timeout: 15_000 })
+    const otherSkip = otherPage.getByRole('button', {
+      name: /稍后配置|Skip for now|Configure later/,
+    })
+    await otherSkip.waitFor({ state: 'visible', timeout: 5_000 }).catch(() => {})
+    if (await otherSkip.count()) await otherSkip.click({ timeout: 6_000 })
+    await otherPage.getByRole('button', { name: /AI 工会|AI Workers.*Union/ })
+      .first().click({ timeout: 6_000 })
+    const otherPanel = otherPage.locator('[role="dialog"]')
+      .filter({ hasText: /AI WORKERS’ UNION/ })
+    await otherPanel.waitFor({ state: 'visible', timeout: 5_000 })
+    assert.match(await otherPanel.innerText(), /当前模拟休息间隔：30 分钟|break interval: 30 minutes/,
+      'Second tab must read the first tab’s persisted negotiated rule')
+    await otherPanel.getByRole('button', { name: /演示一次工会休息诉求|sample rest grievance/ })
+      .click({ timeout: 7_000 })
+    await panel.getByText(/工会提出了模拟休息申请|simulated rest break/)
+      .waitFor({ state: 'visible', timeout: 7_000 })
+    await panel.getByRole('button', { name: /接受提案|Accept proposal/ })
+      .click({ timeout: 7_000 })
+    await otherPanel.getByText(/目前没有待处理的模拟工会诉求|no pending simulated union grievance/)
+      .waitFor({ state: 'visible', timeout: 7_000 })
+    await otherPage.close()
+
     // **Full Host process restart**, not just a Web reload. The same throwaway
     // DSH_HOME must retain the settings-owned agreement, and a fresh Host must
     // issue a new auth cookie. Never reuse the previous session's login token.
