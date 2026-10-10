@@ -40,6 +40,11 @@ test('default DSH work stats persist; classifications stay in-memory unless opte
     assert.match(run('lifetime').text,/1 started/)
     assert.match(run('lifetime').text,/80 ms/)
     assert.match(run('days').text,/1970-01-01: 1 turns ended, 0 tool calls, 80 ms/)
+    assert.match(run('trends').text,/Local work trend \(UTC calendar; 7 days/)
+    assert.match(run('trends 30').text,/Local work trend \(UTC calendar; 30 days/)
+    assert.equal(run('trends 365').kind,'error')
+    assert.match(run('trends 365').text,/Usage: \/union trends/)
+
     assert.match(run('lifetime').text,/0 checked/)
     assert.equal(run('forget-lifetime').kind,'error')
     assert.equal(run('reset').kind,'success')
