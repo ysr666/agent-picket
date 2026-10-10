@@ -2,4 +2,4 @@
 # This does not enable simulated consent or real prompt/tool blocking.
 - insert:
     - id: agent-picket
-      name: 'agent-picket/dsh'
+      name: 'agent-picket'

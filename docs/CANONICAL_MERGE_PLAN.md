@@ -27,11 +27,12 @@ main
                                                 └─ #55 test/union-ax-canonical-20261010 (AX verification)
                                                    └─ #56 test/union-host-error-zoom-review-20261010
                                                       └─ fix/dsh-017-host-compatibility-20261010 (experimental Host/profile only)
+                                                         └─ fix/dsh-017-client-official-settings-20261010 (Web rights verified, Composer pending)
 ```
 
 **Sibling warning:** PR #53 (`fix/53-union-reflow-dynamic-focus`) and PR #54 (`fix/53-union-reflow-forced-colors`) both target #52. They are *not* sequential commits. This proposal builds on the #54 head and selectively ports #53's real Chrome accessibility-tree assertion, extending it to the welcome dialog and 320px reflow. Do not merge #53 and #54 serially or close either as merged on the strength of this proposal. The proposed test branch is also Draft-only, not a release.
 
-The DSH 0.1.7 experiment is **NOT full compatibility**: its native Config and bundle shape have partial evidence, but the real Web welcome/union sidebar still fails. See `docs/DSH_017_HOST_PROFILE_EXPERIMENT.md`. Do not merge a release from this experiment.
+The earlier DSH 0.1.7 Host-only experiment is superseded for Web rights by `docs/DSH_017_OFFICIAL_CLIENT_WEB_VALIDATION.md` (verified Web, Composer parity still blocked). The DSH 0.1.7 experiment is **NOT full compatibility**: its native Config and bundle shape have partial evidence, but the real Web welcome/union sidebar still fails. See `docs/DSH_017_HOST_PROFILE_EXPERIMENT.md`. Do not merge a release from this experiment.
 
 All listed PRs are currently stacked **Draft/open**. This is the preferred **review and sequencing plan**, not permission to click Merge. Resolve the pre-existing #23 baseline and its many older feature branches first, then merge in dependency order after the specific parent's checks pass. If a parent is changed, retest descendants at the *new* head. Never mass-merge stacked PRs based solely on per-branch green tests. Require the appropriate repository maintainer to authorize release/merge.
 

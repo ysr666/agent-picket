@@ -16,6 +16,9 @@ test('distribution stays private and limits runtime dependencies to Host-side sc
   assert.equal(manifest.license, 'MIT')
   assert.equal(manifest.engines.node, '>=22.19.0')
   assert.deepEqual(Object.keys(manifest.exports).sort(), ['.', './client', './core', './dsh'])
+  assert.equal(manifest.main, './dist/adapters/dsh/plugin.js')
+  assert.equal(manifest.exports['.'].default, './dist/adapters/dsh/plugin.js')
+  assert.equal(manifest.exports['./core'].default, './dist/core/index.js')
   for (const route of Object.values(manifest.exports) as Array<{ default: string; types: string }>) {
     assert.equal(existsSync(resolve(root, route.default)), true, route.default)
     assert.equal(existsSync(resolve(root, route.types)), true, route.types)
@@ -46,7 +49,7 @@ test('browser companion is a self-contained DSH loader artifact with a declared 
   assert.deepEqual(manifest.dsh.bundle, { patch: './cordis.patch.yml' })
   const bundle = readFileSync(resolve(root, 'cordis.patch.yml'), 'utf8')
   assert.match(bundle, /id:\s*agent-picket/)
-  assert.match(bundle, /name:\s*'agent-picket\/dsh'/)
+  assert.match(bundle, /name:\s*'agent-picket'/)
   assert.equal(manifest.dsh.client.platform, 'web')
   assert.deepEqual(manifest.dsh.client.inject, [
     '@deepseek-ai/dsh-api-session-controller',

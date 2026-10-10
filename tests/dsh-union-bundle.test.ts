@@ -64,6 +64,7 @@ test('packaged DSH Client loads native React Slots without extra React, model ca
     }},
     locale:{getLocale:()=>({active:'zh'}),subscribe:()=>()=>{}},
     inject(services:string[],cb:(ctx:any)=>void){
+      if (Array.from(services).includes('configForms')) return
       assert.deepEqual(Array.from(services),['slots','settingsScope','locale'])
       cb(ctx)
     },

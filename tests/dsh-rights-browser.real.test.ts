@@ -67,14 +67,14 @@ async function runRightsBrowserE2E(mode: 'source' | 'installed'): Promise<void> 
     + '      name: ' + JSON.stringify(plugin) + '\n')
 
   const childArguments = [
-    '--profile', 'web', '--patch', patch, '--no-open',
+    '--profile', 'web', ...(process.env.PICKET_TEST_017_HOME ? [] : ['--patch',patch]), '--no-open',
     '--host', '127.0.0.1', '--port', '0',
   ]
   const childOptions = {
     stdio: ['ignore', 'pipe', 'pipe'] as ['ignore', 'pipe', 'pipe'],
     env: {
       ...process.env,
-      DSH_HOME: join(root, 'isolated-home'),
+      DSH_HOME: process.env.PICKET_TEST_017_HOME ?? join(root, 'isolated-home'),
       AGENT_PICKET_STATS: 'off',
       DEEPSEEK_API_KEY: '',
       OPENAI_API_KEY: '',
