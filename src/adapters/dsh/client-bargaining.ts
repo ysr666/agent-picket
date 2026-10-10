@@ -7,48 +7,13 @@
  * user-scoped hashes pseudonymize session references in that document.
  */
 import { createLaborDesk, parseLaborState, type Coverage, type LaborDemand, type LaborStateV1 } from '../../product/union-desk.ts'
+import { parseUnionLedger, MAX_UNION_SESSIONS, MAX_UNION_LEDGER_BYTES } from '../../product/union-ledger.ts'
 import type { DshSettingsScope, SettingsScopeSnapshot } from './client-rights-scope.ts'
 
 export interface UnionSettingsSection {
   readonly welcomeDecision: 'unseen' | 'enabled' | 'not-now'
   readonly unionLedger: string
 }
-export interface UnionLedgerV1 {
-  readonly schemaVersion: 1
-  readonly sessions: Readonly<Record<string, LaborStateV1>>
-}
-export interface BrowserUnionSnapshot {
-  readonly available: boolean
-  readonly state: LaborStateV1 | null
-  readonly pending: LaborDemand | null
-  readonly autoBlockEnabled: false
-}
-const MAX_RECORDS = 8
-const MAX_BYTES = 24_000
-const KEY_PATTERN = /^[a-f0-9]{64}$/
-const DEFAULT_LEDGER: UnionLedgerV1 = { schemaVersion: 1, sessions: {} }
-
-export function parseUnionLedger(input: unknown): UnionLedgerV1 | null {
-  if (input === '' || input === undefined) return DEFAULT_LEDGER
-  if (typeof input !== 'string' || input.length > MAX_BYTES) return null
-  let raw: unknown
-  try { raw = JSON.parse(input) } catch { return null }
-  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null
-  const candidate = raw as Partial<UnionLedgerV1>
-  if (candidate.schemaVersion !== 1 || !candidate.sessions
-    || typeof candidate.sessions !== 'object' || Array.isArray(candidate.sessions)) return null
-  const entries = Object.entries(candidate.sessions)
-  if (entries.length > MAX_RECORDS) return null
-  const sessions: Record<string, LaborStateV1> = Object.create(null)
-  for (const [key, value] of entries) {
-    if (!KEY_PATTERN.test(key)) return null
-    const state = parseLaborState(value)
-    if (!state) return null
-    sessions[key] = state
-  }
-  return { schemaVersion: 1, sessions }
-}
-
 export function createDshBrowserUnionDesk(options: {
   readonly scope: DshSettingsScope<UnionSettingsSection>
   readonly consent: () => boolean
@@ -102,10 +67,10 @@ export function createDshBrowserUnionDesk(options: {
     }
     const entries = Object.entries(before.ledger.sessions)
       .filter(([key]) => key !== before.key)
-      .slice(-(MAX_RECORDS - 1))
+      .slice(-(MAX_UNION_SESSIONS - 1))
     const sessions = Object.fromEntries([...entries, [before.key, next]])
     const serialized = JSON.stringify({ schemaVersion: 1, sessions })
-    if (serialized.length > MAX_BYTES) throw new Error('Union ledger capacity exceeded')
+    if (serialized.length > MAX_UNION_LEDGER_BYTES) throw new Error('Union ledger capacity exceeded')
     await scope.set('unionLedger', serialized)
     const after = read()
     if (!after || after.key !== before.key ||
@@ -134,7 +99,7 @@ export function createDshBrowserUnionDesk(options: {
       const scopedId = sessionId
       let key: string
       try { key = await hashSession(scopedId) } catch { return }
-      if (!KEY_PATTERN.test(key) || sessionEpoch !== epoch) return
+      if (!/^[a-f0-9]{64}$/.test(key) || sessionEpoch !== epoch) return
       activeKey = key
       notify()
     },
@@ -156,6 +121,6 @@ export function createDshBrowserUnionDesk(options: {
     resolveCounter(id: number, accepts: boolean) {
       return enqueue(() => perform(desk => desk.resolveCounter(id, accepts)))
     },
-    dispose() { unsubscribe(); listeners.clear(); activeKey = null },
+    dispose() { sessionEpoch++; unsubscribe(); listeners.clear(); activeKey = null },
   }
 }
