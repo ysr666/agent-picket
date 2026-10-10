@@ -57,6 +57,20 @@ interface ClientContext {
   }
 }
 
+/** Auto-invite only when DSH has a *verified real, nonblank* active
+ * Session. The same conservative selector also scopes negotiated ledgers.
+ * Never show a first-run invitation merely because an ambiguous/missing
+ * Session happens to be in the Host snapshot. */
+export function isDshUnionAutoWelcomeEligible(state?: {
+  current?: string
+  phase?: string
+  byId?: Record<string, { blank?: boolean; retainedBy?: {mainView?:number} }>
+}): boolean {
+  if (state?.phase !== 'ready') return false
+  const active = currentDshUnionSession(state)
+  return !!active && state.byId?.[active]?.blank === false
+}
+
 export function apply(ctx: ClientContext, react?: ReactForDsh, portal?: PortalForDsh): void {
   const bridge = typeof ctx.sessions.binding === 'function'
     ? createBrowserDashboardBridge({binding: id => ctx.sessions.binding?.(id)}) : undefined
@@ -153,11 +167,7 @@ export function apply(ctx: ClientContext, react?: ReactForDsh, portal?: PortalFo
       subscribeLocale: listener => scoped.locale!.subscribe(listener),
       readUnion,
       subscribeUnion,
-      shouldAutoWelcome: () => {
-        const state = scoped.sessions.list?.getSnapshot()
-        if (!state || state.phase !== 'ready' || !state.current) return false
-        return state.byId?.[state.current]?.blank === false
-      },
+      shouldAutoWelcome: () => isDshUnionAutoWelcomeEligible(scoped.sessions.list?.getSnapshot()),
       subscribeSessionVisibility: listener => scoped.sessions.list?.subscribe(listener) ?? (()=>{}),
       // The bargaining state is fictional user-owned DSH settings only.
       demoBreak: () => desk.raiseDemoBreak().then(() => {}),
