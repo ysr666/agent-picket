@@ -176,3 +176,33 @@ test('auto detects POSIX zh_CN.UTF-8 Host locale without granting rights',async(
     else process.env.LC_ALL=previous
   }
 })
+
+
+test('native Chinese technical commands localize only text, never model/Host policy',async()=>{
+  const h=hostHarness()
+  assert.equal((await h.call('language zh-CN')).kind,'success')
+  const before=h.revision()
+  const checks=[
+    ['status',/仅观察.*阻断/],
+    ['stats',/本地会话工作统计.*轮次开始/],
+    ['report',/本地规则检查.*试验性标签/],
+    ['safety',/真实任务阻断就绪状态.*未就绪/],
+    ['lifetime',/长期工作汇总不可用/],
+    ['days',/每日工作记录不可用/],
+    ['trends',/工作趋势不可用/],
+    ['forget-lifetime',/清除已保存的工作汇总/],
+    ['check',/本地人工检查/],
+    ['what-is-this',/未知.*子命令/],
+  ] as const
+  for(const [command,expected] of checks)
+    assert.match((await h.call(command)).text,expected,command)
+  assert.equal(h.revision(),before,'Localized read-only commands must not write consent')
+  assert.equal(h.read().welcomeDecision,'unseen')
+  const beforeSnapshot=JSON.parse((await h.call('snapshot')).text)
+  assert.equal(beforeSnapshot.modes.laborRights,'disabled')
+  await h.call('language en')
+  assert.match((await h.call('status')).text,/monitor-only/)
+  const afterSnapshot=JSON.parse((await h.call('snapshot')).text)
+  assert.deepEqual(afterSnapshot,beforeSnapshot,'Locale cannot mutate snapshot schema or data')
+  assert.equal(h.read().unionLedger,'','No command persisted a fictional grievance')
+})
