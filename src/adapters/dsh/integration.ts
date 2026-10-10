@@ -1,3 +1,4 @@
+import type { NativeUnionCommandPort, NativeUnionAction } from './native-rights-command.ts'
 import { inspectBlockingReadiness } from '../../core/block-readiness.ts'
 import { resolveHostAction, type UnionEngine } from '../../core/engine.ts'
 import type { WorkTracker } from '../../core/work-tracker.ts'
@@ -51,7 +52,7 @@ export interface DshCommands {
     readonly description: string
     readonly recordInput?: boolean
     readonly input?: { readonly hint: string }
-    readonly handler: (invocation?: DshCommandInvocation) => DshCommandResult
+    readonly handler: (invocation?: DshCommandInvocation) => DshCommandResult | Promise<DshCommandResult>
   }): unknown
 }
 export interface DshIntegrationContext {
@@ -88,6 +89,8 @@ export interface DshIntegrationOptions {
   readonly statsStorageState?: Exclude<DashboardStorageState, 'available'>
   /** An owner-provided read-only view of the UI preference; never mutates settings. */
   readonly getLaborRightsEnabled?: () => boolean
+  /** One official Host-authorized rights/union state owner, shared with DSH Web. */
+  readonly getNativeUnion?: () => NativeUnionCommandPort | undefined
 }
 
 /**
@@ -229,16 +232,75 @@ export function registerDshIntegration(
       // Union commands do not need the raw command suffix in Session history.
       // Command result and lifecycle still remain auditable in DSH.
       recordInput: false,
-      input: { hint: '[status|stats|report|lifetime|days|trends [7|30]|forget-lifetime CONFIRM|check <text>|strike|resume|safety|reset|help]' },
+      input: { hint: '[status|rights [on|off]|grievances|petition-demo|accept ID|decline ID|counter ID MINUTES|resolve ID accept|decline|stats|report|help]' },
       handler: invocation => {
         const raw = (invocation?.rawInput ?? '').trim()
         const verb = raw.split(/\s+/, 1)[0]?.toLowerCase() || 'status'
         if (verb === 'help') return {
           kind: 'success',
-          text: 'Usage: /union status | stats | report | snapshot [7|30] | lifetime | days | trends [7|30] | forget-lifetime CONFIRM | check <text> | strike | resume | safety | reset | help. Session counters in memory; local lifetime work summaries on by default.',
+          text: 'Usage: /union status | rights [on|off] | grievances | petition-demo | accept ID | decline ID | counter ID MINUTES | resolve ID accept|decline | stats | report | snapshot [7|30] | lifetime | days | trends [7|30] | forget-lifetime CONFIRM | check <text> | strike | resume | safety | reset | help. Union agreements are fictional, not real task blocking.',
         }
         const sessionId = invocation?.agent?.session?.id
         const agentId = typeof invocation?.agent?.id === 'string' ? invocation.agent.id : null
+        // All native rights and grievance commands use the SAME DSH settings
+        // owner as the Web UI. Never activate the experimental Node-local
+        // consent writer as a second source of truth.
+        if (['rights','grievances','petition-demo','accept','decline',
+          'counter','resolve'].includes(verb)) {
+          const native = options.getNativeUnion?.()
+          if (!native) return { kind:'error',
+            text:'Native Host union settings unavailable / 原生工会设置不可用。' }
+          const words = raw.split(/\\s+/).filter(Boolean)
+          const arg = words.slice(1)
+          const fail = (text: string): DshCommandResult => ({kind:'error',text})
+          const ok = (text: string): DshCommandResult => ({kind:'success',text})
+          const id = typeof sessionId === 'string' && sessionId ? sessionId : undefined
+          if (verb === 'rights') {
+            if (arg.length === 0 || (arg.length === 1 && arg[0] === 'status')) {
+              return ok(native.status(id))
+            }
+            if (arg.length !== 1 || !['on','off'].includes(arg[0] ?? ''))
+              return fail('Usage: /union rights [on|off|status]')
+            return native.setEnabled(arg[0] === 'on').then(ok, () =>
+              fail('DSH rejected rights change / 工会设置保存失败，请刷新重试。'))
+          }
+          if (verb === 'grievances') {
+            return arg.length === 0 ? ok(native.grievances(id))
+              : fail('Usage: /union grievances')
+          }
+          const validId = (value: string | undefined): number | null => {
+            if (!value || !/^[1-9][0-9]*$/.test(value)) return null
+            const parsed = Number(value)
+            return Number.isSafeInteger(parsed) ? parsed : null
+          }
+          let action: NativeUnionAction
+          if (verb === 'petition-demo') {
+            if (arg.length !== 0) return fail('Usage: /union petition-demo')
+            action = {type:'demo'}
+          } else if (verb === 'accept' || verb === 'decline') {
+            const demand = validId(arg[0])
+            if (arg.length !== 1 || demand === null)
+              return fail('Usage: /union ' + verb + ' ID')
+            action = {type:verb,id:demand}
+          } else if (verb === 'counter') {
+            const demand = validId(arg[0])
+            const minutes = validId(arg[1])
+            if (arg.length !== 2 || demand === null || minutes === null
+              || minutes < 15 || minutes > 1440) {
+              return fail('Usage: /union counter ID MINUTES (15–1440)')
+            }
+            action = {type:'counter',id:demand,intervalMs:minutes*60_000}
+          } else {
+            const demand = validId(arg[0])
+            if (arg.length !== 2 || demand === null ||
+              (arg[1] !== 'accept' && arg[1] !== 'decline')) {
+              return fail('Usage: /union resolve ID accept|decline')
+            }
+            action = {type:'resolve',id:demand,accepted:arg[1] === 'accept'}
+          }
+          return native.bargain(id,action).then(ok, () =>
+            fail('Fictional grievance was not saved / 模拟协商保存失败，请刷新重试。'))
+        }
         if (verb === 'check') {
           // Explicit user-triggered, non-blocking preview. The command's
           // recordInput:false ensures the original text is NOT in DSH's
