@@ -119,6 +119,9 @@ export function createDshBrowserUnionDesk(options: {
         catch { return null } // failure can never interrupt the real Agent
       })
     },
+    raiseDemoBreak() {
+      return enqueue(() => perform(desk => desk.raiseDemoBreak()))
+    },
     respond(id: number, choice: 'accept' | 'decline') {
       return enqueue(() => perform(desk => desk.respond(id, choice)))
     },
