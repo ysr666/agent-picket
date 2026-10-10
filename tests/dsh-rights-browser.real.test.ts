@@ -182,10 +182,10 @@ async function runRightsBrowserE2E(mode: 'source' | 'installed'): Promise<void> 
       element===(globalThis as any).document.activeElement),true,
     'Opening sidebar must move keyboard focus into the modal')
     assert.equal(await panel.getAttribute('aria-modal'),'true')
-    assert.equal(await page.evaluate(()=>Boolean(document.getElementById('root')?.inert)),true,
+    assert.equal(await page.evaluate(()=>Boolean((globalThis as any).document.getElementById('root')?.inert)),true,
       'Background Host app must be inert while modal is open')
     await page.keyboard.press('Shift+Tab')
-    assert.equal(await page.evaluate(()=>document.activeElement?.tagName),'SUMMARY',
+    assert.equal(await page.evaluate(()=>(globalThis as any).document.activeElement?.tagName),'SUMMARY',
       'Shift+Tab from first control must wrap to final details summary')
     await page.keyboard.press('Tab')
     assert.equal(await closeControl.evaluate((element:unknown)=>
@@ -193,7 +193,7 @@ async function runRightsBrowserE2E(mode: 'source' | 'installed'): Promise<void> 
     'Tab from final summary must wrap to close')
     await page.keyboard.press('Escape')
     await panel.waitFor({state:'detached',timeout:5_000})
-    assert.equal(await page.evaluate(()=>Boolean(document.getElementById('root')?.inert)),false,
+    assert.equal(await page.evaluate(()=>Boolean((globalThis as any).document.getElementById('root')?.inert)),false,
       'Dismissing modal must restore interaction with Host app')
     assert.equal(await trigger.evaluate((element:unknown)=>
       element===(globalThis as any).document.activeElement),true,
