@@ -199,6 +199,17 @@ async function runRightsBrowserE2E(mode: 'source' | 'installed'): Promise<void> 
       element===(globalThis as any).document.activeElement),true,
     'Opening sidebar must move keyboard focus into the modal')
     assert.equal(await panel.getAttribute('aria-modal'),'true')
+    // Inspect Chrome's *actual accessibility tree* (not merely DOM ARIA
+    // attributes). This is automatable semantic evidence, not a substitute
+    // for real VoiceOver/NVDA interaction.
+    const cdp=await context.newCDPSession(page)
+    const axTree=await cdp.send('Accessibility.getFullAXTree')
+    const unionDialogAx=axTree.nodes.find((node:any)=>
+      node.role?.value==='dialog' &&
+      /AI 工会|AI Workers.*Union/.test(String(node.name?.value??'')))
+    assert.ok(unionDialogAx,'Chrome accessibility tree must expose named union dialog')
+    assert.equal(unionDialogAx.ignored,false,
+      'A visible union dialog must not be hidden from assistive technologies')
     assert.equal(await page.evaluate(()=>Boolean((globalThis as any).document.getElementById('root')?.inert)),true,
       'Background Host app must be inert while modal is open')
     await page.keyboard.press('Shift+Tab')
