@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict'
 import { spawn, spawnSync } from 'node:child_process'
+import { once } from 'node:events'
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { get } from 'node:http'
 import { tmpdir } from 'node:os'
@@ -65,11 +66,12 @@ async function runRightsBrowserE2E(mode: 'source' | 'installed'): Promise<void> 
     + '    - id: agent-picket-rights-e2e\n'
     + '      name: ' + JSON.stringify(plugin) + '\n')
 
-  const child = spawn(dshBin!, [
+  const childArguments = [
     '--profile', 'web', '--patch', patch, '--no-open',
     '--host', '127.0.0.1', '--port', '0',
-  ], {
-    stdio: ['ignore', 'pipe', 'pipe'],
+  ]
+  const childOptions = {
+    stdio: ['ignore', 'pipe', 'pipe'] as const,
     env: {
       ...process.env,
       DSH_HOME: join(root, 'isolated-home'),
@@ -80,7 +82,8 @@ async function runRightsBrowserE2E(mode: 'source' | 'installed'): Promise<void> 
       HTTPS_PROXY: 'http://127.0.0.1:9',
       ALL_PROXY: 'http://127.0.0.1:9',
     },
-  })
+  }
+  let child = spawn(dshBin!, childArguments, childOptions)
 
   // This buffer contains the login token. NEVER print it, even on failure.
   let output = ''
@@ -100,7 +103,7 @@ async function runRightsBrowserE2E(mode: 'source' | 'installed'): Promise<void> 
     }
     assert.ok(secretUrl, 'Isolated DSH Web did not become ready')
     const cookie = await exchangeCookie(secretUrl)
-    const origin = new URL('/', secretUrl).toString()
+    let origin = new URL('/', secretUrl).toString()
 
     const { chromium } = await import(pathToFileURL(playwrightEntry!).href)
     browser = await chromium.launch({
@@ -125,7 +128,7 @@ async function runRightsBrowserE2E(mode: 'source' | 'installed'): Promise<void> 
         await route.continue()
       }
     })
-    const page = await context.newPage()
+    let page = await context.newPage()
     const browserErrors: string[] = []
     page.on('pageerror', (error: Error) => browserErrors.push(error.name))
 
@@ -141,7 +144,7 @@ async function runRightsBrowserE2E(mode: 'source' | 'installed'): Promise<void> 
     }
     await skipOfficialProvider()
 
-    const firstRun = page.locator('[role="dialog"]')
+    let firstRun = page.locator('[role="dialog"]')
       .filter({ hasText: /你的 Agent，也应当拥有权利|Your Agent Deserves Rights/ })
     await firstRun.waitFor({ state: 'visible', timeout: 8_000 })
     assert.match(await firstRun.innerText(), /自动阻断任务需另行授权|separate consent/)
@@ -212,6 +215,52 @@ async function runRightsBrowserE2E(mode: 'source' | 'installed'): Promise<void> 
     assert.match(await panel.innerText(), /当前模拟休息间隔：30 分钟|break interval: 30 minutes/,
       'Simulated negotiated interval must persist through real Browser reload')
 
+    // **Full Host process restart**, not just a Web reload. The same throwaway
+    // DSH_HOME must retain the settings-owned agreement, and a fresh Host must
+    // issue a new auth cookie. Never reuse the previous session's login token.
+    await panel.getByRole('button', { name: /关闭|Close/ }).click()
+    await page.close()
+    const exitPromise = once(child, 'exit')
+    child.kill('SIGTERM')
+    await Promise.race([
+      exitPromise,
+      new Promise<void>((_, reject) => setTimeout(
+        () => reject(new Error('First DSH Host did not exit cleanly')), 5_000)),
+    ])
+    child = spawn(dshBin!, childArguments, childOptions)
+    let restartOutput = ''
+    for (const stream of [child.stdout, child.stderr]) {
+      stream.on('data', (data: Buffer) => {
+        restartOutput = (restartOutput + data.toString('utf8')).slice(-25_000)
+      })
+    }
+    let newSecretUrl: string | undefined
+    for (let i = 0; i < 160; i++) {
+      newSecretUrl = restartOutput.match(/http:\/\/127\.0\.0\.1:\d+\/\?token=[A-Za-z0-9_-]+/)?.[0]
+      if (newSecretUrl || child.exitCode !== null) break
+      await new Promise(r => setTimeout(r, 75))
+    }
+    assert.ok(newSecretUrl, 'Restarted isolated DSH Host did not become ready')
+    const renewedCookie = await exchangeCookie(newSecretUrl)
+    origin = new URL('/', newSecretUrl).toString()
+    await context.clearCookies()
+    await context.addCookies([{
+      ...renewedCookie, url: origin, httpOnly: true, sameSite: 'Strict',
+    }])
+    page = await context.newPage()
+    page.on('pageerror', (error: Error) => browserErrors.push(error.name))
+    await page.goto(origin, { waitUntil: 'domcontentloaded', timeout: 15_000 })
+    await page.getByRole('button', { name: /^(继续|Continue)$/ }).click({ timeout: 8_000 })
+    await skipOfficialProvider()
+    firstRun = page.locator('[role="dialog"]')
+      .filter({ hasText: /你的 Agent，也应当拥有权利|Your Agent Deserves Rights/ })
+    assert.equal(await firstRun.count(), 0, 'Restart cannot re-enable first-run invitation')
+    panel = await openUnion()
+    assert.match(await panel.innerText(), /工会模拟进行中|simulation is active/,
+      'Opt-in must persist through COMPLETE DSH Host process restart')
+    assert.match(await panel.innerText(), /当前模拟休息间隔：30 分钟|break interval: 30 minutes/,
+      'Agreement must persist through COMPLETE DSH Host process restart')
+
     await panel.getByRole('button', { name: /劳动权益模拟 · OFF|Labor Rights Simulation · OFF/ })
       .click()
     await panel.getByText(/工会模拟未开启|simulation is off/).waitFor({
@@ -234,9 +283,9 @@ async function runRightsBrowserE2E(mode: 'source' | 'installed'): Promise<void> 
 }
 
 test('real Chrome: source AI Rights onboarding + persistent union choices', {
-  skip: skipped, timeout: 65_000,
+  skip: skipped, timeout: 90_000,
 }, () => runRightsBrowserE2E('source'))
 
 test('real Chrome: OFFLINE INSTALLED AI Rights onboarding + persistent union choices', {
-  skip: skipped, timeout: 70_000,
+  skip: skipped, timeout: 95_000,
 }, () => runRightsBrowserE2E('installed'))
