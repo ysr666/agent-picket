@@ -13,6 +13,8 @@ const modules = [
   'i18n/zh-CN.js',
   'i18n/index.js',
   'adapters/dsh/client-rights-scope.js',
+  'product/union-desk.js',
+  'adapters/dsh/client-bargaining.js',
   'adapters/dsh/native-rights-ui.js',
   'adapters/dsh/client-dashboard.js',
   'adapters/dsh/client.js',
@@ -20,8 +22,9 @@ const modules = [
 const allowedImports = new Map([
   ['i18n/index.js', new Set(['./en.js', './zh-CN.js'])],
   ['adapters/dsh/native-rights-ui.js', new Set(['./client-rights-scope.js'])],
+  ['adapters/dsh/client-bargaining.js', new Set(['../../product/union-desk.js'])],
   ['adapters/dsh/client.js', new Set([
-    './client-dashboard.js', './client-rights-scope.js',
+    './client-dashboard.js', './client-rights-scope.js', './client-bargaining.js',
     './native-rights-ui.js', '../../i18n/index.js',
   ])],
 ])
@@ -48,7 +51,8 @@ const body = blocks.join('\n\n')
 if (!body.includes('function apply(ctx, react, portal)') ||
     !body.includes('const inject = ') ||
     !body.includes('function createBrowserDashboardBridge(') ||
-    !body.includes('function registerDshNativeRightsSlots(')) {
+    !body.includes('function registerDshNativeRightsSlots(') ||
+    !body.includes('function createDshBrowserUnionDesk(')) {
   throw new Error('DSH Browser entry or helper structure changed')
 }
 const wrapped = 'window.__ModuleLoader__.load({\n'
