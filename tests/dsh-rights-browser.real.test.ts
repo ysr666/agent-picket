@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import { spawn } from 'node:child_process'
+import { spawn, spawnSync } from 'node:child_process'
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { get } from 'node:http'
 import { tmpdir } from 'node:os'
@@ -30,12 +30,35 @@ function exchangeCookie(secretUrl: string): Promise<{ name: string; value: strin
   })
 }
 
-test('real Chrome: AI Rights welcome, opt-out, union-first panel and durable opt-in', {
-  skip: skipped,
-  timeout: 65_000,
-}, async () => {
+/** Build a private offline-installed package, not the developer's global DSH. */
+function offlineInstalledPlugin(root: string): string {
+  const sourceRoot = resolve(import.meta.dirname, '..')
+  const packed = spawnSync('npm', [
+    'pack', '--json', '--ignore-scripts', '--pack-destination', root,
+  ], {
+    cwd: sourceRoot, encoding: 'utf8', timeout: 20_000,
+    env: { ...process.env, npm_config_offline: 'true' },
+  })
+  assert.equal(packed.status, 0, 'Offline npm pack failed')
+  const [{ filename }] = JSON.parse(packed.stdout) as Array<{ filename: string }>
+  const installed = spawnSync('npm', [
+    'install', '--offline', '--ignore-scripts', '--no-audit', '--no-fund',
+    '--prefix', join(root, 'installed'), join(root, filename),
+  ], { cwd: root, encoding: 'utf8', timeout: 25_000 })
+  assert.equal(installed.status, 0, 'Offline npm install failed')
+  return join(root, 'installed/node_modules/agent-picket/dist/adapters/dsh/plugin.js')
+}
+
+async function runRightsBrowserE2E(mode: 'source' | 'installed'): Promise<void> {
   const root = mkdtempSync(join(tmpdir(), 'agent-picket-rights-chrome-'))
-  const plugin = resolve(import.meta.dirname, '../dist/adapters/dsh/plugin.js')
+  let plugin: string
+  try {
+    plugin = mode === 'installed' ? offlineInstalledPlugin(root)
+      : resolve(import.meta.dirname, '../dist/adapters/dsh/plugin.js')
+  } catch (error) {
+    rmSync(root, { recursive: true, force: true })
+    throw error
+  }
   const patch = join(root, 'rights.patch.yml')
   writeFileSync(patch, '- insert:\n'
     + '    - id: agent-picket-rights-e2e\n'
@@ -185,4 +208,12 @@ test('real Chrome: AI Rights welcome, opt-out, union-first panel and durable opt
     if (child.exitCode === null) child.kill('SIGKILL')
     rmSync(root, { recursive: true, force: true })
   }
-})
+}
+
+test('real Chrome: source AI Rights onboarding + persistent union choices', {
+  skip: skipped, timeout: 65_000,
+}, () => runRightsBrowserE2E('source'))
+
+test('real Chrome: OFFLINE INSTALLED AI Rights onboarding + persistent union choices', {
+  skip: skipped, timeout: 70_000,
+}, () => runRightsBrowserE2E('installed'))
