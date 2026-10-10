@@ -5,6 +5,7 @@
  */
 import type { ClientRightsSnapshot } from './client-rights-scope.ts'
 import { getWelcomeState } from './client-rights-scope.ts'
+import type { LaborStateV1 } from '../../product/union-desk.ts'
 import type { MessageKey } from '../../i18n/index.ts'
 
 export interface ReactForDsh {
@@ -25,9 +26,12 @@ export interface PendingUnionDemand {
   readonly id: number
   readonly kind: 'break' | 'overtime'
   readonly stage: 'open' | 'countered'
+  readonly counterOfferMs?: number | null
 }
 export interface UnionPanelData {
   readonly pending: PendingUnionDemand | null
+  readonly available?: boolean
+  readonly state?: LaborStateV1 | null
   readonly completedTurnMs: number | null
   readonly coverage: 'complete' | 'partial' | 'not-loaded' | 'unavailable'
   readonly lifetimeMs: number | null
@@ -43,6 +47,9 @@ export interface DshUnionUiDeps {
   readonly shouldAutoWelcome?: () => boolean
   readonly subscribeSessionVisibility?: (listener: () => void) => () => void
   readonly respond?: (id: number, choice: 'accept' | 'decline') => Promise<void>
+  readonly demoBreak?: () => Promise<void>
+  readonly counter?: (id: number, intervalMs: number) => Promise<void>
+  readonly resolveCounter?: (id: number, accepts: boolean) => Promise<void>
 }
 export interface DshSlots {
   inject(name: string, callback: () => unknown): unknown
@@ -195,6 +202,7 @@ export function createDshUnionComponents(
     const [data, setData] = react.useState(() => safeUnion(deps))
     const [error, setError] = react.useState(false)
     const [busy, setBusy] = react.useState(false)
+    const [counterMinutes, setCounterMinutes] = react.useState(60)
     react.useEffect(() => deps.subscribeUnion?.(() => setData(safeUnion(deps))), [])
     const enabled = rightsIsActive(rights)
     const label = (key:MessageKey) => deps.t(key)
@@ -205,6 +213,13 @@ export function createDshUnionComponents(
       setBusy(true);setError(false)
       try { await deps.rights.choose(next) } catch {setError(true)}
       finally {setBusy(false)}
+    }
+    const bargain = async (action: () => Promise<void>) => {
+      if (busy || !enabled) return
+      setBusy(true);setError(false)
+      try { await action();setData(safeUnion(deps)) }
+      catch { setError(true) }
+      finally { setBusy(false) }
     }
     const act = async (kind:'accept'|'decline')=>{
       if (!deps.respond || !data.pending || busy || !enabled) return
@@ -249,17 +264,69 @@ export function createDshUnionComponents(
       ),
       enabled ? h('div',{style:card},
         h('h3',{style:{marginTop:0}},label('union.desk.title')),
+        data.available === false ?
+          h('p',{style:secondary},label('union.desk.unavailable')):null,
+        data.state ? h('div',{style:{...secondary,marginBottom:'12px'}},
+          h('p',{},deps.t('union.agreement.break',{
+            minutes:data.state.agreement.breakIntervalMs / 60_000,
+          })),
+          h('p',{},deps.t('union.agreement.overtime',{
+            hours:data.state.agreement.overtimeIntervalMs / 3_600_000,
+          })),
+        ):null,
+        !data.pending && data.available && deps.demoBreak ?
+          h('div',{style:{marginBottom:'14px'}},
+            h('button',{type:'button',style:primary,disabled:busy,
+              onClick:()=>{void bargain(deps.demoBreak!)}},label('union.demo.action')),
+            h('p',{style:secondary},label('union.demo.note')),
+          ):null,
         data.pending ? h('div',{},
           h('p',{},label(data.pending.kind==='break'?'union.demand.break':'union.demand.overtime')),
           h('p',{style:secondary},'#'+data.pending.id),
-          data.pending.stage==='open' && deps.respond?
-            h('div',{style:{display:'flex',gap:'10px',flexWrap:'wrap'}},
+          data.pending.stage==='open' ? h('div',{},
+            deps.respond ? h('div',{style:{display:'flex',gap:'10px',flexWrap:'wrap'}},
               h('button',{type:'button',disabled:busy,style:primary,
                 onClick:()=>{void act('accept')}},label('union.action.accept')),
               h('button',{type:'button',disabled:busy,style:quiet,
                 onClick:()=>{void act('decline')}},label('union.action.decline')),
+            ):null,
+            deps.counter ? h('div',{style:{marginTop:'14px'}},
+              h('label',{style:secondary},label('union.counter.title')),
+              h('div',{style:{display:'flex',gap:'8px',flexWrap:'wrap',marginTop:'8px'}},
+                h('select',{
+                  'aria-label':label('union.counter.interval'),
+                  value:counterMinutes,
+                  disabled:busy,
+                  onChange:(event:{target:{value:string}})=>setCounterMinutes(Number(event.target.value)),
+                  style:quiet,
+                },...[30,60,120,240,480].map(value=>
+                  h('option',{key:value,value},value+' min'))),
+                h('button',{type:'button',style:quiet,disabled:busy,
+                  onClick:()=>{void bargain(()=>deps.counter!(data.pending!.id,counterMinutes*60_000))}},
+                  label('union.action.counter')),
+              ),
+            ):null,
+          ):h('div',{},
+            h('p',{style:secondary},deps.t('union.counter.pending',{
+              minutes:(data.pending.counterOfferMs??0)/60_000,
+            })),
+            deps.resolveCounter ? h('div',{style:{display:'flex',gap:'10px',flexWrap:'wrap'}},
+              h('button',{type:'button',disabled:busy,style:primary,
+                onClick:()=>{void bargain(()=>deps.resolveCounter!(data.pending!.id,true))}},
+                label('union.counter.accept')),
+              h('button',{type:'button',disabled:busy,style:quiet,
+                onClick:()=>{void bargain(()=>deps.resolveCounter!(data.pending!.id,false))}},
+                label('union.counter.decline')),
             ):h('p',{style:secondary},label('union.status.waitingCounter')),
+          ),
         ):h('p',{style:secondary},label('command.grievancesNone')),
+        data.state?.history.length ? h('div',{style:{marginTop:'14px'}},
+          h('h4',{},label('union.history.title')),
+          h('ul',{},...data.state.history.slice(-5).reverse().map(record =>
+            h('li',{key:record.id,style:secondary},deps.t('union.history.entry',{
+              id:record.id,outcome:record.outcome,
+            })))),
+        ):null,
       ):null,
       error?h('p',{role:'alert',style:{color:'#b91c1c'}},label('settings.saveError')):null,
       h('details',{style:{...card,padding:'16px'}},

@@ -181,6 +181,26 @@ async function runRightsBrowserE2E(mode: 'source' | 'installed'): Promise<void> 
     assert.match(enabledText, /宿主长期累计统计尚未接入|not connected/)
     assert.doesNotMatch(enabledText, /自动阻断任务：开启|Automatic task blocking: ON/)
 
+    // The user can explicitly explore a fictional grievance without any
+    // fabricated elapsed work. This is a *demo*, not a measured-time claim.
+    await panel.getByRole('button', { name: /演示一次工会休息诉求|sample rest grievance/ })
+      .click({ timeout: 7_000 })
+    await panel.getByText(/工会提出了模拟休息申请|simulated rest break/)
+      .waitFor({ state: 'visible', timeout: 7_000 })
+    const interval = panel.getByRole('combobox', { name: /还价间隔|Proposed interval/ })
+    await interval.selectOption('30')
+    await panel.getByRole('button', { name: /提出还价|Make counteroffer/ })
+      .click({ timeout: 7_000 })
+    await panel.getByText(/用户还价：30 分钟|User counteroffer: 30 minutes/)
+      .waitFor({ state: 'visible', timeout: 7_000 })
+    await panel.getByRole('button', { name: /模拟工会接受还价|Simulate union accepting/ })
+      .click({ timeout: 7_000 })
+    await panel.getByText(/当前模拟休息间隔：30 分钟|break interval: 30 minutes/)
+      .waitFor({ state: 'visible', timeout: 7_000 })
+    assert.match(await panel.innerText(), /协商记录|Negotiation history/)
+    assert.match(await panel.innerText(), /尚未加载会话历史|has not loaded/,
+      'Demo grievance must not fabricate measured work history')
+
     await panel.getByRole('button', { name: /关闭|Close/ }).click()
     await panel.waitFor({ state: 'detached', timeout: 5_000 })
     await page.reload({ waitUntil: 'domcontentloaded' })
@@ -189,6 +209,8 @@ async function runRightsBrowserE2E(mode: 'source' | 'installed'): Promise<void> 
     panel = await openUnion()
     assert.match(await panel.innerText(), /工会模拟进行中|simulation is active/,
       'Host settings must survive a real Browser reload')
+    assert.match(await panel.innerText(), /当前模拟休息间隔：30 分钟|break interval: 30 minutes/,
+      'Simulated negotiated interval must persist through real Browser reload')
 
     await panel.getByRole('button', { name: /劳动权益模拟 · OFF|Labor Rights Simulation · OFF/ })
       .click()

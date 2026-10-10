@@ -1,4 +1,5 @@
 import Schema from '@deepseek-ai/schemastery'
+import { parseUnionLedger, MAX_UNION_LEDGER_BYTES } from '../../product/union-ledger.ts'
 
 /**
  * DSH Host-native durable, version-fenced user settings. One authoritative
@@ -8,9 +9,12 @@ import Schema from '@deepseek-ai/schemastery'
 export const RIGHTS_SETTINGS_NAMESPACE = 'agent-picket'
 export const RightsSettingsSchema = Schema.object({
   welcomeDecision: Schema.union(['unseen', 'enabled', 'not-now']).default('unseen'),
+  // Structured, size-bounded fictional bargaining records; no transcripts.
+  unionLedger: Schema.string().default(''),
 })
 export interface HostRightsSection {
   readonly welcomeDecision: 'unseen' | 'enabled' | 'not-now'
+  readonly unionLedger: string
 }
 export interface DshNativeSettingsContext {
   inject?(services: string[], callback: (ctx: {
@@ -27,7 +31,18 @@ export function registerHostRightsNamespace(ctx: DshNativeSettingsContext): void
     // Preserve normal Agent execution and never grant fictional consent in that case.
     const settings = child?.settings
     if (typeof settings?.register !== 'function') return
-    try { settings.register(RIGHTS_SETTINGS_NAMESPACE, RightsSettingsSchema) }
+    try { settings.register(RIGHTS_SETTINGS_NAMESPACE, RightsSettingsSchema, {
+      validate(section: unknown) {
+        const ledger = (section as { unionLedger?: unknown } | null)?.unionLedger
+        const parsed = parseUnionLedger(ledger)
+        // Persist only our normalized numeric-only contract. Reject extra
+        // fields that could otherwise smuggle original chat or tool content.
+        if (typeof ledger !== 'string' || ledger.length > MAX_UNION_LEDGER_BYTES
+          || parsed === null || (ledger !== '' && JSON.stringify(parsed) !== ledger)) {
+          throw new Error('Unsafe or malformed union agreement ledger')
+        }
+      },
+    }) }
     catch { /* Host settings unavailable: UI remains OFF/read-only */ }
   })
 }

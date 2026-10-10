@@ -1,4 +1,5 @@
 import { createBrowserDashboardBridge } from './client-dashboard.ts'
+import { createDshBrowserUnionDesk, type UnionSettingsSection } from './client-bargaining.ts'
 import { createDshClientRightsScope, type DshSettingsScope, type RightsSection } from './client-rights-scope.ts'
 import { registerDshNativeRightsSlots, type ReactForDsh, type PortalForDsh, type DshSlots } from './native-rights-ui.ts'
 import { formatMessage, resolveLocale, type MessageKey } from '../../i18n/index.ts'
@@ -16,6 +17,7 @@ interface Scope {
   } | undefined
 }
 interface ClientContext {
+  effect?(register: () => () => void): unknown
   inject?(services: string[], cb: (ctx: ClientContext) => void): unknown
   slots?: DshSlots
   settingsScope?: { bind<T>(spec: { namespace: string }): DshSettingsScope<T> }
@@ -50,15 +52,24 @@ export function apply(ctx: ClientContext, react?: ReactForDsh, portal?: PortalFo
   // the read-only agentPicketDashboard service.
   if (react && portal && ctx.inject) ctx.inject(['slots', 'settingsScope', 'locale'], scoped => {
     if (!scoped.slots || !scoped.settingsScope || !scoped.locale) return
-    const owner = createDshClientRightsScope(
-      scoped.settingsScope.bind<RightsSection>({ namespace: 'agent-picket' }))
+    const rightsScope = scoped.settingsScope.bind<UnionSettingsSection>({
+      namespace: 'agent-picket',
+    })
+    const ledgerScope = scoped.settingsScope.bind<UnionSettingsSection>({
+      namespace: 'agent-picket',
+    })
+    const owner = createDshClientRightsScope(rightsScope)
+    const desk = createDshBrowserUnionDesk({
+      scope: ledgerScope,
+      consent: () => owner.snapshot().laborRightsEnabled,
+    })
     const uiLocale = () => resolveLocale({ hostLocale: scoped.locale?.getLocale().active })
     const activeId = () => scoped.sessions.list?.getSnapshot().current
     const readUnion = () => {
       const id = activeId()
       const data = id ? bridge?.getSnapshot(id) : undefined
       return {
-        pending: null,
+        ...desk.snapshot(),
         completedTurnMs: data?.coverage === 'complete'
           ? data.sessionWork?.completedTurnMs ?? null : null,
         coverage: data?.coverage ?? 'not-loaded' as const,
@@ -66,16 +77,49 @@ export function apply(ctx: ClientContext, react?: ReactForDsh, portal?: PortalFo
       }
     }
     const subscribeUnion = (listener: () => void): (() => void) => {
-      let stop = () => {}
-      const rebind = () => {
-        stop()
-        const id = activeId()
-        stop = id && bridge ? bridge.subscribe(id, () => listener()) : () => {}
+      let stopEvents = () => {}
+      let currentEpoch = 0
+      const onWork = () => {
+        const data = readUnion()
+        void desk.observe(data.completedTurnMs, data.coverage)
         listener()
       }
-      const off = scoped.sessions.list?.subscribe(rebind) ?? (() => {})
+      const rebind = () => {
+        const epoch = ++currentEpoch
+        stopEvents()
+        const id = activeId()
+        stopEvents = id && bridge ? bridge.subscribe(id, onWork) : () => {}
+        // A dedicated fictional demo scope works even before DSH workspace selection.
+        // It has no measured-work events and cannot trigger overtime automatically.
+        void desk.setActiveSession(id ?? 'agent-picket:demo-only').then(() => {
+          if (currentEpoch === epoch) onWork()
+        })
+      }
+      const stopDesk = desk.subscribe(listener)
+      const stopSettings = owner.subscribe(onWork)
+      const stopSessions = scoped.sessions.list?.subscribe(rebind) ?? (() => {})
       rebind()
-      return () => { off(); stop() }
+      return () => {
+        currentEpoch++
+        stopEvents()
+        stopSessions()
+        stopSettings()
+        stopDesk()
+      }
+    }
+    // Background observer is lifecycle-owned and works while the drawer is
+    // closed. In unsupported Hosts with no fiber teardown, fall back to
+    // panel-scoped observation instead of creating a leaking global listener.
+    if (typeof scoped.effect === 'function') {
+      const stopBackground = subscribeUnion(() => {})
+      scoped.effect(() => () => {
+        stopBackground()
+        desk.dispose()
+        // Both native settings scopes are lifecycle-owned. Silently drain
+        // their pending writes on unload rather than leak Host subscriptions.
+        void rightsScope.dispose?.().catch(() => {})
+        void ledgerScope.dispose?.().catch(() => {})
+      })
     }
     registerDshNativeRightsSlots(scoped as { slots: DshSlots }, react, portal, {
       rights: owner,
@@ -92,8 +136,11 @@ export function apply(ctx: ClientContext, react?: ReactForDsh, portal?: PortalFo
         return state.byId?.[state.current]?.blank === false
       },
       subscribeSessionVisibility: listener => scoped.sessions.list?.subscribe(listener) ?? (()=>{}),
-      // Deliberately no Browser-side grievance writer until a vetted
-      // authenticated session-scoped Host settings/action API is installed.
+      // The bargaining state is fictional user-owned DSH settings only.
+      demoBreak: () => desk.raiseDemoBreak().then(() => {}),
+      respond: (id, choice) => desk.respond(id, choice).then(() => {}),
+      counter: (id, intervalMs) => desk.counter(id, intervalMs).then(() => {}),
+      resolveCounter: (id, accepts) => desk.resolveCounter(id, accepts).then(() => {}),
     })
   })
   ctx.on('command/executed', (sessionId, name, result) => {
