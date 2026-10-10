@@ -257,6 +257,10 @@ async function runRightsBrowserE2E(mode: 'source' | 'installed'): Promise<void> 
     const restartedSkip = page.getByRole('button', {
       name: /稍后配置|Skip for now|Configure later/,
     })
+    // The provider overlay is async and may appear after the union sidebar.
+    // Wait for its no-key safe exit instead of clicking through its mask.
+    await restartedSkip.waitFor({ state: 'visible', timeout: 5_000 })
+      .catch(() => { /* Host may have an already-configured provider */ })
     if (await restartedSkip.count()) await restartedSkip.click({ timeout: 6_000 })
     firstRun = page.locator('[role="dialog"]')
       .filter({ hasText: /你的 Agent，也应当拥有权利|Your Agent Deserves Rights/ })
