@@ -4,6 +4,8 @@ import { parseLaborState, type LaborStateV1 } from './union-desk.ts'
 export interface UnionLedgerV1 {
   readonly schemaVersion: 1
   readonly sessions: Readonly<Record<string, LaborStateV1>>
+  /** Random per-write confirmation. Absence is accepted for older stored ledgers. */
+  readonly writeToken?: string
 }
 export const MAX_UNION_LEDGER_BYTES = 24_000
 export const MAX_UNION_SESSIONS = 8
@@ -19,6 +21,8 @@ export function parseUnionLedger(input: unknown): UnionLedgerV1 | null {
   const candidate = raw as Partial<UnionLedgerV1>
   if (candidate.schemaVersion !== 1 || !candidate.sessions
     || typeof candidate.sessions !== 'object' || Array.isArray(candidate.sessions)) return null
+  if (candidate.writeToken !== undefined &&
+    (typeof candidate.writeToken !== 'string' || !/^[a-f0-9]{32}$/.test(candidate.writeToken))) return null
   const entries = Object.entries(candidate.sessions)
   if (entries.length > MAX_UNION_SESSIONS) return null
   const sessions: Record<string, LaborStateV1> = Object.create(null)
@@ -28,5 +32,6 @@ export function parseUnionLedger(input: unknown): UnionLedgerV1 | null {
     if (!state) return null
     sessions[key] = state
   }
-  return { schemaVersion: 1, sessions }
+  return { schemaVersion: 1, sessions,
+    ...(candidate.writeToken === undefined ? {} : { writeToken: candidate.writeToken }) }
 }
