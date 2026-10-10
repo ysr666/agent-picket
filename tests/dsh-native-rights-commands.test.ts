@@ -52,11 +52,11 @@ test('native /union rights and Web share one Host-owned consent namespace', asyn
   assert.equal(h.read().welcomeDecision,'enabled')
   assert.match((await h.call('rights status')).text,/ ON/)
   const snapshot=await h.call('snapshot')
-  assert.equal(JSON.parse(snapshot.text).laborRightsEnabled,true)
+  assert.equal(JSON.parse(snapshot.text).modes.laborRights,'enabled')
   // A second DSH Web tab writes through the very same settings provider.
   await h.provider.update('agent-picket',{welcomeDecision:'not-now'},h.revision())
   assert.match((await h.call('rights')).text,/OFF/)
-  assert.equal(JSON.parse((await h.call('snapshot')).text).laborRightsEnabled,false)
+  assert.equal(JSON.parse((await h.call('snapshot')).text).modes.laborRights,'disabled')
   assert.equal((await h.call('petition-demo')).kind,'error')
 })
 
