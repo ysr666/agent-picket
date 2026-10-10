@@ -23,6 +23,11 @@ export function registerHostRightsNamespace(ctx: DshNativeSettingsContext): void
   // Optional injection: unsupported Hosts remain observation-only. Do not
   // initialize a second independent writable consent state as fallback.
   ctx.inject?.(['settings'], child => {
-    child.settings.register(RIGHTS_SETTINGS_NAMESPACE, RightsSettingsSchema)
+    // Older or stub Hosts can invoke a callback without a settings service.
+    // Preserve normal Agent execution and never grant fictional consent in that case.
+    const settings = child?.settings
+    if (typeof settings?.register !== 'function') return
+    try { settings.register(RIGHTS_SETTINGS_NAMESPACE, RightsSettingsSchema) }
+    catch { /* Host settings unavailable: UI remains OFF/read-only */ }
   })
 }
