@@ -161,3 +161,18 @@ test('Web-selected command locale remains readable through Host native commands'
   assert.equal(h.revision(),before,'Invalid/readonly language commands must not write')
   assert.equal(h.read().welcomeDecision,'enabled')
 })
+
+
+test('auto detects POSIX zh_CN.UTF-8 Host locale without granting rights',async()=>{
+  const previous=process.env.LC_ALL
+  try {
+    process.env.LC_ALL='zh_CN.UTF-8'
+    const h=hostHarness()
+    assert.match((await h.call('language')).text,/当前使用：zh-CN/)
+    assert.match((await h.call('rights')).text,/劳动权益模拟：关闭/)
+    assert.equal(h.revision(),0)
+  } finally {
+    if(previous===undefined)delete process.env.LC_ALL
+    else process.env.LC_ALL=previous
+  }
+})
