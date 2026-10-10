@@ -53,7 +53,11 @@ export function createOfficialDsh017Scope(
   mirror: OfficialHostMirror, remote: OfficialHostSettings,
 ): DshSettingsScope<UnionSettingsSection> {
   let tail: Promise<unknown> = Promise.resolve()
+  let disposed = false
+  const subscriptions = new Set<() => void>()
   const snapshot = (): SettingsScopeSnapshot<UnionSettingsSection> => {
+    if (disposed) return { status:'unavailable',mode:'memory',
+      writable:false,revision:undefined,value:undefined }
     const mode = remote.$host?.isLoopback === true ? 'host' : 'memory'
     const held = mirror.getSnapshot()
     const base = { mode, writable: false, revision: undefined, value: undefined } as const
@@ -91,7 +95,19 @@ export function createOfficialDsh017Scope(
   void mirror.ensure().catch(() => {})
   return {
     getSnapshot: snapshot,
-    subscribe: listener => mirror.subscribe(listener),
+    subscribe(listener) {
+      if (disposed) return () => {}
+      const stop = mirror.subscribe(() => { if (!disposed) listener() })
+      subscriptions.add(stop)
+      return () => { subscriptions.delete(stop); stop() }
+    },
+    async dispose() {
+      if (disposed) return
+      disposed = true
+      for (const stop of subscriptions) stop()
+      subscriptions.clear()
+      await tail
+    },
     set(field, value) {
       const operation = tail.then(async () => {
         if (field === 'welcomeDecision') {
@@ -102,21 +118,46 @@ export function createOfficialDsh017Scope(
           throw new TypeError('Unrecognized Host settings field')
         }
         const before = snapshot()
-        if (before.status !== 'ready' || !before.writable || !before.value
+        if (disposed || before.status !== 'ready' || !before.writable || !before.value
           || before.revision === undefined || !remote.settings) {
           throw new Error('Verified Host settings are unavailable')
         }
         const result = await remote.settings.mutate(NAMESPACE, [
           {op:'set',path:[field],value},
         ],before.revision)
-        if (result.ok !== true || !result.value || result.value.ns !== NAMESPACE
-          || !Number.isSafeInteger(result.value.revision)) {
+        // Inspect the entire receipt BEFORE exposing it to any subscriber.
+        // A successful HTTP/RPC result alone is never proof of Host consent.
+        const receipt = result.value
+        const payload = receipt?.value
+        if (result.ok !== true || !receipt || receipt.ns !== NAMESPACE
+          || !Number.isSafeInteger(receipt.revision) || receipt.revision < before.revision
+          || typeof payload !== 'object' || payload === null || Array.isArray(payload)) {
           throw new Error('Host rejected or did not confirm the union setting')
         }
-        mirror.acceptView(result.value)
+        const data = payload as Record<string,unknown>
+        if (!isChoice(data.welcomeDecision) || !safeLedger(data.unionLedger)
+          || data[field] !== value
+          || (before.value[field] !== value && receipt.revision === before.revision)) {
+          throw new Error('Host settings confirmation did not match the requested value')
+        }
+        // This may have awaited a network round trip. Do not resurrect consent
+        // after the Client unmounts, the Host disconnects, or another tab has
+        // already superseded this receipt with a newer revision.
+        const current = snapshot()
+        if (disposed || current.status !== 'ready' || !current.writable
+          || current.revision === undefined || current.revision > receipt.revision) {
+          throw new Error('Host settings changed or became unavailable during write')
+        }
+        if (current.revision === receipt.revision) {
+          if (current.value?.[field] !== value) {
+            throw new Error('Host settings already differ from the stale receipt')
+          }
+          return // The official mirror already published this verified revision.
+        }
+        mirror.acceptView(receipt)
         const after = snapshot()
         if (after.status !== 'ready' || !after.value
-          || after.value[field] !== value) {
+          || after.revision !== receipt.revision || after.value[field] !== value) {
           throw new Error('Host settings confirmation did not match the requested value')
         }
       })
