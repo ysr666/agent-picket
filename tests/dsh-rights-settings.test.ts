@@ -56,9 +56,12 @@ test('Host validation rejects extra/unrecognized ledger fields and oversized sto
   assert.doesNotThrow(()=>validate!({welcomeDecision:'enabled',unionLedger:''}))
   assert.doesNotThrow(()=>validate!({welcomeDecision:'enabled',
     unionLedger:JSON.stringify({schemaVersion:1,sessions:{}})}))
+  assert.doesNotThrow(()=>validate!({welcomeDecision:'enabled',
+    unionLedger:JSON.stringify({schemaVersion:1,sessions:{},writeToken:'a'.repeat(32)})}))
   for(const input of [
     '{"schemaVersion":1,"sessions":{},"prompt":"SENSITIVE"}',
     '{"schemaVersion":2,"sessions":{}}',
+    '{"schemaVersion":1,"sessions":{},"writeToken":"not-a-receipt"}',
     'not valid JSON',
     'z'.repeat(25_000),
   ]) {

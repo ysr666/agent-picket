@@ -76,11 +76,20 @@ export function createDshBrowserUnionDesk(options: {
       .filter(([key]) => key !== before.key)
       .slice(-(MAX_UNION_SESSIONS - 1))
     const sessions = Object.fromEntries([...entries, [before.key, next]])
-    const serialized = JSON.stringify({ schemaVersion: 1, sessions })
+    // A unique per-operation receipt disambiguates successful writes from
+    // revision-conflict recovery when another tab produced the same agreement.
+    // Never claim that our write succeeded solely because the final state matches.
+    const entropy = new Uint8Array(16)
+    if (!globalThis.crypto?.getRandomValues) {
+      throw new Error('Secure agreement receipts unavailable')
+    }
+    globalThis.crypto.getRandomValues(entropy)
+    const writeToken = [...entropy].map(part => part.toString(16).padStart(2,'0')).join('')
+    const serialized = JSON.stringify({ schemaVersion: 1, sessions, writeToken })
     if (serialized.length > MAX_UNION_LEDGER_BYTES) throw new Error('Union ledger capacity exceeded')
     await scope.set('unionLedger', serialized)
     const after = read()
-    if (!after || after.key !== before.key ||
+    if (!after || after.key !== before.key || after.ledger.writeToken !== writeToken ||
       JSON.stringify(after.ledger.sessions[before.key]) !== JSON.stringify(next)) {
       throw new Error('Host did not confirm union agreement update')
     }
