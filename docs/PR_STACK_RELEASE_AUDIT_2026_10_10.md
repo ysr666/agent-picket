@@ -1,5 +1,8 @@
 > **2026-10-10 晚间复核：当前有 58 个 PR（55 个开放 Draft、3 个已合并）。** 本文最初的“52 Draft”是早先时间点的历史快照。#53/#54 与 #37–#43 的最新逐文件验收见 [并行分支功能对账](PARALLEL_BRANCH_PARITY_2026_10_10.md)；不要把备用授权存储与官方 DSH Host 设置一起合并。
 
+> **2026-10-11 维护说明：本页是 10 月 10 日合并前的历史审计快照，不是当前 PR 数量或主线状态。** 既定 #23–#70 工会集成链已逐项合入 `main`，#40 AI 权利宣言已合并；相关历史 Draft 已分批归档且保留分支。当前实现与仍待人工验证的发布门槛请读 [最新状态](STATUS.zh.md) 和 [验收单](HUMAN_ACCESSIBILITY_SIGNOFF.zh.md)。下文的“未合并、不要关闭”等文字均是当时审计的原貌，不能反向覆盖新的维护决策。
+
+
 # Agent Picket — Draft PR integration, package and release audit
 
 > Checked against live GitHub on 2026-10-10. **REVIEW ONLY: do not merge, close, push, publish, or enable real task blocking without explicit authorization.** Canonical current candidate: [Draft PR #67](https://github.com/ysr666/agent-picket/pull/67).

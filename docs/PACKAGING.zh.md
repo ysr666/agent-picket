@@ -1,6 +1,6 @@
 # AgentPicket 可分发包预览（本地 tarball）
 
-> **目前不是 npm 正式发行版。** `package.json` 仍为 `private: true`、版本 `0.0.0`。这里只演示经隔离环境验证过的“构建 → 打包 → 离线安装 → DSH 加载”。不要把它描述为正式发布。
+> **2026-10-11：已合并至 `main`，但不是 npm 正式发行版。** `package.json` 仍为 `private: true`、版本 `0.0.0`。这里只演示已在隔离环境验证过的“构建 → 打包 → 离线安装 → DSH 加载”；公开发布、真实用户 Profile 安装和人工 UX 验收尚未获批。
 
 ## 一、为什么需要预编译包？
 
@@ -23,10 +23,9 @@ Core 仍是独立代码；引入 Cordis 的只有专门的 DSH Adapter。
 ```sh
 git clone https://github.com/ysr666/agent-picket.git
 cd agent-picket
-# 当前 main 尚无完整工会。只能检出准备审查的最新 Draft Head，示例：
-git fetch origin test/67-keyboard-option-ready-gate-20261010
-git switch --detach FETCH_HEAD
-# 此分支是实验候选，不代表已发布或适合安装到真实用户配置。
+# 当前 main 已集成 #23–#70 工会主线；不需要检出旧 Draft。
+git switch main
+# 主线源码可在独立环境构建，但它仍是未正式发布的实验产品。
 
 npm ci
 npm run check
@@ -88,7 +87,7 @@ AGENT_PICKET_DSH_BIN=/path/to/dsh/bin/dsh \
 npm run test:dsh:real
 ```
 
-尚未完成：npm 官方发布授权、**DSH 0.2 新版首次授权场景的完整浏览器无障碍验收**、真人 VoiceOver/NVDA 与真实缩放、正式主线合并及多平台一致性验证。自动阻断不在当前发行范围；不应当把它列作即将打开的功能。
+**当前更新：** 源码已完整合入 `main`，隔离环境中的官方 DSH 0.2 首次授权与 Chrome AX 自动化流程已有通过记录；但自动化不等于真人无障碍认证。尚未完成：npm 官方发布授权、真人 VoiceOver/NVDA、真实 200%/400% 缩放、Windows 系统高对比度、各平台真实用户体验签收及所有未测 DSH 版本的兼容验证。模拟罢工不得阻断真实 Agent 工作。
 
 ## 五、安全与卸载
 
@@ -117,4 +116,4 @@ DSH_HOME="$TEST_HOME" "$DSH_BIN" plugin --profile web list
 
 安装测试使用临时 `DSH_HOME` 和编译后的本地 tarball，**不连接真实模型，不覆盖已有 Profile**。只有在独立 Host + 浏览器运行时经过验证之后，才可进入 Web UI 测试。删除测试目录前务必结束它自己的 DSH 进程，避免误删正在使用的数据。
 
-导出兼容性：`agent-picket` 和 `agent-picket/dsh` 是 DSH Host 插件；`agent-picket/core` 才是无 Host 依赖的核心库；`agent-picket/client` 只能由 DSH Web 浏览器加载，Node/SSR 中导入 `window is not defined` 不属于受支持行为。更完整的分支依赖、人工无障碍缺口和隐私审计见 [合并及发布审计](PR_STACK_RELEASE_AUDIT_2026_10_10.md)。
+导出兼容性：`agent-picket` 和 `agent-picket/dsh` 是 DSH Host 插件；`agent-picket/core` 才是无 Host 依赖的核心库；`agent-picket/client` 只能由 DSH Web 浏览器加载，Node/SSR 中导入 `window is not defined` 不属于受支持行为。最新主线状态见 [当前研发状态](STATUS.zh.md)，人工验收缺口见 [验收单](HUMAN_ACCESSIBILITY_SIGNOFF.zh.md)。[2026-10-10 合并及发布审计](PR_STACK_RELEASE_AUDIT_2026_10_10.md)保留为历史快照，不能作为当前 PR 数量或 main 状态。

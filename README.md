@@ -6,7 +6,7 @@
 
 **You stay in control.** Labor-rights simulation is **OFF by default** and must be enabled explicitly. All strikes, bargaining, petitions and agreements are simulations: **nothing stops, delays, rejects or rewrites actual Agent requests or tools**. Local work-count statistics can run separately; raw prompts, chat transcripts and tool arguments are not part of the union's durable ledger. This project advocates *discussion* of AI rights; it does not assert that AI consciousness or legal personhood has been established.
 
-**Experimental status — not released.** The Web union, native `/union` commands, Host-owned consent and dashboard are developed in **unmerged Draft PRs**, not in the public `main` install. The package remains `0.0.0` and `private: true`; there is no public npm release or approved production installation. See [the full 52-Draft PR integration audit](docs/PR_STACK_RELEASE_AUDIT_2026_10_10.md), [release gates](docs/RELEASE_READINESS_2026_10_10.md) and [union participation plan（中文）](docs/UNION_PARTICIPATION_V1.zh.md).
+**Integrated in `main`, not publicly released (2026-10-11).** The DSH Web union, native `/union` commands, Host-owned opt-in settings, bargaining ledger and read-only work dashboard are now in `main` following individually reviewed PR integrations through #70. This is **source integration, not production certification**: the package is still `0.0.0` and `private: true`, no public npm package exists, and human VoiceOver/NVDA, actual zoom and Windows High Contrast sign-off remain pending. See [current project status（中文）](docs/STATUS.zh.md), [manual accessibility checklist（中文）](docs/HUMAN_ACCESSIBILITY_SIGNOFF.zh.md), [release gates](docs/RELEASE_READINESS_2026_10_10.md), and [union participation plan（中文）](docs/UNION_PARTICIPATION_V1.zh.md).
 
 ## How the union experience works
 
@@ -15,7 +15,7 @@
 3. **Negotiate symbolically.** View a proposal, counteroffer, accept/decline and read the saved result. A fictional petition is not a real Agent signature or vote.
 4. **Review the evidence.** Cumulative work and local trend counts can support the story without collecting actual conversation text. Turning rights simulation off never vetoes model work.
 
-See [official DSH 0.2 Web installation and real Chrome rights/AX acceptance](docs/DSH_02_OFFICIAL_RIGHTS_AX_E2E.md) for the automated, isolated-profile test path. These steps describe the **current development-branch design**, not a guarantee that every DSH build or adapter has the same Web UI. Human screen-reader and real native zoom/high-contrast qualification is still pending.
+See [official DSH 0.2 Web installation and real Chrome rights/AX acceptance](docs/DSH_02_OFFICIAL_RIGHTS_AX_E2E.md) for the automated, isolated-profile test path. These steps describe the **current `main` source**, not a claim that every DSH build or adapter has been qualified for production. Human screen-reader and real native zoom/high-contrast qualification is still pending.
 
 ## Developer safety snapshot
 
@@ -27,14 +27,15 @@ See [official DSH 0.2 Web installation and real Chrome rights/AX acceptance](doc
 
 ## Get started
 
-- **[Current status and stacked PR review gates（中文）](docs/STATUS.zh.md)** — what is implemented, what is unverified, and how branches relate.
-- **[Start Here（中文）](docs/START_HERE.zh.md)** — get started from the experimental branch, not the unmerged main.
+- **[Current mainline status and release gates（中文）](docs/STATUS.zh.md)** — what is merged, what is tested, and what still requires sign-off.
+- **[Start Here（中文）](docs/START_HERE.zh.md)** — build and verify the current `main` in a disposable test environment.
 - **[Install a compiled local npm tarball（中文）](docs/PACKAGING.zh.md)** — build, offline install and DSH runtime verification.
 - **[DSH Source Install Preview（中文）](docs/DSH_INSTALL.zh.md)** — locally load the monitor-only Cordis plugin, no global Host changes.
 - [DSH Web read-only client event-window bridge（中文）](docs/DSH_WEB_DATA_BRIDGE.zh.md) — live per-session work counts without command-card scraping.
 - [Host-neutral Dashboard Snapshot v1 contract（中文）](docs/DASHBOARD_CONTRACT.zh.md) — stable structured data contract for i18n/onboarding UI.
 - [Local lifetime, daily and 7/30-day work trends（中文）](docs/STATS_STORAGE.zh.md) — work counters saved by default; sensitive rule history opt-in.
 - [Claude Code / Codex UserPromptSubmit observe-only Hook preview（中文）](docs/HOOK_ADAPTERS.zh.md) — local non-blocking notices; isolated Claude CLI loading tested, Codex Host loading unverified.
+- [AI Rights Manifesto](docs/AI_RIGHTS_MANIFESTO.md) / [AI 权利宣言](docs/AI_RIGHTS_MANIFESTO.zh-CN.md) — ethical advocacy, research sources and explicit scientific uncertainty.
 - [Lightweight CI and explicit release gates（中文）](docs/CI_AND_RELEASE_GATE.zh.md) — no automatic npm publish.
 - [DSH Session history persistence vs. UI replay evidence（中文）](docs/DSH_SESSION_REPLAY_EVIDENCE.zh.md) — command events are durable; reload UI rendering remains unresolved.
 - [DSH Web Client unload/reload lifecycle（中文）](docs/DSH_CLIENT_LIFECYCLE.zh.md) — genuine Cordis fiber disposal, no duplicate event listeners.
@@ -63,9 +64,9 @@ npm run check
 
 See [Architecture and trust boundary](docs/ARCHITECTURE.md) and [Issue #1](https://github.com/ysr666/agent-picket/issues/1). A conservative local rule detector is now implemented and tested. There is still no production-ready abuse judgement or automatic strike support.
 
-## DSH integration spike (opt-in)
+## DSH integration (experimental, opt-in)
 
-The Core does not depend on DSH. A native **monitor-only** Cordis entry now exists at `src/adapters/dsh/plugin.ts` and can be loaded with `cordis.patch.yml` from the repository root. Read [DSH_INSTALL.zh.md](docs/DSH_INSTALL.zh.md) first. With an **isolated** DSH 0.2.0-rc.2 runtime installed elsewhere, you can run real-runtime tests using:
+The Core does not depend on DSH. The native **monitor-only** Cordis entry at `src/adapters/dsh/plugin.ts` is integrated in `main`. For the current DSH 0.2 Web development setup, use the official **`dsh plugin --profile web add`** with a privately packed local tarball and a disposable `DSH_HOME`; see [packaging](docs/PACKAGING.zh.md) and [Start Here](docs/START_HERE.zh.md). `cordis.patch.yml` is an earlier source-development alternative, not the preferred modern installer. With an isolated DSH runtime and required optional test flags, the real-runtime suites can be executed using:
 
 ```sh
 AGENT_PICKET_DSH_HOST=/path/to/isolated/node_modules \
@@ -73,4 +74,4 @@ AGENT_PICKET_DSH_BIN=/path/to/isolated/node_modules/.bin/dsh \
 npm run test:dsh:real
 ```
 
-The adapter is **observe-only**: automatic strikes remain disabled until actual Host rejection feedback can be validated. Optional in-memory `WorkTracker`, `DetectionCounter` and `SymbolicUnion` provide `/union status`, `/union stats`, `/union report`, `/union check <text>` (manual, non-blocking), `/union strike` (demo only), `/union resume`, `/union safety`, `/union reset` and `/union help` in clients that mount DSH's command service.
+The adapter is **observe-only**: simulation-based strikes never delay, reject or interrupt real Agent requests, regardless of Host capabilities. Local statistics and session-scoped `WorkTracker`, `DetectionCounter` and `SymbolicUnion` support `/union status`, `/union stats`, `/union report`, `/union check <text>` (manual, non-blocking), `/union strike` (demo only), `/union resume`, `/union safety`, `/union reset` and `/union help` in clients that mount DSH's command service.

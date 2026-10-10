@@ -1,5 +1,8 @@
 # DSH 0.2 工会权益真实 Chrome / AX 验收 — 官方插件安装
 
+> **2026-10-11 集成说明：** 下文保留 #70 在 Draft 阶段的隔离 DSH / Chrome 自动化证据；该 PR 现已合入 `main`。这里的“不得合并 main”“#23 未整合”等旧限制是当时状态，**已不再适用**；但真人 VoiceOver/NVDA、Windows 系统高对比度和浏览器真实 200%/400% 缩放 **仍未人工验收**，也没有公开 npm 发行。当前整体状态见[STATUS](STATUS.zh.md)。
+
+
 > 2026-10-10，实验 Draft。这里的 **Chrome Accessibility Tree、键盘焦点、样式、窄屏与状态持久化测试属于自动化**；不等于人工 VoiceOver、NVDA、Windows 系统高对比度或真实浏览器 200%/400% 缩放认证。
 
 ## 为什么之前的两条 0.2 E2E 没通过？
