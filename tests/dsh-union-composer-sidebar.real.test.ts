@@ -218,6 +218,12 @@ async function realComposerParity(mode: 'source'|'installed') {
     // Client. Actual typed commands must switch language without affecting
     // negotiated agreements or reenabling blocked model tasks.
     assert.equal((await command('language zh-CN')).kind,'success')
+    // The language preference is Host-owned and must survive a real Client
+    // reload without reenabling any permission or changing the agreement.
+    await page.reload({waitUntil:'domcontentloaded',timeout:12_000})
+    await providerSkip.waitFor({state:'visible',timeout:5_000}).catch(()=>{})
+    if(await providerSkip.count())await providerSkip.click({timeout:5_000})
+    await editor.waitFor({state:'visible',timeout:10_000})
     assert.match((await command('language')).text,/工会命令语言/)
     assert.match((await command('rights')).text,/劳动权益模拟：开启/)
     assert.match((await command('grievances')).text,/休息间隔 30 分钟/)
