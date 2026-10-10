@@ -270,3 +270,50 @@ test('union work/rights status has an accessible polite announcement',()=>{
   assert.equal(status.props['aria-live'],'polite')
   assert.ok(status.children.includes('union.status.active'))
 })
+
+
+test('union dialog has 320px-friendly border-box sizing and capped vertical scrolling',()=>{
+  const {hooks}=fakeReact()
+  const {d}=deps(rights({welcomeDecision:'not-now'}))
+  let useStateIndex=0
+  const openedHooks:ReactForDsh={
+    ...hooks,
+    useState<T>(initial:T|(()=>T)){
+      const [value,set]=hooks.useState(initial)
+      useStateIndex++
+      return useStateIndex===3?[true as T,set]:[value,set]
+    },
+  }
+  const before=(globalThis as any).document
+  ;(globalThis as any).document={body:{},getElementById:()=>({inert:false})}
+  try {
+    const nodes=walk(createDshUnionComponents(openedHooks,
+      {createPortal:node=>node},d).SidebarAction({wide:true}))
+    const dialog=nodes.find(n=>n.props.role==='dialog')
+    assert.ok(dialog)
+    assert.equal(dialog.props.style.boxSizing,'border-box')
+    assert.equal(dialog.props.style.width,'min(100%,800px)')
+    assert.equal(dialog.props.style.overflowY,'auto')
+    assert.equal(dialog.props.style.overflowWrap,'anywhere')
+  }finally{(globalThis as any).document=before}
+})
+
+test('dynamically mounted union bargaining demands have accessible status and stable focus target',()=>{
+  const {hooks}=fakeReact()
+  const {d}=deps(rights({welcomeDecision:'enabled',laborRightsEnabled:true}))
+  const component=createDshUnionComponents(hooks,{createPortal:child=>child},{
+    ...d,readUnion:()=>({
+      pending:{id:9,kind:'break',stage:'open'},
+      completedTurnMs:null,coverage:'not-loaded',lifetimeMs:null,available:true,
+    }),
+  })
+  const tree=walk(component.UnionPanel())
+  const live=tree.find(n=>n.type==='p'&&n.props['aria-live']==='polite'
+    &&n.children.includes('union.demand.break'))
+  assert.ok(live,'A pending demand should be announced without making the whole form live')
+  assert.equal(live.props['aria-atomic'],'true')
+  const heading=tree.find(n=>n.type==='h3'&&n.children.includes('union.desk.title'))
+  assert.ok(heading,'The union negotiation section needs a stable focus target')
+  assert.equal(heading.props.tabIndex,-1,'Heading must receive programmatic focus, not a new Tab stop')
+  assert.equal(typeof heading.props.ref,'function')
+})
