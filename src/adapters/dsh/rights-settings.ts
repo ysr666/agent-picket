@@ -8,6 +8,8 @@ import Schema from '@deepseek-ai/schemastery'
 export const RIGHTS_SETTINGS_NAMESPACE = 'agent-picket'
 export const RightsSettingsSchema = Schema.object({
   welcomeDecision: Schema.union(['unseen', 'enabled', 'not-now']).default('unseen'),
+  // Structured, size-bounded fictional bargaining records; no transcripts.
+  unionLedger: Schema.string().default(''),
 })
 export interface HostRightsSection {
   readonly welcomeDecision: 'unseen' | 'enabled' | 'not-now'
