@@ -380,8 +380,15 @@ async function runRightsBrowserE2E(mode: 'source' | 'installed'): Promise<void> 
     // this is measured zero, never a fabricated nonzero hour claim.
     assert.match(enabledText,
       /尚未加载会话历史|has not loaded|0 小时 0 分钟|0 hours? 0 minutes?/)
-    assert.doesNotMatch(enabledText,/1 小时|2 小时|3 小时|1 hour|2 hours/,
-      'A fresh isolated blank Session must not invent measured work')
+    const measuredWorkCard=panel.getByRole('heading',{
+      name:/工作日与劳动权益|Workday/,
+    }).first().locator('..')
+    assert.doesNotMatch(await measuredWorkCard.innerText(),
+      /1 小时|2 小时|3 小时|1 hour|2 hours/,
+      'A fresh isolated blank Session must not invent measured work; '
+        + 'future fictional threshold estimates are separate from observed time')
+    assert.match(enabledText,/再累计|Next potential proposal|尚未加载|has not loaded/,
+      'Any projected grievance threshold must be clearly separate from measured work')
     assert.match(enabledText, /宿主长期累计统计尚未接入|not connected/)
     assert.doesNotMatch(enabledText, /自动阻断任务：开启|Automatic task blocking: ON/)
 
@@ -419,8 +426,10 @@ async function runRightsBrowserE2E(mode: 'source' | 'installed'): Promise<void> 
     assert.match(postBargain,
       /尚未加载会话历史|has not loaded|0 小时 0 分钟|0 hours? 0 minutes?/,
       'Demo grievance must not invent completed work for a blank Session')
-    assert.doesNotMatch(postBargain, /1 小时|2 小时|3 小时|1 hour|2 hours/,
-      'Fictional agreement must not increase measured work counters')
+    assert.doesNotMatch(await measuredWorkCard.innerText(),
+      /1 小时|2 小时|3 小时|1 hour|2 hours/,
+      'Fictional agreement must not increase measured work counters; '
+        + 'the next possible demand threshold is not measured work')
 
     await panel.getByRole('button', { name: /关闭|Close/ }).click()
     await panel.waitFor({ state: 'detached', timeout: 5_000 })
