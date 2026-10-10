@@ -2,33 +2,61 @@ import { readFileSync, writeFileSync, rmSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 
 /**
- * Experimental DSH 0.2.0-rc.2 browser module packaging. External app plugins
- * cannot import the monorepo's internal tsdown client preset. This minimal
- * zero-dependency module has no imports or chunks and uses the loader's public
- * packaged-artifact factory handoff.
+ * Zero-dependency DSH browser factory builder. Every included module and
+ * import edge is enumerated. React and react-dom are NOT bundled: they come
+ * from DSH's own platform singleton module table through _require.
  */
-const path = fileURLToPath(new URL('../dist/adapters/dsh/client.js', import.meta.url))
-const source = readFileSync(path, 'utf8')
-if (!source.includes('export const inject = ') ||
-    !source.includes('export function apply(ctx)') ||
-    (source.match(/^import\s.*$/gm) ?? []).some(line => !line.includes('client-dashboard.js'))) {
-  throw new Error('DSH Client source changed: review and update the bundler explicitly')
+const root = new URL('../dist/', import.meta.url)
+const output = fileURLToPath(new URL('adapters/dsh/client.js', root))
+const modules = [
+  'i18n/en.js',
+  'i18n/zh-CN.js',
+  'i18n/index.js',
+  'adapters/dsh/client-rights-scope.js',
+  'adapters/dsh/native-rights-ui.js',
+  'adapters/dsh/client-dashboard.js',
+  'adapters/dsh/client.js',
+]
+const allowedImports = new Map([
+  ['i18n/index.js', new Set(['./en.js', './zh-CN.js'])],
+  ['adapters/dsh/native-rights-ui.js', new Set(['./client-rights-scope.js'])],
+  ['adapters/dsh/client.js', new Set([
+    './client-dashboard.js', './client-rights-scope.js',
+    './native-rights-ui.js', '../../i18n/index.js',
+  ])],
+])
+const blocks = []
+for (const name of modules) {
+  const path = fileURLToPath(new URL(name, root))
+  let source = readFileSync(path, 'utf8')
+  const imports = [...source.matchAll(/^import\s+.*?\s+from\s+['"]([^'"]+)['"];?\s*$/gm)]
+  const allowed = allowedImports.get(name) ?? new Set()
+  if (imports.length !== allowed.size ||
+      imports.some(match => !allowed.has(match[1]))) {
+    throw new Error('Client import graph drift at ' + name)
+  }
+  source = source.replace(/^import\s+.*?\s+from\s+['"][^'"]+['"];?\s*$/gm, '')
+    .replace(/^export\s*\{\s*en\s*,\s*zhCN\s*\};?\s*$/gm, '')
+    .replace(/^export\s+/gm, '')
+    .replace(/^\/\/# sourceMappingURL=.*$/gm, '')
+  if (/^(?:import|export)\s/m.test(source)) {
+    throw new Error('Unexpected browser module syntax in ' + name)
+  }
+  blocks.push('// Inline: ' + name + '\n' + source)
 }
-const helperPath = fileURLToPath(new URL('../dist/adapters/dsh/client-dashboard.js', import.meta.url))
-const helper = readFileSync(helperPath, 'utf8')
-if (/^import\s/m.test(helper)) throw new Error('Browser Dashboard helper must have zero runtime imports')
-const helperBody = helper.replace(/^export /gm, '').replace(/^\/\/# sourceMappingURL=.*$/gm, '')
-// Local TS extension compiled to ESM JS; replace the sole dependency with the
-// inlined function. Never dynamically fetch code at runtime.
-const body = source.replace(/^import \{ createBrowserDashboardBridge \} from ['"]\.\/client-dashboard\.js['"];?\s*\n/m, '')
-  .replace(/^export /gm, '').replace(/^\/\/# sourceMappingURL=.*$/gm, '')
-if (/^import\s/m.test(body) || body.includes('from "./client-dashboard.js"')) {
-  throw new Error('Unexpected Client dependencies: review the explicit bundler')
+const body = blocks.join('\n\n')
+if (!body.includes('function apply(ctx, react, portal)') ||
+    !body.includes('const inject = ') ||
+    !body.includes('function createBrowserDashboardBridge(') ||
+    !body.includes('function registerDshNativeRightsSlots(')) {
+  throw new Error('DSH Browser entry or helper structure changed')
 }
-const header = 'window.__ModuleLoader__.load({\n'
+const wrapped = 'window.__ModuleLoader__.load({\n'
   + '  id: "agent-picket",\n'
   + '  factory: (_require) => {\n'
-const footer = '\n    return { inject, apply };\n  },\n});\n'
-writeFileSync(path, header + helperBody + '\n' + body + footer)
-// The TypeScript-generated JS map no longer matches the closure factory.
-rmSync(path + '.map', { force: true })
+  + body
+  + '\nreturn { inject, apply: (ctx) => apply(ctx, _require("react"), _require("react-dom")) };\n'
+  + '  },\n'
+  + '});\n'
+writeFileSync(output, wrapped)
+rmSync(output + '.map', { force: true })

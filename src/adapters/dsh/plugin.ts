@@ -8,6 +8,7 @@ import { DurableStats } from '../node/durable-stats.ts'
 import type { DetectionProvider } from '../../core/types.ts'
 import { homedir } from 'node:os'
 import { join, resolve } from 'node:path'
+import { registerHostRightsNamespace } from './rights-settings.ts'
 
 /**
  * Native DeepSeek Harness/Cordis plugin entry. Node 22.19+ TypeScript stripping
@@ -19,6 +20,8 @@ import { join, resolve } from 'node:path'
 export const name = 'agent-picket'
 
 export function apply(ctx: DshIntegrationContext): void {
+  // Native DSH settings namespace, independent of default-on local work stats.
+  registerHostRightsNamespace(ctx as unknown as Parameters<typeof registerHostRightsNamespace>[0])
   const rules = new LocalRuleDetector()
   // Work-only lifetime summaries are local and ON by default, as expected
   // from a session analytics plugin. All text/classification persistence is

@@ -7,7 +7,7 @@ import test from 'node:test'
 const root = resolve(import.meta.dirname, '..')
 const manifest = JSON.parse(readFileSync(resolve(root, 'package.json'), 'utf8'))
 
-test('distribution stays private and has explicit zero-dependency exports', () => {
+test('distribution stays private and limits runtime dependencies to Host-side schema', () => {
   assert.equal(manifest.name, 'agent-picket')
   assert.equal(manifest.private, true,
     'First public npm release requires explicit review and versioning')
@@ -20,7 +20,13 @@ test('distribution stays private and has explicit zero-dependency exports', () =
     assert.equal(existsSync(resolve(root, route.default)), true, route.default)
     assert.equal(existsSync(resolve(root, route.types)), true, route.types)
   }
-  assert.equal(manifest.dependencies, undefined, 'No production dependencies allowed in Core preview')
+  // DSH's native settings registry requires a validated Schemastery schema.
+  // Core remains Host-neutral and has no other runtime dependencies.
+  assert.deepEqual(manifest.dependencies, { '@deepseek-ai/schemastery': '^3.18.1' })
+  const core = readFileSync(resolve(root, 'dist/core/index.js'), 'utf8')
+  assert.doesNotMatch(core, /schemastery|@deepseek-ai/)
+  const host = readFileSync(resolve(root, 'dist/adapters/dsh/rights-settings.js'), 'utf8')
+  assert.match(host, /schemastery/)
   assert.equal(manifest.scripts.postinstall, undefined)
   assert.equal(manifest.scripts.preinstall, undefined)
   assert.equal(manifest.scripts.prepare, undefined)
