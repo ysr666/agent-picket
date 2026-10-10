@@ -44,3 +44,7 @@ bash scripts/verify-dsh-rights-a11y.sh
 ## 仍然没有完成
 
 本地 [人工无障碍验收表](HUMAN_ACCESSIBILITY_SIGNOFF.zh.md) A1–A8 继续全部 **PENDING**：真人 macOS VoiceOver Safari/Chrome、Windows NVDA Chrome/Edge、浏览器实际 200%/400% 放大、Windows OS High Contrast、语言与断连时的可理解性测试。插件总发布链 #23 及 #69 的整合授权仍未完成；不得合并 `main`、公开发布 npm 或引入真实 Agent 阻断。
+
+## 发布包容量与调试映射审查
+
+本轮真实 GitHub CI 在 Ubuntu 揭示，追加说明文档后压缩包可能超过原先的 250 KB 包容量安全上限。没有放宽阈值：`package.json` 的发行文件 allowlist 保留编译后的 JS、`.d.ts`、Cordis patch、README/LICENSE 和用户文档，但明确排除全部 `dist/**/*.js.map` 与 `dist/**/*.d.ts.map` **开发 source map**；本地构建依旧能生成映射供调试。新测试断言 `.map` 不进入 npm 包，并保留 `< 250000 bytes` 上限。受测本地干净打包由约 249 KB / 166 文件降为 **213962 bytes / 109 文件 / 0 映射文件**。仍须以远程 Ubuntu/macOS CI 为准；不能凭本地大小宣称跨系统通过。
