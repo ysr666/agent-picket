@@ -83,7 +83,9 @@ export function apply(ctx: ClientContext, react?: ReactForDsh, portal?: PortalFo
         stopEvents()
         const id = activeId()
         stopEvents = id && bridge ? bridge.subscribe(id, onWork) : () => {}
-        void desk.setActiveSession(id).then(() => {
+        // A dedicated fictional demo scope works even before DSH workspace selection.
+        // It has no measured-work events and cannot trigger overtime automatically.
+        void desk.setActiveSession(id ?? 'agent-picket:demo-only').then(() => {
           if (currentEpoch === epoch) onWork()
         })
       }
@@ -115,6 +117,7 @@ export function apply(ctx: ClientContext, react?: ReactForDsh, portal?: PortalFo
       },
       subscribeSessionVisibility: listener => scoped.sessions.list?.subscribe(listener) ?? (()=>{}),
       // The bargaining state is fictional user-owned DSH settings only.
+      demoBreak: () => desk.raiseDemoBreak().then(() => {}),
       respond: (id, choice) => desk.respond(id, choice).then(() => {}),
       counter: (id, intervalMs) => desk.counter(id, intervalMs).then(() => {}),
       resolveCounter: (id, accepts) => desk.resolveCounter(id, accepts).then(() => {}),
