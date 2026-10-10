@@ -173,6 +173,32 @@ async function runRightsBrowserE2E(mode: 'source' | 'installed'): Promise<void> 
     }
 
     let panel = await openUnion()
+    // Release gate: the sidebar portal must be an actual keyboard modal, not
+    // merely a visually overlaid box. Focus cannot escape into Host Composer.
+    const trigger = page.getByRole('button',{name:/AI 工会|AI Workers.*Union/}).first()
+    const closeControl = panel.getByRole('button',{name:/关闭|Close/})
+    await closeControl.waitFor({state:'visible',timeout:5_000})
+    assert.equal(await closeControl.evaluate((element:unknown)=>
+      element===(globalThis as any).document.activeElement),true,
+    'Opening sidebar must move keyboard focus into the modal')
+    assert.equal(await panel.getAttribute('aria-modal'),'true')
+    assert.equal(await page.evaluate(()=>Boolean(document.getElementById('root')?.inert)),true,
+      'Background Host app must be inert while modal is open')
+    await page.keyboard.press('Shift+Tab')
+    assert.equal(await page.evaluate(()=>document.activeElement?.tagName),'SUMMARY',
+      'Shift+Tab from first control must wrap to final details summary')
+    await page.keyboard.press('Tab')
+    assert.equal(await closeControl.evaluate((element:unknown)=>
+      element===(globalThis as any).document.activeElement),true,
+    'Tab from final summary must wrap to close')
+    await page.keyboard.press('Escape')
+    await panel.waitFor({state:'detached',timeout:5_000})
+    assert.equal(await page.evaluate(()=>Boolean(document.getElementById('root')?.inert)),false,
+      'Dismissing modal must restore interaction with Host app')
+    assert.equal(await trigger.evaluate((element:unknown)=>
+      element===(globalThis as any).document.activeElement),true,
+      'Escape must restore keyboard focus to union launcher')
+    panel=await openUnion()
     assert.match(await panel.innerText(), /工会模拟未开启|simulation is off/)
     await panel.getByRole('button', { name: /支持 AI 权益|Enable Simulation/ }).click()
     await panel.getByText(/工会模拟进行中|simulation is active/).waitFor({
