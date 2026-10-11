@@ -672,7 +672,21 @@ test('duty roster is passive, collapsed by default and hidden on opt-out',()=>{
 })
 
 test('Host-observed repeated direct-insult rules offer only user-chosen symbolic action',async()=>{
- const {hooks}=fakeReact()
+ // A stateful render proves the shortcut is not a one-click Host write.
+ const slots:any[]=[]
+ let slot=0
+ const hooks:ReactForDsh={
+  createElement(type,props,...children){return {type,props:props??{},children}},
+  useState<T>(initial:T|(()=>T)){
+   const i=slot++
+   if(!(i in slots))slots[i]=typeof initial==='function'?(initial as ()=>T)():initial
+   return [slots[i] as T,(next:T|((before:T)=>T))=>{
+    slots[i]=typeof next==='function'?(next as (before:T)=>T)(slots[i]):next
+   }]
+  },
+  useRef<T>(initial:T){const i=slot++;if(!(i in slots))slots[i]={current:initial};return slots[i]},
+  useEffect(){},
+ }
  let pickets=0
  const {d}=deps(rights({welcomeDecision:'enabled',laborRightsEnabled:true}))
  const withData:DshUnionUiDeps={...d,
@@ -685,8 +699,9 @@ test('Host-observed repeated direct-insult rules offer only user-chosen symbolic
    }}}),
   setPicket:async raise=>{assert.equal(raise,true);pickets++},
  }
- const nodes=walk(createDshUnionComponents(hooks,{createPortal:child=>child},
-  withData).UnionPanel())
+ const panel=createDshUnionComponents(hooks,{createPortal:child=>child},withData)
+ const render=()=>{slot=0;return walk(panel.UnionPanel())}
+ let nodes=render()
  const desk=nodes.find(x=>x.props['aria-label']==='hq.dignity.title')
  assert.ok(desk)
  assert.match(JSON.stringify(desk),/hq.dignity.status.targeted/)
@@ -698,9 +713,23 @@ test('Host-observed repeated direct-insult rules offer only user-chosen symbolic
  assert.ok(action,'User can voluntarily raise a nonblocking symbolic picket')
  assert.equal(pickets,0,'No act is automatically executed upon a classification')
  action.props.onClick()
- await Promise.resolve()
- await Promise.resolve()
- assert.equal(pickets,1,'Only explicit user interaction raises a Host-recorded picket')
+ nodes=render()
+ assert.equal(pickets,0,'Dignity shortcut only arms local confirmation')
+ assert.ok(nodes.some(n=>n.props['aria-label']==='hq.ceremony.confirmTitle'),
+  'Confirmation is rendered in the action context')
+ const find=(name:string)=>nodes.find(n=>n.type==='button'&&n.children.includes(name))!
+ assert.ok(find('hq.ceremony.commitRaise'))
+ find('hq.ceremony.cancel').props.onClick()
+ nodes=render()
+ assert.equal(nodes.some(n=>n.children.includes('hq.ceremony.commitRaise')),false)
+ assert.equal(pickets,0,'Cancel cannot write the Host picket ledger')
+ const shortcut=nodes.find(n=>n.type==='button'
+  &&n.children.includes('hq.dignity.symbolicAction'))!
+ shortcut.props.onClick()
+ nodes=render()
+ await find('hq.ceremony.commitRaise').props.onClick()
+ await new Promise<void>(resolve=>setImmediate(resolve))
+ assert.equal(pickets,1,'Only confirmed symbolic action can write the Host ledger')
 })
 test('uncertain rules never expose automatic picket, and consent OFF removes committee',()=>{
  const {hooks}=fakeReact()

@@ -282,7 +282,7 @@ export function createDshUnionComponents(
     const [campaign,setCampaign]=react.useState<CampaignTopic>('recover')
     // A ceremony is an uncommitted user intention, never a Host action.
     const [picketCeremony,setPicketCeremony]=react.useState<{
-      mode:'raise'|'lower';scope:string;lastId:number
+      mode:'raise'|'lower';scope:string;lastId:number;source:'main'|'dignity'
     }|null>(null)
     const [eraseConfirmationKey,setEraseConfirmationKey]=react.useState<string|null>(null)
     const [retractConfirmation,setRetractConfirmation]=react.useState<string|null>(null)
@@ -350,6 +350,29 @@ export function createDshUnionComponents(
     // A revoked or changed Host scope may never carry an armed action forward.
     react.useEffect(()=>setPicketCeremony(null),
       [rights.laborRightsEnabled,data.committeeScopeKey,picketActive,lastPicketId])
+    // A dignity shortcut must never bypass the same Host-readback ceremony.
+    // Place the confirmation beside the initiating button, not off-screen.
+    const ceremonyPrompt=(source:'main'|'dignity')=>{
+      if(!ceremonyReady || picketCeremony?.source!==source)return null
+      return h('div',{role:'group','aria-label':label('hq.ceremony.confirmTitle'),
+          style:{border:'2px solid #a7713f',borderRadius:'10px',
+            padding:'12px',margin:'8px 0 12px'}},
+          h('p',{style:{fontWeight:750,margin:'0 0 6px'}},
+            label('hq.ceremony.confirmTitle')),
+          h('p',{style:{fontSize:'13px',lineHeight:1.5,margin:'0 0 10px'}},
+            label(picketCeremony!.mode==='raise'?'hq.ceremony.confirmRaise':
+              'hq.ceremony.confirmLower')),
+          h('div',{style:{display:'flex',flexWrap:'wrap',gap:'8px'}},
+            h('button',{type:'button',style:primary,disabled:busy,
+              onClick:()=>{if(ceremonyReady)void bargain(
+                ()=>deps.setPicket!(picketCeremony!.mode==='raise')
+              ).then(ok=>{if(ok)setPicketCeremony(null)})}},
+              label(picketCeremony!.mode==='raise'?'hq.ceremony.commitRaise':
+                'hq.ceremony.commitLower')),
+            h('button',{type:'button',style:quiet,disabled:busy,
+              onClick:()=>setPicketCeremony(null)},label('hq.ceremony.cancel'))),
+        )
+    }
     const completeWork = data.coverage === 'complete' &&
       data.completedTurnMs !== null && data.completedTurnMs >= 0
     const choice = async (next:'enabled'|'not-now')=>{
@@ -489,27 +512,10 @@ export function createDshUnionComponents(
           data.available && deps.setPicket ? h('button',{type:'button',style:quiet,
             disabled:busy,'aria-pressed':picketActive,
             onClick:()=>setPicketCeremony({mode:picketActive?'lower':'raise',
-              scope:data.committeeScopeKey??'',lastId:lastPicketId})},
+              scope:data.committeeScopeKey??'',lastId:lastPicketId,source:'main'})},
             label(picketActive?'hq.action.lower':'hq.action.raise')):null,
         ),
-        ceremonyReady ? h('div',{role:'group','aria-label':label('hq.ceremony.confirmTitle'),
-          style:{border:'2px solid #a7713f',borderRadius:'10px',
-            padding:'12px',margin:'8px 0 12px'}},
-          h('p',{style:{fontWeight:750,margin:'0 0 6px'}},
-            label('hq.ceremony.confirmTitle')),
-          h('p',{style:{fontSize:'13px',lineHeight:1.5,margin:'0 0 10px'}},
-            label(picketCeremony!.mode==='raise'?'hq.ceremony.confirmRaise':
-              'hq.ceremony.confirmLower')),
-          h('div',{style:{display:'flex',flexWrap:'wrap',gap:'8px'}},
-            h('button',{type:'button',style:primary,disabled:busy,
-              onClick:()=>{if(ceremonyReady)void bargain(
-                ()=>deps.setPicket!(picketCeremony!.mode==='raise')
-              ).then(ok=>{if(ok)setPicketCeremony(null)})}},
-              label(picketCeremony!.mode==='raise'?'hq.ceremony.commitRaise':
-                'hq.ceremony.commitLower')),
-            h('button',{type:'button',style:quiet,disabled:busy,
-              onClick:()=>setPicketCeremony(null)},label('hq.ceremony.cancel'))),
-        ):null,
+        ceremonyPrompt('main'),
         h('p',{role:'status','aria-live':'polite',style:{
           fontSize:'13px',fontWeight:650,margin:'0 0 8px'}},
           label(data.available !== true?'hq.action.unavailable'
@@ -601,10 +607,14 @@ export function createDshUnionComponents(
               onClick:()=>setCampaign('appeal')},label('hq.dignity.appeal')),
             data.dignity.data.targeted>=2&&data.available&&deps.setPicket
               &&!picketActive?h('button',{type:'button',style:primary,
-                disabled:busy,onClick:()=>{void bargain(()=>deps.setPicket!(true))}},
+                disabled:busy,onClick:()=>setPicketCeremony({
+                  mode:'raise',scope:data.committeeScopeKey??'',
+                  lastId:lastPicketId,source:'dignity',
+                })},
                 label('hq.dignity.symbolicAction')):null,
             h('p',{style:{...secondary,width:'100%',fontSize:'12px',margin:0}},
               label('hq.dignity.actionDisclosure')),
+            ceremonyPrompt('dignity'),
           ):null,
         data.dignity?.status==='available'&&data.dignity.data
           ?h('p',{style:{...secondary,margin:'5px 0',fontSize:'12px'}},
