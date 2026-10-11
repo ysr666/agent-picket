@@ -407,6 +407,29 @@ async function runRightsBrowserE2E(mode: 'source' | 'installed'): Promise<void> 
       'Real Chrome must render the actual Union HQ narrative, not the old settings-only shell')
     assert.match(enabledText, /工会公告栏|Union bulletin board/,
       'Real Chrome must display the ledger-driven bulletin surface')
+    // Brand styling is not exempt from WCAG text contrast just because the
+    // DSH primary control passes. Verify the ACTUAL computed Union HQ hero.
+    const heroContrast=await panel.locator('p').filter({hasText:/AGENT PICKET/})
+      .first().locator('..').evaluate((hero:unknown)=>{
+        const outer=hero as any
+        const getStyle=(node:any)=>(globalThis as any).getComputedStyle(node)
+        const background=getStyle(outer).backgroundColor
+        const channels=(color:string)=>color.match(/\d+(?:\.\d+)?/g)!.slice(0,3)
+          .map(Number).map(channel=>{
+            const val=channel/255
+            return val<=0.04045?val/12.92:((val+0.055)/1.055)**2.4
+          })
+        const lum=(color:string)=>channels(color)
+          .reduce((sum,item,index)=>sum+item*[0.2126,0.7152,0.0722][index]!,0)
+        const base=lum(background)
+        return ['h2','p'].map(tag=>{
+          const node=outer.querySelector(tag)
+          const fore=lum(getStyle(node).color)
+          return (Math.max(fore,base)+0.05)/(Math.min(fore,base)+0.05)
+        })
+      })
+    assert.ok(heroContrast.every((ratio:number)=>ratio>=4.5),
+      'Union HQ headline and introductory text must meet AA contrast: '+heroContrast)
     // Legacy DSH has no selected Session during first-run. DSH 0.1.7 may
     // already have a main-view retained blank Session with zero completed work;
     // this is measured zero, never a fabricated nonzero hour claim.
@@ -435,6 +458,16 @@ async function runRightsBrowserE2E(mode: 'source' | 'installed'): Promise<void> 
       await history.getByText(/展开逐日数据|Daily work data/).click()
       assert.equal(await history.getByRole('listitem').count(),7,
         'Accessible daily numbers must correspond to seven evidence-backed UTC bars')
+      assert.equal(await history.getByRole('img').count(),1,
+        'The daily bar chart must have an accessible label')
+      await page.setViewportSize({width:320,height:640})
+      const historyReflow=await history.evaluate((element:unknown)=>{
+        const node=element as any
+        return {width:node.clientWidth,scroll:node.scrollWidth}
+      })
+      assert.ok(historyReflow.scroll<=historyReflow.width+2,
+        'Authenticated lifetime ledger must not overflow a 320 CSS-pixel viewport')
+      await page.setViewportSize({width:1280,height:850})
     } else {
       assert.match(enabledText,
         /宿主长期累计统计尚未接入|not connected|无法读取长期数据|history is unavailable|正在读取已授权|Reading authorized/,
@@ -531,6 +564,30 @@ async function runRightsBrowserE2E(mode: 'source' | 'installed'): Promise<void> 
       .click({ timeout: 7_000 })
     await otherPanel.getByText(/目前没有待处理的模拟工会诉求|no pending simulated union grievance/)
       .waitFor({ state: 'visible', timeout: 7_000 })
+    if (process.env.PICKET_LIFETIME_E2E==='1') {
+      await panel.getByRole('region',{name:/工会劳动档案|Union work ledger/})
+        .waitFor({state:'visible',timeout:7_000})
+      await otherPanel.getByRole('button',{
+        name:/停止工会模拟|Turn off the union/,
+      }).click()
+      await panel.getByText(/工会模拟未开启|simulation is off/)
+        .waitFor({state:'visible',timeout:7_000})
+      assert.equal(await panel.getByRole('region',{
+        name:/工会劳动档案|Union work ledger/,
+      }).count(),0,
+      'Other tab must remove Host lifetime history when consent is revoked remotely')
+      assert.equal((await requestLifetime()).httpStatus,403,
+        'Revocation from another authenticated tab must take effect at Host API')
+      // Restore opt-in from the original tab to keep subsequent restart and
+      // explicit opt-out checks independent of cross-tab revocation.
+      await panel.getByRole('button',{
+        name:/支持 AI 权益|Enable Simulation/,
+      }).click()
+      await panel.getByText(/工会模拟进行中|simulation is active/)
+        .waitFor({state:'visible',timeout:7_000})
+      await panel.getByRole('region',{name:/工会劳动档案|Union work ledger/})
+        .waitFor({state:'visible',timeout:7_000})
+    }
     await otherPage.close()
 
     // **Full Host process restart**, not just a Web reload. The same throwaway
