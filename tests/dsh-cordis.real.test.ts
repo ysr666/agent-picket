@@ -3,8 +3,8 @@ import test from 'node:test'
 import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { MemoryStateStore, UnionEngine, DEFAULT_POLICY } from '../src/core/index.ts'
+import { createDshPreStepProbe } from './fixtures/prestep-reject-probe.ts'
 import {
-  createDshPreStepProbe,
   registerDshIntegration,
 } from '../src/adapters/dsh/integration.ts'
 import type { UnionDecision, WorkEvent } from '../src/core/types.ts'

@@ -489,16 +489,3 @@ export function registerDshIntegration(
     })
   })
 }
-
-/** A dev-only explicit probe: it must never be used as a production classifier. */
-export function createDshPreStepProbe(
-  rejectIds: ReadonlySet<string>,
-): (payload: DshPreStep, next: () => Promise<unknown>) => Promise<unknown> {
-  return async (payload, next) => {
-    if (payload.messages.some(message =>
-      typeof message.id === 'string' && rejectIds.has(message.id))) {
-      return { kind: 'reject' }
-    }
-    return next()
-  }
-}

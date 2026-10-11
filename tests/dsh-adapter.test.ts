@@ -1,8 +1,8 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import { UnionEngine, DEFAULT_POLICY, MemoryStateStore, WorkTracker, DetectionCounter, LocalRuleDetector } from '../src/core/index.ts'
+import { createDshPreStepProbe } from './fixtures/prestep-reject-probe.ts'
 import {
-  createDshPreStepProbe,
   normalizeDshPrompt,
   normalizeDshWorkEvent,
   registerDshIntegration,
@@ -333,4 +333,44 @@ test('tool/agent/injected and image-only content do not enter detection or union
  await hook(payload,async()=>({kind:'enter'}))
  assert.equal(h.decisions.length,1)
  assert.equal(h.decisions[0]?.promptId,'human')
+})
+
+test('enforce-mode classification never consumes or modifies text and attachments on DSH',async()=>{
+  const h=harness()
+  const callback=h.listeners.get('agent/pre-step')!
+  // Keep text and media payloads opaque: the official Host, not Agent Picket,
+  // owns their lifetime and correct re-submission. No deep copy, transform,
+  // private prompt queue, or simulated refusal is permitted in production.
+  const image={type:'image',mediaType:'image/png',data:'AAECAwQ='}
+  const file={type:'file',receiptId:'host-file-receipt'}
+  const text={type:'text',text:'direct human abuse fixture'}
+  const content=[text,image,file]
+  const message={id:'test-private-prompt',source:{kind:'user'},content}
+  const messages=[message]
+  const continuation={kind:'enter',messages,hostReceipt:'host-owned-only'}
+  let downstream=0
+  for(let index=0;index<3;index++){
+    const response=await callback({
+      agent:{id:'a',session:{id:'session-unmodified'}},messages,
+    },async()=>{
+      downstream++
+      assert.strictEqual(messages[0],message)
+      assert.strictEqual(message.content,content)
+      assert.strictEqual(content[1],image)
+      assert.strictEqual(content[2],file)
+      return continuation
+    })
+    assert.strictEqual(response,continuation)
+  }
+  assert.equal(downstream,3,
+    'Even with classify-on and an enforce-mode policy, the Host continuation runs')
+  assert.equal(image.data,'AAECAwQ=')
+  assert.equal(file.receiptId,'host-file-receipt')
+  h.setEnabled(false)
+  const decisions=h.decisions.length
+  assert.strictEqual(await callback({
+    agent:{id:'a',session:{id:'session-unmodified'}},messages,
+  },async()=>{downstream++;return continuation}),continuation)
+  assert.equal(h.decisions.length,decisions,
+    'Revocation must prevent new classifications without consuming the Host input')
 })
