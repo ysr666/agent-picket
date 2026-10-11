@@ -48,6 +48,8 @@ export interface UnionPanelData {
   readonly dignity?: BrowserDignitySnapshot
   readonly committeeCases?: DignityCaseSession|null
   readonly committeeScopeKey?: string|null
+  readonly committeeArchive?:{readonly sessions:number;readonly cases:number;
+    readonly writeToken:string|null}|null
 }
 export interface DshUnionUiDeps {
   readonly rights: DshRightsPort
@@ -66,6 +68,8 @@ export interface DshUnionUiDeps {
   readonly setPicket?: (raise: boolean) => Promise<void>
   readonly forgetCommitteeCases?: (expectedHashedSessionKey:string)=>Promise<void>
   readonly exportCommitteeCases?: (expectedHashedSessionKey:string)=>string
+  readonly exportAllCommitteeCases?: (expectedHashedSessionKey:string)=>string
+  readonly forgetAllCommitteeCases?: (key:string,sessions:number,count:number,token:string|null)=>Promise<void>
   readonly committeeAction?: (action:{kind:'file';topic:DignityCaseKind}
     |{kind:'convene';id:number}|{kind:'retract';id:number}
     |{kind:'close';id:number;outcome:DignityCaseOutcome},
@@ -103,6 +107,19 @@ function safeUnion(deps: DshUnionUiDeps): UnionPanelData {
     }
     return data
   } catch { return EMPTY_DATA }
+}
+function downloadUnionJson(payload:string,filename:string):void {
+ const browser=globalThis as any
+ if(!browser.Blob||!browser.URL?.createObjectURL||!browser.document?.createElement)
+   throw new Error('Browser download unavailable')
+ const file=new browser.Blob([payload],{type:'application/json;charset=utf-8'})
+ const url=browser.URL.createObjectURL(file)
+ try{
+   const anchor=browser.document.createElement('a')
+   anchor.href=url;anchor.download=filename;anchor.click()
+ }finally{
+   browser.setTimeout(()=>browser.URL.revokeObjectURL(url),1500)
+ }
 }
 function formatDuration(milliseconds: number | null, locale: string): string {
   if (milliseconds === null || !Number.isSafeInteger(milliseconds) || milliseconds < 0) return '—'
@@ -258,6 +275,7 @@ export function createDshUnionComponents(
     const [campaign,setCampaign]=react.useState<CampaignTopic>('recover')
     const [eraseConfirmationKey,setEraseConfirmationKey]=react.useState<string|null>(null)
     const [retractConfirmation,setRetractConfirmation]=react.useState<string|null>(null)
+    const [eraseAllConfirmation,setEraseAllConfirmation]=react.useState<string|null>(null)
     const deskHeading=react.useRef<{focus():void}|null>(null)
     react.useEffect(()=>{
       if(!lastActionNeedsFocus.current)return
@@ -276,6 +294,7 @@ export function createDshUnionComponents(
     // Never carry an armed deletion into another Session or a newly re-enabled union.
     react.useEffect(()=>{
       setEraseConfirmationKey(null);setRetractConfirmation(null)
+      setEraseAllConfirmation(null)
     },[data.committeeScopeKey,rights.laborRightsEnabled])
     const enabled = rightsIsActive(rights)
     const storyQuiet=data.gazetteMode==='quiet'
@@ -291,6 +310,10 @@ export function createDshUnionComponents(
     const currentCampaign=campaignTopics.find(item=>item.id===campaign)??campaignTopics[0]!
     const lastCommitteeCase=data.committeeCases?.cases.at(-1)
     const committeeCaseActive=lastCommitteeCase&&lastCommitteeCase.stage!=='closed'
+    const allCasesConfirmationKey=data.committeeScopeKey&&data.committeeArchive
+      ?[data.committeeScopeKey,data.committeeArchive.sessions,
+        data.committeeArchive.cases,data.committeeArchive.writeToken??'']
+        .join(':'):null
     const retractKey=data.committeeScopeKey&&lastCommitteeCase
       ?data.committeeScopeKey+':'+lastCommitteeCase.id+':'+lastCommitteeCase.stage:null
     const hasHostDignitySignal=data.dignity?.status==='available'
@@ -516,21 +539,7 @@ export function createDshUnionComponents(
                 onClick:()=>{
                   try{
                     const payload=deps.exportCommitteeCases!(data.committeeScopeKey!)
-                    const browser=globalThis as any
-                    if(!browser.Blob||!browser.URL?.createObjectURL
-                      ||!browser.document?.createElement)
-                      throw new Error('Browser download unavailable')
-                    const file=new browser.Blob([payload],{type:'application/json;charset=utf-8'})
-                    const url=browser.URL.createObjectURL(file)
-                    try{
-                      const anchor=browser.document.createElement('a')
-                      anchor.href=url
-                      anchor.download='agent-picket-committee-cases.json'
-                      anchor.click()
-                    }finally{
-                      // Defer releasing the local URL until Chrome owns the download.
-                      browser.setTimeout(()=>browser.URL.revokeObjectURL(url),1500)
-                    }
+                    downloadUnionJson(payload,'agent-picket-committee-cases.json')
                     setError(false)
                   }catch{setError(true)}
                 }},
@@ -556,6 +565,51 @@ export function createDshUnionComponents(
                   role:'status','aria-live':'polite',
                   style:{...secondary,fontSize:'12px',margin:0}},
                   label('hq.hearing.eraseWarning')):null,
+              ):null,
+            data.committeeArchive&&data.committeeArchive.sessions>0
+              &&data.committeeScopeKey?h('div',{style:{
+                borderTop:'1px solid #d4d7d8',paddingTop:'12px',marginTop:'14px',
+              }},
+                h('h4',{style:{fontSize:'15px',margin:'0 0 6px'}},
+                  label('hq.hearing.allArchiveTitle')),
+                h('p',{style:{...secondary,margin:'0 0 8px'}},
+                  deps.t('hq.hearing.allArchiveSummary',{
+                    sessions:data.committeeArchive.sessions,
+                    cases:data.committeeArchive.cases,
+                  })),
+                h('p',{style:{...secondary,fontSize:'12px',margin:'0 0 10px'}},
+                  label('hq.hearing.allArchiveDisclosure')),
+                h('div',{style:{display:'flex',gap:'8px',flexWrap:'wrap'}},
+                  data.committeeArchive.cases>0&&deps.exportAllCommitteeCases
+                    ?h('button',{type:'button',style:quiet,disabled:busy,
+                      onClick:()=>{
+                        try{
+                          const payload=deps.exportAllCommitteeCases!(data.committeeScopeKey!)
+                          downloadUnionJson(payload,'agent-picket-all-committee-cases.json')
+                          setError(false)
+                        }catch{setError(true)}
+                      }},label('hq.hearing.exportAll')):null,
+                  deps.forgetAllCommitteeCases&&allCasesConfirmationKey?h('button',{
+                    type:'button',style:quiet,disabled:busy,
+                    onClick:()=>{
+                      if(eraseAllConfirmation!==allCasesConfirmationKey){
+                        setEraseAllConfirmation(allCasesConfirmationKey);return
+                      }
+                      const archive=data.committeeArchive!
+                      void bargain(()=>deps.forgetAllCommitteeCases!(
+                        data.committeeScopeKey!,archive.sessions,archive.cases,archive.writeToken))
+                        .then(success=>{if(success)setEraseAllConfirmation(null)})
+                    }},
+                    label(eraseAllConfirmation===allCasesConfirmationKey
+                      ?'hq.hearing.eraseAllConfirm':'hq.hearing.eraseAll')):null,
+                ),
+                eraseAllConfirmation===allCasesConfirmationKey
+                  ?h('p',{role:'status','aria-live':'polite',
+                    style:{...secondary,fontSize:'12px',margin:'8px 0 0'}},
+                    deps.t('hq.hearing.eraseAllWarning',{
+                      sessions:data.committeeArchive.sessions,
+                      cases:data.committeeArchive.cases,
+                    })):null,
               ):null,
             h('p',{style:{...secondary,fontSize:'12px',margin:'8px 0 0'}},
               label('hq.hearing.disclosure')),

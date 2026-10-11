@@ -1379,6 +1379,83 @@ async function runRightsBrowserE2E(mode: 'source' | 'installed'): Promise<void> 
         simulationStillEnabled:true,originalLedgerStillString:true,
         placardStillString:true},
         'User-confirmed Host deletion must erase only this Session’s case metadata')
+      // Exercise the separate ALL-Session controls after current-Session
+      // deletion, with a real browser download and independent Host readback.
+      await sameSessionCommittee.getByRole('button',{
+        name:/提议召开工会讨论|Request a union discussion/,
+      }).click()
+      await sameSessionCommittee.getByText(/案件 #1.*已立案|Case #1.*Filed, awaiting/)
+        .waitFor({state:'visible',timeout:7_000})
+      await sameSessionCommittee.getByRole('button',{
+        name:/导出所有会话案件分组|Export all Session case groups/,
+      }).waitFor({state:'visible',timeout:7_000})
+      const [allCasesDownload]=await Promise.all([
+        page.waitForEvent('download',{timeout:7_000}),
+        sameSessionCommittee.getByRole('button',{
+          name:/导出所有会话案件分组|Export all Session case groups/,
+        }).click(),
+      ])
+      assert.equal(allCasesDownload.suggestedFilename(),
+        'agent-picket-all-committee-cases.json')
+      const allExported=JSON.parse(readFileSync(await allCasesDownload.path(),'utf8'))
+      assert.equal(allExported.format,'agent-picket-all-committee-cases')
+      assert.equal(allExported.schemaVersion,1)
+      assert.ok(Array.isArray(allExported.sessions) && allExported.sessions.length>=1)
+      const currentExportGroup=allExported.sessions.filter((v:any)=>v.current===true)
+      assert.equal(currentExportGroup.length,1)
+      assert.deepEqual(currentExportGroup[0].cases,[{
+        id:1,kind:'request-dialogue',stage:'opened',outcome:null,
+      }])
+      for(const [index,group] of allExported.sessions.entries()){
+        assert.deepEqual(Object.keys(group).sort(),['cases','current','group'])
+        assert.equal(group.group,index+1)
+        assert.equal(typeof group.current,'boolean')
+      }
+      assert.equal(JSON.stringify(allExported).includes(realDignity.sessionId),false)
+      assert.equal(JSON.stringify(allExported).includes(realDignity.sessionKey),false)
+      assert.equal(JSON.stringify(allExported).includes('writeToken'),false)
+      assert.equal(JSON.stringify(allExported).includes('you are an idiot'),false)
+      const eraseAllButton=sameSessionCommittee.getByRole('button',{
+        name:/永久清除所有会话案件记录|Permanently erase all Session case records/,
+      })
+      await eraseAllButton.click()
+      await sameSessionCommittee.getByRole('button',{
+        name:/确认清除全部会话案件|Confirm erasure of ALL Session cases/,
+      }).waitFor({state:'visible',timeout:5_000})
+      await sameSessionCommittee.getByText(/即将从当前 Host|permanently erase all \d+ committee cases/)
+        .waitFor({state:'visible',timeout:5_000})
+      await sameSessionCommittee.getByText(/案件 #1.*已立案|Case #1.*Filed, awaiting/)
+        .waitFor({state:'visible',timeout:5_000})
+      await sameSessionCommittee.getByRole('button',{
+        name:/确认清除全部会话案件|Confirm erasure of ALL Session cases/,
+      }).click()
+      await sameSessionCommittee.getByText(
+        /目前没有已立案件|No committee case has been filed/,
+      ).waitFor({state:'visible',timeout:7_000})
+      const globalErased=await page.evaluate(async()=>{
+        const rpcId='picket-e2e-global-committee-erased'
+        const response=await fetch('/api/settings/describe',{
+          method:'POST',credentials:'same-origin',
+          headers:{'content-type':'application/json'},
+          body:JSON.stringify({type:'client-request',rpcId,
+            method:'settings/describe',payload:{args:{}}}),
+        })
+        const value=(await response.json() as any).result?.value?.namespaces
+          ?.find((v:any)=>v.ns==='agent-picket')?.value
+        const cases=JSON.parse(value?.unionDignityCases||'{}')
+        return {
+          status:response.status,
+          allCaseSessionKeys:Object.keys(cases.sessions??{}).length,
+          unionLedgerIntact:typeof value?.unionLedger==='string',
+          picketLedgerIntact:typeof value?.unionPicketLedger==='string',
+          consentIntact:value?.welcomeDecision==='enabled',
+        }
+      })
+      assert.deepEqual(globalErased,{
+        status:200,allCaseSessionKeys:0,unionLedgerIntact:true,
+        picketLedgerIntact:true,consentIntact:true,
+      },'All-case purge must remove only the independent official Host case ledger')
+
 
     }
     assert.deepEqual(browserErrors, [], 'No uncaught Browser errors are acceptable')
