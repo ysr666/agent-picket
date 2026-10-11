@@ -8,6 +8,8 @@
 
 **Integrated in `main`, not publicly released (2026-10-11).** The DSH Web union, native `/union` commands, Host-owned opt-in settings, bargaining ledger and read-only work dashboard are now in `main` following individually reviewed PR integrations through #70. This is **source integration, not production certification**: the package is still `0.0.0` and `private: true`, no public npm package exists, and human VoiceOver/NVDA, actual zoom and Windows High Contrast sign-off remain pending. See [current project status（中文）](docs/STATUS.zh.md), [manual accessibility checklist（中文）](docs/HUMAN_ACCESSIBILITY_SIGNOFF.zh.md), [release gates](docs/RELEASE_READINESS_2026_10_10.md), and [union participation plan（中文）](docs/UNION_PARTICIPATION_V1.zh.md).
 
+> **1.0 work is not on main (2026-10-12):** The expanded Picketverse, Host-scoped dignity committee, privacy/erasure controls and action-first Union HQ are under review in [Draft PR #110](https://github.com/ysr666/agent-picket/pull/110), not merged or released. This documentation distinguishes the existing merged source from the unreleased integration candidate. For a safe development install, use [the current isolated DSH installation guide](docs/DSH_INSTALL.zh.md), not older source-branch instructions. **The approved interaction rule is one Host-owned first-run consent, then one-click symbolic picket action with verified readback; only future qualified real blocking may offer optional per-action consent.**
+
 ## How the union experience works
 
 1. **Choose whether to join the simulation.** A bilingual first-run disclosure offers explicit Enable and Not Now actions; the official DSH Host owns the decision.
