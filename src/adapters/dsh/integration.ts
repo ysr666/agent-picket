@@ -102,7 +102,7 @@ export interface DshIntegrationOptions {
 export function readDshDashboardSnapshot(
   options: Pick<DshIntegrationOptions,
     'clock' | 'tracker' | 'detections' | 'ceremony' | 'lifetimeStats'
-    | 'statsStorageState' | 'getLaborRightsEnabled'>,
+    | 'statsStorageState' | 'getLaborRightsEnabled' | 'getNativeUnion'>,
   agent?: DshAgent,
   windowDays: 7 | 30 = 7,
 ): DashboardSnapshotV1 {
@@ -114,6 +114,21 @@ export function readDshDashboardSnapshot(
     : options.statsStorageState ?? 'unavailable'
   let rights = false
   try { rights = options.getLaborRightsEnabled?.() === true } catch { /* default off */ }
+  // If this DSH installation exposes the official Host union owner, its
+  // consent and committed ledger MUST outrank any older memory-only ceremony.
+  // Never invent a Host action timestamp or leak local flags after opt-out.
+  let symbolicPicket = id && sessionId
+    ? options.ceremony?.snapshot(id, sessionId) ?? null : null
+  if (options.getNativeUnion) {
+    symbolicPicket = null
+    try {
+      const native = options.getNativeUnion()
+      if (rights && sessionId && native?.enabled() === true) {
+        const shared = native.picketStatus(sessionId)
+        if (shared) symbolicPicket = { active: shared.active, startedAtMs: null }
+      }
+    } catch { /* unverified or revoked Host settings cannot authorize a display */ }
+  }
   return createDashboardSnapshot({
     host: 'dsh',
     generatedAtMs: options.clock.now(),
@@ -122,8 +137,7 @@ export function readDshDashboardSnapshot(
     blockingReadiness: inspectBlockingReadiness({
       warn: false, block: false, commands: true, workEvents: true,
     }),
-    symbolicPicket: id && sessionId
-      ? options.ceremony?.snapshot(id, sessionId) ?? null : null,
+    symbolicPicket,
     // DSH Session event callbacks currently identify the Session, not Agent.
     // This matches the existing WorkTracker key convention, without guessing.
     sessionWork: sessionId ? options.tracker?.snapshot(sessionId, sessionId) ?? null : null,
@@ -412,8 +426,9 @@ export function registerDshIntegration(
           const shared=typeof sessionId==='string' && sessionId
             ?hostUnion?.picketStatus(sessionId)??null:null
           const active=shared!==null ?shared.active
-            :Boolean(agentId&&typeof sessionId==='string'
-              &&ceremony?.snapshot(agentId,sessionId).active)
+            :hostUnion ?false
+              :Boolean(agentId&&typeof sessionId==='string'
+                &&ceremony?.snapshot(agentId,sessionId).active)
           return {kind:'success',text:[
             msg('command.legacy.statusIntro'),
             msg(hostEnabled && shared===null?'command.legacy.statusPicketHostUnavailable'
@@ -430,6 +445,11 @@ export function registerDshIntegration(
           if(raw!==verb || !agentId || typeof sessionId!=='string'||!sessionId)
             return {kind:'error',text:msg('command.legacy.picketUnsupported')}
           const native=options.getNativeUnion?.()
+          // Once an official Host owner exists, its explicit OFF/revocation
+          // must take precedence over the older memory-only CLI demo.
+          // Never report a locally raised picket after Host consent is OFF.
+          if(native && native.enabled()!==true)
+            return {kind:'error',text:native.text('command.native.disabled')}
           // When the same Host has explicitly enabled simulation, there is
           // one persistent action ledger shared by CLI and Web. Failed CAS or
           // revoked consent must not fall back to a misleading local success.

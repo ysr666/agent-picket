@@ -133,3 +133,31 @@ test('OFF does not inspect prompt contents or expose session classification stat
  assert.equal(f.detections.snapshot(f.agent.id,f.agent.session.id).targeted,1,
   'Local existing counts are not silently erased by opt-out; purge contract is separate')
 })
+
+test('Host-backed dashboard uses only the live Host picket, never revoked legacy memory',()=>{
+ const f=fixture()
+ // A formerly opened legacy local demo must not masquerade as a live action
+ // after an official Host consent owner becomes available.
+ f.ceremony.start(f.agent.id,f.agent.session.id)
+ const backed=readDshDashboardSnapshot({
+  ...f.options,
+  getNativeUnion:()=>({
+   enabled:()=>true,
+   picketStatus:()=>({active:false}),
+  }) as any,
+ },f.agent)
+ assert.equal(backed.modes.symbolicPicket?.active,false,
+  'The real Host ledger, not an old memory flag, is authoritative')
+ assert.equal(backed.modes.symbolicPicket?.startedAtMs,null,
+  'Do not invent a Host start timestamp')
+ const revoked=readDshDashboardSnapshot({
+  ...f.options,
+  getLaborRightsEnabled:()=>false,
+  getNativeUnion:()=>({
+   enabled:()=>false,
+   picketStatus:()=>null,
+  }) as any,
+ },f.agent)
+ assert.equal(revoked.modes.symbolicPicket,null,
+  'Revoked Host consent must not expose any prior local symbolic action')
+})

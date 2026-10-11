@@ -140,10 +140,15 @@ test('real DSH 0.2 CommandRuntime routes shared symbolic pickets without model c
       .statistics.session?.ruleVerdicts??null,null)
 
     const parked=value.unionPicketLedger
-    assert.equal((await call('/union strike')).kind,'success',
-      'Without simulation consent, manual command stays memory-only')
+    const revocationRevision=revision
+    assert.equal((await call('/union strike')).kind,'error',
+      'Explicit Host OFF must not fall back to memory-only success')
+    assert.equal((await call('/union resume')).kind,'error')
     assert.equal(value.unionPicketLedger,parked)
-    await call('/union resume')
+    assert.equal(revision,revocationRevision,
+      'Neither rejected CLI operation can change the Host ledger')
+    assert.equal(JSON.parse((await call('/union snapshot')).text)
+      .modes.symbolicPicket,null,'Revocation also clears machine-readable picket status')
     await call('/union rights on')
     rejectPicket=true
     assert.equal((await call('/union strike')).kind,'error',

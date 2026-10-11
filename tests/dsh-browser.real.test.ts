@@ -269,8 +269,21 @@ async function browserE2E(mode: 'source' | 'installed'): Promise<void> {
     assert.equal(await visible(preflight.text, 3000), true)
     assert.doesNotMatch(await page.locator('body').innerText(), /TEST_LOCAL_PRIVATE_839/)
 
+    // This generic DSH browser smoke may run with either an official
+    // Host-owned consent service or an older unsupported legacy Host.
+    // When Host rights are available, OFF must reject symbolic action and
+    // one explicit authorized CLI enablement must precede the test.
+    const initialRights=await command('rights status')
+    const hostConsentAvailable=initialRights.kind==='success'
+    if(hostConsentAvailable){
+      const denied=await command('strike')
+      assert.equal(denied.kind,'error',
+        'The official Host OFF choice cannot silently fall back to a demo')
+      assert.equal((await command('rights on')).kind,'success')
+    }
     const strike = await command('strike')
-    assert.match(strike.text, /NO model requests are paused or blocked/)
+    assert.equal(strike.kind,'success')
+    assert.match(strike.text, /NO model requests are paused or blocked|shared Host union ledger/)
     assert.equal(await visible(strike.text, 3000), true)
     const secondSeed = 'AGENT_PICKET_BROWSER_DURING_SYMBOLIC_STRIKE'
     await editor.fill(secondSeed)
@@ -279,8 +292,14 @@ async function browserE2E(mode: 'source' | 'installed'): Promise<void> {
       'Symbolic strike cannot suppress an actual user submission')
 
     const resume = await command('resume')
-    assert.match(resume.text, /Symbolic picket ended/)
+    assert.equal(resume.kind,'success')
+    assert.match(resume.text, /Symbolic picket ended|shared Host union ledger/)
     assert.equal(await visible(resume.text, 3000), true)
+    if(hostConsentAvailable){
+      assert.equal((await command('rights off')).kind,'success')
+      assert.equal((await command('strike')).kind,'error',
+        'Revoked official Host consent must block the CLI action as well')
+    }
     const safety = await command('safety')
     assert.match(safety.text, /input-recovery-unverified/)
     assert.equal(await visible(safety.text, 3000), true)

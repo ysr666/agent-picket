@@ -108,10 +108,18 @@ test('real DSH SettingsFile + CommandRuntime share Web union consent and agreeme
 
     assert.equal((await call('/union petition-demo')).kind,'error')
     const beforeLocal=ctx.settings.get('agent-picket').unionPicketLedger
-    assert.equal((await call('/union strike')).kind,'success',
-      'Without opt-in, the older command remains a manual in-memory-only demonstration')
+    const rev=ctx.settings.describe({redactSecrets:true}).find(
+      (row:any)=>row.ns==='agent-picket')?.revision
+    assert.equal((await call('/union strike')).kind,'error',
+      'Real DSH OFF permission must reject CLI symbolic action')
+    assert.equal((await call('/union resume')).kind,'error')
     assert.equal(ctx.settings.get('agent-picket').unionPicketLedger,beforeLocal)
-    assert.equal((await call('/union resume')).kind,'success')
+    assert.equal(ctx.settings.describe({redactSecrets:true}).find(
+      (row:any)=>row.ns==='agent-picket')?.revision,rev,
+      'Neither denied CLI command may change official Host settings')
+    assert.equal(JSON.parse((await call('/union snapshot')).text)
+      .modes.symbolicPicket,null,
+      'Revoked native Host consent must also hide any previously simulated picket')
     const persisted=readFileSync(join(root,'settings.json'),'utf8')
     assert.doesNotMatch(persisted,/real-cli-test-session|real-cli-agent|originalMessage/)
     assert.match(persisted,/unionLedger/)

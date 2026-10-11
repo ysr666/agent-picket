@@ -244,9 +244,9 @@ test('CLI strike/resume and Web read the same authorized Host-sidecar simulation
  const h=hostHarness()
  const key=nativeSessionKey(h.agent.session.id)
  const legacy=await h.call('strike')
- assert.equal(legacy.kind,'success','Legacy explicit manual demo remains usable without opt-in')
+ assert.equal(legacy.kind,'error','Known Host-owned OFF means no CLI symbolic action')
  assert.equal(h.read().unionPicketLedger,undefined)
- assert.match((await h.call('status')).text,/Symbolic picket active/i)
+ assert.match((await h.call('status')).text,/No symbolic picket active/)
  assert.equal((await h.call('rights on')).kind,'success')
  assert.match((await h.call('status')).text,/Host union ledger: no current symbolic strike/)
  const started=await h.call('strike')
@@ -269,10 +269,14 @@ test('CLI strike/resume and Web read the same authorized Host-sidecar simulation
  assert.equal(state.active,false)
  assert.equal((await h.call('rights off')).kind,'success')
  const parked=h.read().unionPicketLedger
- assert.equal((await h.call('strike')).kind,'success',
-   'Explicit command with simulation OFF stays an isolated memory ceremony')
+ const parkedRevision=h.revision()
+ assert.equal((await h.call('strike')).kind,'error',
+   'Revoked Host permission must prohibit ALL symbolic actions, including CLI fallback')
+ assert.equal((await h.call('resume')).kind,'error',
+   'A CLI resume command must not bypass the disabled Host-owned union')
  assert.equal(h.read().unionPicketLedger,parked)
- await h.call('resume')
+ assert.equal(h.revision(),parkedRevision,'Denied actions cannot write Host settings')
+ assert.match((await h.call('status')).text,/No symbolic picket active/)
  await h.call('rights on')
  assert.match((await h.call('status')).text,/Host union ledger: no current symbolic strike/)
 })

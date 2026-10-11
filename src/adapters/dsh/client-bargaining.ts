@@ -42,6 +42,7 @@ export function createDshBrowserUnionDesk(options: {
 }) {
   const { scope } = options
   const listeners = new Set<() => void>()
+  let disposed = false
   // A faulty/disposed UI subscriber must never reclassify a committed Host CAS
   // as a failed action, or prevent other subscribers receiving the receipt.
   const notify = () => { for (const callback of listeners) {
@@ -60,6 +61,7 @@ export function createDshBrowserUnionDesk(options: {
     return [...new Uint8Array(hash)].map(part => part.toString(16).padStart(2, '0')).join('')
   })
   const read = () => {
+    if (disposed) return null
     const view = scope.getSnapshot()
     if (view.status !== 'ready' || view.mode !== 'host' || !view.writable
       || view.value?.welcomeDecision !== 'enabled' || !consent() || !activeKey) return null
@@ -149,8 +151,15 @@ export function createDshBrowserUnionDesk(options: {
   }
   return {
     snapshot,
-    subscribe(callback: () => void) { listeners.add(callback); return () => { listeners.delete(callback) } },
+    subscribe(callback: () => void) {
+      if (disposed) return () => {}
+      listeners.add(callback)
+      return () => { listeners.delete(callback) }
+    },
     async setActiveSession(sessionId?: string): Promise<void> {
+      // Stale callbacks after Client fiber teardown must never rearm a Host
+      // settings writer or expose a once-visible Session's private ledger.
+      if (disposed) return
       // Invalidate the previous session immediately: async hashing MUST NOT
       // leak a previous session's state to the new session.
       const epoch = ++sessionEpoch
@@ -453,6 +462,13 @@ export function createDshBrowserUnionDesk(options: {
     resolveCounter(id: number, accepts: boolean) {
       return enqueue(() => perform(desk => desk.resolveCounter(id, accepts)))
     },
-    dispose() { sessionEpoch++; unsubscribe(); listeners.clear(); activeKey = null },
+    dispose() {
+      if (disposed) return
+      disposed = true
+      sessionEpoch++
+      unsubscribe()
+      listeners.clear()
+      activeKey = null
+    },
   }
 }

@@ -696,3 +696,19 @@ test('faulty UI listener cannot turn a confirmed Host write into a reported fail
    'one failed subscriber cannot prevent later subscribers from updating')
  stopFaulty();stopHealthy();desk.dispose()
 })
+
+
+test('disposed Web union desk cannot be rearmed by a delayed or leaked callback',async()=>{
+ const f=fixture(),desk=f.create()
+ await desk.setActiveSession('a')
+ const earlier=f.writeCount()
+ desk.dispose()
+ await desk.setActiveSession('a')
+ assert.equal(desk.snapshot().available,false,
+  'Plugin fiber disposal must irreversibly prevent new Host ledger access')
+ await assert.rejects(desk.raiseDemoBreak(),/unavailable|disposed/)
+ await assert.rejects(desk.setPicket(true),/unavailable|disposed/)
+ await assert.rejects(desk.committeeAction({kind:'file',topic:'question-rule'}),
+  /unavailable|disposed/)
+ assert.equal(f.writeCount(),earlier,'Stale callbacks must not mutate Host settings')
+})
