@@ -183,6 +183,7 @@ export function apply(ctx: ClientContext, react?: ReactForDsh, portal?: PortalFo
       subscribeSessionVisibility: listener => scoped.sessions.list?.subscribe(listener) ?? (()=>{}),
       // The bargaining state is fictional user-owned DSH settings only.
       demoBreak: () => desk.raiseDemoBreak().then(() => {}),
+      setPicket: raise => desk.setPicket(raise).then(() => {}),
       respond: (id, choice) => desk.respond(id, choice).then(() => {}),
       counter: (id, intervalMs) => desk.counter(id, intervalMs).then(() => {}),
       resolveCounter: (id, accepts) => desk.resolveCounter(id, accepts).then(() => {}),

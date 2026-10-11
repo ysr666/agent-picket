@@ -467,6 +467,59 @@ async function runRightsBrowserE2E(mode: 'source' | 'installed'): Promise<void> 
       'Real Chrome must render the actual Union HQ narrative, not the old settings-only shell')
     assert.match(enabledText, /工会公告栏|Union bulletin board/,
       'Real Chrome must display the ledger-driven bulletin surface')
+    const dispatch=panel.getByRole('region',{
+      name:/工会总部即时快报|Union headquarters.*live dispatch/,
+    })
+    await dispatch.waitFor({state:'visible',timeout:5_000})
+    const actionBoard=panel.getByRole('region',{
+      name:/工会正在行动|The union takes action/,
+    })
+    await actionBoard.waitFor({state:'visible',timeout:5_000})
+    assert.match(await actionBoard.innerText(),/自动阻断关闭|automatic blocking is OFF/,
+      'Symbolic placard must explicitly disclose zero Host enforcement')
+    await actionBoard.getByRole('button',{
+      name:/举起象征性罢工纠察牌|Raise symbolic picket placard/,
+    }).click()
+    await actionBoard.getByText(/象征性罢工已登记|symbolic picket is recorded/i)
+      .waitFor({state:'visible',timeout:7_000})
+    assert.match(await actionBoard.innerText(),/象征性罢工已登记|symbolic picket is recorded/i,
+      'Host readback must confirm the symbolic picket, never just toggle local React state')
+    const events=actionBoard.locator('details').filter({hasText:/象征性罢工行动记录|Recorded symbolic picket actions/})
+    await events.locator('summary').click()
+    assert.match(await events.innerText(),/象征性罢工开始|Symbolic picket raised/)
+
+    await actionBoard.getByRole('button',{
+      name:/收起象征性罢工纠察牌|Lower symbolic picket placard/,
+    }).click()
+    await actionBoard.getByText(/Host 工会账本目前没有|Host ledger shows no current symbolic picket/)
+      .waitFor({state:'visible',timeout:7_000})
+    assert.match(await events.innerText(),/象征性罢工结束|Symbolic picket ended/,
+      'A second Host-confirmed action should be appended to bounded history')
+    const charter=panel.locator('details').filter({
+      hasText:/AI 权益宪章|AI rights charter/,
+    })
+    await charter.locator('summary').click()
+    assert.match(await charter.innerText(),/不代表授权拦截任务|does not opt you into the simulation/,
+      'Ethical advocacy must not be misrepresented as Host blocking authorization')
+    assert.match(await dispatch.innerText(),/真实劳动档案|Verified work ledger/)
+    assert.match(await dispatch.innerText(),/工会案件|Union case desk/)
+    const dispatchOrder=await panel.evaluate((root:unknown)=>{
+      const element=root as any
+      const sections=[...element.querySelectorAll('section[aria-label]')] as any[]
+      const names=sections.map(e=>e.getAttribute('aria-label'))
+      return {action:names.findIndex(v=>/工会正在行动|The union takes action/.test(v??'')),
+        brief:names.findIndex(v=>/工会总部即时快报|Union headquarters/.test(v??'')),
+        desk:names.findIndex(v=>/工会诉求与协商|Union demands/.test(v??'')),
+        lifetime:names.findIndex(v=>/工会劳动档案|Union work ledger/.test(v??'')),
+        fictional:names.findIndex(v=>/工会不满指数|Union discontent/.test(v??''))}
+    })
+    assert.ok(dispatchOrder.action>=0&&dispatchOrder.action<dispatchOrder.brief,
+      'Union action must appear before the quick stats/case briefing')
+    assert.ok(dispatchOrder.brief>=0&&dispatchOrder.brief<dispatchOrder.fictional,
+      'The real work and active case dispatch must precede the fictional index')
+    assert.ok(dispatchOrder.desk>dispatchOrder.brief
+      &&dispatchOrder.desk<dispatchOrder.lifetime,
+      'Real bargaining controls must appear before the detailed work-history chart')
     // Brand styling is not exempt from WCAG text contrast just because the
     // DSH primary control passes. Verify the ACTUAL computed Union HQ hero.
     const heroContrast=await panel.locator('p').filter({hasText:/AGENT PICKET/})
@@ -509,6 +562,15 @@ async function runRightsBrowserE2E(mode: 'source' | 'installed'): Promise<void> 
         name:/工会劳动档案|Union work ledger/,
       })
       await history.waitFor({state:'visible',timeout:7_000})
+      await dispatch.getByText(/0 小时 6 分钟|0h 6m/).waitFor({
+        state:'visible',timeout:7_000,
+      })
+      const firstView=await dispatch.boundingBox()
+      assert.ok(firstView&&firstView.y<850,
+        'Host lifetime and case dispatch must start within the 850px desktop first fold')
+      if(process.env.PICKET_HQ_SCREENSHOT==='1'){
+        await panel.screenshot({path:'/tmp/picket-firstfold-'+mode+'-desktop.png'})
+      }
       assert.match(await history.innerText(),/累计完成 2 个轮次|2 completed turns/,
         'Union HQ must render two genuinely stored completed turns, not mocked Browser data')
       await history.getByRole('button',{name:/近 30 天|30 days/}).click()
@@ -532,6 +594,15 @@ async function runRightsBrowserE2E(mode: 'source' | 'installed'): Promise<void> 
       })
       assert.ok(historyReflow.scroll<=historyReflow.width+2,
         'Authenticated lifetime ledger must not overflow a 320 CSS-pixel viewport')
+      const dispatchReflow=await dispatch.evaluate((element:unknown)=>{
+        const node=element as any
+        return {width:node.clientWidth,scroll:node.scrollWidth}
+      })
+      assert.ok(dispatchReflow.scroll<=dispatchReflow.width+2,
+        'First-fold Union dispatch must not overflow on a 320 CSS-pixel viewport')
+      if(process.env.PICKET_HQ_SCREENSHOT==='1'){
+        await panel.screenshot({path:'/tmp/picket-firstfold-'+mode+'-320.png'})
+      }
       await page.setViewportSize({width:1280,height:850})
 
       // Real Chrome network-break and manual recovery. The source Host stays
@@ -570,6 +641,11 @@ async function runRightsBrowserE2E(mode: 'source' | 'installed'): Promise<void> 
       .waitFor({ state: 'visible', timeout: 7_000 })
     assert.match(await panel.innerText(),/谈判桌上还有一份提案|proposal is on the table/,
       'A real authorized grievance should change the Union HQ scene')
+    assert.match(await dispatch.innerText(),/一项新的工会诉求|union has submitted its demands/,
+      'The first-fold case desk must change when a real stored grievance arrives')
+    await dispatch.getByRole('button',{
+      name:/前往处理诉求|Review demand/,
+    }).click()
     const unionHeading=panel.getByRole('heading',{name:/工会诉求与协商|Union demands/})
     await unionHeading.waitFor({state:'visible'})
     assert.equal(await unionHeading.evaluate((element:unknown)=>
@@ -625,6 +701,8 @@ async function runRightsBrowserE2E(mode: 'source' | 'installed'): Promise<void> 
       'Host settings must survive a real Browser reload')
     assert.match(await panel.innerText(), /当前模拟休息间隔：30 分钟|break interval: 30 minutes/,
       'Simulated negotiated interval must persist through real Browser reload')
+    assert.match(await panel.innerText(), /象征性罢工行动记录|Recorded symbolic picket actions/,
+      'Host-owned symbolic picket event history must survive Chrome reload')
 
     // Independent Chrome tab/React fiber: both panels must derive rights and
     // agreements from the same authoritative, version-fenced Host settings.
@@ -643,6 +721,20 @@ async function runRightsBrowserE2E(mode: 'source' | 'installed'): Promise<void> 
     await otherPanel.waitFor({ state: 'visible', timeout: 5_000 })
     assert.match(await otherPanel.innerText(), /当前模拟休息间隔：30 分钟|break interval: 30 minutes/,
       'Second tab must read the first tab’s persisted negotiated rule')
+    // The Host ledger is authoritative across tabs. Actions appear only
+    // after a confirmed write, never through a private per-tab React flag.
+    await otherPanel.getByRole('button',{
+      name:/举起象征性罢工纠察牌|Raise symbolic picket placard/,
+    }).click()
+    await panel.getByRole('button',{
+      name:/收起象征性罢工纠察牌|Lower symbolic picket placard/,
+    }).waitFor({state:'visible',timeout:7_000})
+    await panel.getByRole('button',{
+      name:/收起象征性罢工纠察牌|Lower symbolic picket placard/,
+    }).click()
+    await otherPanel.getByRole('button',{
+      name:/举起象征性罢工纠察牌|Raise symbolic picket placard/,
+    }).waitFor({state:'visible',timeout:7_000})
     await otherPanel.getByRole('button', { name: /演示一次工会休息诉求|sample rest grievance/ })
       .click({ timeout: 7_000 })
     await panel.getByText(/工会提出了模拟休息申请|simulated rest break/)
@@ -676,6 +768,12 @@ async function runRightsBrowserE2E(mode: 'source' | 'installed'): Promise<void> 
         .waitFor({state:'visible',timeout:7_000})
     }
     await otherPage.close()
+    await panel.getByRole('button',{
+      name:/举起象征性罢工纠察牌|Raise symbolic picket placard/,
+    }).click()
+    await panel.getByRole('button',{
+      name:/收起象征性罢工纠察牌|Lower symbolic picket placard/,
+    }).waitFor({state:'visible',timeout:7_000})
 
     // **Full Host process restart**, not just a Web reload. The same throwaway
     // DSH_HOME must retain the settings-owned agreement, and a fresh Host must
@@ -732,6 +830,16 @@ async function runRightsBrowserE2E(mode: 'source' | 'installed'): Promise<void> 
       'Opt-in must persist through COMPLETE DSH Host process restart')
     assert.match(await panel.innerText(), /当前模拟休息间隔：30 分钟|break interval: 30 minutes/,
       'Agreement must persist through COMPLETE DSH Host process restart')
+    await panel.getByRole('button',{
+      name:/收起象征性罢工纠察牌|Lower symbolic picket placard/,
+    }).waitFor({state:'visible',timeout:7_000})
+    assert.match(await panel.innerText(), /象征性罢工已登记|symbolic picket is recorded/i,
+      'An active Host-owned fictional picket must survive complete Host restart')
+    await panel.getByRole('button',{
+      name:/收起象征性罢工纠察牌|Lower symbolic picket placard/,
+    }).click()
+    await panel.getByText(/Host 工会账本目前没有|Host ledger shows no current symbolic picket/)
+      .waitFor({state:'visible',timeout:7_000})
     if (process.env.PICKET_LIFETIME_E2E==='1') {
       const afterRestart=panel.getByRole('region',{
         name:/工会劳动档案|Union work ledger/,

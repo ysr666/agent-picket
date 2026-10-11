@@ -194,3 +194,54 @@ test('two browser tabs racing the same agreement cannot both claim their own Hos
   assert.equal(parseUnionLedger(shared.unionLedger)?.sessions[keyA]?.history.length,1)
   a.dispose();b.dispose()
 })
+
+
+test('symbolic picket is durable per Session, bounded, idempotent and never an enforcement right',async()=>{
+ const f=fixture(),first=f.create()
+ await first.setActiveSession('a')
+ assert.equal(first.snapshot().state?.picket,undefined)
+ const begun=await first.setPicket(true)
+ assert.equal(begun.picket?.active,true)
+ assert.equal(begun.picket?.history[0]?.kind,'picket-raised')
+ const writes=f.writeCount()
+ await first.setPicket(true)
+ assert.equal(f.writeCount(),writes,'replayed raise action cannot generate a second event')
+ first.dispose()
+ const again=f.create()
+ await again.setActiveSession('a')
+ assert.equal(again.snapshot().state?.picket?.active,true,
+  'a fresh client must read the Host-owned picket rather than resetting React state')
+ await again.setActiveSession('b')
+ assert.equal(again.snapshot().state?.picket,undefined,
+  'picket actions are scoped to the pseudonymous Session')
+ await again.setActiveSession('a')
+ const ended=await again.setPicket(false)
+ assert.deepEqual(ended.picket?.history.map(e=>e.kind),
+   ['picket-raised','picket-lowered'])
+ assert.equal(again.snapshot().autoBlockEnabled,false)
+ for(let n=0;n<32;n++)await again.setPicket(n%2===0)
+ assert.equal(again.snapshot().state?.picket?.history.length,12,
+  'Host union action ledger must be bounded under repeated ceremonies')
+ const saved=f.get().unionLedger
+ assert.doesNotMatch(saved,/prompt|sessionId|real-session|rawInput/)
+ assert.ok(saved.length<24000)
+ f.permission(false)
+ assert.equal(again.snapshot().state,null,'revocation hides even a recorded active picket')
+ await assert.rejects(again.setPicket(true),/unavailable/)
+ again.dispose()
+})
+
+test('failed or silent Host action writes never claim a symbolic strike was recorded',async()=>{
+ const f=fixture(),d=f.create()
+ await d.setActiveSession('a')
+ f.fail('reject')
+ await assert.rejects(d.setPicket(true),/rejected/)
+ assert.equal(d.snapshot().state?.picket,undefined)
+ f.fail('silent')
+ await assert.rejects(d.setPicket(true),/did not confirm/)
+ assert.equal(d.snapshot().state?.picket,undefined)
+ f.fail('normal')
+ await d.setPicket(true)
+ assert.equal(d.snapshot().state?.picket?.active,true)
+ d.dispose()
+})

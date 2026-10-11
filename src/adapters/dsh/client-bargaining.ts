@@ -131,6 +131,9 @@ export function createDshBrowserUnionDesk(options: {
     raiseDemoBreak() {
       return enqueue(() => perform(desk => desk.raiseDemoBreak()))
     },
+    setPicket(raise: boolean) {
+      return enqueue(() => perform(desk => desk.setPicket(raise)))
+    },
     respond(id: number, choice: 'accept' | 'decline') {
       return enqueue(() => perform(desk => desk.respond(id, choice)))
     },
