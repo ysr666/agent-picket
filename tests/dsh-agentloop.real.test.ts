@@ -28,6 +28,10 @@ async function verifyOfflineAgentLoop(visionEntry?: string): Promise<void> {
         freeFallback: false
 ` : ''
   writeFileSync(patch, `- insert:
+    - id: picket-isolated-attachment-store
+      name: '@deepseek-ai/dsh-attachment-local'
+      config:
+        dshHome: ${JSON.stringify(root)}
     - id: picket-offline-agentloop-test
       name: ${JSON.stringify(modulePath)}
       inject:
@@ -96,14 +100,28 @@ ${visionRow}`)
     })
     assert.equal((initialized.result as any)?.serverInfo?.name, 'deepseek-harness-sdk-runtime')
 
+    // Host SDK converts encoded images to durable attachment references
+    // before the pre-step hook. A blocked turn MUST NOT be described as
+    // user-recoverable merely because it emitted a blocked turn/end event.
+    const tinyPng='iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAIAAACQkWg2AAAAGUlEQVR4nGOUdMtjIAUwkaR6VMOohiGlAQCmDwDtMnvHzQAAAABJRU5ErkJggg=='
     const rejected = await request(2, 'session/prompt', {
-      sessionId, contentBlocks: [{ type: 'text', text: 'BLOCK TEST' }],
+      sessionId, contentBlocks: [
+        { type: 'text', text: 'BLOCK TEST' },
+        { type: 'image', mimeType:'image/png', data:tinyPng },
+      ],
     })
     assert.equal(typeof (rejected.result as any)?.messageId, 'string')
     await until(() => getEnds().length >= 1, 'first blocked turn to settle')
     assert.deepEqual(getEnds().map(x => x.data.reason.kind), ['blocked'])
     assert.equal(getSessionEvents().some(x => x.type === 'step/start'), false)
     assert.equal(logLines().includes('model-call'), false)
+    assert.equal(getSessionEvents().some(x=>x.type==='user/message'),false,
+      'A rejected turn never commits a user/message to model-facing history')
+    const inputSplices=getSessionEvents().filter(x=>x.type==='agent/inbox/spliced')
+    assert.ok(inputSplices.length>0,
+      'Original submission has to be traceable as Host-owned inbox splices, not stored by Agent Picket')
+    assert.ok(inputSplices.some(x=>JSON.stringify(x.data).includes('attachment')),
+      'Durable Host inbox references an image, but this is NOT a proven one-time user resubmit API')
 
     const allowed = await request(3, 'session/prompt', {
       sessionId, contentBlocks: [{ type: 'text', text: 'ALLOW TEST' }],
