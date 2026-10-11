@@ -90,7 +90,7 @@ async function runRightsBrowserE2E(mode: 'source' | 'installed'): Promise<void> 
     env: {
       ...process.env,
       DSH_HOME: installedWebProfile ?? join(root, 'isolated-home'),
-      AGENT_PICKET_STATS: 'off',
+      AGENT_PICKET_STATS: process.env.PICKET_LIFETIME_E2E==='1'?'on':'off',
       DEEPSEEK_API_KEY: '',
       OPENAI_API_KEY: '',
       HTTP_PROXY: 'http://127.0.0.1:9',
@@ -365,10 +365,42 @@ async function runRightsBrowserE2E(mode: 'source' | 'installed'): Promise<void> 
       'Primary buttons need a discernible border in forced-colors mode')
     await page.emulateMedia({forcedColors:'none'})
     assert.match(await panel.innerText(), /工会模拟未开启|simulation is off/)
+    const requestLifetime = async () => page.evaluate(async () => {
+      const response=await fetch('/api/agent-picket/lifetime/v1?windowDays=7')
+      const value=await response.json().catch(()=>null) as any
+      return {httpStatus:response.status,value}
+    })
+    if (process.env.PICKET_LIFETIME_E2E==='1') {
+      const before=await requestLifetime()
+      assert.equal(before.httpStatus,403,'OFF must be rejected by the official work-only route')
+      assert.equal(before.value?.error,'not_authorized','OFF must never expose local work history')
+    }
     await panel.getByRole('button', { name: /支持 AI 权益|Enable Simulation/ }).click()
     await panel.getByText(/工会模拟进行中|simulation is active/).waitFor({
       state: 'visible', timeout: 5_000,
     })
+    if (process.env.PICKET_LIFETIME_E2E==='1') {
+      const allowed=await requestLifetime()
+      assert.equal(allowed.httpStatus,200,
+        'An informed ON choice should enable only the work-only Host summary')
+      const data=allowed.value as any
+      assert.equal(data?.schemaVersion,1)
+      assert.equal(data?.recentDays.length,7)
+      const negatives=await page.evaluate(async()=>{
+        const base='/api/agent-picket/lifetime/v1'
+        const unauthenticated=await fetch(base+'?windowDays=7',{credentials:'omit'})
+        const malformed=await fetch(base+'?windowDays=7&unexpected=private')
+        return {noCookie:unauthenticated.status,extraQuery:malformed.status}
+      })
+      assert.equal(negatives.noCookie,401,
+        'DSH must reject a request without the authenticated Host browser cookie')
+      assert.equal(negatives.extraQuery,400,
+        'The work-only route must reject query extras before reading data')
+      for (const unsafe of ['checked','targeted','safe','review','prompt','sessionId','fingerprint']) {
+        assert.equal(JSON.stringify(data).includes(unsafe),false,
+          'Authorized work-only response must exclude '+unsafe)
+      }
+    }
     const enabledText = await panel.innerText()
     assert.match(enabledText, /工会诉求与协商|Union demands/)
     assert.match(enabledText, /工会今日照常营业|union is on duty/i,
@@ -389,7 +421,25 @@ async function runRightsBrowserE2E(mode: 'source' | 'installed'): Promise<void> 
         + 'future fictional threshold estimates are separate from observed time')
     assert.match(enabledText,/再累计|Next potential proposal|尚未加载|has not loaded/,
       'Any projected grievance threshold must be clearly separate from measured work')
-    assert.match(enabledText, /宿主长期累计统计尚未接入|not connected/)
+    if (process.env.PICKET_LIFETIME_E2E==='1') {
+      const history=panel.getByRole('region',{
+        name:/工会劳动档案|Union work ledger/,
+      })
+      await history.waitFor({state:'visible',timeout:7_000})
+      assert.match(await history.innerText(),/累计完成 0 个轮次|0 completed turns/,
+        'Empty durable history must show actual zero rather than invented work')
+      await history.getByRole('button',{name:/近 30 天|30 days/}).click()
+      await history.getByText(/近 30 天 UTC|last 30 days/).waitFor({state:'visible',timeout:6_000})
+      await history.getByRole('button',{name:/近 7 天|7 days/}).click()
+      await history.getByText(/近 7 天 UTC|last 7 days/).waitFor({state:'visible',timeout:6_000})
+      await history.getByText(/展开逐日数据|Daily work data/).click()
+      assert.equal(await history.getByRole('listitem').count(),7,
+        'Accessible daily numbers must correspond to seven evidence-backed UTC bars')
+    } else {
+      assert.match(enabledText,
+        /宿主长期累计统计尚未接入|not connected|无法读取长期数据|history is unavailable|正在读取已授权|Reading authorized/,
+        'Missing local history must not become a fabricated duration')
+    }
     assert.doesNotMatch(enabledText, /自动阻断任务：开启|Automatic task blocking: ON/)
 
     // The user can explicitly explore a fictional grievance without any
@@ -538,6 +588,10 @@ async function runRightsBrowserE2E(mode: 'source' | 'installed'): Promise<void> 
       'Opt-in must persist through COMPLETE DSH Host process restart')
     assert.match(await panel.innerText(), /当前模拟休息间隔：30 分钟|break interval: 30 minutes/,
       'Agreement must persist through COMPLETE DSH Host process restart')
+    if (process.env.PICKET_LIFETIME_E2E==='1') {
+      await panel.getByRole('region',{name:/工会劳动档案|Union work ledger/})
+        .waitFor({state:'visible',timeout:7_000})
+    }
 
     // Only a locally installed, disposable DSH 0.1.7 Host may be tested.
     // A valid revision-fenced update proves the official carrier is working;
@@ -620,12 +674,26 @@ async function runRightsBrowserE2E(mode: 'source' | 'installed'): Promise<void> 
     await panel.getByText(/工会模拟未开启|simulation is off/).waitFor({
       state: 'visible', timeout: 5_000,
     })
+    if (process.env.PICKET_LIFETIME_E2E==='1') {
+      assert.equal(await panel.getByRole('region',{
+        name:/工会劳动档案|Union work ledger/,
+      }).count(),0,'Disabling must synchronously hide the lifetime dashboard')
+      const revoked=await requestLifetime()
+      assert.equal(revoked.httpStatus,403)
+      assert.equal(revoked.value?.error,'not_authorized',
+        'Revoked permission must deny any subsequent Host work-only RPC request')
+    }
     await panel.getByRole('button', { name: /关闭|Close/ }).click()
     await page.reload({ waitUntil: 'domcontentloaded' })
     await skipOfficialProvider()
     panel = await openUnion()
     assert.match(await panel.innerText(), /工会模拟未开启|simulation is off/,
       'Explicit disable must persist through a real Browser reload')
+    if (process.env.PICKET_LIFETIME_E2E==='1') {
+      assert.equal(await panel.getByRole('region',{
+        name:/工会劳动档案|Union work ledger/,
+      }).count(),0,'Revoked lifetime work cannot reappear after browser reload')
+    }
     assert.deepEqual(browserErrors, [], 'No uncaught Browser errors are acceptable')
   } finally {
     try { await browser?.close() } catch { /* best effort */ }

@@ -46,7 +46,11 @@
     "README.md",
     "LICENSE",
     "cordis.patch.yml",
-    "docs/"
+    "docs/",
+    "!docs/AGENT_PICKET_V2_IMPLEMENTATION_AND_SAFETY_20261011.zh.md",
+    "!docs/DSH_02_LIFETIME_AUTH_BRIDGE_RESEARCH.zh.md",
+    "!docs/DSH_LIFETIME_WORK_RPC_V1.zh.md",
+    "!docs/UNION_LIFETIME_WEB_INTEGRATION.zh.md"
   ],
   "dsh": {
     "bundle": {
