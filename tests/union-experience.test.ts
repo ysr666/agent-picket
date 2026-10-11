@@ -26,6 +26,10 @@ test('score is bounded, deterministic and depends on real ledger outcomes', () =
   assert.equal(r.discontent,47) // 17 load + 25 pending + 10 declined - 5 accepted
   assert.deepEqual(r.factors,{workLoad:17,pendingGrievance:25,rejectedProposals:10,resolvedProposals:-5})
   assert.equal(r.nextDemandInWorkMs,null)
+  assert.deepEqual(r.latestResolution,{
+    id:4,kind:'break',outcome:'accepted',
+    currentIntervalMs:state.agreement.breakIntervalMs,
+  })
   assert.deepEqual(r.activity.map(e=>e.kind),['counteroffer','accepted','declined'])
   assert.equal(r.status,'negotiating')
   assert.deepEqual(projectUnionExperience({enabled:true,state,completedTurnMs:4*3600_000,coverage:'complete'}),r)
@@ -49,4 +53,15 @@ test('projected next petition requires more observed work, never idle wall time'
   assert.equal(r.nextDemandInWorkMs,60*60_000)
   assert.equal(projectUnionExperience({enabled:true,state:fresh(),
     completedTurnMs:60*60_000,coverage:'partial'}).nextDemandInWorkMs,null)
+})
+
+test('latest resolution reflects actual stored agreement, not inferred contract changes',()=>{
+ const s={...fresh(),agreement:{breakIntervalMs:1_800_000,overtimeIntervalMs:28_800_000},
+   history:[{id:51,kind:'break' as const,outcome:'counter-accepted' as const}]}
+ const r=projectUnionExperience({enabled:true,state:s,coverage:'complete',completedTurnMs:0})
+ assert.deepEqual(r.latestResolution,{
+   id:51,kind:'break',outcome:'counter-accepted',currentIntervalMs:1_800_000,
+ })
+ assert.equal(projectUnionExperience({enabled:false,state:s,
+   coverage:'complete',completedTurnMs:0}).latestResolution,null)
 })

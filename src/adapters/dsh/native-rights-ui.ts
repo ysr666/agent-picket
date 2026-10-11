@@ -428,6 +428,26 @@ export function createDshUnionComponents(
         data.state?.history.length ? h('p',{style:secondary},
           label('hq.agreements.recorded')+': '+data.state.history.length):null,
       ):null,
+      enabled && experience.latestResolution ? h('aside',{
+        style:{...card,padding:'14px 18px',
+          borderLeft:'4px solid #b99b67',
+          background:'var(--dsw-alias-bg-layer-2, #f6f8fb)'},
+        'aria-label':label('hq.resolution.title')},
+        h('p',{style:{...secondary,fontSize:'11px',fontWeight:750,
+          letterSpacing:'.08em',margin:'0 0 6px'}},
+          label('hq.resolution.title')+' · #'+String(experience.latestResolution.id).padStart(4,'0')),
+        h('p',{style:{fontWeight:700,margin:'0 0 6px'}},
+          label(experience.latestResolution.outcome==='accepted'
+            || experience.latestResolution.outcome==='counter-accepted'
+              ? 'hq.resolution.accepted':'hq.resolution.declined')),
+        h('p',{style:{...secondary,margin:0}},
+          deps.t('hq.resolution.current',{
+            kind:label(experience.latestResolution.kind==='break'
+              ?'union.kind.break':'union.kind.overtime'),
+            duration:formatDuration(experience.latestResolution.currentIntervalMs,
+              deps.getLocale?.() ?? 'en'),
+          })),
+      ):null,
       enabled ? h('section',{style:{...card,
         borderTop:'4px solid var(--dsw-alias-brand-primary, #7a493f)'},
         'aria-label':label('hq.activity')},

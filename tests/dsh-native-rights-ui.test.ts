@@ -466,3 +466,24 @@ test('case archive button appears only if genuine Host ledger history exists',()
  assert.ok(nodes.some(n=>n.children.includes('hq.event.accepted')))
  assert.equal(nodes.some(n=>n.children.includes('union.history.title')),false)
 })
+
+test('accepted stored resolution generates a factual current-terms receipt in native HQ',()=>{
+ const {hooks}=fakeReact()
+ const base=deps(rights({welcomeDecision:'enabled',laborRightsEnabled:true}))
+ const d:DshUnionUiDeps={...base.d,readUnion:()=>({
+  pending:null,completedTurnMs:0,coverage:'complete',lifetimeMs:null,available:true,
+  state:{schemaVersion:1,revision:4,
+   agreement:{breakIntervalMs:1_800_000,overtimeIntervalMs:28_800_000},
+   nextBreakDueMs:5_400_000,nextOvertimeDueMs:28_800_000,
+   lastTriggerElapsedMs:3_600_000,pending:null,
+   history:[{id:3,kind:'break',outcome:'counter-accepted'}]},
+ })}
+ const {UnionPanel}=createDshUnionComponents(hooks,{createPortal:child=>child},d)
+ const nodes=walk(UnionPanel())
+ const text=nodes.flatMap(n=>n.children.filter(x=>typeof x==='string'))
+ assert.ok(text.includes('hq.resolution.title · #0003'))
+ assert.ok(text.includes('hq.resolution.accepted'))
+ assert.ok(text.includes('hq.resolution.current'))
+ const receipt=nodes.find(n=>n.props['aria-label']==='hq.resolution.title')
+ assert.ok(receipt)
+})

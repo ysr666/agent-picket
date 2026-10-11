@@ -5,7 +5,7 @@
  * decisions enter this model. Fictional discontent is an explanatory game
  * number, NOT a measurement of AI emotion or an authorization to block work.
  */
-import type { LaborStateV1 } from './union-desk.ts'
+import type { BargainOutcome, LaborDemandKind, LaborStateV1 } from './union-desk.ts'
 
 export type WorkCoverage = 'complete' | 'partial' | 'not-loaded' | 'unavailable'
 export type UnionActivityKind = 'new-demand' | 'counteroffer' | 'accepted'
@@ -14,6 +14,13 @@ export interface UnionActivity {
   readonly id: number
   readonly kind: UnionActivityKind
   readonly demand: 'break' | 'overtime'
+}
+export interface LatestResolution {
+  readonly id: number
+  readonly kind: LaborDemandKind
+  readonly outcome: BargainOutcome
+  /** Current effective term, not an assertion that this individual case changed it. */
+  readonly currentIntervalMs: number
 }
 export interface DiscontentFactors {
   readonly workLoad: number
@@ -27,6 +34,7 @@ export interface UnionExperience {
   /** Auditable explanation of the fictional index, unavailable with partial metrics. */
   readonly factors: DiscontentFactors | null
   /** Work milliseconds remaining until the next simulated labor threshold. */
+  readonly latestResolution: LatestResolution | null
   readonly nextDemandInWorkMs: number | null
   /** Meaningful observed work time; never estimates the live open turn. */
   readonly verifiedCompletedTurnMs: number | null
@@ -48,13 +56,13 @@ export interface UnionExperienceInput {
  */
 export function projectUnionExperience(input: UnionExperienceInput): UnionExperience {
   if (!input.enabled) {
-    return { enabled: false, discontent: null, factors: null,
+    return { enabled: false, discontent: null, factors: null, latestResolution: null,
       nextDemandInWorkMs: null, verifiedCompletedTurnMs: null,
       status: 'off', activity: [] }
   }
   const state = input.state
   if (!state) {
-    return { enabled: true, discontent: null, factors: null,
+    return { enabled: true, discontent: null, factors: null, latestResolution: null,
       nextDemandInWorkMs: null, verifiedCompletedTurnMs: null,
       status: 'unavailable', activity: [] }
   }
@@ -63,6 +71,12 @@ export function projectUnionExperience(input: UnionExperienceInput): UnionExperi
     && input.completedTurnMs >= 0
     ? input.completedTurnMs : null
 
+  const last = state.history.at(-1)
+  const latestResolution: LatestResolution | null = last ? {
+    id: last.id, kind: last.kind, outcome: last.outcome,
+    currentIntervalMs: last.kind === 'break'
+      ? state.agreement.breakIntervalMs : state.agreement.overtimeIntervalMs,
+  } : null
   const activity: UnionActivity[] = []
   if (state.pending) {
     activity.push({
@@ -96,7 +110,7 @@ export function projectUnionExperience(input: UnionExperienceInput): UnionExperi
     }
   }
   return {
-    enabled: true, discontent, factors, nextDemandInWorkMs,
+    enabled: true, discontent, factors, latestResolution, nextDemandInWorkMs,
     verifiedCompletedTurnMs: verified,
     status: state.pending ? 'negotiating' : 'working', activity,
   }
