@@ -657,3 +657,17 @@ test('Host-authorized Gazette is a bounded, independently grouped replay',()=>{
  assert.ok(nodes.some(n=>n.type==='button'&&n.children.includes('hq.story.quiet')
   &&n.props['aria-expanded']===true))
 })
+
+
+test('duty roster is passive, collapsed by default and hidden on opt-out',()=>{
+ const {hooks}=fakeReact()
+ const base=deps(rights({welcomeDecision:'enabled',laborRightsEnabled:true}))
+ const nodes=walk(createDshUnionComponents(hooks,{createPortal:child=>child},base.d).UnionPanel())
+ const region=nodes.find(n=>n.props['aria-label']==='hq.cadence.title')
+ assert.ok(region,'Authorized union has a passive manually opened duty roster')
+ const summary=nodes.find(n=>n.type==='summary'&&n.children.includes('hq.cadence.title'))
+ assert.ok(summary)
+ const out=walk(createDshUnionComponents(hooks,{createPortal:child=>child},
+   deps(rights({welcomeDecision:'not-now',laborRightsEnabled:false})).d).UnionPanel())
+ assert.equal(out.some(n=>n.props['aria-label']==='hq.cadence.title'),false)
+})

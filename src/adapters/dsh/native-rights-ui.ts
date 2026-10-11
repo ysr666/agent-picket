@@ -7,6 +7,7 @@ import type { ClientRightsSnapshot } from './client-rights-scope.ts'
 import { getWelcomeState } from './client-rights-scope.ts'
 import { projectUnionExperience } from '../../product/union-experience.ts'
 import { projectUnionStory } from '../../product/union-story.ts'
+import { projectUnionCadence } from '../../product/union-cadence.ts'
 import type { LaborStateV1 } from '../../product/union-desk.ts'
 import type { PicketActionState } from '../../product/picket-ledger.ts'
 import type { MessageKey } from '../../i18n/index.ts'
@@ -265,6 +266,8 @@ export function createDshUnionComponents(
       enabled, state:data.state, completedTurnMs:data.completedTurnMs,
       coverage:data.coverage,
     })
+    const cadence = projectUnionCadence({enabled,state:data.state,
+      completedTurnMs:data.completedTurnMs,coverage:data.coverage})
     const label = (key:MessageKey) => deps.t(key)
     const currentCampaign=campaignTopics.find(item=>item.id===campaign)??campaignTopics[0]!
     const picketActive = data.available === true && data.picket?.active === true
@@ -418,6 +421,28 @@ export function createDshUnionComponents(
           h('p',{style:{...secondary,fontSize:'12px',margin:'12px 0 0'}},
             label('hq.story.disclosure')),
         ):h('p',{style:secondary},label('hq.story.muted')),
+      ):null,
+      enabled ? h('section',{'aria-label':label('hq.cadence.title'),
+        style:{...card,padding:'12px 18px'}},
+        h('details',{},
+          h('summary',{style:{cursor:'pointer',fontWeight:750}},
+            label('hq.cadence.title')),
+          h('p',{style:{...secondary,fontSize:'12px',margin:'10px 0'}},
+            label('hq.cadence.disclosure')),
+          h('p',{style:{fontWeight:700,margin:'0 0 10px'}},
+            label(('hq.cadence.status.'+cadence.status) as MessageKey)),
+          ...cadence.rows.map(row=>h('div',{key:row.kind,
+            style:{borderTop:'1px solid #d4d7d8',padding:'8px 0'}},
+            h('strong',{},label(row.kind==='break'
+              ?'hq.cadence.break':'hq.cadence.overtime')),
+            h('p',{style:{...secondary,margin:'5px 0'}},
+              cadence.pendingId!==null?label('hq.cadence.pending')
+                :row.remainingWorkMs===null?label('hq.cadence.unknown')
+                :row.thresholdReached?label('hq.cadence.threshold')
+                :deps.t('hq.cadence.remaining',{
+                  duration:formatDuration(row.remainingWorkMs,deps.getLocale?.()??'en')})),
+          )),
+        ),
       ):null,
       enabled ? h('section',{style:{display:'grid',gap:'12px',
         gridTemplateColumns:'repeat(auto-fit,minmax(min(100%,275px),1fr))'},

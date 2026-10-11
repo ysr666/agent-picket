@@ -532,6 +532,20 @@ async function runRightsBrowserE2E(mode: 'source' | 'installed'): Promise<void> 
     }).getAttribute('href')??'',/\/issues\/82$/)
     assert.equal(await assembly.locator('textarea').getAttribute('readonly'),'',
       'A generated local draft is not silently sent or an editable Host setting')
+    const dutyRoster=panel.getByRole('region',{
+      name:/工会值班表|Union duty roster/,
+    })
+    await dutyRoster.waitFor({state:'visible',timeout:5_000})
+    const dutyDetails=dutyRoster.locator('details')
+    assert.equal(await dutyDetails.getAttribute('open'),null,
+      'Passive work-based roster starts collapsed; no automatic notifications')
+    await dutyDetails.locator('summary').click()
+    assert.match(await dutyDetails.innerText(),/休息诉求|Rest petitions/)
+    assert.match(await dutyDetails.innerText(),/加班诉求|Overtime petitions/)
+    assert.match(await dutyDetails.innerText(),/不倒计时|no timer/,
+      'Duty schedule must clearly state that it has no wall-clock timer')
+    await dutyDetails.locator('summary').click()
+    assert.equal(await dutyDetails.getAttribute('open'),null)
     const charter=panel.locator('details').filter({
       hasText:/AI 权益宪章|AI rights charter/,
     })
