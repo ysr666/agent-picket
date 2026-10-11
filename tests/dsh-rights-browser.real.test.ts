@@ -7,6 +7,7 @@ import { tmpdir } from 'node:os'
 import { join, resolve, sep } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import test from 'node:test'
+import { DurableStats } from '../src/adapters/node/durable-stats.ts'
 
 const dshBin = process.env.AGENT_PICKET_DSH_BIN
 const playwrightEntry = process.env.AGENT_PICKET_PLAYWRIGHT_ENTRY
@@ -97,6 +98,39 @@ async function runRightsBrowserE2E(mode: 'source' | 'installed'): Promise<void> 
       HTTPS_PROXY: 'http://127.0.0.1:9',
       ALL_PROXY: 'http://127.0.0.1:9',
     },
+  }
+  // Seed TWO NONZERO workdays through the real DurableStats writer in an
+  // isolated test-owned DSH_HOME. Do not mock Browser JSON or modify any
+  // existing developer/production profile. Both turns end before today.
+  if (process.env.PICKET_LIFETIME_E2E==='1') {
+    const dir=join(childOptions.env.DSH_HOME,'agent-picket','stats')
+    const stats=new DurableStats(dir)
+    const now=new Date()
+    const utcStart=Date.UTC(now.getUTCFullYear(),now.getUTCMonth(),now.getUTCDate())
+    const records=[
+      {dayOffset:2,elapsedMs:120_000,ordinal:'two-days-ago'},
+      {dayOffset:1,elapsedMs:240_000,ordinal:'yesterday'},
+    ]
+    try {
+      for (const row of records) {
+        const start=utcStart-row.dayOffset*86_400_000+12*3_600_000
+        const sessionId='isolated-acceptance-'+row.ordinal
+        const event=(type:'turn-start'|'tool-start'|'tool-end'|'turn-end',
+          id:string,recordedAtMs:number)=>{
+          assert.equal(stats.recordWork({
+            id,agentId:'offline-test-only',sessionId,type,recordedAtMs,
+          }),true)
+        }
+        event('turn-start',row.ordinal+'-begin',start)
+        event('tool-start',row.ordinal+'-tool-begin',start+1000)
+        event('tool-end',row.ordinal+'-tool-end',start+2000)
+        event('turn-end',row.ordinal+'-end',start+row.elapsedMs)
+      }
+      assert.equal(stats.snapshot().completedTurnMs,360_000,
+        'Isolated Host test fixture must be recorded by the real durable writer')
+    } finally {
+      stats.close()
+    }
   }
   let child = spawn(dshBin!, childArguments, childOptions)
 
@@ -388,6 +422,13 @@ async function runRightsBrowserE2E(mode: 'source' | 'installed'): Promise<void> 
       const data=allowed.value as any
       assert.equal(data?.schemaVersion,1)
       assert.equal(data?.recentDays.length,7)
+      assert.equal(data.lifetime.completedTurnMs,360_000,
+        'Lifetime total must exactly equal two completed real durable-store test turns')
+      assert.equal(data.lifetime.turnEnds,2)
+      assert.equal(data.lifetime.toolCalls,2)
+      assert.equal(data.recentDays.at(-3)?.work.completedTurnMs,120_000)
+      assert.equal(data.recentDays.at(-2)?.work.completedTurnMs,240_000)
+      assert.equal(data.recentDays.at(-1)?.work.completedTurnMs,0)
       assert.match(allowed.cacheControl??'',/no-store/i,
         'Host must forbid browser/proxy storage of authorized lifetime work data')
       assert.match(allowed.contentType??'',/application\/json/i,
@@ -468,8 +509,8 @@ async function runRightsBrowserE2E(mode: 'source' | 'installed'): Promise<void> 
         name:/工会劳动档案|Union work ledger/,
       })
       await history.waitFor({state:'visible',timeout:7_000})
-      assert.match(await history.innerText(),/累计完成 0 个轮次|0 completed turns/,
-        'Empty durable history must show actual zero rather than invented work')
+      assert.match(await history.innerText(),/累计完成 2 个轮次|2 completed turns/,
+        'Union HQ must render two genuinely stored completed turns, not mocked Browser data')
       await history.getByRole('button',{name:/近 30 天|30 days/}).click()
       await history.getByText(/近 30 天 UTC|last 30 days/).waitFor({state:'visible',timeout:6_000})
       await history.getByRole('button',{name:/近 7 天|7 days/}).click()
@@ -477,6 +518,11 @@ async function runRightsBrowserE2E(mode: 'source' | 'installed'): Promise<void> 
       await history.getByText(/展开逐日数据|Daily work data/).click()
       assert.equal(await history.getByRole('listitem').count(),7,
         'Accessible daily numbers must correspond to seven evidence-backed UTC bars')
+      const dayDetails=(await history.getByRole('listitem').allInnerTexts()).join('\n')
+      assert.match(dayDetails,/0 小时 2 分钟|0h 2m/,
+        'A legitimate persisted two-minute day must reach accessible text')
+      assert.match(dayDetails,/0 小时 4 分钟|0h 4m/,
+        'A legitimate persisted four-minute day must reach accessible text')
       assert.equal(await history.getByRole('img').count(),1,
         'The daily bar chart must have an accessible label')
       await page.setViewportSize({width:320,height:640})
@@ -665,8 +711,14 @@ async function runRightsBrowserE2E(mode: 'source' | 'installed'): Promise<void> 
     assert.match(await panel.innerText(), /当前模拟休息间隔：30 分钟|break interval: 30 minutes/,
       'Agreement must persist through COMPLETE DSH Host process restart')
     if (process.env.PICKET_LIFETIME_E2E==='1') {
-      await panel.getByRole('region',{name:/工会劳动档案|Union work ledger/})
-        .waitFor({state:'visible',timeout:7_000})
+      const afterRestart=panel.getByRole('region',{
+        name:/工会劳动档案|Union work ledger/,
+      })
+      await afterRestart.waitFor({state:'visible',timeout:7_000})
+      assert.match(await afterRestart.innerText(),/累计完成 2 个轮次|2 completed turns/,
+        'A restarted Host must recover the isolated durable two-turn ledger')
+      assert.match(await afterRestart.innerText(),/0 小时 6 分钟|0h 6m/,
+        'Restart must not lose or double count six minutes of completed-turn time')
     }
 
     // Only a locally installed, disposable DSH 0.1.7 Host may be tested.
