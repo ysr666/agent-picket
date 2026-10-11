@@ -83,7 +83,12 @@
     "!docs/DSH_COMPOSER_UNION_E2E.md",
     "!docs/DSH_BROWSER_BARGAINING.md",
     "!docs/UNION_CASE_HEARINGS_20261011.zh.md",
-    "!docs/DETECTOR_PRODUCT_E2E_20261011.zh.md"
+    "!docs/DETECTOR_PRODUCT_E2E_20261011.zh.md",
+    "!docs/DSH_INTEGRATION.md",
+    "!docs/DASHBOARD_CONTRACT.zh.md",
+    "!docs/HOOK_ADAPTERS.zh.md",
+    "!docs/DSH_WEB_CAPABILITIES.zh.md",
+    "!docs/DSH_02_OFFICIAL_RIGHTS_AX_E2E.md"
   ],
   "dsh": {
     "bundle": {
