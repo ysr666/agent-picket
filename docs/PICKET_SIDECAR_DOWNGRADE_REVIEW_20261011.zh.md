@@ -20,11 +20,16 @@
 1. 旧版本复现：#89 旧 `parseUnionLedger` 对带 `picket` 的 #90 原始协商账本返回 REJECT。
 2. 修复后交叉校验：由 #89 的旧解析器和旧 Host 设置校验器读取“原始协商账本 + 新独立侧车”，原始协商账本被接受，原待处理提案保留且字节保持不变；新侧车由新协议校验器读取。
 3. `npm run check`：截至本轮最后测试 **272 total / 248 PASS / 0 FAIL / 24 conditional SKIP**，包括严格私密文本拒绝、限长计数、重复动作幂等、跨会话隔离、两标签 CAS 冲突、revocation 及打包预算。
-4. DSH 0.2.0-rc.2 Google Chrome 源码及离线包 2/2 PASS；DSH 0.1.2-rc.1 Google Chrome 源码及离线包 2/2 PASS：均使用本地隔离 Host，在官方读写、跨标签、页面重载、Host 重启、权限撤销等路径检验。最后做微小 parser 审查后应重跑上述 E2E 并重新记录。
+4. DSH 0.2.0-rc.2 Google Chrome 源码及离线包 2/2 PASS；DSH 0.1.2-rc.1 Google Chrome 源码及离线包 2/2 PASS：均使用本地隔离 Host，在官方读写、跨标签、页面重载、Host 重启、权限撤销等路径检验。最终完整回归已在 parser 严格递增校验及竞态测试增补后重跑，DSH 0.2/0.1 均再次 2/2 PASS。
+
+5. **隔离版真实 Host 降级/回升级验收**：从已通过 DSH 0.2 Chrome E2E 的临时 Profile 复制出专用 \`/tmp/picket-sidecar-actual-downgrade-20261011/home\`。将新插件包替换为 #89（使用旧源码重新 build/pack 后经 DSH 官方 \`plugin --profile web add\` 安装），启动真正 DSH 0.2.0-rc.2 Host 并通过带 Cookie 的官方 \`settings/describe\` 检查，再使用官方 CAS \`settings/mutate\` 修改并恢复 \`commandLocale\`，最后重新安装修复版新插件并重启 Host。全过程不请求模型，也不使用生产 Profile。
+   - 旧插件正常启动、可读协商账本、成功完成两次 harmless 设置写入。旧 Host 的设置视图**隐藏**未知的 \`unionPicketLedger\`（只显示 \`welcomeDecision, unionLedger, commandLocale\`），因此不能声称旧版可以直接展示罢工事件。
+   - 重新安装新版后 \`unionPicketLedger\` 再次出现在 Host 设置视图中；**两个账本完整 SHA-256 均与降级前相同**。旧版实际设置更新没有清除未知的侧车。
+   - 本次仅覆盖 **DSH 0.2.0-rc.2、Agent Picket #89→修复版**，以及旧版 \`commandLocale\` 写入。更早版本、完整旧版 GUI 协商互动、未知 Schema 故障恢复/任意类型写入尚未穷尽。
 
 ## 明确的剩余门禁
 
-- **尚未进行完整的真实“新插件写入→卸载新版→安装旧版→复用同一个隔离 DSH_HOME→重新升级”的跨版本全链路。** 旧源码模块交叉检验不等于真实降级实机签收。
+- 已完成一轮隔离 Profile 的新→旧→新实际替换与官方 Host 写入、恢复验证；但尚未覆盖**全部历史 DSH/插件版本、旧 GUI 的任意操作路径、反复降级、侧车上限和所有未知 Schema 更新语义**，仍不构成正式发布兼容性签收。
 - Draft PR #90 原方案写入的 `LaborStateV1.picket` 实验数据不能静默抹除；若确实存在此类隔离开发数据，需单独设计兼容迁移/人工导出回滚，默认 fail closed，不能自动改写未知版。
 - #82 的正式导出/删除操作须明确覆盖侧车；支持理念/阅读宪章与数据授权相互独立。
 - 真实阻断仍由 #79/#80 原始消息和全部附件无损恢复、真人来源认证、恢复/绕过 UI 及明确授权门禁控制。
