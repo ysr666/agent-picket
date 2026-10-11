@@ -9,16 +9,19 @@ import { createNativeUnionCommandPort, type NativeSettingsProvider } from '../sr
 test('new DSH Config uses three volatile Host fields without a blocking flag', () => {
   const schema = DshProfileRightsConfig
   assert.equal(schema.type, 'object')
-  for (const name of ['welcomeDecision','unionLedger','commandLocale','unionPicketLedger']) {
+  for (const name of ['welcomeDecision','unionLedger','commandLocale','unionPicketLedger','unionGazetteMode']) {
     assert.equal(schema.dict![name]?.meta.volatile, true, name)
   }
   assert.deepEqual(Object.keys(schema.dict!).sort(),
-    ['commandLocale','unionLedger','unionPicketLedger','welcomeDecision'])
+    ['commandLocale','unionGazetteMode','unionLedger','unionPicketLedger','welcomeDecision'])
   const parsed = schema({})
   assert.equal(parsed.welcomeDecision.get(), 'unseen')
   assert.equal(parsed.unionLedger.get(), '')
   assert.equal(parsed.unionPicketLedger.get(), '')
   assert.equal(parsed.commandLocale.get(), 'auto')
+  assert.equal(parsed.unionGazetteMode.get(),'visible')
+  assert.equal(schema({unionGazetteMode:'quiet'}).unionGazetteMode.get(),'quiet')
+  assert.throws(()=>schema({unionGazetteMode:'future-push' as never}))
   assert.throws(() => schema({welcomeDecision:'on' as never}), /./)
 })
 

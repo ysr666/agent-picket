@@ -734,11 +734,13 @@ async function runRightsBrowserE2E(mode: 'source' | 'installed'): Promise<void> 
     }
     assert.match(await panel.innerText(),/当前模拟休息间隔：30 分钟|break interval: 30 minutes/,
       'The accepted 30-minute interval is preserved separately from the next existing due threshold')
-    await gazette.getByRole('button',{name:/安静模式|Quiet this panel/}).click()
-    assert.match(await gazette.innerText(),/仅隐藏当前面板|hidden only in this panel/)
-    await gazette.getByRole('button',{name:/显示小报|Show dispatch/}).click()
-    assert.match(await gazette.innerText(),/协议已归档|Agreement recorded/,
-      'Local quieting must not delete Host case history')
+    await gazette.getByRole('button',{name:/跨会话静音小报|Mute Gazette across sessions/}).click()
+    await gazette.getByText(/已按 Host 偏好静音|hidden by your Host-saved preference/)
+      .waitFor({state:'visible',timeout:7_000})
+    // Deliberately keep Host mode QUIET across browser reload, cross-tab
+    // operations and the complete Host restart below; restore at the end.
+    assert.doesNotMatch(await gazette.innerText(),/协议已归档|Agreement recorded/,
+      'A quiet Gazette must not silently expose the archived story')
     assert.match(await panel.innerText(), /协商记录|recorded cases/)
     const openArchive=panel.getByRole('button',{
       name:/查看全部协商记录|View all recorded cases/,
@@ -775,9 +777,17 @@ async function runRightsBrowserE2E(mode: 'source' | 'installed'): Promise<void> 
       'Simulated negotiated interval must persist through real Browser reload')
     assert.match(await panel.innerText(), /象征性罢工行动记录|Recorded symbolic picket actions/,
       'Host-owned symbolic picket event history must survive Chrome reload')
-    assert.match(await panel.getByRole('region',{name:/工会小报|Union Gazette/}).innerText(),
-      /协议已归档|Agreement recorded/,
-      'Gazette replay survives reload without generating another fictional event')
+    const mutedGazette=panel.getByRole('region',{name:/工会小报|Union Gazette/})
+    await mutedGazette.getByText(/已按 Host 偏好静音|hidden by your Host-saved preference/)
+      .waitFor({state:'visible',timeout:7_000})
+    assert.doesNotMatch(await mutedGazette.innerText(),/协议已归档|Agreement recorded/,
+      'Host-owned Gazette preference must survive Chrome reload')
+    await mutedGazette.getByRole('button',{
+      name:/重新显示小报|Show Gazette again/,
+    }).click()
+    await mutedGazette.getByText(/协议已归档|Agreement recorded/)
+      .waitFor({state:'visible',timeout:7_000})
+    // Later simulated overtime submissions must remain visible in the Gazette.
 
     // Independent Chrome tab/React fiber: both panels must derive rights and
     // agreements from the same authoritative, version-fenced Host settings.
@@ -796,6 +806,21 @@ async function runRightsBrowserE2E(mode: 'source' | 'installed'): Promise<void> 
     await otherPanel.waitFor({ state: 'visible', timeout: 5_000 })
     assert.match(await otherPanel.innerText(), /当前模拟休息间隔：30 分钟|break interval: 30 minutes/,
       'Second tab must read the first tab’s persisted negotiated rule')
+    const otherGazette=otherPanel.getByRole('region',{name:/工会小报|Union Gazette/})
+    await otherGazette.getByRole('button',{
+      name:/跨会话静音小报|Mute Gazette across sessions/,
+    }).click()
+    await mutedGazette.getByText(/已按 Host 偏好静音|hidden by your Host-saved preference/)
+      .waitFor({state:'visible',timeout:7_000})
+    await mutedGazette.getByRole('button',{
+      name:/重新显示小报|Show Gazette again/,
+    }).click()
+    await otherGazette.getByRole('button',{
+      name:/跨会话静音小报|Mute Gazette across sessions/,
+    }).waitFor({state:'visible',timeout:7_000})
+    assert.doesNotMatch(await otherGazette.innerText(),
+      /已按 Host 偏好静音|hidden by your Host-saved preference/,
+      'Both authenticated Chrome tabs must agree on the Host-owned Gazette setting')
     // The Host ledger is authoritative across tabs. Actions appear only
     // after a confirmed write, never through a private per-tab React flag.
     await otherPanel.getByRole('button',{
@@ -876,6 +901,16 @@ async function runRightsBrowserE2E(mode: 'source' | 'installed'): Promise<void> 
       name:/收起象征性罢工纠察牌|Lower symbolic picket placard/,
     }).waitFor({state:'visible',timeout:7_000})
 
+    // Persist another quiet choice across a COMPLETE Host restart, not just
+    // the earlier browser refresh or independent in-memory React mount.
+    const beforeRestartGazette=panel.getByRole('region',{name:/工会小报|Union Gazette/})
+    await beforeRestartGazette.getByRole('button',{
+      name:/跨会话静音小报|Mute Gazette across sessions/,
+    }).click()
+    await beforeRestartGazette.getByText(
+      /已按 Host 偏好静音|hidden by your Host-saved preference/,
+    ).waitFor({state:'visible',timeout:7_000})
+
     // **Full Host process restart**, not just a Web reload. The same throwaway
     // DSH_HOME must retain the settings-owned agreement, and a fresh Host must
     // issue a new auth cookie. Never reuse the previous session's login token.
@@ -929,6 +964,18 @@ async function runRightsBrowserE2E(mode: 'source' | 'installed'): Promise<void> 
     panel = await openUnion()
     assert.match(await panel.innerText(), /工会模拟进行中|simulation is active/,
       'Opt-in must persist through COMPLETE DSH Host process restart')
+    const restartedGazette=panel.getByRole('region',{name:/工会小报|Union Gazette/})
+    await restartedGazette.getByText(/已按 Host 偏好静音|hidden by your Host-saved preference/)
+      .waitFor({state:'visible',timeout:7_000})
+    await restartedGazette.getByRole('button',{
+      name:/重新显示小报|Show Gazette again/,
+    }).click()
+    await restartedGazette.getByRole('button',{
+      name:/跨会话静音小报|Mute Gazette across sessions/,
+    }).waitFor({state:'visible',timeout:7_000})
+    assert.doesNotMatch(await restartedGazette.innerText(),
+      /已按 Host 偏好静音|hidden by your Host-saved preference/,
+      'Restoring Host preference must replay the current case without rewriting its history')
     assert.match(await panel.innerText(), /当前模拟休息间隔：30 分钟|break interval: 30 minutes/,
       'Agreement must persist through COMPLETE DSH Host process restart')
     await panel.getByRole('button',{

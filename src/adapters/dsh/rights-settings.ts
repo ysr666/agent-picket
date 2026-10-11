@@ -9,6 +9,7 @@ export const RightsSettingsSchema = Schema.object({
   welcomeDecision: Schema.union(['unseen', 'enabled', 'not-now']).default('unseen'),
   unionLedger: Schema.string().default(''),
   unionPicketLedger: Schema.string().default(''),
+  unionGazetteMode: Schema.union(['visible','quiet']).default('visible'),
   commandLocale: Schema.union(['auto', 'en', 'zh-CN']).default('auto'),
 })
 
@@ -42,6 +43,7 @@ export const DshProfileRightsConfig = Schema.object({
   ).default('').volatile(),
   commandLocale: Schema.union(['auto', 'en', 'zh-CN'])
     .default('auto').volatile(),
+  unionGazetteMode: Schema.union(['visible','quiet']).default('visible').volatile(),
   unionPicketLedger: Schema.transform(
     Schema.string().max(MAX_PICKET_LEDGER_BYTES),
     value=>{ requireSafePicketLedger(value);return value },true,
@@ -52,6 +54,7 @@ export interface HostRightsSection {
   readonly welcomeDecision: 'unseen' | 'enabled' | 'not-now'
   readonly unionLedger: string
   readonly unionPicketLedger: string
+  readonly unionGazetteMode: 'visible' | 'quiet'
   readonly commandLocale: 'auto' | 'en' | 'zh-CN'
 }
 
