@@ -139,3 +139,23 @@ test('reject 7-day histories that belong to an older UTC window despite valid JS
  assert.deepEqual(reader.snapshot(),{status:'unavailable',data:null},
   'Date labels must prove that the chart covers the advertised Host UTC window')
 })
+
+test('a thrown UI observer cannot prevent a consent-scoped work snapshot refresh',async()=>{
+ let calls=0,healthy=0
+ const reader=createBrowserLifetimeWorkReader({
+  authorized:()=>true,
+  fetcher:async url=>{calls++;return fetchOk(String(url).includes('windowDays=30')?30:7)},
+ })
+ reader.subscribe(()=>{throw Error('stale UI subscriber')})
+ reader.subscribe(()=>{healthy++})
+ reader.setScope(true,'session-a')
+ await settle()
+ assert.equal(reader.snapshot().status,'available')
+ assert.equal(calls,1)
+ await reader.refresh(30)
+ await settle()
+ assert.equal(reader.snapshot().data?.windowDays,30)
+ assert.equal(calls,2)
+ assert.ok(healthy>=2,'the next healthy observer must still get updates')
+ reader.dispose()
+})

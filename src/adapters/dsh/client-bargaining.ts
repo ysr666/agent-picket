@@ -42,7 +42,11 @@ export function createDshBrowserUnionDesk(options: {
 }) {
   const { scope } = options
   const listeners = new Set<() => void>()
-  const notify = () => { for (const callback of listeners) callback() }
+  // A faulty/disposed UI subscriber must never reclassify a committed Host CAS
+  // as a failed action, or prevent other subscribers receiving the receipt.
+  const notify = () => { for (const callback of listeners) {
+    try { callback() } catch { /* observer errors cannot affect Host writes */ }
+  } }
   const unsubscribe = scope.subscribe(notify)
   let activeKey: string | null = null
   let serial: Promise<unknown> = Promise.resolve()

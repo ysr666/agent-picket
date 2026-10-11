@@ -71,7 +71,11 @@ export function createBrowserLifetimeWorkReader(options:{
   let permission=false
   let terminated=false
   let abort:AbortController|null=null
-  const notify=()=>{for(const callback of listeners)callback()}
+  // A broken UI listener must not strand an authenticated work refresh in
+  // loading state or generate an unhandled rejection after consent changes.
+  const notify=()=>{for(const callback of listeners){
+    try{callback()}catch{ /* isolate UI observers */ }
+  }}
   const invalidate=(status:LifetimeVisibility)=>{
     ++epoch
     abort?.abort()

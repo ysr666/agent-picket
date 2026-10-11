@@ -676,3 +676,23 @@ test('Web simulated overtime follows the same Host CAS and privacy contract as b
  assert.equal(desk.snapshot().state?.pending,null)
  desk.dispose()
 })
+
+test('faulty UI listener cannot turn a confirmed Host write into a reported failure',async()=>{
+ const f=fixture(),desk=f.create()
+ await desk.setActiveSession('a')
+ let healthySignals=0
+ const stopFaulty=desk.subscribe(()=>{throw Error('unmounted UI listener')})
+ const stopHealthy=desk.subscribe(()=>{healthySignals++})
+ // A failed React or plugin subscriber runs AFTER the authoritative Host CAS.
+ // It must never make a committed action look like a failed user request.
+ const demand=await desk.raiseDemoBreak()
+ assert.equal(demand?.kind,'break')
+ assert.equal(f.writeCount(),1)
+ assert.equal(desk.snapshot().pending?.id,demand?.id)
+ const raised=await desk.setPicket(true)
+ assert.equal(raised.active,true)
+ assert.equal(desk.snapshot().picket?.active,true)
+ assert.ok(healthySignals>=2,
+   'one failed subscriber cannot prevent later subscribers from updating')
+ stopFaulty();stopHealthy();desk.dispose()
+})
