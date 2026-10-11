@@ -804,6 +804,32 @@ async function runRightsBrowserE2E(mode: 'source' | 'installed'): Promise<void> 
       .click({ timeout: 7_000 })
     await otherPanel.getByText(/目前没有待处理的模拟工会诉求|no pending simulated union grievance/)
       .waitFor({ state: 'visible', timeout: 7_000 })
+    // A second, explicitly user-launched overtime story shares the original
+    // Host agreement ledger across real browser tabs; it is not measured work.
+    await otherPanel.getByRole('button',{
+      name:/发起一份模拟加班诉求|File a sample overtime petition/,
+    }).click()
+    await panel.getByText(/工会提交了模拟加班申诉|simulated overtime grievance/)
+      .waitFor({state:'visible',timeout:7_000})
+    assert.match(await panel.getByRole('region',{
+      name:/工会小报|Union Gazette/,
+    }).innerText(),/诉求已提交|Petition filed/,
+      'Overtime petition must alter the replayed Gazette from the Host ledger')
+    await panel.getByRole('combobox',{
+      name:/还价间隔|Proposed interval/,
+    }).selectOption('240')
+    await panel.getByRole('button',{name:/提出还价|Make counteroffer/}).click()
+    await otherPanel.getByText(/用户还价：240 分钟|User counteroffer: 240 minutes/)
+      .waitFor({state:'visible',timeout:7_000})
+    await otherPanel.getByRole('button',{
+      name:/模拟工会接受还价|Simulate union accepting/,
+    }).click()
+    await panel.getByText(/当前模拟加班间隔：4 小时|overtime interval: 4 hours/)
+      .waitFor({state:'visible',timeout:7_000})
+    assert.match(await panel.getByRole('region',{
+      name:/工会小报|Union Gazette/,
+    }).innerText(),/协议已归档|Agreement recorded/,
+      'An accepted overtime proposal must have a persisted Gazette consequence')
     if (process.env.PICKET_LIFETIME_E2E==='1') {
       await panel.getByRole('region',{name:/工会劳动档案|Union work ledger/})
         .waitFor({state:'visible',timeout:7_000})

@@ -55,6 +55,7 @@ export interface DshUnionUiDeps {
   readonly subscribeSessionVisibility?: (listener: () => void) => () => void
   readonly respond?: (id: number, choice: 'accept' | 'decline') => Promise<void>
   readonly demoBreak?: () => Promise<void>
+  readonly demoOvertime?: () => Promise<void>
   readonly setPicket?: (raise: boolean) => Promise<void>
   readonly counter?: (id: number, intervalMs: number) => Promise<void>
   readonly resolveCounter?: (id: number, accepts: boolean) => Promise<void>
@@ -361,6 +362,10 @@ export function createDshUnionComponents(
               type:'button',style:primary,disabled:busy,
               onClick:()=>{void bargain(deps.demoBreak!)}},
               label('hq.action.petition')):null,
+          !data.pending && data.available && deps.demoOvertime ? h('button',{
+            type:'button',style:quiet,disabled:busy,
+            onClick:()=>{void bargain(deps.demoOvertime!)}},
+            label('hq.action.overtimePetition')):null,
           data.available && deps.setPicket ? h('button',{type:'button',style:quiet,
             disabled:busy,'aria-pressed':picketActive,
             onClick:()=>{void bargain(()=>deps.setPicket!(!picketActive))}},

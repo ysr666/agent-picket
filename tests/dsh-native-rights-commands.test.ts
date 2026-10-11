@@ -86,6 +86,32 @@ test('native petition/counter/resolve really changes the same ledger Web reads',
   assert.ok(h.read().unionLedger.includes('"breakIntervalMs":1800000'))
 })
 
+test('CLI explicit overtime demo shares legacy Host protocol and preserves absence of fictional work',async()=>{
+ const h=hostHarness()
+ assert.equal((await h.call('petition-demo overtime')).kind,'error')
+ await h.call('rights on')
+ const result=await h.call('petition-demo overtime')
+ assert.equal(result.kind,'success')
+ const key=nativeSessionKey(h.agent.session.id)
+ const first=parseUnionLedger(h.read().unionLedger)!.sessions[key]!
+ assert.equal(first.pending?.kind,'overtime')
+ assert.equal(first.pending?.raisedAtElapsedMs,0)
+ assert.equal((await h.call('petition-demo break')).kind,'success',
+   'Existing pending demand is never silently replaced')
+ assert.equal(h.read().unionLedger.includes('real-session-53'),false)
+ assert.equal((await h.call('counter 1 240')).kind,'success')
+ assert.equal((await h.call('resolve 1 accept')).kind,'success')
+ const after=parseUnionLedger(h.read().unionLedger)!.sessions[key]!
+ assert.equal(after.agreement.overtimeIntervalMs,4*3_600_000)
+ assert.equal(after.nextOvertimeDueMs,8*3_600_000)
+ assert.equal(after.agreement.breakIntervalMs,2*3_600_000)
+ for(const bad of ['petition-demo unknown','petition-demo break overtime']){
+   const before=h.revision()
+   assert.equal((await h.call(bad)).kind,'error')
+   assert.equal(h.revision(),before)
+ }
+})
+
 test('command grammar rejects invalid IDs and numeric counters without state changes',async()=>{
   const h=hostHarness()
   await h.call('rights on')

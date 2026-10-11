@@ -69,6 +69,15 @@ test('real DSH SettingsFile + CommandRuntime share Web union consent and agreeme
     assert.equal(ledger.sessions[key]?.agreement.breakIntervalMs,30*60_000)
     assert.equal(ledger.sessions[key]?.history.at(-1)?.outcome,'counter-accepted')
     assert.match((await call('/union grievances')).text,/30min/)
+    assert.equal((await call('/union petition-demo overtime')).kind,'success')
+    const overtime=parseUnionLedger(ctx.settings.get('agent-picket').unionLedger)!
+      .sessions[key]?.pending
+    assert.equal(overtime?.kind,'overtime')
+    assert.equal(overtime?.raisedAtElapsedMs,0)
+    assert.equal((await call('/union counter '+overtime!.id+' 240')).kind,'success')
+    assert.equal((await call('/union resolve '+overtime!.id+' accept')).kind,'success')
+    assert.equal(parseUnionLedger(ctx.settings.get('agent-picket').unionLedger)!
+      .sessions[key]?.agreement.overtimeIntervalMs,4*3_600_000)
     assert.equal(JSON.parse((await call('/union snapshot')).text).modes.laborRights,'enabled')
     // Reproduce a DSH Client settingsScope write (same Host namespace) without a
     // second Node-local consent owner.

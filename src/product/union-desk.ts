@@ -171,6 +171,20 @@ export function createLaborDesk(options: {
       history: [...s.history, { id: p.id, kind: p.kind, outcome }].slice(-MAX_HISTORY),
     }
   }
+  function raiseDemoDemand(kind: LaborDemandKind): LaborDemand | null {
+      if (!enabled()) return null
+      if (kind !== 'break' && kind !== 'overtime')
+        throw new TypeError('Invalid simulated petition kind')
+      const s = read()
+      if (s.pending) return null
+      const demand: LaborDemand = {
+        id: s.revision + 1, kind,
+        raisedAtElapsedMs: s.lastTriggerElapsedMs,
+        stage: 'open', counterOfferMs: null,
+      }
+      write({ ...s, revision: s.revision + 1, pending: demand })
+      return demand
+  }
   return {
     snapshot(): LaborDeskSnapshot {
       if (!enabled()) return { enabled: false, state: null }
@@ -196,18 +210,10 @@ export function createLaborDesk(options: {
         return demand
       } catch { return null } // corrupt/unwritable Host cannot trigger spurious actions
     },
-    /** Explicitly user-launched DEMO request; never claim observed fatigue/worktime. */
+    raiseDemoDemand,
+    /** Backward-compatible explicit break petition entrypoint. */
     raiseDemoBreak(): LaborDemand | null {
-      if (!enabled()) return null
-      const s = read()
-      if (s.pending) return null
-      const demand: LaborDemand = {
-        id: s.revision + 1, kind: 'break',
-        raisedAtElapsedMs: s.lastTriggerElapsedMs,
-        stage: 'open', counterOfferMs: null,
-      }
-      write({ ...s, revision: s.revision + 1, pending: demand })
-      return demand
+      return raiseDemoDemand('break')
     },
     /** Accept/decline updates the future simulated demand schedule, never Host work. */
     respond(id: number, choice: 'accept' | 'decline'): LaborStateV1 {

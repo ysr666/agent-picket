@@ -134,7 +134,10 @@ export function createDshBrowserUnionDesk(options: {
       })
     },
     raiseDemoBreak() {
-      return enqueue(() => perform(desk => desk.raiseDemoBreak()))
+      return enqueue(() => perform(desk => desk.raiseDemoDemand('break')))
+    },
+    raiseDemoOvertime() {
+      return enqueue(() => perform(desk => desk.raiseDemoDemand('overtime')))
     },
     setPicket(raise: boolean) {
       return enqueue(async () => {

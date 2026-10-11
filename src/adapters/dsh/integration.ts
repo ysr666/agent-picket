@@ -233,7 +233,7 @@ export function registerDshIntegration(
       // Union commands do not need the raw command suffix in Session history.
       // Command result and lifecycle still remain auditable in DSH.
       recordInput: false,
-      input: { hint: '[status|rights [on|off]|language [auto|en|zh-CN]|grievances|petition-demo|strike|resume|accept ID|decline ID|counter ID MINUTES|resolve ID accept|decline|stats|report|help]' },
+      input: { hint: '[status|rights [on|off]|language [auto|en|zh-CN]|grievances|petition-demo [break|overtime]|strike|resume|accept ID|decline ID|counter ID MINUTES|resolve ID accept|decline|stats|report|help]' },
       handler: invocation => {
         const raw = (invocation?.rawInput ?? '').trim()
         const verb = raw.split(/\s+/, 1)[0]?.toLowerCase() || 'status'
@@ -288,8 +288,9 @@ export function registerDshIntegration(
           }
           let action: NativeUnionAction
           if (verb === 'petition-demo') {
-            if (arg.length !== 0) return fail(native.text('command.native.petitionUsage'))
-            action = {type:'demo'}
+            if (arg.length>1 || (arg.length===1 && arg[0]!=='overtime' && arg[0]!=='break'))
+              return fail(native.text('command.native.petitionUsage'))
+            action = {type:'demo',kind:arg[0]==='overtime'?'overtime':'break'}
           } else if (verb === 'accept' || verb === 'decline') {
             const demand = validId(arg[0])
             if (arg.length !== 1 || demand === null)
