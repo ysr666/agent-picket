@@ -1,15 +1,12 @@
 /**
- * DSH 0.2+ optional Host-only, authenticated, read-only work aggregate RPC.
- * The official DSH Connection owns browser admission, Origin/Host fence and
- * request transport. Agent Picket never opens an HTTP listener of its own.
- *
- * This is deliberately NOT wired into DSH Web yet; the privacy and lifecycle
- * contract must pass real DSH E2E before browser presentation is permitted.
+ * DSH 0.2+ optional Host-owned, authenticated, read-only work aggregates.
+ * The official DSH Connection's exact Fetch-route registry owns browser
+ * admission, Origin/Host trust fence and network transport.
+ * Agent Picket never opens an HTTP listener or reads the browser's WAL.
  */
 import type { DurableTotals } from '../node/durable-stats.ts'
 
-export const LIFETIME_WORK_RPC_CHANNEL = '/agent-picket-lifetime/v1'
-export const LIFETIME_WORK_RPC_ENDPOINT = 'work/lifetime'
+export const LIFETIME_WORK_FETCH_PATH = '/api/agent-picket/lifetime/v1'
 
 const WORK_KEYS = [
   'turnStarts', 'turnEnds', 'toolCalls', 'toolResults', 'completedTurnMs',
@@ -32,26 +29,23 @@ export interface LifetimeWorkStore {
   snapshot(): unknown
   snapshotDays(limit?: number): readonly unknown[]
 }
-export interface HostRpcResult {
-  readonly ok: boolean
-  readonly value?: unknown
-  readonly error?: { readonly code: string; readonly message: string; readonly details: object }
-}
-export interface HostConnectionRpc {
-  handle(channel: string, fn: (
-    endpoint: string, payload: unknown, signal: AbortSignal, peer: unknown
-  ) => Promise<HostRpcResult>): () => Promise<void>
+export interface HostConnectionFetch {
+  register(route: {
+    readonly path: string
+    readonly methods: readonly ['GET']
+    readonly requestBody: 'buffered'
+    readonly fetch: (request: Request) => Promise<Response>
+  }): () => Promise<void>
 }
 export interface LifetimeHostContext {
   inject?(deps: string[], cb: (ctx: {
-    connection?: {rpc?: HostConnectionRpc}
+    connection?: {fetch?: HostConnectionFetch}
     effect?(factory: () => () => void): unknown
   }) => void): unknown
   effect?(factory: () => () => void): unknown
 }
-const deny = (code: string): HostRpcResult => ({
-  ok: false, error: { code, message: 'Lifetime work unavailable', details: {} },
-})
+const responseError = (code: string, status: number): Response =>
+  Response.json({error:code},{status,headers:{'cache-control':'no-store'}})
 const validMs = (n: unknown): n is number =>
   typeof n === 'number' && Number.isSafeInteger(n) && n >= 0
 const validDay = (day: unknown): day is string => {
@@ -75,11 +69,11 @@ function workOnly(src: unknown): WorkOnlyCounts {
     completedTurnMs: raw.completedTurnMs as number,
   }
 }
-function horizon(payload: unknown): 7 | 30 | null {
-  if (!payload || typeof payload !== 'object' || Array.isArray(payload)) return null
-  const p = payload as Record<string, unknown>
-  if (Object.keys(p).length !== 1) return null
-  return p.windowDays === 7 || p.windowDays === 30 ? p.windowDays : null
+function parseHorizon(request: Request): 7 | 30 | null {
+  const url=new URL(request.url)
+  if (url.searchParams.size!==1 || !url.searchParams.has('windowDays')) return null
+  const value=url.searchParams.get('windowDays')
+  return value==='7'?7:value==='30'?30:null
 }
 /** Explicit dates and work-only values; never serializes the original Store. */
 export function projectLifetimeWork(
@@ -120,10 +114,12 @@ export function projectLifetimeWork(
   }
 }
 /**
- * Fail-closed registration: needs official inject, owned disposal and current
- * Host authorization. A stale browser session cannot reuse an earlier choice.
+ * Fail-closed registration: needs the official 0.2+ Connection, correct Host
+ * owner, and current Host permission. Exact GET routes are authenticated by
+ * the official shared /api browser transport, unlike direct RPC handle()
+ * channels which are only available on the in-process carrier.
  */
-export function registerDshLifetimeWorkRpc(ctx: LifetimeHostContext, options: {
+export function registerDshLifetimeWorkFetch(ctx: LifetimeHostContext, options: {
   readonly authorized: () => boolean
   readonly store: () => LifetimeWorkStore | undefined
   readonly now?: () => number
@@ -133,35 +129,32 @@ export function registerDshLifetimeWorkRpc(ctx: LifetimeHostContext, options: {
   let disposed=false
   ctx.effect(() => () => { disposed=true; const fn=stop; stop=undefined; if(fn) void fn() })
   ctx.inject(['connection'], child => {
-    if (disposed || stop || typeof child.connection?.rpc?.handle !== 'function') return
+    if (disposed || stop || typeof child.connection?.fetch?.register !== 'function') return
     try {
-      const registered=child.connection.rpc.handle(LIFETIME_WORK_RPC_CHANNEL,
-        async (endpoint,payload,signal) => {
-          if (disposed || signal.aborted || endpoint !== LIFETIME_WORK_RPC_ENDPOINT) {
-            return deny('unavailable')
-          }
-          const span=horizon(payload)
-          if (!span) return deny('invalid_request')
+      const registered=child.connection.fetch.register({
+        path:LIFETIME_WORK_FETCH_PATH,methods:['GET'],requestBody:'buffered',
+        async fetch(request:Request):Promise<Response> {
+          if (disposed || request.signal.aborted) return responseError('unavailable',503)
+          const days=parseHorizon(request)
+          if (!days) return responseError('invalid_request',400)
           try {
-            if (options.authorized() !== true) return deny('not_authorized')
+            if (options.authorized()!==true) return responseError('not_authorized',403)
             const store=options.store()
-            if (!store) return deny('unavailable')
-            // A future version of the Host might revoke during the synchronous
-            // aggregate read. Check again immediately before returning.
-            const response=projectLifetimeWork(
-              store.snapshot(),store.snapshotDays(31),span,(options.now??Date.now)())
-            if (signal.aborted || options.authorized() !== true) return deny('not_authorized')
-            return {ok:true,value:response}
-          } catch {return deny('unavailable')}
-        })
+            if (!store) return responseError('unavailable',503)
+            const output=projectLifetimeWork(
+              store.snapshot(),store.snapshotDays(31),days,(options.now??Date.now)())
+            if (request.signal.aborted || options.authorized()!==true) {
+              return responseError('not_authorized',403)
+            }
+            return Response.json(output,{status:200,headers:{'cache-control':'no-store'}})
+          } catch { return responseError('unavailable',503) }
+        },
+      })
       stop=registered
-      // When the Host Connection service itself reloads, Cordis disposes the
-      // injected scoped fiber. Clear our registration pointer so a re-created
-      // authenticated Connection can register a fresh handler.
       child.effect?.(() => () => {
-        if (stop === registered) stop=undefined
+        if (stop===registered) stop=undefined
         void registered()
       })
-    } catch { /* unsupported Host must not interrupt models or app startup */ }
+    } catch { /* Unsupported Host must not interrupt Agent model work. */ }
   })
 }

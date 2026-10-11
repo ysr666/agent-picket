@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { projectLifetimeWork, registerDshLifetimeWorkRpc,
-  LIFETIME_WORK_RPC_CHANNEL,LIFETIME_WORK_RPC_ENDPOINT } from '../src/adapters/dsh/lifetime-work-rpc.ts'
+import { projectLifetimeWork, registerDshLifetimeWorkFetch,
+  LIFETIME_WORK_FETCH_PATH } from '../src/adapters/dsh/lifetime-work-rpc.ts'
 
 const blank=()=>({turnStarts:3,turnEnds:2,toolCalls:5,toolResults:5,
  completedTurnMs:67_000,checked:9,safe:4,review:3,targeted:2,
@@ -10,9 +10,9 @@ const today=Date.parse('2026-10-11T12:00:00Z')
 test('work-only projection excludes all abusive verdict counters and raw fields',()=>{
  const output=projectLifetimeWork(blank(),[
   {day:'2026-10-10',totals:blank()}],7,today)
- const text=JSON.stringify(output)
+ const content=JSON.stringify(output)
  for(const secret of ['checked','targeted','safe','review','SECRET_MESSAGE','sessionId','fingerprint']){
-  assert.equal(text.includes(secret),false,secret)
+  assert.equal(content.includes(secret),false,secret)
  }
  assert.equal(output.lifetime.completedTurnMs,67000)
  assert.equal(output.recentDays.length,7)
@@ -25,74 +25,70 @@ test('reject unsafe metrics and malformed date/duplicates',()=>{
  assert.throws(()=>projectLifetimeWork(blank(),[
   {day:'2026-10-10',totals:blank()}, {day:'2026-10-10',totals:blank()}],7,today))
 })
-test('the registered official channel denies on OFF, invalid payload and revoke-in-flight',async()=>{
- let handler:((endpoint:string,payload:unknown,signal:AbortSignal,peer:unknown)=>Promise<any>)|undefined
- let unregistered=0
- let cleanup=()=>{}
+test('official exact Fetch route denies OFF, invalid query and revocation',async()=>{
+ let handler:((request:Request)=>Promise<Response>)|undefined
+ let unregistered=0,cleanup=()=>{}
  const ctx={
   effect(fn:()=>()=>void){cleanup=fn()},
-  inject(_services:string[],fn:(s:any)=>void){fn({connection:{rpc:{
-   handle(channel:string,h:typeof handler){
-    assert.equal(channel,LIFETIME_WORK_RPC_CHANNEL);handler=h
+  inject(_services:string[],fn:(s:any)=>void){fn({connection:{fetch:{
+   register(route:{path:string;methods:readonly string[];fetch:(r:Request)=>Promise<Response>}){
+    assert.equal(route.path,LIFETIME_WORK_FETCH_PATH)
+    assert.deepEqual(route.methods,['GET'])
+    handler=route.fetch
     return async()=>{unregistered++}
    },
   }}})},
  }
  let enabled=true,read=0
- registerDshLifetimeWorkRpc(ctx,{
+ registerDshLifetimeWorkFetch(ctx,{
   authorized:()=>enabled,
   store:()=>({snapshot(){read++;return blank()},snapshotDays(){return []}}),
   now:()=>today,
  })
- const invoke=(payload:unknown,signal=new AbortController().signal)=>
-  handler!(LIFETIME_WORK_RPC_ENDPOINT,payload,signal,{})
+ const invoke=(query='?windowDays=7',signal?:AbortSignal)=>
+  handler!(new Request('http://localhost'+LIFETIME_WORK_FETCH_PATH+query,
+   {signal}))
  enabled=false
- assert.equal((await invoke({windowDays:7})).error.code,'not_authorized')
+ assert.equal((await invoke()).status,403)
  assert.equal(read,0)
  enabled=true
- assert.equal((await invoke({windowDays:7,extra:'private'})).error.code,'invalid_request')
+ assert.equal((await invoke('?windowDays=7&extra=unsafe')).status,400)
  assert.equal(read,0)
- assert.equal((await invoke({windowDays:7})).ok,true)
+ const allowed=await invoke()
+ assert.equal(allowed.status,200)
+ assert.equal(allowed.headers.get('cache-control'),'no-store')
+ const result=await allowed.json() as any
+ assert.equal(result.recentDays.length,7)
  assert.equal(read,1)
  enabled=false
- const d=await invoke({windowDays:7})
- assert.equal(d.ok,false)
+ assert.equal((await invoke()).status,403)
  cleanup()
- assert.equal((await invoke({windowDays:7})).ok,false)
+ assert.equal((await invoke()).status,503)
  assert.equal(unregistered,1)
 })
-test('unsupported Host does not register any surface or throw',()=>{
- registerDshLifetimeWorkRpc({}, {authorized:()=>true,store:()=>undefined})
+test('optional Host Connection service absence never registers nor throws',()=>{
+ registerDshLifetimeWorkFetch({}, {authorized:()=>true,store:()=>undefined})
 })
-
-test('lifetime service follows a replaced Host Connection without stale handler reuse',async()=>{
- let reconnect:((child:any)=>void)|undefined
- const callbacks:Array<()=>void>=[]
- let calls=0,shutdowns=0
+test('official service reconnect re-registers after old scoped fiber ends',()=>{
+ let rebind:((s:any)=>void)|undefined
+ const mainCleanups:Array<()=>void>=[]
+ let count=0,shutdowns=0
  const ctx={
-  effect(fn:()=>()=>void){callbacks.push(fn())},
-  inject(_deps:string[],fn:(child:any)=>void){reconnect=fn},
+  effect(fn:()=>()=>void){mainCleanups.push(fn())},
+  inject(_deps:string[],fn:(s:any)=>void){rebind=fn},
  }
- registerDshLifetimeWorkRpc(ctx,{
-  authorized:()=>true,
-  store:()=>({snapshot:()=>blank(),snapshotDays:()=>[]}),now:()=>today,
- })
- const makeHost=()=>{
-  let ownShutdown:()=>void=()=>{}
-  const host={connection:{rpc:{handle(_channel:string,fn:unknown){
-   calls++
-   assert.equal(typeof fn,'function')
+ registerDshLifetimeWorkFetch(ctx,{authorized:()=>true,store:()=>undefined})
+ const createConnection=()=>{
+  let close=()=>{}
+  rebind!({connection:{fetch:{register(_spec:unknown){
+   count++
    return async()=>{shutdowns++}
-  }}},effect(fn:()=>()=>void){ownShutdown=fn()}}
-  reconnect!(host)
-  return ()=>ownShutdown()
+  }}},effect(fn:()=>()=>void){close=fn()}})
+  return close
  }
- const stopFirst=makeHost()
- assert.equal(calls,1)
- stopFirst()
- const stopSecond=makeHost()
- assert.equal(calls,2,'new trusted Connection must get a new endpoint')
- stopSecond()
- callbacks.forEach(fn=>fn())
- assert.ok(shutdowns>=2)
+ createConnection()()
+ createConnection()()
+ assert.equal(count,2)
+ mainCleanups.forEach(fn=>fn())
+ assert.equal(shutdowns,2)
 })
