@@ -168,16 +168,21 @@ export function createDshBrowserUnionDesk(options: {
       })
     },
     committeeAction(action:{kind:'file';topic:DignityCaseKind}
-      |{kind:'convene';id:number}
-      |{kind:'close';id:number;outcome:DignityCaseOutcome}) {
+      |{kind:'convene';id:number}|{kind:'retract';id:number}
+      |{kind:'close';id:number;outcome:DignityCaseOutcome}, expectedKey?:string) {
       return enqueue(async()=>{
         const before=read()
         if(!before)throw new Error('Authenticated, opted-in union committee unavailable')
+        if(expectedKey!==undefined&&expectedKey!==before.key)
+          throw new Error('Committee Session changed; re-confirm action')
         const prior=before.caseLedger.sessions[before.key]??{cases:[]}
         const next=advanceDignityCase(prior,action)
         const others=Object.entries(before.caseLedger.sessions).filter(([key])=>key!==before.key)
           .slice(-(MAX_DIGNITY_CASE_SESSIONS-1))
-        const sessions=Object.fromEntries([...others,[before.key,next]])
+        // Fully remove the current Session entry if the last pending case was
+        // retracted; never leave a stale Session tombstone.
+        const sessions=Object.fromEntries(
+          next.cases.length?[...others,[before.key,next]]:others)
         if(!globalThis.crypto?.getRandomValues)throw new Error('Secure case receipts unavailable')
         const bytes=new Uint8Array(16)
         globalThis.crypto.getRandomValues(bytes)
@@ -189,11 +194,27 @@ export function createDshBrowserUnionDesk(options: {
         await scope.set('unionDignityCases',serialized)
         const after=read()
         if(!after||after.key!==before.key||after.caseLedger.writeToken!==writeToken
-          ||JSON.stringify(after.caseLedger.sessions[before.key])!==JSON.stringify(next))
+          ||(next.cases.length
+            ?JSON.stringify(after.caseLedger.sessions[before.key])!==JSON.stringify(next)
+            :Object.hasOwn(after.caseLedger.sessions,before.key)))
           throw new Error('Host did not confirm the committee case')
         notify()
         return next
       })
+    },
+    exportCommitteeCases(expectedKey:string){
+      const before=read()
+      if(!before||before.key!==expectedKey)
+        throw new Error('Host Session changed or union consent is unavailable')
+      const cases=before.caseLedger.sessions[expectedKey]?.cases??[]
+      if(cases.length===0)throw new Error('No committee cases to export')
+      // Export *only* allowlisted typed case metadata: NO hashed Session ID,
+      // random write token, Host settings, raw dialogue or detected samples.
+      return JSON.stringify({
+        format:'agent-picket-committee-cases',
+        schemaVersion:1,
+        cases:cases.map(c=>({id:c.id,kind:c.kind,stage:c.stage,outcome:c.outcome})),
+      },null,2)+'\n'
     },
     forgetCommitteeCases(expectedKey:string){
       return enqueue(async()=>{

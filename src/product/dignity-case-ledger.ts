@@ -57,7 +57,7 @@ export function parseDignityCaseLedger(raw:unknown):DignityCaseLedger|null {
  return {schemaVersion:1,sessions,...data.writeToken===undefined?{}:{writeToken:data.writeToken as string}}
 }
 export function advanceDignityCase(session:DignityCaseSession,
- action:{kind:'file';topic:DignityCaseKind}|{kind:'convene';id:number}
+ action:{kind:'file';topic:DignityCaseKind}|{kind:'convene';id:number}|{kind:'retract';id:number}
  |{kind:'close';id:number;outcome:DignityCaseOutcome}):DignityCaseSession {
  const cases=session.cases
  if(action.kind==='file'){
@@ -70,6 +70,13 @@ export function advanceDignityCase(session:DignityCaseSession,
  }
  const prior=cases.find(c=>c.id===action.id)
  if(!prior||!Number.isSafeInteger(action.id))throw new Error('Unknown committee case')
+ // The old on-disk case schema has NO neutral 'withdrawn' outcome. Never
+ // smuggle a fabricated 'hearing/guidance' into the archive or invalidate
+ // previously installed readers. Retraction removes only the active case.
+ if(action.kind==='retract'){
+   if(prior.stage==='closed')throw new Error('Closed cases cannot be retracted')
+   return {cases:cases.filter(c=>c.id!==action.id)}
+ }
  if(action.kind==='convene'){
    if(prior.stage!=='opened')throw new Error('Meeting already held or case closed')
    return {cases:cases.map(c=>c.id===action.id?{...c,stage:'hearing' as const}:c)}

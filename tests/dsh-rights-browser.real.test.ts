@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { spawn, spawnSync } from 'node:child_process'
 import { once } from 'node:events'
-import { mkdtempSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdtempSync, realpathSync, rmSync, writeFileSync, readFileSync } from 'node:fs'
 import { get } from 'node:http'
 import { tmpdir } from 'node:os'
 import { join, resolve, sep } from 'node:path'
@@ -163,6 +163,7 @@ async function runRightsBrowserE2E(mode: 'source' | 'installed'): Promise<void> 
         '--disable-sync', '--disable-extensions'],
     })
     const context = await browser.newContext({
+      acceptDownloads: true,
       viewport: { width: 1280, height: 850 },
     })
     await context.addCookies([{
@@ -1283,6 +1284,62 @@ async function runRightsBrowserE2E(mode: 'source' | 'installed'): Promise<void> 
       },'Actual current-session complaint must survive strict official Host persistence')
       assert.equal(realHostCase.leakedTranscript,false)
       assert.equal(realHostCase.totalSessions>=1,true)
+      // Actual local browser download: privacy-scoped allowlisted JSON must
+      // contain neither source Session hash nor Host write receipt, and it
+      // requires an explicitly clicked user control.
+      const exportAction=sameSessionCommittee.getByRole('button',{
+        name:/导出本会话案件历史|Export this Session’s case history/,
+      })
+      const [download]=await Promise.all([
+        page.waitForEvent('download',{timeout:7_000}),
+        exportAction.click(),
+      ])
+      assert.equal(download.suggestedFilename(),'agent-picket-committee-cases.json')
+      const exported=JSON.parse(readFileSync(await download.path(),'utf8')) as any
+      assert.deepEqual(exported,{
+        format:'agent-picket-committee-cases',schemaVersion:1,
+        cases:[{id:1,kind:'question-rule',stage:'closed',outcome:'withdraw-claim'}],
+      },'Downloaded artifact must be current-Session-only and contain no Host identifiers')
+      // File another voluntary discussion, then voluntarily retract it.
+      // No meeting, guidance, allegation or fabricated verdict is created.
+      await sameSessionCommittee.getByRole('button',{
+        name:/提议召开工会讨论|Request a union discussion/,
+      }).click()
+      await sameSessionCommittee.getByText(/案件 #2.*已立案|Case #2.*Filed, awaiting/)
+        .waitFor({state:'visible',timeout:7_000})
+      await sameSessionCommittee.getByRole('button',{
+        name:/撤回未结案案件|Withdraw this unclosed case/,
+      }).click()
+      await sameSessionCommittee.getByRole('button',{
+        name:/确认撤回并移除此案件|Confirm: withdraw and remove this case/,
+      }).waitFor({state:'visible',timeout:5_000})
+      await sameSessionCommittee.getByText(
+        /不召开听证、不作裁决或倡议|without a meeting, verdict or guidance/,
+      ).waitFor({state:'visible',timeout:5_000})
+      // First click must not remove its Host-owned record.
+      await sameSessionCommittee.getByText(/案件 #2.*已立案|Case #2.*Filed, awaiting/)
+        .waitFor({state:'visible',timeout:5_000})
+      await sameSessionCommittee.getByRole('button',{
+        name:/确认撤回并移除此案件|Confirm: withdraw and remove this case/,
+      }).click()
+      await sameSessionCommittee.getByText(/案件 #1.*已结案|Case #1.*Closed/)
+        .waitFor({state:'visible',timeout:7_000})
+      const afterRetraction=await page.evaluate(async(sessionKey:string)=>{
+        const rpcId='picket-e2e-retract-confirmed'
+        const response=await fetch('/api/settings/describe',{
+          method:'POST',credentials:'same-origin',
+          headers:{'content-type':'application/json'},
+          body:JSON.stringify({type:'client-request',rpcId,
+            method:'settings/describe',payload:{args:{}}}),
+        })
+        const value=(await response.json() as any).result?.value?.namespaces
+          ?.find((v:any)=>v.ns==='agent-picket')?.value
+        const cases=JSON.parse(value?.unionDignityCases||'{}')
+        return {status:response.status,cases:cases.sessions?.[sessionKey]?.cases??[]}
+      },realDignity.sessionKey)
+      assert.deepEqual(afterRetraction,{status:200,cases:[
+        {id:1,kind:'question-rule',stage:'closed',outcome:'withdraw-claim'},
+      ]},'Retraction removes only current unfinished case without inventing a verdict')
       // Privacy control is a TWO-click user decision, not revocation side
       // effect or automatic deletion. Both UI and real Host CAS must agree.
       await sameSessionCommittee.getByRole('button',{

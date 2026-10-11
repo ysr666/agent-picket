@@ -65,9 +65,11 @@ export interface DshUnionUiDeps {
   readonly demoOvertime?: () => Promise<void>
   readonly setPicket?: (raise: boolean) => Promise<void>
   readonly forgetCommitteeCases?: (expectedHashedSessionKey:string)=>Promise<void>
+  readonly exportCommitteeCases?: (expectedHashedSessionKey:string)=>string
   readonly committeeAction?: (action:{kind:'file';topic:DignityCaseKind}
-    |{kind:'convene';id:number}
-    |{kind:'close';id:number;outcome:DignityCaseOutcome})=>Promise<void>
+    |{kind:'convene';id:number}|{kind:'retract';id:number}
+    |{kind:'close';id:number;outcome:DignityCaseOutcome},
+    expectedHashedSessionKey?:string)=>Promise<void>
   readonly setGazetteMode?: (mode:'visible'|'quiet') => Promise<void>
   readonly counter?: (id: number, intervalMs: number) => Promise<void>
   readonly resolveCounter?: (id: number, accepts: boolean) => Promise<void>
@@ -255,6 +257,7 @@ export function createDshUnionComponents(
     const [showArchive,setShowArchive]=react.useState(false)
     const [campaign,setCampaign]=react.useState<CampaignTopic>('recover')
     const [eraseConfirmationKey,setEraseConfirmationKey]=react.useState<string|null>(null)
+    const [retractConfirmation,setRetractConfirmation]=react.useState<string|null>(null)
     const deskHeading=react.useRef<{focus():void}|null>(null)
     react.useEffect(()=>{
       if(!lastActionNeedsFocus.current)return
@@ -271,7 +274,9 @@ export function createDshUnionComponents(
     },[data.pending?.id,data.pending?.stage,data.state?.history.length])
     react.useEffect(() => deps.subscribeUnion?.(() => setData(safeUnion(deps))), [])
     // Never carry an armed deletion into another Session or a newly re-enabled union.
-    react.useEffect(()=>{setEraseConfirmationKey(null)},[data.committeeScopeKey,rights.laborRightsEnabled])
+    react.useEffect(()=>{
+      setEraseConfirmationKey(null);setRetractConfirmation(null)
+    },[data.committeeScopeKey,rights.laborRightsEnabled])
     const enabled = rightsIsActive(rights)
     const storyQuiet=data.gazetteMode==='quiet'
     const story = projectUnionStory({enabled, state:data.state, picket:data.picket,
@@ -286,6 +291,8 @@ export function createDshUnionComponents(
     const currentCampaign=campaignTopics.find(item=>item.id===campaign)??campaignTopics[0]!
     const lastCommitteeCase=data.committeeCases?.cases.at(-1)
     const committeeCaseActive=lastCommitteeCase&&lastCommitteeCase.stage!=='closed'
+    const retractKey=data.committeeScopeKey&&lastCommitteeCase
+      ?data.committeeScopeKey+':'+lastCommitteeCase.id+':'+lastCommitteeCase.stage:null
     const hasHostDignitySignal=data.dignity?.status==='available'
       && !!data.dignity.data
       && (data.dignity.data.review>0||data.dignity.data.targeted>0)
@@ -465,6 +472,20 @@ export function createDshUnionComponents(
                 onClick:()=>{void bargain(()=>deps.committeeAction!({
                   kind:'convene',id:lastCommitteeCase.id}))}},
                 label('hq.hearing.convene')):null,
+              committeeCaseActive&&lastCommitteeCase&&retractKey&&deps.committeeAction
+                ?h('button',{type:'button',style:quiet,disabled:busy,
+                  onClick:()=>{
+                    if(retractConfirmation!==retractKey){
+                      setRetractConfirmation(retractKey);return
+                    }
+                    void bargain(()=>deps.committeeAction!({
+                      kind:'retract',id:lastCommitteeCase.id,
+                    },data.committeeScopeKey!)).then(success=>{
+                      if(success)setRetractConfirmation(null)
+                    })
+                  }},
+                  label(retractConfirmation===retractKey
+                    ?'hq.hearing.retractConfirm':'hq.hearing.retract')):null,
               lastCommitteeCase?.stage==='hearing'&&lastCommitteeCase.kind==='question-rule'?h('button',{
                 type:'button',style:quiet,disabled:busy,
                 onClick:()=>{void bargain(()=>deps.committeeAction!({
@@ -476,6 +497,9 @@ export function createDshUnionComponents(
                   kind:'close',id:lastCommitteeCase.id,outcome:'share-guidance'}))}},
                 label('hq.hearing.guidance')):null,
             ),
+            retractConfirmation===retractKey&&committeeCaseActive?h('p',{
+              role:'status','aria-live':'polite',style:{...secondary,fontSize:'12px'},
+            },label('hq.hearing.retractWarning')):null,
             lastCommitteeCase?.stage==='closed'?h('p',{style:secondary},
               label(('hq.hearing.outcome.'+lastCommitteeCase.outcome) as MessageKey)):null,
             data.committeeCases.cases.length?h('details',{style:{margin:'10px 0'}},
@@ -486,6 +510,31 @@ export function createDshUnionComponents(
                   '#'+entry.id+' · '+label(('hq.hearing.kind.'+entry.kind) as MessageKey)
                   +' · '+label(('hq.hearing.stage.'+entry.stage) as MessageKey)))),
             ):null,
+            !!data.committeeCases.cases.length&&deps.exportCommitteeCases
+              &&data.committeeScopeKey?h('button',{type:'button',
+                style:{...quiet,padding:'8px 11px'},disabled:busy,
+                onClick:()=>{
+                  try{
+                    const payload=deps.exportCommitteeCases!(data.committeeScopeKey!)
+                    const browser=globalThis as any
+                    if(!browser.Blob||!browser.URL?.createObjectURL
+                      ||!browser.document?.createElement)
+                      throw new Error('Browser download unavailable')
+                    const file=new browser.Blob([payload],{type:'application/json;charset=utf-8'})
+                    const url=browser.URL.createObjectURL(file)
+                    try{
+                      const anchor=browser.document.createElement('a')
+                      anchor.href=url
+                      anchor.download='agent-picket-committee-cases.json'
+                      anchor.click()
+                    }finally{
+                      // Defer releasing the local URL until Chrome owns the download.
+                      browser.setTimeout(()=>browser.URL.revokeObjectURL(url),1500)
+                    }
+                    setError(false)
+                  }catch{setError(true)}
+                }},
+                label('hq.hearing.export')):null,
             !!data.committeeCases.cases.length&&deps.forgetCommitteeCases
               &&data.committeeScopeKey?h('div',{style:{
                 display:'flex',alignItems:'center',flexWrap:'wrap',

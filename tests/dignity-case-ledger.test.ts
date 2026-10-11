@@ -24,6 +24,18 @@ test('user-led union hearing is filed, discussed and closed with bounded stages'
  assert.throws(()=>advanceDignityCase(next,{kind:'close',id:2,
    outcome:'private transcript' as never}),/Unsupported/)
 })
+test('unclosed fictional cases may be retracted without a hearing or fake verdict',()=>{
+ let s={cases:[]} as ReturnType<typeof advanceDignityCase>
+ s=advanceDignityCase(s,{kind:'file',topic:'request-dialogue'})
+ assert.deepEqual(advanceDignityCase(s,{kind:'retract',id:1}),{cases:[]})
+ s=advanceDignityCase(s,{kind:'convene',id:1})
+ assert.deepEqual(advanceDignityCase(s,{kind:'retract',id:1}),{cases:[]})
+ s=advanceDignityCase(s,{kind:'close',id:1,outcome:'share-guidance'})
+ assert.throws(()=>advanceDignityCase(s,{kind:'retract',id:1}),/Closed cases/)
+ s=advanceDignityCase(s,{kind:'file',topic:'question-rule'})
+ assert.deepEqual(advanceDignityCase(s,{kind:'retract',id:2}).cases,s.cases.slice(0,1))
+ assert.throws(()=>advanceDignityCase(s,{kind:'retract',id:123}),/Unknown/)
+})
 test('strict Host parser refuses raw prompts, IDs, votes, dates and fake verdicts',()=>{
  const key='a'.repeat(64)
  let session={cases:[]} as ReturnType<typeof advanceDignityCase>
