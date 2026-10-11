@@ -28,6 +28,8 @@ export interface BrowserUnionSnapshot {
   readonly committeeCases: DignityCaseSession|null
   /** Safe hashed Session discriminator for two-click irreversible erasure. */
   readonly committeeScopeKey: string|null
+  readonly committeeArchive: {readonly sessions:number;readonly cases:number;
+    readonly writeToken:string|null}|null
   readonly autoBlockEnabled: false
 }
 
@@ -71,10 +73,16 @@ export function createDshBrowserUnionDesk(options: {
         gazetteMode:data?.gazetteMode??null,
         committeeCases: data?.caseLedger.sessions[data.key] ?? (data?{cases:[]}:null),
         committeeScopeKey:data?.key??null,
+        committeeArchive:data?{
+          sessions:Object.keys(data.caseLedger.sessions).length,
+          cases:Object.values(data.caseLedger.sessions)
+            .reduce((total,session)=>total+session.cases.length,0),
+          writeToken:data.caseLedger.writeToken??null,
+        }:null,
         autoBlockEnabled: false }
     } catch {
       return { available: false, state: null, pending: null, picket: null,
-        gazetteMode:null,committeeCases:null,committeeScopeKey:null, autoBlockEnabled: false }
+        gazetteMode:null,committeeCases:null,committeeScopeKey:null,committeeArchive:null, autoBlockEnabled: false }
     }
   }
 
@@ -215,6 +223,56 @@ export function createDshBrowserUnionDesk(options: {
         schemaVersion:1,
         cases:cases.map(c=>({id:c.id,kind:c.kind,stage:c.stage,outcome:c.outcome})),
       },null,2)+'\n'
+    },
+    exportAllCommitteeCases(expectedKey:string){
+      const before=read()
+      if(!before||before.key!==expectedKey)
+        throw new Error('Host Session changed or union consent is unavailable')
+      const records=Object.entries(before.caseLedger.sessions)
+        .filter(([,session])=>session.cases.length>0)
+      if(records.length===0)throw new Error('No union cases to export')
+      // Unlink downloaded groups from the actual raw and hashed Session IDs.
+      // Group numbers are only positions inside THIS export, not persistent IDs.
+      return JSON.stringify({
+        format:'agent-picket-all-committee-cases',schemaVersion:1,
+        sessions:records.map(([key,session],i)=>({
+          group:i+1,current:key===before.key,
+          cases:session.cases.map(c=>({
+            id:c.id,kind:c.kind,stage:c.stage,outcome:c.outcome,
+          })),
+        })),
+      },null,2)+'\n'
+    },
+    forgetAllCommitteeCases(expectedKey:string, expectedSessions:number,
+      expectedCount:number,expectedWriteToken:string|null){
+      return enqueue(async()=>{
+        const before=read()
+        if(!before||before.key!==expectedKey)
+          throw new Error('Host Session changed or union consent is unavailable')
+        const count=Object.values(before.caseLedger.sessions)
+          .reduce((sum,v)=>sum+v.cases.length,0)
+        if(Object.keys(before.caseLedger.sessions).length!==expectedSessions
+          ||count!==expectedCount
+          ||((before.caseLedger.writeToken??null)!==expectedWriteToken))
+          throw new Error('Case archive changed; re-confirm full erasure')
+        if(Object.keys(before.caseLedger.sessions).length===0)return
+        if(!globalThis.crypto?.getRandomValues)
+          throw new Error('Secure deletion receipts unavailable')
+        const bytes=new Uint8Array(16)
+        globalThis.crypto.getRandomValues(bytes)
+        const writeToken=[...bytes].map(x=>x.toString(16).padStart(2,'0')).join('')
+        // Removing every pseudonymized Session key is intentional. This does
+        // NOT erase DSH conversations, other union ledgers or raw files.
+        const serialized=JSON.stringify({schemaVersion:1,sessions:{},writeToken})
+        if(activeKey!==before.key||!consent())
+          throw new Error('Session or consent changed before archive erasure')
+        await scope.set('unionDignityCases',serialized)
+        const after=read()
+        if(!after||after.key!==before.key||after.caseLedger.writeToken!==writeToken
+          ||Object.keys(after.caseLedger.sessions).length!==0)
+          throw new Error('Host did not confirm entire case archive erasure')
+        notify()
+      })
     },
     forgetCommitteeCases(expectedKey:string){
       return enqueue(async()=>{

@@ -167,6 +167,67 @@ test('user-controlled neutral retract and allowlisted case JSON export are Host-
  await assert.rejects(desk.committeeAction({kind:'retract',id:1},keyB),/unavailable/)
  desk.dispose()
 })
+test('full archive portability and erasure affect all Session cases but no other ledger',async()=>{
+ const f=fixture(),desk=f.create()
+ await desk.setActiveSession('a')
+ await desk.committeeAction({kind:'file',topic:'question-rule'})
+ await desk.committeeAction({kind:'convene',id:1})
+ await desk.committeeAction({kind:'close',id:1,outcome:'withdraw-claim'})
+ await desk.setActiveSession('b')
+ await desk.committeeAction({kind:'file',topic:'request-dialogue'})
+ await desk.setActiveSession('a')
+ const previous=desk.snapshot().committeeArchive!
+ assert.equal(previous.sessions,2)
+ assert.equal(previous.cases,2)
+ assert.match(previous.writeToken??'',/^[a-f0-9]{32}$/)
+ const artifact=desk.exportAllCommitteeCases(keyA)
+ const exported=JSON.parse(artifact) as any
+ assert.deepEqual(exported,{
+  format:'agent-picket-all-committee-cases',schemaVersion:1,
+  sessions:[
+   {group:1,current:true,cases:[{
+    id:1,kind:'question-rule',stage:'closed',outcome:'withdraw-claim',
+   }]},
+   {group:2,current:false,cases:[{
+    id:1,kind:'request-dialogue',stage:'opened',outcome:null,
+   }]},
+  ],
+ })
+ // All group labels are ordinal and cannot reveal original or hashed IDs.
+ for(const sensitive of [keyA,keyB,'writeToken','unionLedger','agent-picket-agent-id'])
+  assert.equal(artifact.includes(sensitive),false,sensitive)
+ const originals={unionLedger:f.get().unionLedger,unionPicketLedger:f.get().unionPicketLedger}
+ const writes=f.writeCount()
+ await assert.rejects(desk.forgetAllCommitteeCases(keyB,2,2,previous.writeToken),/Session changed/)
+ await assert.rejects(desk.forgetAllCommitteeCases(keyA,2,1,previous.writeToken),/changed/)
+ await assert.rejects(desk.forgetAllCommitteeCases(keyA,1,2,previous.writeToken),/changed/)
+ await assert.rejects(desk.forgetAllCommitteeCases(keyA,2,2,'f'.repeat(32)),/changed/)
+ assert.equal(f.writeCount(),writes)
+ f.fail('silent')
+ await assert.rejects(desk.forgetAllCommitteeCases(keyA,2,2,previous.writeToken),/did not confirm/)
+ f.fail('reject')
+ await assert.rejects(desk.forgetAllCommitteeCases(keyA,2,2,previous.writeToken),/rejected/)
+ assert.equal(desk.snapshot().committeeArchive?.cases,2)
+ f.fail('normal')
+ await desk.forgetAllCommitteeCases(keyA,2,2,previous.writeToken)
+ assert.deepEqual(JSON.parse(f.get().unionDignityCases!),{
+  schemaVersion:1,sessions:{},writeToken:JSON.parse(f.get().unionDignityCases!).writeToken,
+ })
+ assert.deepEqual(desk.snapshot().committeeArchive?.sessions,0)
+ assert.deepEqual(desk.snapshot().committeeArchive?.cases,0)
+ assert.deepEqual(f.get().unionLedger,originals.unionLedger)
+ assert.deepEqual(f.get().unionPicketLedger,originals.unionPicketLedger)
+ await desk.setActiveSession('b')
+ assert.deepEqual(desk.snapshot().committeeCases?.cases,[])
+ const now=desk.snapshot().committeeArchive!
+ await desk.forgetAllCommitteeCases(keyB,0,0,now.writeToken)
+ assert.throws(()=>desk.exportAllCommitteeCases(keyB),/No union cases/)
+ f.permission(false)
+ assert.equal(desk.snapshot().committeeArchive,null)
+ assert.throws(()=>desk.exportAllCommitteeCases(keyB),/unavailable/)
+ await assert.rejects(desk.forgetAllCommitteeCases(keyB,0,0,now.writeToken),/unavailable/)
+ desk.dispose()
+})
 test('Host Gazette preference survives adapter restart, consent cycle and rejects false writes',async()=>{
  const f=fixture(),a=f.create()
  await a.setActiveSession('a')
