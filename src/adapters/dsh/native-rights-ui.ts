@@ -6,6 +6,7 @@
 import type { ClientRightsSnapshot } from './client-rights-scope.ts'
 import { getWelcomeState } from './client-rights-scope.ts'
 import { projectUnionExperience } from '../../product/union-experience.ts'
+import { projectUnionStory } from '../../product/union-story.ts'
 import type { LaborStateV1 } from '../../product/union-desk.ts'
 import type { PicketActionState } from '../../product/picket-ledger.ts'
 import type { MessageKey } from '../../i18n/index.ts'
@@ -239,6 +240,7 @@ export function createDshUnionComponents(
     const [counterMinutes, setCounterMinutes] = react.useState(60)
     const lastActionNeedsFocus=react.useRef(false)
     const [showArchive,setShowArchive]=react.useState(false)
+    const [storyQuiet,setStoryQuiet]=react.useState(false)
     const [campaign,setCampaign]=react.useState<CampaignTopic>('recover')
     const deskHeading=react.useRef<{focus():void}|null>(null)
     react.useEffect(()=>{
@@ -256,6 +258,8 @@ export function createDshUnionComponents(
     },[data.pending?.id,data.pending?.stage,data.state?.history.length])
     react.useEffect(() => deps.subscribeUnion?.(() => setData(safeUnion(deps))), [])
     const enabled = rightsIsActive(rights)
+    const story = projectUnionStory({enabled, state:data.state, picket:data.picket,
+      completedTurnMs:data.completedTurnMs,coverage:data.coverage})
     const experience = projectUnionExperience({
       enabled, state:data.state, completedTurnMs:data.completedTurnMs,
       coverage:data.coverage,
@@ -377,6 +381,38 @@ export function createDshUnionComponents(
         ):null,
         h('p',{style:{...secondary,margin:0,lineHeight:1.5}},
           label('hq.action.safety')),
+      ):null,
+      // The Gazette is computed from the two independently persisted Host
+      // streams. No generated time stamps, fabricated votes, or cross-ledger
+      // order. Local quieting never affects Host tracking or other tabs.
+      enabled ? h('section',{'aria-label':label('hq.story.title'),
+        style:{...card,borderTop:'4px solid #7e6651'}},
+        h('div',{style:{display:'flex',alignItems:'center',
+          justifyContent:'space-between',gap:'10px',flexWrap:'wrap'}},
+          h('h3',{style:{margin:'0 0 6px'}},label('hq.story.title')),
+          h('button',{type:'button',style:{...quiet,padding:'7px 10px',fontSize:'12px'},
+            'aria-expanded':!storyQuiet,
+            onClick:()=>setStoryQuiet(v=>!v)},
+            label(storyQuiet?'hq.story.show':'hq.story.quiet'))),
+        !storyQuiet ? h('div',{},
+          h('p',{style:{fontWeight:700,margin:'7px 0'}},
+            label(('hq.story.scene.'+story.scene) as MessageKey)),
+          story.nextDueInWorkMs!==null ? h('p',{style:secondary},
+            deps.t('hq.story.next',{duration:formatDuration(
+              story.nextDueInWorkMs,deps.getLocale?.()??'en')})):null,
+          ...([['cases',story.cases,'hq.story.cases'],
+            ['actions',story.actions,'hq.story.actions']] as const).map(
+            ([key,records,heading])=>records.length ? h('div',{key,
+              style:{marginTop:'12px'}},
+              h('p',{style:{...secondary,fontWeight:700,margin:'0 0 5px'}},label(heading)),
+              h('ol',{style:{paddingLeft:'22px',margin:0,fontSize:'13px'}},
+                ...records.map(event=>h('li',{key:event.key,
+                  style:{padding:'3px 0'}},
+                  '#'+event.id+' · '+label(('hq.story.event.'+event.kind) as MessageKey))))
+            ):null),
+          h('p',{style:{...secondary,fontSize:'12px',margin:'12px 0 0'}},
+            label('hq.story.disclosure')),
+        ):h('p',{style:secondary},label('hq.story.muted')),
       ):null,
       enabled ? h('section',{style:{display:'grid',gap:'12px',
         gridTemplateColumns:'repeat(auto-fit,minmax(min(100%,275px),1fr))'},

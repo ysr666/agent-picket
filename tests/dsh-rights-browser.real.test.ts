@@ -478,6 +478,10 @@ async function runRightsBrowserE2E(mode: 'source' | 'installed'): Promise<void> 
     await actionBoard.waitFor({state:'visible',timeout:5_000})
     assert.match(await actionBoard.innerText(),/自动阻断关闭|automatic blocking is OFF/,
       'Symbolic placard must explicitly disclose zero Host enforcement')
+    const gazette=panel.getByRole('region',{
+      name:/工会小报|Union Gazette/,
+    })
+    await gazette.waitFor({state:'visible',timeout:5_000})
     await actionBoard.getByRole('button',{
       name:/举起象征性罢工纠察牌|Raise symbolic picket placard/,
     }).click()
@@ -485,6 +489,8 @@ async function runRightsBrowserE2E(mode: 'source' | 'installed'): Promise<void> 
       .waitFor({state:'visible',timeout:7_000})
     assert.match(await actionBoard.innerText(),/象征性罢工已登记|symbolic picket is recorded/i,
       'Host readback must confirm the symbolic picket, never just toggle local React state')
+    assert.match(await gazette.innerText(),/正在象征性纠察|Symbolic picket underway/,
+      'Only a real Host ledger picket can change the Gazette headline')
     const events=actionBoard.locator('details').filter({hasText:/象征性罢工行动记录|Recorded symbolic picket actions/})
     await events.locator('summary').click()
     assert.match(await events.innerText(),/象征性罢工开始|Symbolic picket raised/)
@@ -674,6 +680,8 @@ async function runRightsBrowserE2E(mode: 'source' | 'installed'): Promise<void> 
       'A real authorized grievance should change the Union HQ scene')
     assert.match(await dispatch.innerText(),/一项新的工会诉求|union has submitted its demands/,
       'The first-fold case desk must change when a real stored grievance arrives')
+    assert.match(await gazette.innerText(),/诉求已提交|Petition filed/,
+      'The Gazette must derive a new headline from this persisted grievance')
     await dispatch.getByRole('button',{
       name:/前往处理诉求|Review demand/,
     }).click()
@@ -688,6 +696,8 @@ async function runRightsBrowserE2E(mode: 'source' | 'installed'): Promise<void> 
       .click({ timeout: 7_000 })
     await panel.getByText(/用户还价：30 分钟|User counteroffer: 30 minutes/)
       .waitFor({ state: 'visible', timeout: 7_000 })
+    assert.match(await gazette.innerText(),/还价已存档|Counteroffer pending/,
+      'A counteroffer must change the story, not just a decorative number')
     assert.equal(await unionHeading.evaluate((element: unknown) =>
       element === (globalThis as any).document.activeElement), true,
       'After counteroffer replaces an action, keyboard focus recovers on heading')
@@ -698,6 +708,23 @@ async function runRightsBrowserE2E(mode: 'source' | 'installed'): Promise<void> 
     assert.equal(await unionHeading.evaluate((element:unknown)=>
       element===(globalThis as any).document.activeElement),true,
     'When a negotiated demand resolves and its buttons disappear, keep keyboard focus inside dialog')
+    assert.match(await gazette.innerText(),/协议已归档|Agreement recorded/,
+      'An accepted Host agreement changes the Gazette consequence')
+    if(process.env.PICKET_LIFETIME_E2E==='1'){
+      assert.match(await gazette.innerText(),/2 小时 0 分钟|2h 0m/,
+        'Verified Host work retains the original due floor: accepting shorter terms cannot retroactively create stale demands')
+    }else{
+      assert.doesNotMatch(await gazette.innerText(),
+        /再累计.*下一项诉求|Next possible petition after/,
+        'Legacy Host without complete work coverage must not invent a future petition countdown')
+    }
+    assert.match(await panel.innerText(),/当前模拟休息间隔：30 分钟|break interval: 30 minutes/,
+      'The accepted 30-minute interval is preserved separately from the next existing due threshold')
+    await gazette.getByRole('button',{name:/安静模式|Quiet this panel/}).click()
+    assert.match(await gazette.innerText(),/仅隐藏当前面板|hidden only in this panel/)
+    await gazette.getByRole('button',{name:/显示小报|Show dispatch/}).click()
+    assert.match(await gazette.innerText(),/协议已归档|Agreement recorded/,
+      'Local quieting must not delete Host case history')
     assert.match(await panel.innerText(), /协商记录|recorded cases/)
     const openArchive=panel.getByRole('button',{
       name:/查看全部协商记录|View all recorded cases/,
@@ -734,6 +761,9 @@ async function runRightsBrowserE2E(mode: 'source' | 'installed'): Promise<void> 
       'Simulated negotiated interval must persist through real Browser reload')
     assert.match(await panel.innerText(), /象征性罢工行动记录|Recorded symbolic picket actions/,
       'Host-owned symbolic picket event history must survive Chrome reload')
+    assert.match(await panel.getByRole('region',{name:/工会小报|Union Gazette/}).innerText(),
+      /协议已归档|Agreement recorded/,
+      'Gazette replay survives reload without generating another fictional event')
 
     // Independent Chrome tab/React fiber: both panels must derive rights and
     // agreements from the same authoritative, version-fenced Host settings.
