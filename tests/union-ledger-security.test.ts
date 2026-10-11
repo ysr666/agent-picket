@@ -69,6 +69,28 @@ test('legacy countered requests and legitimate agreement history remain valid',(
   assert.doesNotThrow(()=>validator()({welcomeDecision:'enabled',unionLedger:ledger}))
 })
 
+test('only bounded, numeric fictional picket events are permitted in the Host ledger',()=>{
+ const base=freshLaborState()
+ const valid={...base,revision:2,picket:{active:false,
+   history:[{id:1,kind:'picket-raised'},{id:2,kind:'picket-lowered'}]}}
+ assert.deepEqual(parseLaborState(valid),valid)
+ assert.doesNotThrow(()=>validator()({welcomeDecision:'enabled',unionLedger:encoded(valid)}))
+ for(const bad of [
+   {...valid,picket:{...valid.picket,rawPrompt:'SECRET'}},
+   {...valid,picket:{active:true,history:[{id:1,kind:'picket-raised',prompt:'SECRET'}]}},
+   {...valid,picket:{active:false,history:[{id:1,kind:'picket-raised'}]}},
+   {...valid,picket:{active:true,history:[]}},
+   {...valid,picket:{active:true,history:[{id:1,kind:'picket-raised'},
+     {id:2,kind:'picket-lowered'}]}},
+   {...valid,picket:{active:false,history:Array.from({length:13},(_,i)=>({
+     id:i,kind:'picket-lowered'}))}},
+ ]) {
+   assert.equal(parseUnionLedger(encoded(bad)),null)
+   assert.throws(()=>validator()({welcomeDecision:'enabled',unionLedger:encoded(bad)}),
+     /Unsafe or malformed/)
+ }
+})
+
 test('unknown future or malformed nested bargain fails without silent sanitization',()=>{
   const state = freshLaborState()
   for(const candidate of [

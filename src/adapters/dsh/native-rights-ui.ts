@@ -52,6 +52,7 @@ export interface DshUnionUiDeps {
   readonly subscribeSessionVisibility?: (listener: () => void) => () => void
   readonly respond?: (id: number, choice: 'accept' | 'decline') => Promise<void>
   readonly demoBreak?: () => Promise<void>
+  readonly setPicket?: (raise: boolean) => Promise<void>
   readonly counter?: (id: number, intervalMs: number) => Promise<void>
   readonly resolveCounter?: (id: number, accepts: boolean) => Promise<void>
 }
@@ -229,7 +230,6 @@ export function createDshUnionComponents(
     const [counterMinutes, setCounterMinutes] = react.useState(60)
     const lastActionNeedsFocus=react.useRef(false)
     const [showArchive,setShowArchive]=react.useState(false)
-    const [localPicket,setLocalPicket]=react.useState(false)
     const deskHeading=react.useRef<{focus():void}|null>(null)
     react.useEffect(()=>{
       if(!lastActionNeedsFocus.current)return
@@ -246,13 +246,13 @@ export function createDshUnionComponents(
     },[data.pending?.id,data.pending?.stage,data.state?.history.length])
     react.useEffect(() => deps.subscribeUnion?.(() => setData(safeUnion(deps))), [])
     const enabled = rightsIsActive(rights)
-    // This is a temporary panel-only theatrical placard, never Host enforcement.
-    react.useEffect(()=>{if(!enabled)setLocalPicket(false)},[enabled])
     const experience = projectUnionExperience({
       enabled, state:data.state, completedTurnMs:data.completedTurnMs,
       coverage:data.coverage,
     })
     const label = (key:MessageKey) => deps.t(key)
+    const picketActive = data.available === true && data.state?.picket?.active === true
+    const picketHistory = data.available === true ? data.state?.picket?.history ?? [] : []
     const completeWork = data.coverage === 'complete' &&
       data.completedTurnMs !== null && data.completedTurnMs >= 0
     const choice = async (next:'enabled'|'not-now')=>{
@@ -323,9 +323,8 @@ export function createDshUnionComponents(
             onClick:()=>{void choice('not-now')}},label('hq.disable')):null,
         ),
       ),
-      // The action board outranks analytics and bargaining in the first fold.
-      // Its petition button uses the real Host-owned fictional case ledger;
-      // the picket placard is intentionally local to this panel only.
+      // The Host-owned fictional picket and demand ledger outrank analytics.
+      // Neither can change real Agent task admission or reveal raw prompts.
       enabled ? h('section',{'aria-label':label('hq.action.title'),
         style:{...card,borderTop:'5px solid #bd6f49',
           background:'var(--dsw-alias-bg-layer-2, #f6f8fb)'}},
@@ -347,14 +346,24 @@ export function createDshUnionComponents(
               type:'button',style:primary,disabled:busy,
               onClick:()=>{void bargain(deps.demoBreak!)}},
               label('hq.action.petition')):null,
-          h('button',{type:'button',style:quiet,
-            'aria-pressed':localPicket,
-            onClick:()=>setLocalPicket(value=>!value)},
-            label(localPicket?'hq.action.lower':'hq.action.raise')),
+          data.available && deps.setPicket ? h('button',{type:'button',style:quiet,
+            disabled:busy,'aria-pressed':picketActive,
+            onClick:()=>{void bargain(()=>deps.setPicket!(!picketActive))}},
+            label(picketActive?'hq.action.lower':'hq.action.raise')):null,
         ),
         h('p',{role:'status','aria-live':'polite',style:{
           fontSize:'13px',fontWeight:650,margin:'0 0 8px'}},
-          label(localPicket?'hq.action.placardOn':'hq.action.placardOff')),
+          label(data.available !== true?'hq.action.unavailable'
+            :picketActive?'hq.action.placardOn':'hq.action.placardOff')),
+        picketHistory.length ? h('details',{style:{margin:'8px 0 12px'}},
+          h('summary',{style:{cursor:'pointer',fontSize:'13px',fontWeight:650}},
+            label('hq.action.history')),
+          h('ol',{style:{paddingLeft:'19px',fontSize:'13px',margin:'8px 0'}},
+            ...picketHistory.slice(-4).reverse().map(event=>h('li',{
+              key:event.id,style:{margin:'4px 0'}},
+              '#'+event.id+' · '+label(event.kind==='picket-raised'
+                ?'hq.action.eventRaised':'hq.action.eventLowered')))),
+        ):null,
         h('p',{style:{...secondary,margin:0,lineHeight:1.5}},
           label('hq.action.safety')),
       ):null,

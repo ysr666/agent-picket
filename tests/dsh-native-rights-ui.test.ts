@@ -432,7 +432,7 @@ test('explainable Union HQ index reveals factors and the next evidence-based pet
 test('first-fold dispatch prioritizes verified work and current case before fictional discontent',()=>{
  const {hooks}=fakeReact()
  const base=deps(rights({welcomeDecision:'enabled',laborRightsEnabled:true}))
- const d:DshUnionUiDeps={...base.d,readUnion:()=>({
+ const d:DshUnionUiDeps={...base.d,setPicket:async()=>{},readUnion:()=>({
   pending:{id:29,kind:'break',stage:'open'},completedTurnMs:0,
   coverage:'complete',lifetimeMs:360_000,available:true,
   lifetimeWork:{
@@ -485,9 +485,11 @@ test('charter is readable with union OFF, while union action controls stay hidde
 test('picket action is strictly symbolic and sample petition uses the existing Host ledger',async()=>{
  const {hooks}=fakeReact()
  let hostPetitions=0
+ const recordedActions:boolean[]=[]
  const d:DshUnionUiDeps={
   ...deps(rights({welcomeDecision:'enabled',laborRightsEnabled:true})).d,
   demoBreak:async()=>{hostPetitions++},
+  setPicket:async active=>{recordedActions.push(active)},
   readUnion:()=>({pending:null,completedTurnMs:null,coverage:'unavailable',
    lifetimeMs:null,available:true}),
  }
@@ -497,7 +499,14 @@ test('picket action is strictly symbolic and sample petition uses the existing H
  assert.ok(petition,'A sample demand must be available through the real Host-owned fictional ledger')
  await petition.props.onClick()
  assert.equal(hostPetitions,1)
- assert.ok(nodes.some(n=>n.type==='button'&&n.props['aria-pressed']===false))
+ const raise=nodes.find(n=>n.type==='button'&&n.props['aria-pressed']===false)
+ assert.ok(raise)
+ await raise.props.onClick()
+ // The click calls the authorized DSH port; the static fake React tree
+ // deliberately cannot claim a Host state change until an actual readback.
+ await Promise.resolve()
+ await Promise.resolve()
+ assert.deepEqual(recordedActions,[true])
  assert.ok(nodes.some(n=>n.children.includes('hq.action.safety')))
  assert.ok(nodes.some(n=>n.children.includes('hq.action.placardOff')))
  const noSession={...d,readUnion:()=>({pending:null,completedTurnMs:null,
@@ -505,7 +514,8 @@ test('picket action is strictly symbolic and sample petition uses the existing H
  const panel=createDshUnionComponents(hooks,{createPortal:child=>child},noSession).UnionPanel()
  const other=walk(panel)
  assert.equal(other.some(n=>n.type==='button'&&n.children.includes('hq.action.petition')),false)
- assert.ok(other.some(n=>n.type==='button'&&n.children.includes('hq.action.raise')))
+ assert.equal(other.some(n=>n.type==='button'&&n.children.includes('hq.action.raise')),false)
+ assert.ok(other.some(n=>n.children.includes('hq.action.unavailable')))
 })
 
 test('Union HQ case dossier is readable, uses recorded ID, and preserves actionable negotiation',()=>{
