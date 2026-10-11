@@ -17,7 +17,7 @@
 - `npm run check`：275 tests / 251 PASS / 0 FAIL / 24 conditional SKIP，包含 Host 权限 OFF/ON、会话键兼容、CAS 回执、重复幂等、Host 拒绝、侧车损坏、仍正常执行的旧内存演示。
 - 真正 **DSH 0.1.2-rc.1 SettingsFile + CommandRuntime** 命令测试：`/union strike/resume` 保存到 Host 官方侧车，Web 共享会话键可读；模拟 OFF 的旧命令不会改变侧车。
 - DSH 0.2 Chrome 源码/离线安装 2/2 PASS，DSH 0.1 Chrome 源码/离线安装 2/2 PASS（均已继续保留原有 UI、授权与工时测试）。
-- DSH 0.2 的真实 CommandRuntime 命令链路尚未通过相同的专用 Host 命令集成测试；0.2 官方 CLI 的实机 Chrome 回归不等于专门验证 `/union strike` 交互。不能误称覆盖此项。
+- **新增 DSH 0.2.0-rc.2 真正 CommandRuntime 集成测试**：由官方 dsh-commands 模块执行 rights on → strike → status → resume；再以 Web desk 对同一哈希 Session 的 Host 模拟记录进行双向读写，覆盖重复命令、撤权、Host 拒写、私密数据和实际命令生命周期。设置服务是使用真实 Config Schema 验证和 CAS 的隔离替身，尚不等于真实 SettingsForms/Profile 文件管理器。此测试已加入 DSH 0.2 Chrome 验收脚本；真实 CommandRuntime 测试与真实 Host Chrome 验收相互补充，不能误称完整 CLI+Web 端到端已完成。
 
 ## 暂未解决
 

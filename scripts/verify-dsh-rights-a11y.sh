@@ -25,6 +25,19 @@ if [[ "$version" == 0.1.* ]]; then
   exit "$rc"
 fi
 
+# A real DSH 0.2 CommandRuntime is exercised with an isolated, strict
+# Config-validated Host-settings stand-in. The full genuine DSH 0.2 Host
+# settings API is separately covered by the Chrome tests below: neither
+# source may be substituted for the other in release claims.
+if (cd "$root" && AGENT_PICKET_TEST_DSH_VERSION="$version" \
+    node --experimental-strip-types --test \
+    tests/dsh-command-runtime-02.real.test.ts) > "$proof/real-commands-02.log" 2>&1; then
+  echo "DSH02_COMMAND_RUNTIME=PASS stage=real-commands-with-isolated-settings"
+else
+  echo "DSH02_COMMAND_RUNTIME=FAIL stage=real-commands-with-isolated-settings"
+  exit 1
+fi
+
 # DSH 0.2 needs an officially installed Web Profile for a writable Host
 # settings namespace. --patch alone can expose the sidebar yet withhold the
 # actual consent writer. Do not spoof or inject Host settings in this test.
