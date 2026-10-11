@@ -233,7 +233,7 @@ export function registerDshIntegration(
       // Union commands do not need the raw command suffix in Session history.
       // Command result and lifecycle still remain auditable in DSH.
       recordInput: false,
-      input: { hint: '[status|rights [on|off]|language [auto|en|zh-CN]|grievances|petition-demo|accept ID|decline ID|counter ID MINUTES|resolve ID accept|decline|stats|report|help]' },
+      input: { hint: '[status|rights [on|off]|language [auto|en|zh-CN]|grievances|petition-demo|strike|resume|accept ID|decline ID|counter ID MINUTES|resolve ID accept|decline|stats|report|help]' },
       handler: invocation => {
         const raw = (invocation?.rawInput ?? '').trim()
         const verb = raw.split(/\s+/, 1)[0]?.toLowerCase() || 'status'
@@ -394,10 +394,19 @@ export function registerDshIntegration(
           })}
         }
         if (verb === 'status') {
-          const active=agentId&&typeof sessionId==='string'&&ceremony?.snapshot(agentId,sessionId).active
+          const hostUnion=options.getNativeUnion?.()
+          const hostEnabled=hostUnion?.enabled()===true
+          const shared=typeof sessionId==='string' && sessionId
+            ?hostUnion?.picketStatus(sessionId)??null:null
+          const active=shared!==null ?shared.active
+            :Boolean(agentId&&typeof sessionId==='string'
+              &&ceremony?.snapshot(agentId,sessionId).active)
           return {kind:'success',text:[
             msg('command.legacy.statusIntro'),
-            msg(active?'command.legacy.statusPicketOn':'command.legacy.statusPicketOff'),
+            msg(hostEnabled && shared===null?'command.legacy.statusPicketHostUnavailable'
+              :shared!==null
+                ?(active?'command.legacy.statusPicketStoredOn':'command.legacy.statusPicketStoredOff')
+                :(active?'command.legacy.statusPicketOn':'command.legacy.statusPicketOff')),
             options.getNativeUnion?.()?.status(typeof sessionId==='string'?sessionId:undefined)
               ??(options.getNativeUnion?.()?.text('command.native.unavailable')
                 ??en['command.native.unavailable']),
@@ -405,8 +414,25 @@ export function registerDshIntegration(
           ].join(' ')}
         }
         if (verb === 'strike' || verb === 'resume') {
-          if(!ceremony||!agentId||typeof sessionId!=='string'||!sessionId)
+          if(raw!==verb || !agentId || typeof sessionId!=='string'||!sessionId)
             return {kind:'error',text:msg('command.legacy.picketUnsupported')}
+          const native=options.getNativeUnion?.()
+          // When the same Host has explicitly enabled simulation, there is
+          // one persistent action ledger shared by CLI and Web. Failed CAS or
+          // revoked consent must not fall back to a misleading local success.
+          if(native?.enabled()===true) {
+            if(native.picketStatus(sessionId)===null)
+              return {kind:'error',text:msg('command.legacy.picketSharedError')}
+            return native.picket(sessionId,verb==='strike').then(outcome=>{
+              ceremony?.resume(agentId,sessionId) // discard old local-only demo
+              return {kind:'success' as const,text:msg(
+                outcome==='unchanged'?'command.legacy.picketSharedUnchanged':
+                  verb==='strike'?'command.legacy.picketSharedStarted':
+                    'command.legacy.picketSharedEnded')}
+            },()=>({kind:'error' as const,
+              text:msg('command.legacy.picketSharedError')}))
+          }
+          if(!ceremony)return {kind:'error',text:msg('command.legacy.picketUnsupported')}
           if(verb==='strike'){
             ceremony.start(agentId,sessionId)
             return {kind:'success',text:msg('command.legacy.picketStarted')}
