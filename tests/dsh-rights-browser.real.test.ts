@@ -1300,6 +1300,15 @@ async function runRightsBrowserE2E(mode: 'source' | 'installed'): Promise<void> 
         format:'agent-picket-committee-cases',schemaVersion:1,
         cases:[{id:1,kind:'question-rule',stage:'closed',outcome:'withdraw-claim'}],
       },'Downloaded artifact must be current-Session-only and contain no Host identifiers')
+      // REAL HOST INVALIDATION: arm an irreversible single-Session erasure,
+      // then add a case through the same authenticated DSH Host. The first
+      // confirmation must expire immediately instead of erasing new records.
+      await sameSessionCommittee.getByRole('button',{
+        name:/删除本会话的工会案件记录|Delete this Session’s committee cases/,
+      }).click()
+      await sameSessionCommittee.getByRole('button',{
+        name:/确认永久删除本会话案件|Confirm permanent deletion of these cases/,
+      }).waitFor({state:'visible',timeout:5_000})
       // File another voluntary discussion, then voluntarily retract it.
       // No meeting, guidance, allegation or fabricated verdict is created.
       await sameSessionCommittee.getByRole('button',{
@@ -1307,6 +1316,28 @@ async function runRightsBrowserE2E(mode: 'source' | 'installed'): Promise<void> 
       }).click()
       await sameSessionCommittee.getByText(/案件 #2.*已立案|Case #2.*Filed, awaiting/)
         .waitFor({state:'visible',timeout:7_000})
+      await sameSessionCommittee.getByRole('button',{
+        name:/删除本会话的工会案件记录|Delete this Session’s committee cases/,
+      }).waitFor({state:'visible',timeout:7_000})
+      assert.equal(await sameSessionCommittee.getByRole('button',{
+        name:/确认永久删除本会话案件|Confirm permanent deletion of these cases/,
+      }).count(),0,'A fresh Host case invalidates the previous irreversible erasure approval')
+      // Host readback still contains BOTH cases. A second click on the old
+      // approval was never allowed to write anything.
+      const preservedAfterStaleApproval=await page.evaluate(async(key:string)=>{
+        const response=await fetch('/api/settings/describe',{
+          method:'POST',credentials:'same-origin',
+          headers:{'content-type':'application/json'},
+          body:JSON.stringify({type:'client-request',
+            rpcId:'picket-release-check-stale-current-case',
+            method:'settings/describe',payload:{args:{}}}),
+        })
+        const value=(await response.json() as any).result?.value?.namespaces
+          ?.find((row:any)=>row.ns==='agent-picket')?.value
+        return JSON.parse(value?.unionDignityCases||'{}').sessions?.[key]?.cases??[]
+      },realDignity.sessionKey)
+      assert.deepEqual(preservedAfterStaleApproval.map((c:any)=>c.id),[1,2],
+        'First delete approval must not erase a case that was filed afterward')
       await sameSessionCommittee.getByRole('button',{
         name:/撤回未结案案件|Withdraw this unclosed case/,
       }).click()
