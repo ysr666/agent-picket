@@ -59,6 +59,18 @@ for flavor in source installed; do
     ((fail+=1))
     continue
   fi
+  # Explicitly opt-in acceptance mode: install the audited, test-only OFFLINE
+  # LLM adapter into a throwaway official Web Profile. Not shipped in npm;
+  # no API keys, network connection or model billing.
+  if [[ "${PICKET_DIGNITY_E2E:-0}" == "1" ]]; then
+    if ! DSH_HOME="$profile" "$AGENT_PICKET_DSH_BIN" plugin --profile web add \
+      "$root/tests/fixtures/offline-web-provider" \
+      >"$proof/offline-provider-$flavor.log" 2>&1; then
+      echo "FLAVOR=$flavor FAIL stage=official-offline-provider-install"
+      ((fail+=1))
+      continue
+    fi
+  fi
   pattern='real Chrome: source'
   if [[ "$flavor" == installed ]]; then
     pattern='real Chrome: OFFLINE INSTALLED'

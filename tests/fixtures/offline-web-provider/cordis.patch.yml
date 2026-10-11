@@ -1,0 +1,3 @@
+- insert:
+    - id: agent-picket-offline-provider
+      name: '@agent-picket/offline-web-provider'
