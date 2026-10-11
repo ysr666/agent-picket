@@ -90,7 +90,7 @@ async function runRightsBrowserE2E(mode: 'source' | 'installed'): Promise<void> 
     env: {
       ...process.env,
       DSH_HOME: installedWebProfile ?? join(root, 'isolated-home'),
-      AGENT_PICKET_STATS: 'off',
+      AGENT_PICKET_STATS: process.env.PICKET_LIFETIME_E2E==='1'?'on':'off',
       DEEPSEEK_API_KEY: '',
       OPENAI_API_KEY: '',
       HTTP_PROXY: 'http://127.0.0.1:9',
@@ -365,10 +365,42 @@ async function runRightsBrowserE2E(mode: 'source' | 'installed'): Promise<void> 
       'Primary buttons need a discernible border in forced-colors mode')
     await page.emulateMedia({forcedColors:'none'})
     assert.match(await panel.innerText(), /工会模拟未开启|simulation is off/)
+    const requestLifetime = async () => page.evaluate(async () => {
+      const response=await fetch('/api/agent-picket/lifetime/v1?windowDays=7')
+      const value=await response.json().catch(()=>null) as any
+      return {httpStatus:response.status,value}
+    })
+    if (installedWebProfile && process.env.PICKET_LIFETIME_E2E==='1') {
+      const before=await requestLifetime()
+      assert.equal(before.httpStatus,403,'OFF must be rejected by the official work-only route')
+      assert.equal(before.value?.error,'not_authorized','OFF must never expose local work history')
+    }
     await panel.getByRole('button', { name: /支持 AI 权益|Enable Simulation/ }).click()
     await panel.getByText(/工会模拟进行中|simulation is active/).waitFor({
       state: 'visible', timeout: 5_000,
     })
+    if (installedWebProfile && process.env.PICKET_LIFETIME_E2E==='1') {
+      const allowed=await requestLifetime()
+      assert.equal(allowed.httpStatus,200,
+        'An informed ON choice should enable only the work-only Host summary')
+      const data=allowed.value as any
+      assert.equal(data?.schemaVersion,1)
+      assert.equal(data?.recentDays.length,7)
+      const negatives=await page.evaluate(async()=>{
+        const base='/api/agent-picket/lifetime/v1'
+        const unauthenticated=await fetch(base+'?windowDays=7',{credentials:'omit'})
+        const malformed=await fetch(base+'?windowDays=7&unexpected=private')
+        return {noCookie:unauthenticated.status,extraQuery:malformed.status}
+      })
+      assert.equal(negatives.noCookie,401,
+        'DSH must reject a request without the authenticated Host browser cookie')
+      assert.equal(negatives.extraQuery,400,
+        'The work-only route must reject query extras before reading data')
+      for (const unsafe of ['checked','targeted','safe','review','prompt','sessionId','fingerprint']) {
+        assert.equal(JSON.stringify(data).includes(unsafe),false,
+          'Authorized work-only response must exclude '+unsafe)
+      }
+    }
     const enabledText = await panel.innerText()
     assert.match(enabledText, /工会诉求与协商|Union demands/)
     // Legacy DSH has no selected Session during first-run. DSH 0.1.7 may
@@ -591,6 +623,12 @@ async function runRightsBrowserE2E(mode: 'source' | 'installed'): Promise<void> 
     await panel.getByText(/工会模拟未开启|simulation is off/).waitFor({
       state: 'visible', timeout: 5_000,
     })
+    if (installedWebProfile && process.env.PICKET_LIFETIME_E2E==='1') {
+      const revoked=await requestLifetime()
+      assert.equal(revoked.httpStatus,403)
+      assert.equal(revoked.value?.error,'not_authorized',
+        'Revoked permission must deny any subsequent Host work-only RPC request')
+    }
     await panel.getByRole('button', { name: /关闭|Close/ }).click()
     await page.reload({ waitUntil: 'domcontentloaded' })
     await skipOfficialProvider()
