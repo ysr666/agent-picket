@@ -22,14 +22,7 @@ export interface BargainHistory {
   readonly kind: LaborDemandKind
   readonly outcome: BargainOutcome
 }
-export type PicketActionKind = 'picket-raised' | 'picket-lowered'
-export interface PicketActionState {
-  readonly active: boolean
-  readonly history: readonly { readonly id: number; readonly kind: PicketActionKind }[]
-}
 export interface LaborStateV1 {
-  /** Host-owned fictional picket event log, optional for backward compatibility. */
-  readonly picket?: PicketActionState
   readonly schemaVersion: 1
   readonly revision: number
   readonly agreement: LaborAgreement
@@ -56,7 +49,6 @@ export const DEFAULT_LABOR_AGREEMENT: Readonly<LaborAgreement> = Object.freeze({
 const MIN_INTERVAL = 15 * 60_000
 const MAX_INTERVAL = 24 * 60 * 60_000
 const MAX_HISTORY = 20
-const MAX_PICKET_HISTORY = 12
 
 function validInterval(value: unknown): value is number {
   return typeof value === 'number' && Number.isSafeInteger(value)
@@ -87,12 +79,10 @@ export function freshLaborState(): LaborStateV1 {
 }
 export function parseLaborState(value: unknown): LaborStateV1 | null {
   if (value === undefined || value === null) return freshLaborState()
-  const baseKeys = [
+  if (!hasExactlyKeys(value, [
     'schemaVersion', 'revision', 'agreement', 'nextBreakDueMs',
     'nextOvertimeDueMs', 'lastTriggerElapsedMs', 'pending', 'history',
-  ]
-  if (!hasExactlyKeys(value, Object.hasOwn(value ?? {}, 'picket')
-    ? [...baseKeys, 'picket'] : baseKeys)) return null
+  ])) return null
   const s = value as Partial<LaborStateV1>
   if (s.schemaVersion !== 1 || !validTime(s.revision)
     || !hasExactlyKeys(s.agreement, ['breakIntervalMs', 'overtimeIntervalMs'])
@@ -106,18 +96,6 @@ export function parseLaborState(value: unknown): LaborStateV1 | null {
   if (!s.history.every((h: BargainHistory) =>
     hasExactlyKeys(h, ['id', 'kind', 'outcome']) && validTime(h.id)
     && kinds.includes(h.kind) && outcomes.includes(h.outcome))) return null
-  const picket = s.picket
-  if (picket !== undefined && (
-    !hasExactlyKeys(picket, ['active','history'])
-    || typeof picket.active !== 'boolean'
-    || !Array.isArray(picket.history) || picket.history.length > MAX_PICKET_HISTORY
-    || !picket.history.every(event => hasExactlyKeys(event, ['id','kind'])
-      && validTime(event.id)
-      && (event.kind === 'picket-raised' || event.kind === 'picket-lowered'))
-    || (picket.history.length > 0 && picket.active
-      !== (picket.history[picket.history.length - 1]?.kind === 'picket-raised'))
-    || (picket.history.length === 0 && picket.active)
-  )) return null
   const p = s.pending
   if (p === undefined) return null
   if (p !== null && (!hasExactlyKeys(p, [
@@ -142,12 +120,6 @@ export function parseLaborState(value: unknown): LaborStateV1 | null {
     history: s.history.map((h: BargainHistory) => ({
       id: h.id, kind: h.kind, outcome: h.outcome,
     })),
-    // Preserve original canonical key order: legacy fields first, optional
-    // v1 extension last. Host validates a byte-exact sanitized round-trip.
-    ...(picket === undefined ? {} : { picket: {
-      active: picket.active,
-      history: picket.history.map(event => ({ id: event.id, kind: event.kind })),
-    } }),
   }
 }
 
@@ -236,22 +208,6 @@ export function createLaborDesk(options: {
       }
       write({ ...s, revision: s.revision + 1, pending: demand })
       return demand
-    },
-    /** A user-directed fictional picket is only a bounded Host ledger event.
-     * No Host task admission, file operations, timers or Agent autonomy. */
-    setPicket(raise: boolean): LaborStateV1 {
-      requireEnabled()
-      if (typeof raise !== 'boolean') throw new TypeError('Invalid picket action')
-      const state = read()
-      const old = state.picket ?? { active: false, history: [] }
-      if (old.active === raise) return state
-      if (!Number.isSafeInteger(state.revision + 1)) throw new RangeError('Picket revision exhausted')
-      const kind: PicketActionKind = raise ? 'picket-raised' : 'picket-lowered'
-      return write({
-        ...state, revision:state.revision + 1,
-        picket: { active: raise,
-          history:[...old.history, { id: state.revision + 1, kind }].slice(-MAX_PICKET_HISTORY) },
-      })
     },
     /** Accept/decline updates the future simulated demand schedule, never Host work. */
     respond(id: number, choice: 'accept' | 'decline'): LaborStateV1 {

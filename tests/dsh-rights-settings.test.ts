@@ -5,11 +5,11 @@ import {
 } from '../src/adapters/dsh/rights-settings.ts'
 
 test('DSH Host schema defaults fictional rights to unseen/OFF and rejects malformed choices', () => {
-  assert.deepEqual(RightsSettingsSchema({}), {welcomeDecision:'unseen',unionLedger:'',commandLocale:'auto'})
+  assert.deepEqual(RightsSettingsSchema({}), {welcomeDecision:'unseen',unionLedger:'',unionPicketLedger:'',commandLocale:'auto'})
   assert.deepEqual(RightsSettingsSchema({welcomeDecision:'enabled'}),
-    {welcomeDecision:'enabled',unionLedger:'',commandLocale:'auto'})
+    {welcomeDecision:'enabled',unionLedger:'',unionPicketLedger:'',commandLocale:'auto'})
   assert.deepEqual(RightsSettingsSchema({welcomeDecision:'not-now'}),
-    {welcomeDecision:'not-now',unionLedger:'',commandLocale:'auto'})
+    {welcomeDecision:'not-now',unionLedger:'',unionPicketLedger:'',commandLocale:'auto'})
   assert.throws(() => RightsSettingsSchema({welcomeDecision:'automatic-strike' as never}))
   assert.throws(() => RightsSettingsSchema({welcomeDecision:true as never}))
   assert.equal(RightsSettingsSchema({commandLocale:'zh-CN'}).commandLocale,'zh-CN')
@@ -55,11 +55,11 @@ test('Host validation rejects extra/unrecognized ledger fields and oversized sto
     },
   })
   assert.ok(validate)
-  assert.doesNotThrow(()=>validate!({welcomeDecision:'enabled',unionLedger:''}))
+  assert.doesNotThrow(()=>validate!({welcomeDecision:'enabled',unionLedger:'',unionPicketLedger:''}))
   assert.doesNotThrow(()=>validate!({welcomeDecision:'enabled',
-    unionLedger:JSON.stringify({schemaVersion:1,sessions:{}})}))
+    unionLedger:JSON.stringify({schemaVersion:1,sessions:{}}),unionPicketLedger:''}))
   assert.doesNotThrow(()=>validate!({welcomeDecision:'enabled',
-    unionLedger:JSON.stringify({schemaVersion:1,sessions:{},writeToken:'a'.repeat(32)})}))
+    unionLedger:JSON.stringify({schemaVersion:1,sessions:{},writeToken:'a'.repeat(32)}),unionPicketLedger:''}))
   for(const input of [
     '{"schemaVersion":1,"sessions":{},"prompt":"SENSITIVE"}',
     '{"schemaVersion":2,"sessions":{}}',
@@ -67,6 +67,6 @@ test('Host validation rejects extra/unrecognized ledger fields and oversized sto
     'not valid JSON',
     'z'.repeat(25_000),
   ]) {
-    assert.throws(()=>validate!({welcomeDecision:'enabled',unionLedger:input}),/Unsafe/)
+    assert.throws(()=>validate!({welcomeDecision:'enabled',unionLedger:input,unionPicketLedger:''}),/Unsafe/)
   }
 })

@@ -8,16 +8,19 @@
  */
 import { createLaborDesk, parseLaborState, type Coverage, type LaborDemand, type LaborStateV1 } from '../../product/union-desk.ts'
 import { parseUnionLedger, MAX_UNION_SESSIONS, MAX_UNION_LEDGER_BYTES } from '../../product/union-ledger.ts'
+import { parsePicketLedger, MAX_PICKET_LEDGER_BYTES, MAX_PICKET_SESSIONS, MAX_PICKET_HISTORY, type PicketActionState } from '../../product/picket-ledger.ts'
 import type { DshSettingsScope } from './client-rights-scope.ts'
 
 export interface UnionSettingsSection {
   readonly welcomeDecision: 'unseen' | 'enabled' | 'not-now'
   readonly unionLedger: string
+  readonly unionPicketLedger?: string
 }
 export interface BrowserUnionSnapshot {
   readonly available: boolean
   readonly state: LaborStateV1 | null
   readonly pending: LaborDemand | null
+  readonly picket: PicketActionState | null
   readonly autoBlockEnabled: false
 }
 
@@ -46,16 +49,18 @@ export function createDshBrowserUnionDesk(options: {
     if (view.status !== 'ready' || view.mode !== 'host' || !view.writable
       || view.value?.welcomeDecision !== 'enabled' || !consent() || !activeKey) return null
     const ledger = parseUnionLedger(view.value.unionLedger)
-    if (!ledger) return null
-    return { view, ledger, key: activeKey }
+    const picketLedger = parsePicketLedger(view.value.unionPicketLedger ?? '')
+    if (!ledger || !picketLedger) return null
+    return { view, ledger, picketLedger, key: activeKey }
   }
   const snapshot = (): BrowserUnionSnapshot => {
     try {
       const data = read()
       const state = data ? parseLaborState(data.ledger.sessions[data.key]) : null
-      return { available: state !== null, state, pending: state?.pending ?? null, autoBlockEnabled: false }
+      return { available: state !== null, state, pending: state?.pending ?? null,
+        picket: data?.picketLedger.sessions[data.key] ?? null, autoBlockEnabled: false }
     } catch {
-      return { available: false, state: null, pending: null, autoBlockEnabled: false }
+      return { available: false, state: null, pending: null, picket: null, autoBlockEnabled: false }
     }
   }
 
@@ -132,7 +137,41 @@ export function createDshBrowserUnionDesk(options: {
       return enqueue(() => perform(desk => desk.raiseDemoBreak()))
     },
     setPicket(raise: boolean) {
-      return enqueue(() => perform(desk => desk.setPicket(raise)))
+      return enqueue(async () => {
+        if (typeof raise !== 'boolean') throw new TypeError('Invalid symbolic picket action')
+        const before=read()
+        if (!before) throw new Error('Authorized, enabled Host union settings unavailable')
+        const prior=before.picketLedger.sessions[before.key] ??
+          {active:false,history:[]} as PicketActionState
+        if (prior.active===raise) return prior
+        const previousId=prior.history.at(-1)?.id ?? 0
+        const id=previousId+1
+        if (!Number.isSafeInteger(id)) throw new Error('Picket event counter exhausted')
+        const kind=raise?'picket-raised' as const:'picket-lowered' as const
+        const next:PicketActionState={
+          active:raise,
+          history:[...prior.history,{id,kind}].slice(-MAX_PICKET_HISTORY),
+        }
+        const entries=Object.entries(before.picketLedger.sessions)
+          .filter(([key])=>key!==before.key).slice(-(MAX_PICKET_SESSIONS-1))
+        const sessions=Object.fromEntries([...entries,[before.key,next]])
+        if(!globalThis.crypto?.getRandomValues)throw new Error('Secure picket receipts unavailable')
+        const bytes=new Uint8Array(16)
+        globalThis.crypto.getRandomValues(bytes)
+        const writeToken=[...bytes].map(v=>v.toString(16).padStart(2,'0')).join('')
+        const serialized=JSON.stringify({schemaVersion:1,sessions,writeToken})
+        if(serialized.length>MAX_PICKET_LEDGER_BYTES)throw new Error('Picket ledger capacity exceeded')
+        if(activeKey!==before.key||!consent())
+          throw new Error('Session or consent changed before symbolic action')
+        await scope.set('unionPicketLedger',serialized)
+        const after=read()
+        if (!after || after.key!==before.key
+          ||after.picketLedger.writeToken!==writeToken
+          ||JSON.stringify(after.picketLedger.sessions[before.key])!==JSON.stringify(next))
+          throw new Error('Host did not confirm symbolic picket action')
+        notify()
+        return next
+      })
     },
     respond(id: number, choice: 'accept' | 'decline') {
       return enqueue(() => perform(desk => desk.respond(id, choice)))
