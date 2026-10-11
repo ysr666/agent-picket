@@ -26,6 +26,8 @@ export interface BrowserUnionSnapshot {
   readonly picket: PicketActionState | null
   readonly gazetteMode: 'visible'|'quiet'|null
   readonly committeeCases: DignityCaseSession|null
+  /** Safe hashed Session discriminator for two-click irreversible erasure. */
+  readonly committeeScopeKey: string|null
   readonly autoBlockEnabled: false
 }
 
@@ -68,10 +70,11 @@ export function createDshBrowserUnionDesk(options: {
         picket: data?.picketLedger.sessions[data.key] ?? null,
         gazetteMode:data?.gazetteMode??null,
         committeeCases: data?.caseLedger.sessions[data.key] ?? (data?{cases:[]}:null),
+        committeeScopeKey:data?.key??null,
         autoBlockEnabled: false }
     } catch {
       return { available: false, state: null, pending: null, picket: null,
-        gazetteMode:null,committeeCases:null, autoBlockEnabled: false }
+        gazetteMode:null,committeeCases:null,committeeScopeKey:null, autoBlockEnabled: false }
     }
   }
 
@@ -190,6 +193,32 @@ export function createDshBrowserUnionDesk(options: {
           throw new Error('Host did not confirm the committee case')
         notify()
         return next
+      })
+    },
+    forgetCommitteeCases(expectedKey:string){
+      return enqueue(async()=>{
+        const before=read()
+        if(!before)throw new Error('Authenticated, opted-in committee records unavailable')
+        if(before.key!==expectedKey)throw new Error('Committee Session changed; re-confirm deletion')
+        const prior=before.caseLedger.sessions[before.key]
+        if(!prior?.cases.length)return // Nothing in this Session to erase.
+        const sessions=Object.fromEntries(Object.entries(before.caseLedger.sessions)
+          .filter(([key])=>key!==before.key))
+        if(!globalThis.crypto?.getRandomValues)throw new Error('Secure deletion receipts unavailable')
+        const bytes=new Uint8Array(16)
+        globalThis.crypto.getRandomValues(bytes)
+        const writeToken=[...bytes].map(x=>x.toString(16).padStart(2,'0')).join('')
+        const serialized=JSON.stringify({schemaVersion:1,sessions,writeToken})
+        if(serialized.length>MAX_DIGNITY_CASE_BYTES)
+          throw new Error('Committee record exceeds size limit')
+        if(activeKey!==before.key||!consent())
+          throw new Error('Session or consent changed before committee record deletion')
+        await scope.set('unionDignityCases',serialized)
+        const after=read()
+        if(!after||after.key!==before.key||after.caseLedger.writeToken!==writeToken
+          ||Object.hasOwn(after.caseLedger.sessions,before.key))
+          throw new Error('Host did not confirm the committee record was deleted')
+        notify()
       })
     },
     setPicket(raise: boolean) {

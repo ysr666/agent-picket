@@ -47,6 +47,7 @@ export interface UnionPanelData {
   readonly lifetimeWork?: LifetimeClientSnapshot
   readonly dignity?: BrowserDignitySnapshot
   readonly committeeCases?: DignityCaseSession|null
+  readonly committeeScopeKey?: string|null
 }
 export interface DshUnionUiDeps {
   readonly rights: DshRightsPort
@@ -63,6 +64,7 @@ export interface DshUnionUiDeps {
   readonly demoBreak?: () => Promise<void>
   readonly demoOvertime?: () => Promise<void>
   readonly setPicket?: (raise: boolean) => Promise<void>
+  readonly forgetCommitteeCases?: (expectedHashedSessionKey:string)=>Promise<void>
   readonly committeeAction?: (action:{kind:'file';topic:DignityCaseKind}
     |{kind:'convene';id:number}
     |{kind:'close';id:number;outcome:DignityCaseOutcome})=>Promise<void>
@@ -252,6 +254,7 @@ export function createDshUnionComponents(
     const lastActionNeedsFocus=react.useRef(false)
     const [showArchive,setShowArchive]=react.useState(false)
     const [campaign,setCampaign]=react.useState<CampaignTopic>('recover')
+    const [eraseConfirmationKey,setEraseConfirmationKey]=react.useState<string|null>(null)
     const deskHeading=react.useRef<{focus():void}|null>(null)
     react.useEffect(()=>{
       if(!lastActionNeedsFocus.current)return
@@ -267,6 +270,8 @@ export function createDshUnionComponents(
       if(modal && !modal.contains(doc?.activeElement))deskHeading.current?.focus()
     },[data.pending?.id,data.pending?.stage,data.state?.history.length])
     react.useEffect(() => deps.subscribeUnion?.(() => setData(safeUnion(deps))), [])
+    // Never carry an armed deletion into another Session or a newly re-enabled union.
+    react.useEffect(()=>{setEraseConfirmationKey(null)},[data.committeeScopeKey,rights.laborRightsEnabled])
     const enabled = rightsIsActive(rights)
     const storyQuiet=data.gazetteMode==='quiet'
     const story = projectUnionStory({enabled, state:data.state, picket:data.picket,
@@ -294,11 +299,11 @@ export function createDshUnionComponents(
       try { await deps.rights.choose(next) } catch {setError(true)}
       finally {setBusy(false)}
     }
-    const bargain = async (action: () => Promise<void>) => {
-      if (busy || !enabled) return
+    const bargain = async (action: () => Promise<void>):Promise<boolean> => {
+      if (busy || !enabled) return false
       setBusy(true);setError(false)
-      try { await action();lastActionNeedsFocus.current=true;setData(safeUnion(deps)) }
-      catch { setError(true) }
+      try { await action();lastActionNeedsFocus.current=true;setData(safeUnion(deps));return true }
+      catch { setError(true);return false }
       finally { setBusy(false) }
     }
     const act = async (kind:'accept'|'decline')=>{
@@ -481,6 +486,28 @@ export function createDshUnionComponents(
                   '#'+entry.id+' · '+label(('hq.hearing.kind.'+entry.kind) as MessageKey)
                   +' · '+label(('hq.hearing.stage.'+entry.stage) as MessageKey)))),
             ):null,
+            !!data.committeeCases.cases.length&&deps.forgetCommitteeCases
+              &&data.committeeScopeKey?h('div',{style:{
+                display:'flex',alignItems:'center',flexWrap:'wrap',
+                gap:'8px',paddingTop:'10px',marginTop:'10px',
+                borderTop:'1px solid #d4d7d8',
+              }},
+                h('button',{type:'button',disabled:busy,
+                  style:{...quiet,padding:'8px 11px'},
+                  onClick:()=>{
+                    if(eraseConfirmationKey!==data.committeeScopeKey){
+                      setEraseConfirmationKey(data.committeeScopeKey!);return
+                    }
+                    void bargain(()=>deps.forgetCommitteeCases!(data.committeeScopeKey!))
+                      .then(success=>{if(success)setEraseConfirmationKey(null)})
+                  }},
+                  label(eraseConfirmationKey===data.committeeScopeKey
+                    ?'hq.hearing.eraseConfirm':'hq.hearing.erase')),
+                eraseConfirmationKey===data.committeeScopeKey?h('p',{
+                  role:'status','aria-live':'polite',
+                  style:{...secondary,fontSize:'12px',margin:0}},
+                  label('hq.hearing.eraseWarning')):null,
+              ):null,
             h('p',{style:{...secondary,fontSize:'12px',margin:'8px 0 0'}},
               label('hq.hearing.disclosure')),
           ):null,

@@ -1283,6 +1283,45 @@ async function runRightsBrowserE2E(mode: 'source' | 'installed'): Promise<void> 
       },'Actual current-session complaint must survive strict official Host persistence')
       assert.equal(realHostCase.leakedTranscript,false)
       assert.equal(realHostCase.totalSessions>=1,true)
+      // Privacy control is a TWO-click user decision, not revocation side
+      // effect or automatic deletion. Both UI and real Host CAS must agree.
+      await sameSessionCommittee.getByRole('button',{
+        name:/删除本会话的工会案件记录|Delete this Session’s committee cases/,
+      }).click()
+      await sameSessionCommittee.getByRole('button',{
+        name:/确认永久删除本会话案件|Confirm permanent deletion of these cases/,
+      }).waitFor({state:'visible',timeout:5_000})
+      await sameSessionCommittee.getByText(
+        /仅删除本会话的模拟案件元数据|Only this Session’s fictional committee-case metadata/,
+      ).waitFor({state:'visible',timeout:5_000})
+      await sameSessionCommittee.getByText(/案件 #1.*已结案|Case #1.*Closed/)
+        .waitFor({state:'visible',timeout:5_000})
+      await sameSessionCommittee.getByRole('button',{
+        name:/确认永久删除本会话案件|Confirm permanent deletion of these cases/,
+      }).click()
+      await sameSessionCommittee.getByText(
+        /目前没有已立案件|No committee case has been filed/,
+      ).waitFor({state:'visible',timeout:8_000})
+      const erased=await page.evaluate(async(sessionKey:string)=>{
+        const rpcId='picket-e2e-case-erased-verify'
+        const response=await fetch('/api/settings/describe',{
+          method:'POST',credentials:'same-origin',
+          headers:{'content-type':'application/json'},
+          body:JSON.stringify({type:'client-request',rpcId,
+            method:'settings/describe',payload:{args:{}}}),
+        })
+        const value=(await response.json() as any).result?.value?.namespaces
+          ?.find((v:any)=>v.ns==='agent-picket')?.value
+        const cases=JSON.parse(value?.unionDignityCases||'{}')
+        return {status:response.status,caseRetained:Object.hasOwn(cases.sessions??{},sessionKey),
+          simulationStillEnabled:value?.welcomeDecision==='enabled',
+          originalLedgerStillString:typeof value?.unionLedger==='string',
+          placardStillString:typeof value?.unionPicketLedger==='string'}
+      },realDignity.sessionKey)
+      assert.deepEqual(erased,{status:200,caseRetained:false,
+        simulationStillEnabled:true,originalLedgerStillString:true,
+        placardStillString:true},
+        'User-confirmed Host deletion must erase only this Session’s case metadata')
 
     }
     assert.deepEqual(browserErrors, [], 'No uncaught Browser errors are acceptable')
