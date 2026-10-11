@@ -100,8 +100,16 @@ export function createBrowserLifetimeWorkReader(options:{
     return value
   }
   async function load(horizon:7|30=7):Promise<void>{
-    if(terminated||!permission||!previousSession||!allowed()) {
-      invalidate('off'); return
+    if(!allowed()){
+      // Revocation may be first observed by an explicit background refresh,
+      // before React calls snapshot() or a Host invalidation calls setScope().
+      // Forget the scope as well as the response, so a later opt-in for the
+      // identical Session MUST issue a fresh authenticated Host request.
+      permission=false;previousSession=null
+      invalidate('off');return
+    }
+    if(terminated||!permission||!previousSession){
+      invalidate('off');return
     }
     const id=++epoch
     abort?.abort()

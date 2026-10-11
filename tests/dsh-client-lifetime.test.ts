@@ -159,3 +159,22 @@ test('a thrown UI observer cannot prevent a consent-scoped work snapshot refresh
  assert.ok(healthy>=2,'the next healthy observer must still get updates')
  reader.dispose()
 })
+
+test('a revoked permission observed by an explicit refresh cannot poison later re-authorization',async()=>{
+ let authorized=true,reads=0
+ const reader=createBrowserLifetimeWorkReader({authorized:()=>authorized,
+  fetcher:async()=>{reads++;return fetchOk()}})
+ reader.setScope(true,'same-session')
+ await settle()
+ assert.equal(reads,1)
+ authorized=false
+ // A background work / dignity refresh can observe opt-out before React
+ // renders a snapshot. No intervening snapshot() is guaranteed.
+ await reader.refresh()
+ authorized=true
+ reader.setScope(true,'same-session')
+ await settle()
+ assert.equal(reads,2,'A fresh Host authorization must re-fetch even with unchanged Session')
+ assert.equal(reader.snapshot().status,'available')
+ reader.dispose()
+})

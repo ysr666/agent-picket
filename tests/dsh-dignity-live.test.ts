@@ -63,3 +63,36 @@ test('authenticated official Host fetch returns only counts, denies OFF, invalid
  assert.equal((await fetch(good)).status,503)
  assert.equal(stopped,1)
 })
+
+test('Host dignity route allowlists live count data even when its source carries private extras',async()=>{
+ let route:{fetch:(r:Request)=>Promise<Response>}|undefined
+ const ctx={
+  effect(_fn:()=>()=>void){},
+  inject(_deps:string[],fn:(c:any)=>void){fn({connection:{fetch:{
+   register(def:any){route=def;return async()=>{}},
+  }}})},
+ }
+ const key='c'.repeat(64)
+ let source:any={schemaVersion:1,source:'dsh-host-volatile-dignity',
+  checked:2,safe:1,review:0,targeted:1,latest:'targeted',
+  origin:'claimed-user-source',enforcement:false,persistence:'memory-only',
+  sessionId:'PRIVATE_REAL_SESSION',rawText:'PRIVATE_PROMPT_CONTENT',
+  attachments:[{name:'PRIVATE_ATTACHMENT'}]}
+ registerDshDignityFetch(ctx,{authorized:()=>true,lookup:()=>source})
+ const get=()=>route!.fetch(new Request('http://localhost'+DIGNITY_FETCH_PATH+'?sessionKey='+key))
+ const visible=await get()
+ assert.equal(visible.status,200)
+ const text=await visible.text()
+ assert.deepEqual(Object.keys(JSON.parse(text)).sort(),[
+  'schemaVersion','source','checked','safe','review','targeted','latest',
+  'origin','enforcement','persistence',
+ ].sort(),'Only the documented field allowlist can leave Host')
+ for(const secret of ['PRIVATE_REAL_SESSION','PRIVATE_PROMPT_CONTENT','PRIVATE_ATTACHMENT'])
+  assert.equal(text.includes(secret),false,'Host must not expose arbitrary metadata')
+ source={...source,checked:1,rawText:'another PRIVATE_PROMPT'}
+ assert.equal((await get()).status,503,
+  'Malformed totals must not be serialized as trusted Host verdicts')
+ source={...source,checked:2,enforcement:true}
+ assert.equal((await get()).status,503,
+  'Host must refuse accidental enforcement/provenance claim changes')
+})

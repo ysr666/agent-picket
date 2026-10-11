@@ -46,7 +46,13 @@ export function createBrowserDignityReader(options:{
     return Array.from(new Uint8Array(hash),b=>b.toString(16).padStart(2,'0')).join('')
   })
   async function load(){
-    if(terminated||!session||!allowed()){clear('off');return}
+    if(!allowed()){
+      // Refresh can catch Host opt-out before the browser renders a snapshot.
+      // Drop the Session binding too, preventing reauthorization of the same
+      // Session from incorrectly skipping the next authenticated GET.
+      session=null;clear('off');return
+    }
+    if(terminated||!session){clear('off');return}
     const key=++epoch
     abort?.abort()
     const controller=new AbortController()
@@ -82,8 +88,12 @@ export function createBrowserDignityReader(options:{
       }
       return current
     },
-    subscribe(fn:()=>void){listeners.add(fn);return()=>{listeners.delete(fn)}},
+    subscribe(fn:()=>void){
+      if(terminated)return()=>{}
+      listeners.add(fn);return()=>{listeners.delete(fn)}
+    },
     setScope(enabled:boolean,activeSession:string|null){
+      if(terminated)return
       const next=enabled===true&&allowed()&&typeof activeSession==='string'&&activeSession
         ?activeSession:null
       if(next===session)return
