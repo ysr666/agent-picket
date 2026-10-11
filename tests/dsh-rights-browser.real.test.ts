@@ -533,6 +533,28 @@ async function runRightsBrowserE2E(mode: 'source' | 'installed'): Promise<void> 
       assert.ok(historyReflow.scroll<=historyReflow.width+2,
         'Authenticated lifetime ledger must not overflow a 320 CSS-pixel viewport')
       await page.setViewportSize({width:1280,height:850})
+
+      // Real Chrome network-break and manual recovery. The source Host stays
+      // healthy; we abort only the *browser's* work-only request so a failed
+      // fetch can never be mistaken for a valid zero-minute ledger.
+      const workRoute='**/api/agent-picket/lifetime/v1?windowDays=7'
+      let blockedRequests=0
+      await page.route(workRoute,async (route:any)=>{
+        blockedRequests++
+        await route.abort('failed')
+      })
+      await history.getByRole('button',{name:/近 7 天|7 days/}).click()
+      await history.getByText(/无法读取长期数据|history is unavailable/)
+        .waitFor({state:'visible',timeout:7_000})
+      assert.equal(blockedRequests,1,'An intentional browser outage must actually intercept the Host request')
+      assert.doesNotMatch(await history.innerText(),/累计完成 2 个轮次|2 completed turns/,
+        'A failed work-history fetch must hide the previous aggregate, never show stale data')
+      await page.unroute(workRoute)
+      await history.getByRole('button',{name:/重新读取工作记录|Refresh work history/}).click()
+      await history.getByText(/累计完成 2 个轮次|2 completed turns/)
+        .waitFor({state:'visible',timeout:7_000})
+      assert.match(await history.innerText(),/0 小时 6 分钟|0h 6m/,
+        'The user can recover the original six-minute Host ledger without page reload')
     } else {
       assert.match(enabledText,
         /宿主长期累计统计尚未接入|not connected|无法读取长期数据|history is unavailable|正在读取已授权|Reading authorized/,

@@ -92,3 +92,21 @@ test('official service reconnect re-registers after old scoped fiber ends',()=>{
  mainCleanups.forEach(fn=>fn())
  assert.equal(shutdowns,2)
 })
+
+test('30-day work rollup preserves exact nonzero UTC days across a month boundary',()=>{
+ const now=Date.parse('2026-03-01T01:05:00.000Z')
+ const first=Date.parse('2026-01-31T00:00:00.000Z')
+ const totals=blank()
+ const daily=Array.from({length:30},(_,index)=>{
+   const day=new Date(first+index*86_400_000).toISOString().slice(0,10)
+   return {day,totals:{...totals,completedTurnMs:(index+1)*60_000}}
+ })
+ const response=projectLifetimeWork(totals,daily,30,now)
+ assert.equal(response.recentDays.length,30)
+ assert.equal(response.recentDays[0]?.day,'2026-01-31')
+ assert.equal(response.recentDays.at(-1)?.day,'2026-03-01')
+ assert.equal(response.recentDays[0]?.work.completedTurnMs,60_000)
+ assert.equal(response.recentDays[28]?.work.completedTurnMs,29*60_000)
+ assert.equal(response.recentDays[29]?.work.completedTurnMs,30*60_000)
+ assert.equal(JSON.stringify(response).includes('targeted'),false)
+})
