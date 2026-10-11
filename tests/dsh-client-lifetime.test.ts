@@ -108,3 +108,34 @@ test('HTTP 403 and 401 produce unavailable, never a zero-work claim',async()=>{
   assert.equal(reader.snapshot().data,null)
  }
 })
+
+test('revocation observed between Host notifications irreversibly clears cached history',async()=>{
+ let allowed=true,calls=0
+ const reader=createBrowserLifetimeWorkReader({authorized:()=>allowed,
+  fetcher:async()=>{calls++;return fetchOk()}})
+ reader.setScope(true,'session-a')
+ await settle()
+ assert.equal(reader.snapshot().status,'available')
+ allowed=false
+ assert.equal(reader.snapshot().status,'off')
+ allowed=true
+ assert.equal(reader.snapshot().status,'off',
+  'Once a revoked permission has been observed, a previous work response must never reappear')
+ reader.setScope(true,'session-a')
+ await settle()
+ assert.equal(calls,2,'Reauthorization requires a new authenticated Host read')
+ assert.equal(reader.snapshot().status,'available')
+})
+
+test('reject 7-day histories that belong to an older UTC window despite valid JSON',async()=>{
+ const wrong=response()
+ wrong.recentDays.forEach(day=>{
+  day.day=new Date(Date.parse(day.day+'T00:00:00Z')-86_400_000).toISOString().slice(0,10)
+ })
+ const reader=createBrowserLifetimeWorkReader({authorized:()=>true,
+  fetcher:async()=>new Response(JSON.stringify(wrong))})
+ reader.setScope(true,'session-a')
+ await settle()
+ assert.deepEqual(reader.snapshot(),{status:'unavailable',data:null},
+  'Date labels must prove that the chart covers the advertised Host UTC window')
+})

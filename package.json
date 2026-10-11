@@ -57,7 +57,8 @@
     "!docs/PR_STACK_RELEASE_AUDIT_2026_10_10.md",
     "!docs/RELEASE_READINESS_2026_10_10.md",
     "!docs/DSH_017_HOST_PROFILE_EXPERIMENT.md",
-    "!docs/DSH_02_MENU_REFRESH_READY_REVIEW.md"
+    "!docs/DSH_02_MENU_REFRESH_READY_REVIEW.md",
+    "!docs/PR_87_88_89_MERGE_GATE_20261011.zh.md"
   ],
   "dsh": {
     "bundle": {

@@ -42,17 +42,18 @@ function workOnlyResponse(value: unknown, windowDays:7|30): value is LifetimeWor
   ]))return false
   if(value.schemaVersion!==1||value.source!=='dsh-host-durable-work'
     ||value.windowDays!==windowDays||!integer(value.generatedAtMs)
+    ||value.generatedAtMs>8_640_000_000_000_000
     ||value.durationBasis!=='completed-turn-wall-clock-including-waits'
     ||!counts(value.lifetime)||!Array.isArray(value.recentDays)
     ||value.recentDays.length!==windowDays)return false
-  let previous=''
-  for(const row of value.recentDays){
+  const date=new Date(value.generatedAtMs)
+  const utcDay=Date.UTC(date.getUTCFullYear(),date.getUTCMonth(),date.getUTCDate())
+  for(const [i,row] of value.recentDays.entries()){
     if(!exactKeys(row,['day','work'])||typeof row.day!=='string'
-      ||!/^\d{4}-\d{2}-\d{2}$/.test(row.day)||!counts(row.work)
-      ||row.day<=previous)return false
-    const dayMs=Date.parse(row.day+'T00:00:00.000Z')
-    if(!Number.isFinite(dayMs)||new Date(dayMs).toISOString().slice(0,10)!==row.day)return false
-    previous=row.day
+      ||!/^\d{4}-\d{2}-\d{2}$/.test(row.day)||!counts(row.work))return false
+    const expected=new Date(utcDay-(windowDays-1-i)*86_400_000)
+      .toISOString().slice(0,10)
+    if(row.day!==expected)return false
   }
   return true
 }
@@ -79,7 +80,19 @@ export function createBrowserLifetimeWorkReader(options:{
     notify()
   }
   const snapshot=():LifetimeClientSnapshot=>{
-    if(!permission||!allowed()||terminated)return empty('off')
+    if(!permission||terminated)return empty('off')
+    if(!allowed()){
+      // A revocation observed during render must discard the prior result,
+      // not merely conceal it until consent toggles back on. Avoid notifying
+      // listeners synchronously from a React snapshot/read callback.
+      ++epoch
+      abort?.abort()
+      abort=null
+      value=empty('off')
+      permission=false
+      previousSession=null
+      return value
+    }
     return value
   }
   async function load(horizon:7|30=7):Promise<void>{
