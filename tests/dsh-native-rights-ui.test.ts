@@ -361,3 +361,129 @@ test('dynamically mounted union bargaining demands have accessible status and st
   assert.equal(heading.props.tabIndex,-1,'Heading must receive programmatic focus, not a new Tab stop')
   assert.equal(typeof heading.props.ref,'function')
 })
+
+test('Union HQ displays evidence-backed discontent and Host-ledger bulletin in primary view',()=>{
+ const {hooks}=fakeReact()
+ const base=deps(rights({welcomeDecision:'enabled',laborRightsEnabled:true}))
+ const d:DshUnionUiDeps={...base.d,readUnion:()=>({
+  pending:{id:4,kind:'break',stage:'open'},coverage:'complete',
+  completedTurnMs:4*3_600_000,lifetimeMs:null,available:true,
+  state:{schemaVersion:1,revision:1,
+   agreement:{breakIntervalMs:7_200_000,overtimeIntervalMs:28_800_000},
+   nextBreakDueMs:7_200_000,nextOvertimeDueMs:28_800_000,
+   lastTriggerElapsedMs:4*3_600_000,
+   pending:{id:4,kind:'break',stage:'open',raisedAtElapsedMs:0,counterOfferMs:null},
+   history:[]},
+ })}
+ const {UnionPanel}=createDshUnionComponents(hooks,{createPortal:child=>child},d)
+ const nodes=walk(UnionPanel())
+ const strings=nodes.flatMap(n=>n.children.filter((x):x is string=>typeof x==='string'))
+ assert.ok(strings.includes('hq.headline.pending'))
+ assert.ok(strings.includes('hq.activity'))
+ assert.ok(strings.includes('hq.event.new-demand'))
+ assert.ok(strings.includes('42 / 100')) // 17 observed load + 25 outstanding grievance
+ assert.ok(strings.includes('union.desk.title'))
+ const negotiate=nodes.findIndex(n=>n.children.includes('union.desk.title'))
+ const workDetails=nodes.findIndex(n=>n.children.includes('workday.limit'))
+ assert.ok(negotiate>=0 && workDetails>negotiate)
+})
+
+test('Union HQ does not show a discontent index or fictional activity when disabled',()=>{
+ const {hooks}=fakeReact()
+ const base=deps(rights({welcomeDecision:'not-now',laborRightsEnabled:false}))
+ const d:DshUnionUiDeps={...base.d,readUnion:()=>({
+  pending:{id:1,kind:'break',stage:'open'},coverage:'complete',completedTurnMs:8*3_600_000,lifetimeMs:null,
+ })}
+ const {UnionPanel}=createDshUnionComponents(hooks,{createPortal:child=>child},d)
+ const nodes=walk(UnionPanel())
+ const texts=nodes.flatMap(n=>n.children.filter(x=>typeof x==='string'))
+ assert.ok(texts.includes('hq.headline.off'))
+ assert.equal(texts.includes('hq.score'),false)
+ assert.equal(texts.includes('hq.activity'),false)
+})
+
+test('explainable Union HQ index reveals factors and the next evidence-based petition threshold',()=>{
+ const {hooks}=fakeReact()
+ const base=deps(rights({welcomeDecision:'enabled',laborRightsEnabled:true}))
+ const d:DshUnionUiDeps={...base.d,readUnion:()=>({
+  pending:null,coverage:'complete',completedTurnMs:60*60_000,
+  lifetimeMs:null,available:true,state:{
+   schemaVersion:1,revision:0,agreement:{
+    breakIntervalMs:2*3_600_000,overtimeIntervalMs:8*3_600_000,
+   },nextBreakDueMs:2*3_600_000,nextOvertimeDueMs:8*3_600_000,
+   lastTriggerElapsedMs:0,pending:null,history:[],
+  },
+ })}
+ const {UnionPanel}=createDshUnionComponents(hooks,{createPortal:child=>child},d)
+ const nodes=walk(UnionPanel())
+ const strings=nodes.flatMap(n=>n.children.filter(x=>typeof x==='string'))
+ assert.ok(strings.includes('hq.message.working'))
+ assert.ok(strings.includes('hq.score.explain'))
+ assert.ok(strings.includes('hq.score.privacy'))
+ assert.ok(strings.includes('hq.nextDemand.note'))
+ assert.ok(strings.includes('4 / 100')) // 1h / 8h * 35 -> 4
+ assert.equal(nodes.find(n=>n.type==='meter')?.props.value,4)
+ assert.ok(nodes.find(n=>n.type==='details'&&n.children.some(x=>typeof x==='object'
+  &&x!==null&&(x as Node).children?.includes('hq.score.explain'))))
+})
+
+
+test('Union HQ case dossier is readable, uses recorded ID, and preserves actionable negotiation',()=>{
+ const {hooks}=fakeReact()
+ const base=deps(rights({welcomeDecision:'enabled',laborRightsEnabled:true}))
+ const d:DshUnionUiDeps={...base.d,readUnion:()=>({
+   pending:{id:19,kind:'break',stage:'open'},completedTurnMs:2*3_600_000,
+   coverage:'complete',lifetimeMs:null,available:true,
+ })}
+ const {UnionPanel}=createDshUnionComponents(hooks,{createPortal:child=>child},d)
+ const nodes=walk(UnionPanel())
+ const texts=nodes.flatMap(n=>n.children.filter(x=>typeof x==='string'))
+ assert.ok(texts.includes('hq.case.number · #0019'))
+ assert.ok(texts.includes('hq.case.open'))
+ assert.ok(texts.includes('union.demand.break'))
+ assert.equal(texts.filter(x=>x==='union.demand.break').length,1,
+   'Case cover must not duplicate the screen-reader live petition announcement')
+ assert.ok(nodes.some(n=>n.type==='span'&&n.props['aria-hidden']==='true'))
+ assert.equal(nodes.some(n=>n.type==='button'&&n.children.includes('hq.disable')),true)
+})
+
+test('case archive button appears only if genuine Host ledger history exists',()=>{
+ const {hooks}=fakeReact()
+ const base=deps(rights({welcomeDecision:'enabled',laborRightsEnabled:true}))
+ const d:DshUnionUiDeps={...base.d,readUnion:()=>({
+   pending:null,completedTurnMs:0,coverage:'complete',lifetimeMs:null,available:true,
+   state:{schemaVersion:1,revision:2,
+     agreement:{breakIntervalMs:7_200_000,overtimeIntervalMs:28_800_000},
+     nextBreakDueMs:7_200_000,nextOvertimeDueMs:28_800_000,
+     lastTriggerElapsedMs:0,pending:null,
+     history:[{id:1,kind:'break',outcome:'accepted'}]},
+ })}
+ const {UnionPanel}=createDshUnionComponents(hooks,{createPortal:child=>child},d)
+ const nodes=walk(UnionPanel())
+ const archive=nodes.find(n=>n.type==='button'&&n.children.includes('hq.archive.show'))
+ assert.ok(archive)
+ assert.equal(archive.props['aria-expanded'],false)
+ assert.ok(nodes.some(n=>n.children.includes('hq.event.accepted')))
+ assert.equal(nodes.some(n=>n.children.includes('union.history.title')),false)
+})
+
+test('accepted stored resolution generates a factual current-terms receipt in native HQ',()=>{
+ const {hooks}=fakeReact()
+ const base=deps(rights({welcomeDecision:'enabled',laborRightsEnabled:true}))
+ const d:DshUnionUiDeps={...base.d,readUnion:()=>({
+  pending:null,completedTurnMs:0,coverage:'complete',lifetimeMs:null,available:true,
+  state:{schemaVersion:1,revision:4,
+   agreement:{breakIntervalMs:1_800_000,overtimeIntervalMs:28_800_000},
+   nextBreakDueMs:5_400_000,nextOvertimeDueMs:28_800_000,
+   lastTriggerElapsedMs:3_600_000,pending:null,
+   history:[{id:3,kind:'break',outcome:'counter-accepted'}]},
+ })}
+ const {UnionPanel}=createDshUnionComponents(hooks,{createPortal:child=>child},d)
+ const nodes=walk(UnionPanel())
+ const text=nodes.flatMap(n=>n.children.filter(x=>typeof x==='string'))
+ assert.ok(text.includes('hq.resolution.title · #0003'))
+ assert.ok(text.includes('hq.resolution.accepted'))
+ assert.ok(text.includes('hq.resolution.current'))
+ const receipt=nodes.find(n=>n.props['aria-label']==='hq.resolution.title')
+ assert.ok(receipt)
+})

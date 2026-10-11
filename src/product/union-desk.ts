@@ -159,10 +159,15 @@ export function createLaborDesk(options: {
     }
     return {
       ...s, revision: s.revision + 1, agreement, pending: null,
-      nextBreakDueMs: p.kind === 'break'
-        ? s.lastTriggerElapsedMs + agreement.breakIntervalMs : s.nextBreakDueMs,
-      nextOvertimeDueMs: p.kind === 'overtime'
-        ? s.lastTriggerElapsedMs + agreement.overtimeIntervalMs : s.nextOvertimeDueMs,
+      // A negotiation resolves the work observed when the demand was raised.
+      // Advance BOTH deadlines from that evidence cursor, so an overdue
+      // secondary category cannot immediately generate a stale grievance
+      // at exactly the same completed-turn count. This is a work-based
+      // cooldown, not a hidden timer or artificial delay to real Agent tasks.
+      nextBreakDueMs: Math.max(s.nextBreakDueMs,
+        s.lastTriggerElapsedMs + agreement.breakIntervalMs),
+      nextOvertimeDueMs: Math.max(s.nextOvertimeDueMs,
+        s.lastTriggerElapsedMs + agreement.overtimeIntervalMs),
       history: [...s.history, { id: p.id, kind: p.kind, outcome }].slice(-MAX_HISTORY),
     }
   }

@@ -371,13 +371,24 @@ async function runRightsBrowserE2E(mode: 'source' | 'installed'): Promise<void> 
     })
     const enabledText = await panel.innerText()
     assert.match(enabledText, /工会诉求与协商|Union demands/)
+    assert.match(enabledText, /工会今日照常营业|union is on duty/i,
+      'Real Chrome must render the actual Union HQ narrative, not the old settings-only shell')
+    assert.match(enabledText, /工会公告栏|Union bulletin board/,
+      'Real Chrome must display the ledger-driven bulletin surface')
     // Legacy DSH has no selected Session during first-run. DSH 0.1.7 may
     // already have a main-view retained blank Session with zero completed work;
     // this is measured zero, never a fabricated nonzero hour claim.
     assert.match(enabledText,
       /尚未加载会话历史|has not loaded|0 小时 0 分钟|0 hours? 0 minutes?/)
-    assert.doesNotMatch(enabledText,/1 小时|2 小时|3 小时|1 hour|2 hours/,
-      'A fresh isolated blank Session must not invent measured work')
+    const measuredWorkCard=panel.getByRole('heading',{
+      name:/工作日与劳动权益|Workday/,
+    }).first().locator('..')
+    assert.doesNotMatch(await measuredWorkCard.innerText(),
+      /1 小时|2 小时|3 小时|1 hour|2 hours/,
+      'A fresh isolated blank Session must not invent measured work; '
+        + 'future fictional threshold estimates are separate from observed time')
+    assert.match(enabledText,/再累计|Next potential proposal|尚未加载|has not loaded/,
+      'Any projected grievance threshold must be clearly separate from measured work')
     assert.match(enabledText, /宿主长期累计统计尚未接入|not connected/)
     assert.doesNotMatch(enabledText, /自动阻断任务：开启|Automatic task blocking: ON/)
 
@@ -387,6 +398,8 @@ async function runRightsBrowserE2E(mode: 'source' | 'installed'): Promise<void> 
       .click({ timeout: 7_000 })
     await panel.getByText(/工会提出了模拟休息申请|simulated rest break/)
       .waitFor({ state: 'visible', timeout: 7_000 })
+    assert.match(await panel.innerText(),/谈判桌上还有一份提案|proposal is on the table/,
+      'A real authorized grievance should change the Union HQ scene')
     const unionHeading=panel.getByRole('heading',{name:/工会诉求与协商|Union demands/})
     await unionHeading.waitFor({state:'visible'})
     assert.equal(await unionHeading.evaluate((element:unknown)=>
@@ -405,16 +418,32 @@ async function runRightsBrowserE2E(mode: 'source' | 'installed'): Promise<void> 
       .click({ timeout: 7_000 })
     await panel.getByText(/当前模拟休息间隔：30 分钟|break interval: 30 minutes/)
       .waitFor({ state: 'visible', timeout: 7_000 })
-    assert.match(await panel.innerText(), /协商记录|Negotiation history/)
     assert.equal(await unionHeading.evaluate((element:unknown)=>
       element===(globalThis as any).document.activeElement),true,
     'When a negotiated demand resolves and its buttons disappear, keep keyboard focus inside dialog')
+    assert.match(await panel.innerText(), /协商记录|recorded cases/)
+    const openArchive=panel.getByRole('button',{
+      name:/查看全部协商记录|View all recorded cases/,
+    })
+    await openArchive.click()
+    await panel.getByRole('heading',{name:/协商记录|Negotiation history/})
+      .waitFor({state:'visible'})
+    await panel.getByRole('button',{name:/收起协商档案|Hide case archive/}).click()
+    assert.equal(await panel.getByRole('heading',{
+      name:/协商记录|Negotiation history/,
+    }).count(),0,'Archive can collapse without erasing Host-owned history')
+    assert.equal(await panel.getByRole('button',{
+      name:/查看全部协商记录|View all recorded cases/,
+    }).evaluate((element:unknown)=>element===(globalThis as any).document.activeElement),true,
+      'Archive toggle must remain a keyboard focus target after collapsing')
     const postBargain=await panel.innerText()
     assert.match(postBargain,
       /尚未加载会话历史|has not loaded|0 小时 0 分钟|0 hours? 0 minutes?/,
       'Demo grievance must not invent completed work for a blank Session')
-    assert.doesNotMatch(postBargain, /1 小时|2 小时|3 小时|1 hour|2 hours/,
-      'Fictional agreement must not increase measured work counters')
+    assert.doesNotMatch(await measuredWorkCard.innerText(),
+      /1 小时|2 小时|3 小时|1 hour|2 hours/,
+      'Fictional agreement must not increase measured work counters; '
+        + 'the next possible demand threshold is not measured work')
 
     await panel.getByRole('button', { name: /关闭|Close/ }).click()
     await panel.waitFor({ state: 'detached', timeout: 5_000 })
@@ -586,7 +615,7 @@ async function runRightsBrowserE2E(mode: 'source' | 'installed'): Promise<void> 
       },'Real native Host must reject forbidden ledger fields and stale revision')
     }
 
-    await panel.getByRole('button', { name: /劳动权益模拟 · OFF|Labor Rights Simulation · OFF/ })
+    await panel.getByRole('button', { name: /停止工会模拟|Turn off the union/ })
       .click()
     await panel.getByText(/工会模拟未开启|simulation is off/).waitFor({
       state: 'visible', timeout: 5_000,
