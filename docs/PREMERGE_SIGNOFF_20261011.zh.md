@@ -30,6 +30,14 @@
 | 自动化可访问性 | PASS（限定范围） | CDP 可访问性树的命名弹层、键盘焦点陷阱/恢复、退出按钮、色彩对比度 AA（包括 Union HQ 标题/导语）、强制高对比度、320px 窄屏/图表不溢出、图表可展开逐日文字 |
 | 真实任务阻断边界 | PASS（保持关闭） | DSH Adapter 仍 observe-only；没有从模拟授权隐式升级为真正阻断；#79/#80 安全验证独立进行 |
 
+### 增强网络负向验收（DSH 0.2.0-rc.2 实际 Chrome）
+
+- 在已授权且持有真实浏览器 Cookie 的状态下，GET 的 JSON 响应有 `Cache-Control: no-store` 和 `application/json`；工时数据由严格字段白名单校验。
+- 无 Cookie 请求被官方 Connection 返回 **401**；附带外部伪造 `Origin: https://outside-origin.invalid` 但保留合法会话身份的测试请求，返回 **403**；额外查询参数或 `windowDays=365` 返回 **400**。
+- 对仅注册 GET 的路径发送 POST，在 DSH 0.2.0-rc.2 实测 **404（路由未注册）**，不是 405；不应把未命中的路径当成 Host 的读写端点。
+- 两个隔离安装 Profile 中的源码与离线 Chrome 路径均 **PASS（2/2）**。这确认了当前测试版本的网络防护，不等于独立第三方隐私审计完成。
+- 详情与人工复验步骤：`docs/MANUAL_ACCESSIBILITY_UX_SIGNOFF.zh.md`。
+
 ## C. 必须由真人或独立审查完成（当前不签收）
 
 | 验收项 | 当前状态 | 必须完成的实际操作 |
@@ -41,6 +49,8 @@
 | 复杂真实 Host 现场验证 | PENDING | 高延迟/断线恢复、大量非零历史工时、30 天趋势、跨会话可用性、反复刷新与重启；空白 Host 通过不能代替真实长期数据现场 |
 | PR 叠加合并与发布核对 | PENDING | 审阅 #87→main；#89 在 #87 合并后重定向 main 重新 CI/E2E。确认 #88 Host API 与 #89 不重复合并；#73 只在确认被取代后结案 |
 | 真实罢工（未来功能） | NOT PART OF THIS RELEASE | #79/#80 的 Host 用户来源认证、无损保存原始消息及附件、显示原因、继续/绕过、一次性明确知情授权与旧授权迁移，全部未验收；必须持续 OFF |
+
+人工验收执行表与正确答案另见 `docs/MANUAL_ACCESSIBILITY_UX_SIGNOFF.zh.md`。
 
 ## D. 最终签署规则
 

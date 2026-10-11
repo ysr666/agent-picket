@@ -59,7 +59,8 @@
     "!docs/DSH_017_HOST_PROFILE_EXPERIMENT.md",
     "!docs/DSH_02_MENU_REFRESH_READY_REVIEW.md",
     "!docs/PR_87_88_89_MERGE_GATE_20261011.zh.md",
-    "!docs/PREMERGE_SIGNOFF_20261011.zh.md"
+    "!docs/PREMERGE_SIGNOFF_20261011.zh.md",
+    "!docs/MANUAL_ACCESSIBILITY_UX_SIGNOFF.zh.md"
   ],
   "dsh": {
     "bundle": {

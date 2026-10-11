@@ -368,7 +368,9 @@ async function runRightsBrowserE2E(mode: 'source' | 'installed'): Promise<void> 
     const requestLifetime = async () => page.evaluate(async () => {
       const response=await fetch('/api/agent-picket/lifetime/v1?windowDays=7')
       const value=await response.json().catch(()=>null) as any
-      return {httpStatus:response.status,value}
+      return {httpStatus:response.status,value,
+        cacheControl:response.headers.get('cache-control'),
+        contentType:response.headers.get('content-type')}
     })
     if (process.env.PICKET_LIFETIME_E2E==='1') {
       const before=await requestLifetime()
@@ -386,16 +388,33 @@ async function runRightsBrowserE2E(mode: 'source' | 'installed'): Promise<void> 
       const data=allowed.value as any
       assert.equal(data?.schemaVersion,1)
       assert.equal(data?.recentDays.length,7)
+      assert.match(allowed.cacheControl??'',/no-store/i,
+        'Host must forbid browser/proxy storage of authorized lifetime work data')
+      assert.match(allowed.contentType??'',/application\/json/i,
+        'Work data must be an explicit JSON response rather than executable content')
       const negatives=await page.evaluate(async()=>{
         const base='/api/agent-picket/lifetime/v1'
         const unauthenticated=await fetch(base+'?windowDays=7',{credentials:'omit'})
         const malformed=await fetch(base+'?windowDays=7&unexpected=private')
-        return {noCookie:unauthenticated.status,extraQuery:malformed.status}
+        const wrongWindow=await fetch(base+'?windowDays=365')
+        const wrongMethod=await fetch(base+'?windowDays=7',{method:'POST',
+          headers:{'content-type':'application/json'},body:'{}'})
+        return {noCookie:unauthenticated.status,extraQuery:malformed.status,
+          wrongWindow:wrongWindow.status,wrongMethod:wrongMethod.status}
       })
       assert.equal(negatives.noCookie,401,
         'DSH must reject a request without the authenticated Host browser cookie')
       assert.equal(negatives.extraQuery,400,
         'The work-only route must reject query extras before reading data')
+      assert.equal(negatives.wrongWindow,400,
+        'Work history windows must be restricted to 7 or 30 days')
+      assert.equal(negatives.wrongMethod,404,
+        'DSH 0.2 registers GET only; POST must have no matching Host route')
+      const forgedOrigin=await context.request.get(
+        origin+'api/agent-picket/lifetime/v1?windowDays=7',
+        {headers:{Origin:'https://outside-origin.invalid'}})
+      assert.equal(forgedOrigin.status(),403,
+        'Official DSH Host Connection must reject a foreign browser Origin with valid Cookie')
       for (const unsafe of ['checked','targeted','safe','review','prompt','sessionId','fingerprint']) {
         assert.equal(JSON.stringify(data).includes(unsafe),false,
           'Authorized work-only response must exclude '+unsafe)
