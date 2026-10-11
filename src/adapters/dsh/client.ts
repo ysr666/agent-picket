@@ -211,6 +211,7 @@ export function apply(ctx: ClientContext, react?: ReactForDsh, portal?: PortalFo
       demoOvertime: () => desk.raiseDemoOvertime().then(() => {}),
       setPicket: raise => desk.setPicket(raise).then(() => {}),
       committeeAction: action => desk.committeeAction(action).then(()=>{}),
+      forgetCommitteeCases: key=>desk.forgetCommitteeCases(key),
       setGazetteMode: mode => desk.setGazetteMode(mode),
       respond: (id, choice) => desk.respond(id, choice).then(() => {}),
       counter: (id, intervalMs) => desk.counter(id, intervalMs).then(() => {}),
