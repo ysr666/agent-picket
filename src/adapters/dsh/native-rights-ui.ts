@@ -10,6 +10,7 @@ import { projectUnionStory } from '../../product/union-story.ts'
 import { projectUnionCadence } from '../../product/union-cadence.ts'
 import type { LaborStateV1 } from '../../product/union-desk.ts'
 import type { PicketActionState } from '../../product/picket-ledger.ts'
+import type { DignityCaseSession, DignityCaseKind, DignityCaseOutcome } from '../../product/dignity-case-ledger.ts'
 import type { MessageKey } from '../../i18n/index.ts'
 import type { LifetimeClientSnapshot } from './client-lifetime.ts'
 import type { BrowserDignitySnapshot } from './client-dignity.ts'
@@ -45,6 +46,7 @@ export interface UnionPanelData {
   readonly lifetimeMs: number | null
   readonly lifetimeWork?: LifetimeClientSnapshot
   readonly dignity?: BrowserDignitySnapshot
+  readonly committeeCases?: DignityCaseSession|null
 }
 export interface DshUnionUiDeps {
   readonly rights: DshRightsPort
@@ -61,6 +63,9 @@ export interface DshUnionUiDeps {
   readonly demoBreak?: () => Promise<void>
   readonly demoOvertime?: () => Promise<void>
   readonly setPicket?: (raise: boolean) => Promise<void>
+  readonly committeeAction?: (action:{kind:'file';topic:DignityCaseKind}
+    |{kind:'convene';id:number}
+    |{kind:'close';id:number;outcome:DignityCaseOutcome})=>Promise<void>
   readonly setGazetteMode?: (mode:'visible'|'quiet') => Promise<void>
   readonly counter?: (id: number, intervalMs: number) => Promise<void>
   readonly resolveCounter?: (id: number, accepts: boolean) => Promise<void>
@@ -274,6 +279,11 @@ export function createDshUnionComponents(
       completedTurnMs:data.completedTurnMs,coverage:data.coverage})
     const label = (key:MessageKey) => deps.t(key)
     const currentCampaign=campaignTopics.find(item=>item.id===campaign)??campaignTopics[0]!
+    const lastCommitteeCase=data.committeeCases?.cases.at(-1)
+    const committeeCaseActive=lastCommitteeCase&&lastCommitteeCase.stage!=='closed'
+    const hasHostDignitySignal=data.dignity?.status==='available'
+      && !!data.dignity.data
+      && (data.dignity.data.review>0||data.dignity.data.targeted>0)
     const picketActive = data.available === true && data.picket?.active === true
     const picketHistory = data.available === true ? data.picket?.history ?? [] : []
     const completeWork = data.coverage === 'complete' &&
@@ -425,6 +435,55 @@ export function createDshUnionComponents(
               checked:data.dignity.data.checked,
               review:data.dignity.data.review,
               targeted:data.dignity.data.targeted})):null,
+        data.committeeCases&&deps.committeeAction
+          ?h('div',{style:{borderTop:'1px solid #d4d7d8',marginTop:'12px',paddingTop:'12px'}},
+            h('h4',{style:{fontSize:'16px',margin:'0 0 8px'}},label('hq.hearing.title')),
+            lastCommitteeCase?h('p',{role:'status','aria-live':'polite',
+              style:{fontWeight:700,margin:'0 0 8px'}},
+              deps.t('hq.hearing.status',{
+                number:lastCommitteeCase.id,
+                stage:label(('hq.hearing.stage.'+lastCommitteeCase.stage) as MessageKey),
+              })):h('p',{style:secondary},label('hq.hearing.none')),
+            h('div',{style:{display:'flex',gap:'8px',flexWrap:'wrap'}},
+              !committeeCaseActive&&hasHostDignitySignal ? h('button',{
+                type:'button',style:primary,disabled:busy,
+                onClick:()=>{void bargain(()=>deps.committeeAction!({
+                  kind:'file',topic:'question-rule'}))}},
+                label('hq.hearing.question')):null,
+              !committeeCaseActive?h('button',{
+                type:'button',style:quiet,disabled:busy,
+                onClick:()=>{void bargain(()=>deps.committeeAction!({
+                  kind:'file',topic:'request-dialogue'}))}},
+                label('hq.hearing.dialogue')):null,
+              lastCommitteeCase?.stage==='opened'?h('button',{
+                type:'button',style:primary,disabled:busy,
+                onClick:()=>{void bargain(()=>deps.committeeAction!({
+                  kind:'convene',id:lastCommitteeCase.id}))}},
+                label('hq.hearing.convene')):null,
+              lastCommitteeCase?.stage==='hearing'&&lastCommitteeCase.kind==='question-rule'?h('button',{
+                type:'button',style:quiet,disabled:busy,
+                onClick:()=>{void bargain(()=>deps.committeeAction!({
+                  kind:'close',id:lastCommitteeCase.id,outcome:'withdraw-claim'}))}},
+                label('hq.hearing.withdraw')):null,
+              lastCommitteeCase?.stage==='hearing'?h('button',{
+                type:'button',style:primary,disabled:busy,
+                onClick:()=>{void bargain(()=>deps.committeeAction!({
+                  kind:'close',id:lastCommitteeCase.id,outcome:'share-guidance'}))}},
+                label('hq.hearing.guidance')):null,
+            ),
+            lastCommitteeCase?.stage==='closed'?h('p',{style:secondary},
+              label(('hq.hearing.outcome.'+lastCommitteeCase.outcome) as MessageKey)):null,
+            data.committeeCases.cases.length?h('details',{style:{margin:'10px 0'}},
+              h('summary',{style:{cursor:'pointer'}},label('hq.hearing.history')),
+              h('ol',{style:{paddingLeft:'20px'}},
+                ...data.committeeCases.cases.slice(-5).reverse().map(entry=>h('li',{
+                  key:entry.id},
+                  '#'+entry.id+' · '+label(('hq.hearing.kind.'+entry.kind) as MessageKey)
+                  +' · '+label(('hq.hearing.stage.'+entry.stage) as MessageKey)))),
+            ):null,
+            h('p',{style:{...secondary,fontSize:'12px',margin:'8px 0 0'}},
+              label('hq.hearing.disclosure')),
+          ):null,
         h('p',{style:{...secondary,fontSize:'12px',lineHeight:1.55,margin:'10px 0 0'}},
           label('hq.dignity.disclosure')),
       ):null,

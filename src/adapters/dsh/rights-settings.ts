@@ -2,6 +2,7 @@ import Schema from '@deepseek-ai/schemastery'
 import type { NativeSettingsProvider } from './native-rights-command.ts'
 import { parseUnionLedger, MAX_UNION_LEDGER_BYTES } from '../../product/union-ledger.ts'
 import { parsePicketLedger, MAX_PICKET_LEDGER_BYTES } from '../../product/picket-ledger.ts'
+import { parseDignityCaseLedger, MAX_DIGNITY_CASE_BYTES } from '../../product/dignity-case-ledger.ts'
 
 /** One Host-owned authorization state per installed DSH version. Never a second store. */
 export const RIGHTS_SETTINGS_NAMESPACE = 'agent-picket'
@@ -9,6 +10,7 @@ export const RightsSettingsSchema = Schema.object({
   welcomeDecision: Schema.union(['unseen', 'enabled', 'not-now']).default('unseen'),
   unionLedger: Schema.string().default(''),
   unionPicketLedger: Schema.string().default(''),
+  unionDignityCases: Schema.string().default(''),
   unionGazetteMode: Schema.union(['visible','quiet']).default('visible'),
   commandLocale: Schema.union(['auto', 'en', 'zh-CN']).default('auto'),
 })
@@ -21,6 +23,12 @@ function requireSafeLedger(ledger: unknown): asserts ledger is string {
   }
 }
 
+function requireSafeCases(v:unknown):asserts v is string {
+ const ledger=parseDignityCaseLedger(v)
+ if(typeof v!=='string'||v.length>MAX_DIGNITY_CASE_BYTES||
+   ledger===null||(v!==''&&JSON.stringify(ledger)!==v))
+   throw new Error('Unsafe dignity committee case data')
+}
 function requireSafePicketLedger(ledger:unknown):asserts ledger is string {
   const parsed=parsePicketLedger(ledger)
   if(typeof ledger!=='string'||ledger.length>MAX_PICKET_LEDGER_BYTES
@@ -44,6 +52,10 @@ export const DshProfileRightsConfig = Schema.object({
   commandLocale: Schema.union(['auto', 'en', 'zh-CN'])
     .default('auto').volatile(),
   unionGazetteMode: Schema.union(['visible','quiet']).default('visible').volatile(),
+  unionDignityCases: Schema.transform(
+    Schema.string().max(MAX_DIGNITY_CASE_BYTES),
+    value=>{requireSafeCases(value);return value},true,
+  ).default('').volatile(),
   unionPicketLedger: Schema.transform(
     Schema.string().max(MAX_PICKET_LEDGER_BYTES),
     value=>{ requireSafePicketLedger(value);return value },true,
@@ -54,6 +66,7 @@ export interface HostRightsSection {
   readonly welcomeDecision: 'unseen' | 'enabled' | 'not-now'
   readonly unionLedger: string
   readonly unionPicketLedger: string
+  readonly unionDignityCases: string
   readonly unionGazetteMode: 'visible' | 'quiet'
   readonly commandLocale: 'auto' | 'en' | 'zh-CN'
 }
@@ -97,6 +110,8 @@ export function registerHostRightsNamespace(
             if (section && typeof section === 'object'
               && 'unionPicketLedger' in section)
               requireSafePicketLedger((section as {unionPicketLedger?: unknown}).unionPicketLedger)
+            if(section&&typeof section==='object'&&'unionDignityCases' in section)
+              requireSafeCases((section as {unionDignityCases?:unknown}).unionDignityCases)
           },
         })
         if (typeof settings.get === 'function'
@@ -130,6 +145,8 @@ export function registerHostRightsNamespace(
         if ('unionPicketLedger' in patch) {
           requireSafePicketLedger((patch as {unionPicketLedger?: unknown}).unionPicketLedger)
         }
+        if('unionDignityCases' in patch)
+          requireSafeCases((patch as {unionDignityCases?:unknown}).unionDignityCases)
         return update(namespace, patch, revision)
       },
     }

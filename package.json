@@ -76,7 +76,13 @@
     "!docs/DSH_017_OFFICIAL_CLIENT_WEB_VALIDATION.md",
     "!docs/DSH_017_COMPOSER_HOST_CAS_VALIDATION.md",
     "!docs/DSH_017_HOST_RECEIPT_LIFECYCLE_GATE.md",
-    "!docs/DIGNITY_COMMITTEE_ACTION_V1_20261011.zh.md"
+    "!docs/DIGNITY_COMMITTEE_ACTION_V1_20261011.zh.md",
+    "!docs/DSH_UNION_WEB_PREVIEW.md",
+    "!docs/DSH_HOST_VERSION_COMPATIBILITY.md",
+    "!docs/DSH_PACKAGED_WEB_E2E.zh.md",
+    "!docs/DSH_COMPOSER_UNION_E2E.md",
+    "!docs/DSH_BROWSER_BARGAINING.md",
+    "!docs/UNION_CASE_HEARINGS_20261011.zh.md"
   ],
   "dsh": {
     "bundle": {

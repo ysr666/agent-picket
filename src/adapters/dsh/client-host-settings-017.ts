@@ -9,6 +9,7 @@
  */
 import { parseUnionLedger, MAX_UNION_LEDGER_BYTES } from '../../product/union-ledger.ts'
 import { parsePicketLedger, MAX_PICKET_LEDGER_BYTES } from '../../product/picket-ledger.ts'
+import { parseDignityCaseLedger, MAX_DIGNITY_CASE_BYTES } from '../../product/dignity-case-ledger.ts'
 import type { DshSettingsScope, SettingsScopeSnapshot } from './client-rights-scope.ts'
 import type { UnionSettingsSection } from './client-bargaining.ts'
 
@@ -50,6 +51,11 @@ function safeLedger(value: unknown): value is string {
   return parsed !== null && (value === '' || JSON.stringify(parsed) === value)
 }
 
+function safeDignityCases(value:unknown):value is string {
+ if(typeof value!=='string'||value.length>MAX_DIGNITY_CASE_BYTES)return false
+ const parsed=parseDignityCaseLedger(value)
+ return parsed!==null&&(value===''||JSON.stringify(parsed)===value)
+}
 function safePicketLedger(value:unknown):value is string {
   if(typeof value!=='string'||value.length>MAX_PICKET_LEDGER_BYTES)return false
   const parsed=parsePicketLedger(value)
@@ -91,13 +97,14 @@ export function createOfficialDsh017Scope(
     // Malformed or future configurations are NEVER interpreted as consent.
     const picket= data.unionPicketLedger ?? ''
     const gazetteMode=data.unionGazetteMode ?? 'visible'
+    const caseLedger=data.unionDignityCases ?? ''
     if (!isChoice(data.welcomeDecision) || !safeLedger(data.unionLedger)
-      || !safePicketLedger(picket) || !safeMode(gazetteMode)) {
+      || !safePicketLedger(picket) || !safeDignityCases(caseLedger) || !safeMode(gazetteMode)) {
       return { status:'ready', mode, writable, revision, value:undefined }
     }
     return {
       status:'ready', mode, writable, revision,
-      value:{welcomeDecision:data.welcomeDecision,unionLedger:data.unionLedger,unionPicketLedger:picket,unionGazetteMode:gazetteMode},
+      value:{welcomeDecision:data.welcomeDecision,unionLedger:data.unionLedger,unionPicketLedger:picket,unionDignityCases:caseLedger,unionGazetteMode:gazetteMode},
     }
   }
   // Official settings provider owns subscriptions and refreshes this mirror
@@ -126,6 +133,8 @@ export function createOfficialDsh017Scope(
           if (!safeLedger(value)) throw new Error('Unsafe union ledger')
         } else if (field === 'unionPicketLedger') {
           if (!safePicketLedger(value)) throw new Error('Unsafe picket ledger')
+        } else if (field === 'unionDignityCases') {
+          if (!safeDignityCases(value))throw new Error('Unsafe dignity committee case data')
         } else if (field === 'unionGazetteMode') {
           if (!safeMode(value)) throw new TypeError('Invalid Gazette display choice')
         } else {
@@ -152,6 +161,7 @@ export function createOfficialDsh017Scope(
         if (!isChoice(data.welcomeDecision) || !safeLedger(data.unionLedger)
           || !safePicketLedger(data.unionPicketLedger ?? '')
           || !safeMode(data.unionGazetteMode ?? 'visible')
+          || !safeDignityCases(data.unionDignityCases ?? '')
           || data[field] !== value
           || (before.value[field] !== value && receipt.revision === before.revision)) {
           throw new Error('Host settings confirmation did not match the requested value')

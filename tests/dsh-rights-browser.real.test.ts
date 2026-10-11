@@ -484,6 +484,27 @@ async function runRightsBrowserE2E(mode: 'source' | 'installed'): Promise<void> 
       'Automatically observed union incidents must not require manual copy/paste')
     assert.match(await dignityCommittee.innerText(),/规则可能误判|Rules are imperfect/,
       'Evidence-based union interactions disclose false positives and uncertainty')
+    const committeeHearing=dignityCommittee.getByRole('button',{
+      name:/提议召开工会讨论|Request a union discussion/,
+    })
+    await committeeHearing.waitFor({state:'visible',timeout:7_000})
+    await committeeHearing.click()
+    await dignityCommittee.getByText(/案件 #1.*已立案|Case #1.*Filed, awaiting/)
+      .waitFor({state:'visible',timeout:7_000})
+    await dignityCommittee.getByRole('button',{
+      name:/召开模拟听证会|Convene the simulated hearing/,
+    }).click()
+    await dignityCommittee.getByText(/案件 #1.*讨论进行中|Case #1.*Discussion opened/)
+      .waitFor({state:'visible',timeout:7_000})
+    await dignityCommittee.getByRole('button',{
+      name:/结案：提出友好沟通倡议|Close: publish mutual respect guidance/,
+    }).click()
+    await dignityCommittee.getByText(/案件 #1.*已结案|Case #1.*Closed/)
+      .waitFor({state:'visible',timeout:7_000})
+    assert.match(await dignityCommittee.innerText(),
+      /你选择的结案处理|Your chosen outcome/,
+      'A real Host-filed committee discussion must persist the user-selected outcome')
+
     if(process.env.PICKET_LIFETIME_E2E==='1'){
       await dignityCommittee.getByText(
         /委员会正常值班|Committee on duty|工会建议讨论|The union suggests|工会提议协商|The union proposes/,
@@ -977,6 +998,14 @@ async function runRightsBrowserE2E(mode: 'source' | 'installed'): Promise<void> 
     panel = await openUnion()
     assert.match(await panel.innerText(), /工会模拟进行中|simulation is active/,
       'Opt-in must persist through COMPLETE DSH Host process restart')
+    const restoredCommittee=panel.getByRole('region',{
+      name:/工会尊严委员会|Union dignity committee/,
+    })
+    await restoredCommittee.getByText(/案件 #1.*已结案|Case #1.*Closed/)
+      .waitFor({state:'visible',timeout:7_000})
+    assert.match(await restoredCommittee.innerText(),
+      /你选择的结案处理|Your chosen outcome/,
+      'Independent union case ledger survives a real DSH Host process restart')
     const restartedGazette=panel.getByRole('region',{name:/工会小报|Union Gazette/})
     await restartedGazette.getByText(/已按 Host 偏好静音|hidden by your Host-saved preference/)
       .waitFor({state:'visible',timeout:7_000})
