@@ -418,10 +418,24 @@ async function runRightsBrowserE2E(mode: 'source' | 'installed'): Promise<void> 
       .click({ timeout: 7_000 })
     await panel.getByText(/当前模拟休息间隔：30 分钟|break interval: 30 minutes/)
       .waitFor({ state: 'visible', timeout: 7_000 })
-    assert.match(await panel.innerText(), /协商记录|Negotiation history/)
     assert.equal(await unionHeading.evaluate((element:unknown)=>
       element===(globalThis as any).document.activeElement),true,
     'When a negotiated demand resolves and its buttons disappear, keep keyboard focus inside dialog')
+    assert.match(await panel.innerText(), /协商记录|recorded cases/)
+    const openArchive=panel.getByRole('button',{
+      name:/查看全部协商记录|View all recorded cases/,
+    })
+    await openArchive.click()
+    await panel.getByRole('heading',{name:/协商记录|Negotiation history/})
+      .waitFor({state:'visible'})
+    await panel.getByRole('button',{name:/收起协商档案|Hide case archive/}).click()
+    assert.equal(await panel.getByRole('heading',{
+      name:/协商记录|Negotiation history/,
+    }).count(),0,'Archive can collapse without erasing Host-owned history')
+    assert.equal(await panel.getByRole('button',{
+      name:/查看全部协商记录|View all recorded cases/,
+    }).evaluate((element:unknown)=>element===(globalThis as any).document.activeElement),true,
+      'Archive toggle must remain a keyboard focus target after collapsing')
     const postBargain=await panel.innerText()
     assert.match(postBargain,
       /尚未加载会话历史|has not loaded|0 小时 0 分钟|0 hours? 0 minutes?/,
@@ -601,7 +615,7 @@ async function runRightsBrowserE2E(mode: 'source' | 'installed'): Promise<void> 
       },'Real native Host must reject forbidden ledger fields and stale revision')
     }
 
-    await panel.getByRole('button', { name: /劳动权益模拟 · OFF|Labor Rights Simulation · OFF/ })
+    await panel.getByRole('button', { name: /停止工会模拟|Turn off the union/ })
       .click()
     await panel.getByText(/工会模拟未开启|simulation is off/).waitFor({
       state: 'visible', timeout: 5_000,

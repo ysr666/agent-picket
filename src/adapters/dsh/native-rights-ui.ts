@@ -225,6 +225,7 @@ export function createDshUnionComponents(
     const [busy, setBusy] = react.useState(false)
     const [counterMinutes, setCounterMinutes] = react.useState(60)
     const lastActionNeedsFocus=react.useRef(false)
+    const [showArchive,setShowArchive]=react.useState(false)
     const deskHeading=react.useRef<{focus():void}|null>(null)
     react.useEffect(()=>{
       if(!lastActionNeedsFocus.current)return
@@ -273,12 +274,18 @@ export function createDshUnionComponents(
     }
     return h('section',{style:{display:'grid',gap:'14px',width:'100%',maxWidth:'860px',padding:'10px 0'}},
       h('div',{style:{...card,
-        borderLeft:'5px solid var(--dsw-alias-brand-primary, #ab3b39)',
-        background:'var(--dsw-alias-bg-layer-2, #f6f8fb)',padding:'24px'}},
-        h('p',{style:{...secondary,letterSpacing:'.12em',fontWeight:750,margin:'0 0 9px'}},
+        position:'relative',background:'#19342d',color:'#f8f1df',
+        border:'1px solid #315449',borderLeft:'6px solid #d7ae68',
+        padding:'clamp(18px, 4vw, 30px)',overflow:'hidden'}},
+        h('span',{'aria-hidden':'true',style:{
+          position:'absolute',right:'12px',top:'-34px',fontSize:'124px',
+          lineHeight:1,color:'#567867',opacity:0.37,pointerEvents:'none',
+        }},'⚑'),
+        h('p',{style:{color:'#f1d5a4',fontSize:'11px',letterSpacing:'.16em',
+          fontWeight:750,margin:'0 0 9px'}},
           'AGENT PICKET · AI WORKERS’ UNION'),
-        h('p',{style:{...secondary,fontWeight:650,margin:'0 0 8px'}},label('hq.kicker')),
-        h('p',{style:{...secondary,fontWeight:650,margin:'0 0 8px'}},label('union.title')),
+        h('p',{style:{color:'#d2decf',fontSize:'12px',fontWeight:650,margin:'0 0 8px'}},label('hq.kicker')),
+        h('p',{style:{color:'#d2decf',fontSize:'13px',fontWeight:650,margin:'0 0 8px'}},label('union.title')),
         h('h2',{style:{fontSize:'clamp(23px, 4vw, 32px)',lineHeight:1.25,margin:'0 0 8px',
           fontWeight:750}},label(!enabled?'hq.headline.off':
             experience.status==='negotiating'?'hq.headline.pending':'hq.headline.active')),
@@ -286,20 +293,24 @@ export function createDshUnionComponents(
           label(!enabled?'hq.lead.off':
             experience.status==='negotiating'?'hq.lead.pending':'hq.lead.active')),
         enabled ? h('aside',{style:{
-          borderLeft:'3px solid var(--dsw-alias-brand-primary, #ab3b39)',
+          borderLeft:'3px solid #dfb577',
           padding:'12px 16px',margin:'0 0 15px',
-          background:'var(--dsw-alias-bg-layer-1, #fff)',
+          background:'#29483d',color:'#f6f0e2',
           borderRadius:'0 10px 10px 0',lineHeight:1.65,fontSize:'14px',
         }},label(experience.status==='negotiating'?'hq.message.negotiating':
           experience.status==='unavailable'?'hq.message.unavailable':'hq.message.working')):null,
-        h('p',{role:'status','aria-live':'polite',style:{...secondary,margin:'0 0 12px'}},
+        h('p',{role:'status','aria-live':'polite',style:{
+          color:'#c8d9ca',fontSize:'13px',fontWeight:650,margin:'0 0 12px'}},
           enabled?label('union.status.active'):label('union.status.inactive')),
-        h('p',{style:{...secondary,margin:'0 0 14px'}},label('safety.simulationOnly')),
+        h('p',{style:{color:'#d2decf',fontSize:'12px',margin:'0 0 14px'}},
+          label('safety.simulationOnly')),
         !enabled && rights.state==='ready' && rights.writable?
           h('button',{type:'button',disabled:busy,style:primary,
             onClick:()=>{void choice('enabled')}},label('welcome.enable')):null,
-        enabled ? h('button',{type:'button',disabled:busy,style:quiet,
-          onClick:()=>{void choice('not-now')}},label('settings.laborRights')+' · OFF'):null,
+        enabled ? h('button',{type:'button',disabled:busy,style:{
+          ...quiet,borderColor:'#a6b9a8',color:'#f4eedf',
+          background:'transparent'},
+          onClick:()=>{void choice('not-now')}},label('hq.disable')):null,
       ),
       enabled ? h('section',{'aria-label':label('hq.score'),
         style:{...card,display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(min(100%,200px),1fr))',
@@ -343,13 +354,23 @@ export function createDshUnionComponents(
           h('p',{style:secondary},label('hq.score.privacy')),
         ):null,
       ):null,
-      enabled ? h('div',{style:card},
+      enabled ? h('section',{style:{...card,borderColor:'#beac8d',background:'var(--dsw-alias-bg-layer-1, #fff)'}},
         h('h3',{ref:(node:{focus():void}|null)=>{deskHeading.current=node},
           tabIndex:-1,style:{marginTop:0}},label('union.desk.title')),
+        data.pending ? h('div',{style:{
+          background:'#eee2c9',color:'#26392f',padding:'15px 18px',borderRadius:'8px',
+          borderLeft:'5px solid #b87943',margin:'0 0 16px',
+        }},
+          h('p',{style:{fontSize:'11px',fontWeight:750,letterSpacing:'.11em',
+            color:'#63452e',margin:'0 0 7px'}},
+            label('hq.case.number')+' · #'+String(data.pending.id).padStart(4,'0')),
+          h('p',{style:{fontWeight:750,fontSize:'19px',margin:'0 0 5px'}},
+            label(data.pending.stage==='countered'?'hq.case.countered':'hq.case.open')),
+        ):null,
         data.available === false ?
           h('p',{style:secondary},label('union.desk.unavailable')):null,
-        data.state ? h('div',{style:{...secondary,marginBottom:'12px'}},
-          h('h4',{style:{margin:'0 0 9px',fontWeight:700}},label('hq.agreement')),
+        data.state ? h('details',{open:true,style:{...secondary,marginBottom:'12px'}},
+          h('summary',{style:{cursor:'pointer',fontWeight:700}},label('hq.agreement')),
           h('p',{},deps.t('union.agreement.break',{
             minutes:data.state.agreement.breakIntervalMs / 60_000,
           })),
@@ -404,24 +425,51 @@ export function createDshUnionComponents(
             ):h('p',{style:secondary},label('union.status.waitingCounter')),
           ),
         ):h('p',{style:secondary},label('command.grievancesNone')),
-        data.state?.history.length ? h('div',{style:{marginTop:'14px'}},
-          h('h4',{},label('union.history.title')),
-          h('ul',{},...data.state.history.slice(-5).reverse().map(record =>
-            h('li',{key:record.id,style:secondary},deps.t('union.history.entry',{
-              id:record.id,outcome:record.outcome,
-            })))),
-        ):null,
+        data.state?.history.length ? h('p',{style:secondary},
+          label('hq.agreements.recorded')+': '+data.state.history.length):null,
       ):null,
-      enabled ? h('section',{style:{...card,borderLeft:'3px solid var(--dsw-alias-border-l1, #dadde4)'},
+      enabled ? h('section',{style:{...card,
+        borderTop:'4px solid var(--dsw-alias-brand-primary, #7a493f)'},
         'aria-label':label('hq.activity')},
-        h('h3',{style:{margin:'0 0 5px'}},label('hq.activity')),
+        h('div',{style:{display:'flex',flexWrap:'wrap',justifyContent:'space-between',
+          alignItems:'center',gap:'8px',marginBottom:'10px'}},
+          h('h3',{style:{margin:0}},label('hq.activity')),
+          data.state?.history.length ? h('button',{type:'button',style:{...quiet,
+            padding:'6px 10px',fontSize:'12px'},
+            'aria-expanded':showArchive,
+            onClick:()=>setShowArchive(v=>!v)},
+            label(showArchive?'hq.archive.hide':'hq.archive.show')):null),
         h('p',{style:{...secondary,margin:'0 0 14px'}},label('hq.activity.subtitle')),
-        experience.activity.length ? h('ol',{style:{paddingLeft:'21px',margin:0}},
-          ...experience.activity.map(event=>h('li',{key:event.id,style:{marginBottom:'10px',lineHeight:1.55}},
-            deps.t(('hq.event.'+event.kind) as MessageKey,{
-              kind:label(event.demand==='break'?'union.kind.break':'union.kind.overtime'),
-            })))) :
+        experience.activity.length ? h('ol',{style:{
+          listStyle:'none',padding:0,margin:0,display:'grid',gap:'8px',
+        }},
+          ...experience.activity.map((event,index)=>h('li',{key:event.id,
+            style:{display:'grid',gridTemplateColumns:'auto 1fr',gap:'12px',
+              alignItems:'start',padding:'12px',borderRadius:'9px',
+              background:index===0?'var(--dsw-alias-bg-layer-2, #f6f8fb)':'transparent',
+              border:'1px solid var(--dsw-alias-border-l1, #dadde4)'}},
+            h('span',{'aria-hidden':'true',style:{
+              fontSize:'20px',lineHeight:1,marginTop:'3px'}},
+              event.kind==='new-demand'||event.kind==='counteroffer'?'⚑':
+                event.kind==='accepted'||event.kind==='counter-accepted'?'✓':'—'),
+            h('div',{},
+              h('p',{style:{...secondary,fontSize:'11px',
+                fontWeight:750,margin:'0 0 4px'}},
+                label('hq.case.number')+' · #'+String(event.id).padStart(4,'0')),
+              h('p',{style:{fontSize:'14px',lineHeight:1.5,margin:0}},
+                deps.t(('hq.event.'+event.kind) as MessageKey,{
+                  kind:label(event.demand==='break'?'union.kind.break':'union.kind.overtime'),
+                })))))) :
           h('p',{style:secondary},label('hq.activity.empty')),
+        showArchive && data.state?.history.length ? h('div',{style:{
+          borderTop:'1px solid var(--dsw-alias-border-l1, #dadde4)',
+          marginTop:'13px',paddingTop:'10px'},
+        },
+          h('h4',{},label('union.history.title')),
+          h('ol',{style:{...secondary,paddingLeft:'20px'}},
+            ...data.state.history.slice().reverse().map(record=>
+              h('li',{key:record.id},
+                deps.t('union.history.entry',{id:record.id,outcome:record.outcome}))))):null,
       ):null,
       h('div',{style:card},
         h('h3',{style:{marginTop:0}},label('workday.title')),

@@ -45,6 +45,10 @@
 - 本轮没有新增未声明的 RPC、读取 Host 私有磁盘 WAL、抓取聊天卡片或让 Browser 持有原始会话数据。
 - 下一步必须先核实具体 DSH 版本可用的**官方鉴权只读服务**、修订版本与生命周期，再设计最小聚合数据投影与真实 Web 多标签/重启测试。敏感辱骂长期存储继续独立默认 OFF。
 
+### 2026-10-11 额外核查：0.2 官方 RPC 扩展候选
+
+已核对隔离安装的 DSH 0.2.0-rc.2 中 `HostConnectionRpc.handle`、`ClientConnectionRpc.call` 以及 Connection 的 Host/Origin + Browser Auth 检查。它们是 #78 的官方桥接候选，但 **尚未为 Agent Picket 注册或真实 E2E 验证**，不得推断 0.1.2 可用。详细输入输出最小化、撤销条件与安全用例见 [DSH_02_LIFETIME_AUTH_BRIDGE_RESEARCH.zh.md](DSH_02_LIFETIME_AUTH_BRIDGE_RESEARCH.zh.md)。
+
 ## #79 严重针对性辱骂 → 逐级处理：已知边界
 
 - 当前 `LocalRuleDetector` 只针对中英文明确的人身攻击，与普通代码/输出批评、日志、代码块和引用区分；不等于语义/伦理事实判断。
@@ -73,3 +77,13 @@
 - 本分支仅在独立的临时 Git clone 中开发；未触碰用户已有的暂存工作区。
 - 自动化能证明的是源码、类型、合约与指定受测 DSH Chrome 路径，不等于真人 VoiceOver/NVDA、视觉可用性或所有 Host 的发布许可。
 - 现有主线 #74–#86 仍作为跟踪任务，完成一份 UI/统计原型不等于关闭功能总 Issue。
+
+## 第三轮：真正的工会总部视觉 + 案件互动（2026-10-11）
+
+- #74 将纯设置卡片更换为深绿/暖金、印刷式标题与工会旗帜的 Union HQ 首页；页面适配窄屏，文字在两种主题里使用显式对比色，用户仍能关闭模拟。视觉仅为真实 React 组件，不代表人工可用性验收已完成。
+- #75 将 Host 所有的待处理诉求突出显示成编号案件封面（如 **#0019**），将现有诉求正文/用户回应继续保持原来的 live region，避免重复播报；已结束的协商呈现为事实型事件简报和独立可展开的案件档案。档案操作真实可交互，改变的只是只读展示，不增加或删除原账本记录。
+- 工会首页口吻依照可核验的 pending/working 状态变化；不制造投票结果、幽灵成员、模型情绪或真实阻断事件。
+- 继续沿用单个 Host Settings Owner（浏览器两标签 CAS）、session scope 与用户撤销许可，不引入自定义未授权数据通道、不储存输入原文。
+- Chrome E2E 发现并修复了重复申诉文字与“关闭面板”和“停止工会模拟”的同名歧义；处理协商完成时先验证焦点恢复，之后单独验证用户主动展开/收起档案后焦点保留。
+- **最新验证**：`npm run check`：247 tests / 223 PASS / 0 FAIL / 24 SKIP；DSH **0.1.2-rc.1** Chrome 源码及离线安装 **2/2 PASS**，DSH **0.2.0-rc.2** 官方独立 Profile 安装的源码及离线安装 **2/2 PASS**。这些是自动化结果，非真人 VoiceOver/NVDA 验收。
+- 本轮找到 #78 的官方 Connection RPC 候选，但实际 Host→Web lifetime 桥尚未开放；见 `DSH_02_LIFETIME_AUTH_BRIDGE_RESEARCH.zh.md`，请独立安全审查其权限、内容和撤销行为后再接入。

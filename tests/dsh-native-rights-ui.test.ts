@@ -426,3 +426,43 @@ test('explainable Union HQ index reveals factors and the next evidence-based pet
  assert.ok(nodes.find(n=>n.type==='details'&&n.children.some(x=>typeof x==='object'
   &&x!==null&&(x as Node).children?.includes('hq.score.explain'))))
 })
+
+
+test('Union HQ case dossier is readable, uses recorded ID, and preserves actionable negotiation',()=>{
+ const {hooks}=fakeReact()
+ const base=deps(rights({welcomeDecision:'enabled',laborRightsEnabled:true}))
+ const d:DshUnionUiDeps={...base.d,readUnion:()=>({
+   pending:{id:19,kind:'break',stage:'open'},completedTurnMs:2*3_600_000,
+   coverage:'complete',lifetimeMs:null,available:true,
+ })}
+ const {UnionPanel}=createDshUnionComponents(hooks,{createPortal:child=>child},d)
+ const nodes=walk(UnionPanel())
+ const texts=nodes.flatMap(n=>n.children.filter(x=>typeof x==='string'))
+ assert.ok(texts.includes('hq.case.number · #0019'))
+ assert.ok(texts.includes('hq.case.open'))
+ assert.ok(texts.includes('union.demand.break'))
+ assert.equal(texts.filter(x=>x==='union.demand.break').length,1,
+   'Case cover must not duplicate the screen-reader live petition announcement')
+ assert.ok(nodes.some(n=>n.type==='span'&&n.props['aria-hidden']==='true'))
+ assert.equal(nodes.some(n=>n.type==='button'&&n.children.includes('hq.disable')),true)
+})
+
+test('case archive button appears only if genuine Host ledger history exists',()=>{
+ const {hooks}=fakeReact()
+ const base=deps(rights({welcomeDecision:'enabled',laborRightsEnabled:true}))
+ const d:DshUnionUiDeps={...base.d,readUnion:()=>({
+   pending:null,completedTurnMs:0,coverage:'complete',lifetimeMs:null,available:true,
+   state:{schemaVersion:1,revision:2,
+     agreement:{breakIntervalMs:7_200_000,overtimeIntervalMs:28_800_000},
+     nextBreakDueMs:7_200_000,nextOvertimeDueMs:28_800_000,
+     lastTriggerElapsedMs:0,pending:null,
+     history:[{id:1,kind:'break',outcome:'accepted'}]},
+ })}
+ const {UnionPanel}=createDshUnionComponents(hooks,{createPortal:child=>child},d)
+ const nodes=walk(UnionPanel())
+ const archive=nodes.find(n=>n.type==='button'&&n.children.includes('hq.archive.show'))
+ assert.ok(archive)
+ assert.equal(archive.props['aria-expanded'],false)
+ assert.ok(nodes.some(n=>n.children.includes('hq.event.accepted')))
+ assert.equal(nodes.some(n=>n.children.includes('union.history.title')),false)
+})
