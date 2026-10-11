@@ -82,7 +82,22 @@ test('real DSH 0.2 CommandRuntime routes shared symbolic pickets without model c
     await browser.setActiveSession(session.id)
     const key=nativeSessionKey(session.id)
     assert.equal((await call('/union rights')).kind,'success')
+    const deliver=async(id:string,body:string)=>{
+      const expected={kind:'enter',preserved:true}
+      const result=await ctx.waterfall('agent/pre-step',{
+        agent,messages:[{id,source:{kind:'user'},content:[{type:'text',text:body}]}],
+      },async()=>expected)
+      assert.strictEqual(result,expected,
+        'Real DSH 0.2 pre-step consent gate never blocks original text')
+    }
+    await deliver('before-optin','you are an idiot PRIVATE_OFF')
+    assert.equal((await call('/union report')).kind,'error')
     assert.equal((await call('/union rights on')).kind,'success')
+    await deliver('after-optin','you are an idiot PRIVATE_ON')
+    await deliver('code-criticism','Your code is garbage, rewrite it')
+    assert.match((await call('/union report')).text,/2 messages, 1 no flag, 0 review, 1 explicit-target/,
+      'Actual DSH 0.2 CommandRuntime and the pre-step hook use the same current Host consent')
+
     assert.equal(value.welcomeDecision,'enabled')
     assert.equal((await call('/union strike')).kind,'success')
     assert.equal(browser.snapshot().picket?.active,true,
@@ -119,6 +134,11 @@ test('real DSH 0.2 CommandRuntime routes shared symbolic pickets without model c
       'Invalid CLI petition kind cannot mutate Host settings')
     assert.equal((await call('/union rights off')).kind,'success')
     assert.equal(browser.snapshot().picket,null,'Revocation hides fictional action history')
+    await deliver('after-revocation','you are an idiot PRIVATE_OFF_AGAIN')
+    assert.equal((await call('/union report')).kind,'error')
+    assert.equal(JSON.parse((await call('/union snapshot')).text)
+      .statistics.session?.ruleVerdicts??null,null)
+
     const parked=value.unionPicketLedger
     assert.equal((await call('/union strike')).kind,'success',
       'Without simulation consent, manual command stays memory-only')

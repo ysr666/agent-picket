@@ -38,6 +38,7 @@ test('DSH 0.2 Cordis event waterfall, native command service and teardown', {
         engine, clock: { now: () => 123 },
         onDecision: decision => events.push(decision),
         onWorkEvent: event => work.push(event),
+        getLaborRightsEnabled:()=>true,
       })
     },
   })

@@ -212,7 +212,7 @@ test('native Chinese technical commands localize only text, never model/Host pol
   const checks=[
     ['status',/仅观察.*阻断/],
     ['stats',/本地会话工作统计.*轮次开始/],
-    ['report',/本地规则检查.*试验性标签/],
+    ['report',/工会未授权.*自动辱骂检测/],
     ['safety',/真实任务阻断就绪状态.*未就绪/],
     ['lifetime',/长期工作汇总不可用/],
     ['days',/每日工作记录不可用/],

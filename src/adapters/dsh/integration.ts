@@ -127,7 +127,7 @@ export function readDshDashboardSnapshot(
     // DSH Session event callbacks currently identify the Session, not Agent.
     // This matches the existing WorkTracker key convention, without guessing.
     sessionWork: sessionId ? options.tracker?.snapshot(sessionId, sessionId) ?? null : null,
-    sessionRules: id && sessionId
+    sessionRules: rights && id && sessionId
       ? options.detections?.snapshot(id, sessionId) ?? null : null,
     storage,
     lifetime: options.lifetimeStats?.snapshot() ?? null,
@@ -204,16 +204,28 @@ export function registerDshIntegration(
   ctx.on('agent/pre-step', async (payload, next) => {
     try {
       for (const message of payload.messages) {
+        // No default consent. Read the real Host-owned setting at EVERY
+        // message so a revoked or unavailable permission stops classification
+        // immediately, even in a multi-message pre-step batch. Statistics
+        // and the optional durable verdict writer are downstream of this gate.
+        let authorized = false
+        try { authorized = options.getLaborRightsEnabled?.() === true }
+        catch { /* unavailable settings are not consent */ }
+        if (!authorized) break
         const prompt = normalizeDshPrompt(payload.agent, message, clock.now())
-        if (!prompt) continue
+        // Tool/agent/injected origins and textless images must never become
+        // "human abuse" observations or enter the Core's prompt-ID cache.
+        if (!prompt || prompt.provenance.actor !== 'human'
+          || !prompt.segments.some(segment => segment.text.trim())) continue
         const decision = engine.evaluate(prompt)
-        // No original text leaves this adapter, even via the observer API.
+        // Always monitor-only. Claimed user role is not a verified human.
+        // No original content leaves this adapter, even via observers.
         if (resolveHostAction(decision, capabilities) !== 'block') {
           try { onDecision?.(decision) } catch { /* observers never affect Host */ }
         }
       }
     } catch {
-      // Always fail open. DSH owns rejection and continuation semantics.
+      // Fail OPEN for legitimate Host work, CLOSED for further classification.
     }
     return next()
   })
@@ -453,6 +465,9 @@ export function registerDshIntegration(
           })}
         }
         if (verb === 'report') {
+          let reportConsent=false
+          try { reportConsent=options.getLaborRightsEnabled?.()===true } catch {}
+          if (!reportConsent) return {kind:'error',text:msg('command.legacy.reportDisabled')}
           if(typeof sessionId!=='string'||!sessionId||!detections)
             return {kind:'error',text:msg('command.legacy.reportUnavailable')}
           const t=detections.snapshot(
