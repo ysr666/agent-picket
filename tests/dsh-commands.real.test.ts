@@ -91,16 +91,17 @@ test('real DSH CommandRuntime dispatches union status, report, strike, resume, r
     assert.match(stats.text ?? '', /elapsed time in completed turns 100 ms/)
 
     const strike = await call('/union strike')
-    assert.equal(strike.kind, 'success')
-    assert.match(strike.text ?? '', /NO model requests are paused or blocked/)
-    assert.match((await call('/union status')).text ?? '', /picket ACTIVE/)
+    assert.equal(strike.kind, 'error',
+      'A real DSH Host without an authorized union settings owner must fail closed')
+    assert.match(strike.text ?? '', /unavailable/)
+    assert.match((await call('/union status')).text ?? '', /No symbolic picket active/)
 
     const stillAllowed = await ctx.waterfall('agent/pre-step', {
       agent, messages: [{ id: 'native-3', source: { kind: 'user' }, content: [{ type: 'text', text: 'Please fix the code' }] }],
     }, async () => ({ kind: 'enter' }))
     assert.equal(stillAllowed.kind, 'enter', 'Symbolic strike must not reject any real prompt')
 
-    assert.match((await call('/union resume')).text ?? '', /picket ended/)
+    assert.equal((await call('/union resume')).kind,'error')
     assert.match((await call('/union status')).text ?? '', /No symbolic picket active/)
     assert.match((await call('/union reset')).text ?? '', /reset/)
     assert.match((await call('/union report')).text ?? '', /0 messages/)

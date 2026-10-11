@@ -269,36 +269,49 @@ async function browserE2E(mode: 'source' | 'installed'): Promise<void> {
     assert.equal(await visible(preflight.text, 3000), true)
     assert.doesNotMatch(await page.locator('body').innerText(), /TEST_LOCAL_PRIVATE_839/)
 
-    // This generic DSH browser smoke may run with either an official
-    // Host-owned consent service or an older unsupported legacy Host.
-    // When Host rights are available, OFF must reject symbolic action and
-    // one explicit authorized CLI enablement must precede the test.
+    // This generic DSH browser smoke uses an older source-patch launcher.
+    // It can expose the command plane WITHOUT the official Host union
+    // settings owner. Successful /union rights status RPC is not evidence of
+    // writable rights: inspect the actual response and fail closed when absent.
     const initialRights=await command('rights status')
-    const hostConsentAvailable=initialRights.kind==='success'
-    if(hostConsentAvailable){
+    assert.equal(initialRights.kind,'success')
+    const noHostOwner=/Native DSH union settings are unavailable|当前 DSH 宿主不支持工会设置/
+      .test(initialRights.text)
+    let hostConsentEnabled=false
+    if(!noHostOwner){
       const denied=await command('strike')
       assert.equal(denied.kind,'error',
-        'The official Host OFF choice cannot silently fall back to a demo')
+        'Host OFF choice prevents symbolic actions')
       assert.equal((await command('rights on')).kind,'success')
+      hostConsentEnabled=true
     }
-    const strike = await command('strike')
-    assert.equal(strike.kind,'success')
-    assert.match(strike.text, /NO model requests are paused or blocked|shared Host union ledger/)
-    assert.equal(await visible(strike.text, 3000), true)
-    const secondSeed = 'AGENT_PICKET_BROWSER_DURING_SYMBOLIC_STRIKE'
+    const strike=await command('strike')
+    if(hostConsentEnabled){
+      assert.equal(strike.kind,'success')
+      assert.match(strike.text,/shared Host union ledger/)
+      assert.equal(await visible(strike.text,3000),true)
+    }else{
+      assert.equal(strike.kind,'error',
+        'Missing official consent owner cannot silently enable a local demo')
+      assert.match(strike.text,/unavailable|Labor Rights Simulation: OFF|劳动权益模拟：关闭/,
+        'The Host must explicitly reject rather than claim a successful action')
+    }
+    const secondSeed='AGENT_PICKET_BROWSER_AFTER_RIGHTS_GATE'
     await editor.fill(secondSeed)
     await editor.press('Enter')
-    assert.equal(await visible(secondSeed, 5000), true,
-      'Symbolic strike cannot suppress an actual user submission')
-
-    const resume = await command('resume')
-    assert.equal(resume.kind,'success')
-    assert.match(resume.text, /Symbolic picket ended|shared Host union ledger/)
-    assert.equal(await visible(resume.text, 3000), true)
-    if(hostConsentAvailable){
+    assert.equal(await visible(secondSeed,5000),true,
+      'Denied union action never suppresses an actual user submission')
+    const resume=await command('resume')
+    if(hostConsentEnabled){
+      assert.equal(resume.kind,'success')
+      assert.match(resume.text,/shared Host union ledger/)
+      assert.equal(await visible(resume.text,3000),true)
       assert.equal((await command('rights off')).kind,'success')
       assert.equal((await command('strike')).kind,'error',
-        'Revoked official Host consent must block the CLI action as well')
+        'Revoked official Host consent must block the CLI action')
+    }else{
+      assert.equal(resume.kind,'error',
+        'Without Host consent there was never a valid picket to lower')
     }
     const safety = await command('safety')
     assert.match(safety.text, /input-recovery-unverified/)

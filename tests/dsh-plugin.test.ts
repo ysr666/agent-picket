@@ -40,9 +40,10 @@ test('public plugin exports Cordis identity and remains fully monitor-only', asy
   assert.match(safety.text, /human-source-unverified/)
   assert.match(safety.text, /input-recovery-unverified/)
   const symbolic=invoke('strike')
-  assert.equal(symbolic.kind,'success')
-  assert.match(symbolic.text,/Symbolic picket active/)
-  assert.match(invoke('status').text,/picket ACTIVE/)
+  assert.equal(symbolic.kind,'error',
+    'No official Host consent writer means no production symbolic action')
+  assert.match(symbolic.text,/unavailable/)
+  assert.match(invoke('status').text,/No symbolic picket active/)
   // A manual status flag MUST NOT change the actual pre-step continuation.
   const after=await handlers.get('agent/pre-step')!({
     agent, messages:[{id:'after-symbolic',source:{kind:'user'},content:[
@@ -50,7 +51,7 @@ test('public plugin exports Cordis identity and remains fully monitor-only', asy
     ]}],
   },async()=>({kind:'enter'}))
   assert.deepEqual(after,{kind:'enter'})
-  assert.match(invoke('resume').text,/picket ended/)
+  assert.equal(invoke('resume').kind,'error')
   assert.match(invoke('status').text,/No symbolic picket active/)
 
   handlers.get('session/event')!({ id: 'one-session' }, { type: 'turn/start', seq: 1, time: 100 })

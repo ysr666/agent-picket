@@ -63,7 +63,7 @@
 
 本轮用三个修复前已经失败的回归检查发现既有生命周期风险，并在 1.0 候选中修复：
 
-1. 官方 Host 工会授权已明确 OFF 时，CLI /union strike、/union resume 曾静默回退到旧本地象征性仪式并反馈成功（包括用户主动关闭工会以后）。现按 Host 显式授权判定为不可用，不写工会账本、不拒绝真实模型请求；无 Host Settings Owner 的历史显式本地演示独立保留、不得冒充跨端持久授权功能。
+1. 官方 Host 工会授权已明确 OFF 时，CLI /union strike、/union resume 曾静默回退到旧本地象征性仪式并反馈成功（包括用户主动关闭工会以后）。现按 Host 显式授权判定为不可用，不写工会账本、不拒绝真实模型请求；正式插件若没有可验证的 Host Settings Owner，也必须明确拒绝象征性行动；只有不作为发行入口的独立核心研究模拟器保留旧本地演示能力。
 2. Web 工会控制器 dispose() 原本只注销订阅和清除 Session 键，遗留组件回调仍可在卸载后重新 setActiveSession 并操作 Host。现不可逆记录销毁状态，禁止重新订阅、重新绑定 Session 和发起任何账本写入。异步旧 Session 哈希继续采用现有 epoch 防串号。
 3. 原 /union snapshot 即使具有真实 Host 工会服务也只读取旧的 SymbolicUnion 内存标记，可导致 CLI/Web/机器可读快照相互矛盾，甚至在 Host 关闭工会后投影出旧本地举牌。现 Host 账本存在时只依据 Host 授权与 picketStatus 返回状态；Host 未证明可读时清空象征性动作投影，不臆造行动时间。未接入官方 Host Owner 的旧独立 Demo API 维持其既有只读行为。
 

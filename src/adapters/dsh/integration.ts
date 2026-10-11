@@ -445,6 +445,12 @@ export function registerDshIntegration(
           if(raw!==verb || !agentId || typeof sessionId!=='string'||!sessionId)
             return {kind:'error',text:msg('command.legacy.picketUnsupported')}
           const native=options.getNativeUnion?.()
+          // Production always provides getNativeUnion. If the official Host
+          // consent owner is unavailable, no symbolic action is authorized.
+          // The bare core adapter (without that port) retains its isolated
+          // explicit research demo but it is never the installed plugin.
+          if(options.getNativeUnion && !native)
+            return {kind:'error',text:en['command.native.unavailable']}
           // Once an official Host owner exists, its explicit OFF/revocation
           // must take precedence over the older memory-only CLI demo.
           // Never report a locally raised picket after Host consent is OFF.
