@@ -15,12 +15,14 @@ export interface UnionSettingsSection {
   readonly welcomeDecision: 'unseen' | 'enabled' | 'not-now'
   readonly unionLedger: string
   readonly unionPicketLedger?: string
+  readonly unionGazetteMode?: 'visible'|'quiet'
 }
 export interface BrowserUnionSnapshot {
   readonly available: boolean
   readonly state: LaborStateV1 | null
   readonly pending: LaborDemand | null
   readonly picket: PicketActionState | null
+  readonly gazetteMode: 'visible'|'quiet'|null
   readonly autoBlockEnabled: false
 }
 
@@ -50,17 +52,20 @@ export function createDshBrowserUnionDesk(options: {
       || view.value?.welcomeDecision !== 'enabled' || !consent() || !activeKey) return null
     const ledger = parseUnionLedger(view.value.unionLedger)
     const picketLedger = parsePicketLedger(view.value.unionPicketLedger ?? '')
-    if (!ledger || !picketLedger) return null
-    return { view, ledger, picketLedger, key: activeKey }
+    const gazetteMode=view.value.unionGazetteMode ?? 'visible'
+    if (!ledger || !picketLedger || (gazetteMode!=='visible'&&gazetteMode!=='quiet')) return null
+    return { view, ledger, picketLedger, gazetteMode, key: activeKey }
   }
   const snapshot = (): BrowserUnionSnapshot => {
     try {
       const data = read()
       const state = data ? parseLaborState(data.ledger.sessions[data.key]) : null
       return { available: state !== null, state, pending: state?.pending ?? null,
-        picket: data?.picketLedger.sessions[data.key] ?? null, autoBlockEnabled: false }
+        picket: data?.picketLedger.sessions[data.key] ?? null,
+        gazetteMode:data?.gazetteMode??null, autoBlockEnabled: false }
     } catch {
-      return { available: false, state: null, pending: null, picket: null, autoBlockEnabled: false }
+      return { available: false, state: null, pending: null, picket: null,
+        gazetteMode:null, autoBlockEnabled: false }
     }
   }
 
@@ -138,6 +143,20 @@ export function createDshBrowserUnionDesk(options: {
     },
     raiseDemoOvertime() {
       return enqueue(() => perform(desk => desk.raiseDemoDemand('overtime')))
+    },
+    setGazetteMode(mode:'visible'|'quiet') {
+      return enqueue(async()=>{
+        if(mode!=='visible'&&mode!=='quiet')throw new TypeError('Invalid Gazette display mode')
+        const before=read()
+        if(!before)throw new Error('Authorized Host settings unavailable')
+        if(before.gazetteMode===mode)return
+        const key=before.key
+        await scope.set('unionGazetteMode',mode)
+        const after=read()
+        if(!after||after.key!==key||after.gazetteMode!==mode)
+          throw new Error('Host did not confirm Gazette display preference')
+        notify()
+      })
     },
     setPicket(raise: boolean) {
       return enqueue(async () => {

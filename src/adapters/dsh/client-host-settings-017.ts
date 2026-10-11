@@ -41,6 +41,7 @@ export interface OfficialHostSettings {
   }
 }
 const NAMESPACE = 'agent-picket'
+const safeMode = (value:unknown):value is 'visible'|'quiet' => value==='visible'||value==='quiet'
 const isChoice = (value: unknown): value is UnionSettingsSection['welcomeDecision'] =>
   value === 'unseen' || value === 'enabled' || value === 'not-now'
 function safeLedger(value: unknown): value is string {
@@ -89,13 +90,14 @@ export function createOfficialDsh017Scope(
     const data = source as Record<string,unknown>
     // Malformed or future configurations are NEVER interpreted as consent.
     const picket= data.unionPicketLedger ?? ''
+    const gazetteMode=data.unionGazetteMode ?? 'visible'
     if (!isChoice(data.welcomeDecision) || !safeLedger(data.unionLedger)
-      || !safePicketLedger(picket)) {
+      || !safePicketLedger(picket) || !safeMode(gazetteMode)) {
       return { status:'ready', mode, writable, revision, value:undefined }
     }
     return {
       status:'ready', mode, writable, revision,
-      value:{welcomeDecision:data.welcomeDecision,unionLedger:data.unionLedger,unionPicketLedger:picket},
+      value:{welcomeDecision:data.welcomeDecision,unionLedger:data.unionLedger,unionPicketLedger:picket,unionGazetteMode:gazetteMode},
     }
   }
   // Official settings provider owns subscriptions and refreshes this mirror
@@ -124,6 +126,8 @@ export function createOfficialDsh017Scope(
           if (!safeLedger(value)) throw new Error('Unsafe union ledger')
         } else if (field === 'unionPicketLedger') {
           if (!safePicketLedger(value)) throw new Error('Unsafe picket ledger')
+        } else if (field === 'unionGazetteMode') {
+          if (!safeMode(value)) throw new TypeError('Invalid Gazette display choice')
         } else {
           throw new TypeError('Unrecognized Host settings field')
         }
@@ -147,6 +151,7 @@ export function createOfficialDsh017Scope(
         const data = payload as Record<string,unknown>
         if (!isChoice(data.welcomeDecision) || !safeLedger(data.unionLedger)
           || !safePicketLedger(data.unionPicketLedger ?? '')
+          || !safeMode(data.unionGazetteMode ?? 'visible')
           || data[field] !== value
           || (before.value[field] !== value && receipt.revision === before.revision)) {
           throw new Error('Host settings confirmation did not match the requested value')

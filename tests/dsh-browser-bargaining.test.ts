@@ -18,7 +18,7 @@ function fixture(consent=true) {
     async set(field,next){
       if(mode==='reject')throw new Error('Host rejected write')
       if(mode==='silent')return
-      assert.ok(field==='unionLedger'||field==='unionPicketLedger')
+      assert.ok(field==='unionLedger'||field==='unionPicketLedger'||field==='unionGazetteMode')
       value={...value,[field]:next as string}
       writes++;for(const listener of listeners)listener()
     },
@@ -34,6 +34,48 @@ function fixture(consent=true) {
     updateLedger:(v:string)=>{value={...value,unionLedger:v}},
     writable:(v:boolean)=>{writable=v}}
 }
+
+test('Host Gazette preference survives adapter restart, consent cycle and rejects false writes',async()=>{
+ const f=fixture(),a=f.create()
+ await a.setActiveSession('a')
+ assert.equal(a.snapshot().gazetteMode,'visible')
+ assert.equal(f.writeCount(),0)
+ await a.setGazetteMode('quiet')
+ assert.equal(a.snapshot().gazetteMode,'quiet')
+ assert.equal(f.get().unionGazetteMode,'quiet')
+ assert.equal(f.writeCount(),1)
+ await a.setGazetteMode('quiet')
+ assert.equal(f.writeCount(),1,'Idempotent choice produces no extra Host mutation')
+ a.dispose()
+ const b=f.create()
+ await b.setActiveSession('a')
+ assert.equal(b.snapshot().gazetteMode,'quiet')
+ await b.setActiveSession('b')
+ assert.equal(b.snapshot().gazetteMode,'quiet','User-level preference applies across sessions')
+ f.permission(false)
+ assert.equal(b.snapshot().gazetteMode,null,'OFF never exposes fictional Gazette')
+ await assert.rejects(b.setGazetteMode('visible'),/unavailable/)
+ f.permission(true)
+ assert.equal(b.snapshot().gazetteMode,'quiet','Re-enable restores the user-owned muted choice')
+ f.fail('silent')
+ await assert.rejects(b.setGazetteMode('visible'),/did not confirm/)
+ assert.equal(f.get().unionGazetteMode,'quiet')
+ f.fail('reject')
+ await assert.rejects(b.setGazetteMode('visible'),/rejected/)
+ f.fail('normal')
+ await b.setGazetteMode('visible')
+ assert.equal(f.get().unionGazetteMode,'visible')
+ assert.equal(b.snapshot().autoBlockEnabled,false)
+ b.dispose()
+})
+test('legacy Host config missing Gazette preference defaults visible but invalid values fail closed',async()=>{
+ const f=fixture(),d=f.create()
+ await d.setActiveSession('a')
+ assert.equal(d.snapshot().gazetteMode,'visible')
+ const untrusted='hijacked' as 'visible'
+ await assert.rejects(d.setGazetteMode(untrusted),/Invalid/)
+ d.dispose()
+})
 
 test('OFF is not consent, incomplete work windows never generate grievances',async()=>{
   const f=fixture(false),d=f.create()

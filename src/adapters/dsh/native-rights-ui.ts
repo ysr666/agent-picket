@@ -38,6 +38,7 @@ export interface UnionPanelData {
   readonly available?: boolean
   readonly state?: LaborStateV1 | null
   readonly picket?: PicketActionState | null
+  readonly gazetteMode?: 'visible'|'quiet'|null
   readonly completedTurnMs: number | null
   readonly coverage: 'complete' | 'partial' | 'not-loaded' | 'unavailable'
   readonly lifetimeMs: number | null
@@ -58,6 +59,7 @@ export interface DshUnionUiDeps {
   readonly demoBreak?: () => Promise<void>
   readonly demoOvertime?: () => Promise<void>
   readonly setPicket?: (raise: boolean) => Promise<void>
+  readonly setGazetteMode?: (mode:'visible'|'quiet') => Promise<void>
   readonly counter?: (id: number, intervalMs: number) => Promise<void>
   readonly resolveCounter?: (id: number, accepts: boolean) => Promise<void>
 }
@@ -242,7 +244,6 @@ export function createDshUnionComponents(
     const [counterMinutes, setCounterMinutes] = react.useState(60)
     const lastActionNeedsFocus=react.useRef(false)
     const [showArchive,setShowArchive]=react.useState(false)
-    const [storyQuiet,setStoryQuiet]=react.useState(false)
     const [campaign,setCampaign]=react.useState<CampaignTopic>('recover')
     const deskHeading=react.useRef<{focus():void}|null>(null)
     react.useEffect(()=>{
@@ -260,6 +261,7 @@ export function createDshUnionComponents(
     },[data.pending?.id,data.pending?.stage,data.state?.history.length])
     react.useEffect(() => deps.subscribeUnion?.(() => setData(safeUnion(deps))), [])
     const enabled = rightsIsActive(rights)
+    const storyQuiet=data.gazetteMode==='quiet'
     const story = projectUnionStory({enabled, state:data.state, picket:data.picket,
       completedTurnMs:data.completedTurnMs,coverage:data.coverage})
     const experience = projectUnionExperience({
@@ -399,8 +401,8 @@ export function createDshUnionComponents(
           justifyContent:'space-between',gap:'10px',flexWrap:'wrap'}},
           h('h3',{style:{margin:'0 0 6px'}},label('hq.story.title')),
           h('button',{type:'button',style:{...quiet,padding:'7px 10px',fontSize:'12px'},
-            'aria-expanded':!storyQuiet,
-            onClick:()=>setStoryQuiet(v=>!v)},
+            'aria-expanded':!storyQuiet,disabled:busy||!deps.setGazetteMode,
+            onClick:()=>{if(deps.setGazetteMode)void bargain(()=>deps.setGazetteMode!(storyQuiet?'visible':'quiet'))}},
             label(storyQuiet?'hq.story.show':'hq.story.quiet'))),
         !storyQuiet ? h('div',{},
           h('p',{style:{fontWeight:700,margin:'7px 0'}},
