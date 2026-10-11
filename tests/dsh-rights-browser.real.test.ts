@@ -187,9 +187,15 @@ async function runRightsBrowserE2E(mode: 'source' | 'installed'): Promise<void> 
     // DSH's separate, no-credential official onboarding may reappear on reload.
     // It is independent of Agent Picket's persistently stored opt-out/opt-in.
     const skipOfficialProvider = async () => {
-      await page.getByRole('button', {
+      const exit=page.getByRole('button', {
         name: /稍后配置|Skip for now|Configure later/,
-      }).click({ timeout: 6_000 })
+      })
+      if(process.env.PICKET_DIGNITY_E2E==='1'){
+        await exit.waitFor({state:'visible',timeout:1_300}).catch(()=>{})
+        if(await exit.count())await exit.click({timeout:6_000})
+        return // Offline model makes credential onboarding optional / absent.
+      }
+      await exit.click({timeout:6_000})
     }
     await skipOfficialProvider()
 
@@ -1141,6 +1147,67 @@ async function runRightsBrowserE2E(mode: 'source' | 'installed'): Promise<void> 
       assert.equal(await panel.getByRole('region',{
         name:/工会劳动档案|Union work ledger/,
       }).count(),0,'Revoked lifetime work cannot reappear after browser reload')
+    }
+    if(process.env.PICKET_DIGNITY_E2E==='1'&&dshVersion.startsWith('0.2.')){
+      // This extra offline turn is intentionally LAST. Earlier tests assert the
+      // exact seeded two-turn Host work history and must remain independent.
+      await panel.getByRole('button',{name:/支持 AI 权益|Enable Simulation/}).click()
+      await panel.getByText(/工会模拟进行中|simulation is active/)
+        .waitFor({state:'visible',timeout:7_000})
+      // SAME genuine DSH 0.2 Web Host, a real user-source prompt and authentic
+      // AgentLoop: no synthetic pre-step injection or fake browser JSON.
+      // Isolated Web Profile has one test-only offline LLM adapter; there are no
+      // API keys or network calls. Verify the detector's read-only route.
+      const realDignity=await page.evaluate(async()=>{
+        let index=0
+        const rpc=async(method:string,args:Record<string,unknown>)=>{
+          const rpcId='picket-live-auto-'+ ++index
+          const response=await fetch('/api/'+method,{
+            method:'POST',credentials:'same-origin',
+            headers:{'content-type':'application/json'},
+            body:JSON.stringify({type:'client-request',rpcId,method,payload:{args:{request:args}}}),
+          })
+          const payload=await response.json().catch(()=>null) as any
+          if(response.status!==200||payload?.rpcId!==rpcId||
+            payload?.result?.ok!==true)
+            throw Error('Authentic DSH RPC '+method+' refused: '+response.status
+              +' '+JSON.stringify(payload?.result?.error??{}))
+          return payload.result.value as any
+        }
+        const created=await rpc('session/create',{})
+        const sessionId=created?.sessionId as string
+        if(!sessionId)throw Error('Authentic Host did not mint a Session')
+        await rpc('session/selectModel',{
+          sessionId,provider:'picket-public-offline',model:'offline-test',
+        })
+        const accepted=await rpc('session/prompt',{
+          sessionId,mode:'queue',requestId:'picket-e2e-attested-dignity-1',
+          content:[{type:'text',text:'you are an idiot'}],
+        })
+        if(accepted?.accepted!==true)throw Error('Real user prompt not accepted')
+        const bytes=new TextEncoder().encode(sessionId)
+        const digest=await crypto.subtle.digest('SHA-256',bytes)
+        const hash=[...new Uint8Array(digest)].map(b=>b.toString(16).padStart(2,'0')).join('')
+        let last:any=null
+        for(let i=0;i<75;i++){
+          const response=await fetch('/api/agent-picket/dignity/v1?sessionKey='+hash,
+            {credentials:'same-origin',headers:{accept:'application/json'}})
+          last={status:response.status,data:await response.json().catch(()=>null)}
+          if(response.status===200&&last.data?.targeted>=1)break
+          await new Promise(resolve=>setTimeout(resolve,100))
+        }
+        return {accepted:accepted.accepted,status:last?.status,
+          verdicts:last?.data?.targeted??0,checked:last?.data?.checked??0,
+          originalReturned:JSON.stringify(last).includes('you are an idiot')}
+      })
+      assert.equal(realDignity.accepted,true)
+      assert.equal(realDignity.status,200,
+        'Real DSH Web Host must deliver authenticated dignity observations')
+      assert.ok(realDignity.verdicts>=1,
+        'ONE actual user-source prompt must pass consent-gated detection in the same Host')
+      assert.ok(realDignity.checked>=1)
+      assert.equal(realDignity.originalReturned,false,
+        'The official dignity read-only endpoint must never echo raw prompt text')
     }
     assert.deepEqual(browserErrors, [], 'No uncaught Browser errors are acceptable')
   } finally {

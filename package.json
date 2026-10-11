@@ -82,7 +82,8 @@
     "!docs/DSH_PACKAGED_WEB_E2E.zh.md",
     "!docs/DSH_COMPOSER_UNION_E2E.md",
     "!docs/DSH_BROWSER_BARGAINING.md",
-    "!docs/UNION_CASE_HEARINGS_20261011.zh.md"
+    "!docs/UNION_CASE_HEARINGS_20261011.zh.md",
+    "!docs/DETECTOR_PRODUCT_E2E_20261011.zh.md"
   ],
   "dsh": {
     "bundle": {
