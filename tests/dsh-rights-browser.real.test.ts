@@ -1455,6 +1455,98 @@ async function runRightsBrowserE2E(mode: 'source' | 'installed'): Promise<void> 
         status:200,allCaseSessionKeys:0,unionLedgerIntact:true,
         picketLedgerIntact:true,consentIntact:true,
       },'All-case purge must remove only the independent official Host case ledger')
+      // Independent user-controlled bargaining and symbolic picket records:
+      // verify the actual downloaded bytes, two distinct user confirmations,
+      // and exact official Host states. Neither operation is equivalent to
+      // erasing the Host's original chat or labor observation history.
+      const bothSaved=await page.evaluate(async()=>{
+        const response=await fetch('/api/settings/describe',{
+          method:'POST',credentials:'same-origin',
+          headers:{'content-type':'application/json'},
+          body:JSON.stringify({type:'client-request',
+            rpcId:'picket-ledger-saved-before',
+            method:'settings/describe',payload:{args:{}}}),
+        })
+        const value=(await response.json() as any).result?.value?.namespaces
+          ?.find((v:any)=>v.ns==='agent-picket')?.value
+        return {
+          negotiations:Object.keys(JSON.parse(value?.unionLedger||'{"sessions":{}}').sessions??{}).length,
+          pickets:Object.keys(JSON.parse(value?.unionPicketLedger||'{"sessions":{}}').sessions??{}).length,
+        }
+      })
+      assert.ok(bothSaved.negotiations>=1&&bothSaved.pickets>=1,
+        'Both real user-owned ledgers must exist before live deletion test')
+      const privacyRows=[
+        {title:/模拟协商、请愿与协议记录|Simulated bargaining agreements/,
+         filename:'agent-picket-negotiations.json',
+         format:'agent-picket-all-negotiations'},
+        {title:/象征性举牌与纠察行动记录|Symbolic picket placards/,
+         filename:'agent-picket-symbolic-pickets.json',
+         format:'agent-picket-all-symbolic-pickets'},
+      ]
+      for(const row of privacyRows){
+        const ledgerPanel=panel.getByRole('heading',{name:row.title}).locator('..')
+        await ledgerPanel.getByRole('button',{
+          name:/导出此完整账本|Export this entire ledger/,
+        }).waitFor({state:'visible',timeout:7_000})
+        const [archiveDownload]=await Promise.all([
+          page.waitForEvent('download',{timeout:7_000}),
+          ledgerPanel.getByRole('button',{
+            name:/导出此完整账本|Export this entire ledger/,
+          }).click(),
+        ])
+        assert.equal(archiveDownload.suggestedFilename(),row.filename)
+        const archive=JSON.parse(readFileSync(await archiveDownload.path(),'utf8'))
+        assert.equal(archive.format,row.format)
+        assert.equal(archive.schemaVersion,1)
+        assert.ok(Array.isArray(archive.groups)&&archive.groups.length>=1)
+        for(const [i,group] of archive.groups.entries()){
+          assert.equal(group.group,i+1)
+          assert.deepEqual(Object.keys(group).sort(),['current','group','state'])
+        }
+        for(const secret of [
+          realDignity.sessionId,realDignity.sessionKey,'writeToken',
+          'you are an idiot','welcomeDecision',
+        ])assert.equal(JSON.stringify(archive).includes(secret),false)
+        await ledgerPanel.getByRole('button',{
+          name:/清除此完整账本|Erase this entire ledger/,
+        }).click()
+        await ledgerPanel.getByRole('button',{
+          name:/确认永久清除此账本|Confirm permanent erasure of this ledger/,
+        }).waitFor({state:'visible',timeout:5_000})
+        await ledgerPanel.getByText(
+          /将永久清除此账本|Permanently remove all/,
+        ).waitFor({state:'visible',timeout:5_000})
+        await ledgerPanel.getByRole('button',{
+          name:/确认永久清除此账本|Confirm permanent erasure of this ledger/,
+        }).click()
+        // The relevant ledger section disappears only after an authenticated
+        // Host CAS write was independently verified by the plugin.
+        await panel.getByRole('heading',{name:row.title})
+          .waitFor({state:'detached',timeout:7_000})
+      }
+      const unionCleared=await page.evaluate(async()=>{
+        const response=await fetch('/api/settings/describe',{
+          method:'POST',credentials:'same-origin',
+          headers:{'content-type':'application/json'},
+          body:JSON.stringify({type:'client-request',
+            rpcId:'picket-actual-ledgers-erased',
+            method:'settings/describe',payload:{args:{}}}),
+        })
+        const v=(await response.json() as any).result?.value?.namespaces
+          ?.find((x:any)=>x.ns==='agent-picket')?.value
+        return {
+          status:response.status,
+          negotiations:Object.keys(JSON.parse(v?.unionLedger||'{}').sessions??{}).length,
+          pickets:Object.keys(JSON.parse(v?.unionPicketLedger||'{}').sessions??{}).length,
+          cases:Object.keys(JSON.parse(v?.unionDignityCases||'{}').sessions??{}).length,
+          enabled:v?.welcomeDecision==='enabled',
+        }
+      })
+      assert.deepEqual(unionCleared,{
+        status:200,negotiations:0,pickets:0,cases:0,enabled:true,
+      },'Each ledger must be independently removed, without undoing consent')
+
 
 
     }

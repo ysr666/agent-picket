@@ -212,6 +212,9 @@ export function apply(ctx: ClientContext, react?: ReactForDsh, portal?: PortalFo
       setPicket: raise => desk.setPicket(raise).then(() => {}),
       committeeAction: (action,key) => desk.committeeAction(action,key).then(()=>{}),
       exportCommitteeCases: key=>desk.exportCommitteeCases(key),
+      exportUnionLedger:(which,key)=>desk.exportUnionLedger(which,key),
+      forgetUnionLedger:(which,key,groups,entries,token)=>
+        desk.forgetUnionLedger(which,key,groups,entries,token),
       exportAllCommitteeCases: key=>desk.exportAllCommitteeCases(key),
       forgetAllCommitteeCases: (key,sessions,count,token)=>
         desk.forgetAllCommitteeCases(key,sessions,count,token),
