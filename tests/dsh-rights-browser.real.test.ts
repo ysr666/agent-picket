@@ -1174,7 +1174,12 @@ async function runRightsBrowserE2E(mode: 'source' | 'installed'): Promise<void> 
               +' '+JSON.stringify(payload?.result?.error??{}))
           return payload.result.value as any
         }
-        const created=await rpc('session/create',{})
+        // Read the *real* currently rendered DSH workspace. An ungrouped
+        // API-only session can be invisible under a collapsed Ungrouped tree.
+        const workspaceRow=(globalThis as any).document.querySelector('[data-row-key^="workspace:"]')
+        const workspaceId=workspaceRow?.getAttribute('data-row-key')?.slice('workspace:'.length)
+        if(!workspaceId)throw Error('No authentic DSH workspace selected')
+        const created=await rpc('session/create',{workspaceId})
         const sessionId=created?.sessionId as string
         if(!sessionId)throw Error('Authentic Host did not mint a Session')
         await rpc('session/selectModel',{
@@ -1196,7 +1201,7 @@ async function runRightsBrowserE2E(mode: 'source' | 'installed'): Promise<void> 
           if(response.status===200&&last.data?.targeted>=1)break
           await new Promise(resolve=>setTimeout(resolve,100))
         }
-        return {accepted:accepted.accepted,status:last?.status,
+        return {sessionId,sessionKey:hash,accepted:accepted.accepted,status:last?.status,
           verdicts:last?.data?.targeted??0,checked:last?.data?.checked??0,
           originalReturned:JSON.stringify(last).includes('you are an idiot')}
       })
@@ -1208,6 +1213,77 @@ async function runRightsBrowserE2E(mode: 'source' | 'installed'): Promise<void> 
       assert.ok(realDignity.checked>=1)
       assert.equal(realDignity.originalReturned,false,
         'The official dignity read-only endpoint must never echo raw prompt text')
+      // Complete the FULL user-visible chain in exactly the Session that
+      // submitted the genuine Host prompt. The click below is DSH's official
+      // workspace sidebar navigation, not a forged Picket session override.
+      await panel.getByRole('button',{name:/关闭|Close/}).click()
+      const realSessionRow=page.locator('[data-row-key='+JSON.stringify(
+        'session:'+realDignity.sessionId)+']')
+      await realSessionRow.waitFor({state:'visible',timeout:10_000})
+      await realSessionRow.click()
+      await page.waitForTimeout(180)
+      panel=await openUnion()
+      const sameSessionCommittee=panel.getByRole('region',{
+        name:/工会尊严委员会|Union dignity committee/,
+      })
+      await sameSessionCommittee.getByRole('button',{
+        name:/正式提出规则异议|File a disagreement with the rule/,
+      }).waitFor({state:'visible',timeout:9_000})
+      await sameSessionCommittee.getByText(/工会提议协商|The union proposes/)
+        .waitFor({state:'visible',timeout:9_000})
+      assert.doesNotMatch(await sameSessionCommittee.innerText(),
+        /确认真人辱骂|confirmed human abuse/,
+        'Rule matches must remain contestable discussion leads, not human guilt')
+      await sameSessionCommittee.getByText(
+        /目前没有已立案件|No committee case has been filed/,
+      ).waitFor({state:'visible',timeout:7_000})
+      // Classifier alone cannot file a case: its only effect is a user-visible,
+      // contestable invitation. Host CAS writes require an explicit click.
+      await sameSessionCommittee.getByRole('button',{
+        name:/正式提出规则异议|File a disagreement with the rule/,
+      }).click()
+      await sameSessionCommittee.getByText(/案件 #1.*已立案|Case #1.*Filed, awaiting/)
+        .waitFor({state:'visible',timeout:7_000})
+      await sameSessionCommittee.getByRole('button',{
+        name:/召开模拟听证会|Convene the simulated hearing/,
+      }).click()
+      await sameSessionCommittee.getByText(/案件 #1.*讨论进行中|Case #1.*Discussion opened/)
+        .waitFor({state:'visible',timeout:7_000})
+      await sameSessionCommittee.getByRole('button',{
+        name:/结案：撤回未经证实的指控|Close: withdraw the unverified allegation/,
+      }).click()
+      await sameSessionCommittee.getByText(/案件 #1.*已结案|Case #1.*Closed/)
+        .waitFor({state:'visible',timeout:7_000})
+      assert.match(await sameSessionCommittee.innerText(),
+        /未作辱骂认定|no finding of abuse/,
+        'Host-backed case must close with the user-selected non-punitive outcome')
+      const realHostCase=await page.evaluate(async(sessionKey:string)=>{
+        const rpcId='picket-e2e-session-case-check'
+        const response=await fetch('/api/settings/describe',{
+          method:'POST',credentials:'same-origin',
+          headers:{'content-type':'application/json'},
+          body:JSON.stringify({
+            type:'client-request',rpcId,method:'settings/describe',payload:{args:{}},
+          }),
+        })
+        const data=await response.json() as any
+        const raw=data.result?.value?.namespaces?.find((v:any)=>
+          v.ns==='agent-picket')?.value?.unionDignityCases
+        const parsed=JSON.parse(raw||'{}') as any
+        return {
+          status:response.status,
+          caseAtSession:parsed.sessions?.[sessionKey]?.cases?.[0]??null,
+          leakedTranscript:JSON.stringify(parsed).includes('you are an idiot'),
+          totalSessions:Object.keys(parsed.sessions??{}).length,
+        }
+      },realDignity.sessionKey)
+      assert.equal(realHostCase.status,200)
+      assert.deepEqual(realHostCase.caseAtSession,{
+        id:1,kind:'question-rule',stage:'closed',outcome:'withdraw-claim',
+      },'Actual current-session complaint must survive strict official Host persistence')
+      assert.equal(realHostCase.leakedTranscript,false)
+      assert.equal(realHostCase.totalSessions>=1,true)
+
     }
     assert.deepEqual(browserErrors, [], 'No uncaught Browser errors are acceptable')
   } finally {
