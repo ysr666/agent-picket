@@ -2,13 +2,14 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 import { createDshBrowserUnionDesk } from '../src/adapters/dsh/client-bargaining.ts'
 import { parseUnionLedger } from '../src/product/union-ledger.ts'
+import { parsePicketLedger } from '../src/product/picket-ledger.ts'
 import type { DshSettingsScope } from '../src/adapters/dsh/client-rights-scope.ts'
 import type { UnionSettingsSection } from '../src/adapters/dsh/client-bargaining.ts'
 
 const H = 3_600_000
 const keyA='a'.repeat(64), keyB='b'.repeat(64)
 function fixture(consent=true) {
-  let value:UnionSettingsSection={welcomeDecision:consent?'enabled':'not-now',unionLedger:''}
+  let value:UnionSettingsSection={welcomeDecision:consent?'enabled':'not-now',unionLedger:'',unionPicketLedger:''}
   let writes=0, mode:'normal'|'reject'|'silent'='normal', writable=true
   const listeners=new Set<()=>void>()
   const scope:DshSettingsScope<UnionSettingsSection>={
@@ -17,8 +18,8 @@ function fixture(consent=true) {
     async set(field,next){
       if(mode==='reject')throw new Error('Host rejected write')
       if(mode==='silent')return
-      assert.equal(field,'unionLedger')
-      value={...value,unionLedger:next as string}
+      assert.ok(field==='unionLedger'||field==='unionPicketLedger')
+      value={...value,[field]:next as string}
       writes++;for(const listener of listeners)listener()
     },
   }
@@ -199,32 +200,34 @@ test('two browser tabs racing the same agreement cannot both claim their own Hos
 test('symbolic picket is durable per Session, bounded, idempotent and never an enforcement right',async()=>{
  const f=fixture(),first=f.create()
  await first.setActiveSession('a')
- assert.equal(first.snapshot().state?.picket,undefined)
+ assert.equal(first.snapshot().picket,null)
  const begun=await first.setPicket(true)
- assert.equal(begun.picket?.active,true)
- assert.equal(begun.picket?.history[0]?.kind,'picket-raised')
+ assert.equal(begun.active,true)
+ assert.equal(begun.history[0]?.kind,'picket-raised')
  const writes=f.writeCount()
  await first.setPicket(true)
  assert.equal(f.writeCount(),writes,'replayed raise action cannot generate a second event')
  first.dispose()
  const again=f.create()
  await again.setActiveSession('a')
- assert.equal(again.snapshot().state?.picket?.active,true,
+ assert.equal(again.snapshot().picket?.active,true,
   'a fresh client must read the Host-owned picket rather than resetting React state')
  await again.setActiveSession('b')
- assert.equal(again.snapshot().state?.picket,undefined,
+ assert.equal(again.snapshot().picket,null,
   'picket actions are scoped to the pseudonymous Session')
  await again.setActiveSession('a')
  const ended=await again.setPicket(false)
- assert.deepEqual(ended.picket?.history.map(e=>e.kind),
+ assert.deepEqual(ended.history.map(e=>e.kind),
    ['picket-raised','picket-lowered'])
  assert.equal(again.snapshot().autoBlockEnabled,false)
  for(let n=0;n<32;n++)await again.setPicket(n%2===0)
- assert.equal(again.snapshot().state?.picket?.history.length,12,
+ assert.equal(again.snapshot().picket?.history.length,12,
   'Host union action ledger must be bounded under repeated ceremonies')
- const saved=f.get().unionLedger
+ const saved=f.get().unionPicketLedger!
  assert.doesNotMatch(saved,/prompt|sessionId|real-session|rawInput/)
- assert.ok(saved.length<24000)
+ assert.ok(saved.length<8000)
+ assert.equal(f.get().unionLedger,'','Fictional pickets never modify the legacy agreement format')
+ assert.deepEqual(Object.keys(parsePicketLedger(saved)!.sessions),[keyA])
  f.permission(false)
  assert.equal(again.snapshot().state,null,'revocation hides even a recorded active picket')
  await assert.rejects(again.setPicket(true),/unavailable/)
@@ -236,12 +239,58 @@ test('failed or silent Host action writes never claim a symbolic strike was reco
  await d.setActiveSession('a')
  f.fail('reject')
  await assert.rejects(d.setPicket(true),/rejected/)
- assert.equal(d.snapshot().state?.picket,undefined)
+ assert.equal(d.snapshot().picket,null)
  f.fail('silent')
  await assert.rejects(d.setPicket(true),/did not confirm/)
- assert.equal(d.snapshot().state?.picket,undefined)
+ assert.equal(d.snapshot().picket,null)
  f.fail('normal')
  await d.setPicket(true)
- assert.equal(d.snapshot().state?.picket?.active,true)
+ assert.equal(d.snapshot().picket?.active,true)
  d.dispose()
+})
+
+test('two tabs racing symbolic picket cannot both claim a Host write',async()=>{
+  const initial=fixture()
+  let shared=initial.get()
+  let revision=1
+  const waiting:Array<()=>void>=[]
+  let sends=0
+  function tab() {
+    let local=shared, seenRevision=revision
+    const listeners=new Set<()=>void>()
+    const scope:DshSettingsScope<UnionSettingsSection>={
+      getSnapshot:()=>({status:'ready' as const,mode:'host' as const,
+        writable:true,revision:seenRevision,value:local}),
+      subscribe:fn=>{listeners.add(fn);return()=>listeners.delete(fn)},
+      async set(field,next){
+        assert.equal(field,'unionPicketLedger')
+        const expected=seenRevision
+        sends++
+        if(sends<2)await new Promise<void>(resolve=>waiting.push(resolve))
+        else for(const wake of waiting)wake()
+        if(expected===revision) {
+          shared={...shared,unionPicketLedger:next as string}
+          revision++
+        }
+        // DSH settingsScope recovers rejected version-fenced writes by
+        // mirroring the winning Host revision, without throwing an error.
+        local=shared
+        seenRevision=revision
+        for(const callback of listeners)callback()
+      },
+    }
+    return createDshBrowserUnionDesk({scope,consent:()=>true,
+      hashSession:async()=>keyA})
+  }
+  const a=tab(),b=tab()
+  await Promise.all([a.setActiveSession('a'),b.setActiveSession('a')])
+  const results=await Promise.allSettled([
+    a.setPicket(true),b.setPicket(true),
+  ])
+  assert.equal(results.filter(x=>x.status==='fulfilled').length,1)
+  assert.equal(results.filter(x=>x.status==='rejected').length,1)
+  assert.match(String((results.find(x=>x.status==='rejected') as PromiseRejectedResult).reason),
+    /confirm/)
+  assert.equal(parsePicketLedger(shared.unionPicketLedger)?.sessions[keyA]?.history.length,1)
+  a.dispose();b.dispose()
 })

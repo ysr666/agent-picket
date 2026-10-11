@@ -8,6 +8,7 @@
  * Never install a second settings provider, a custom RPC, or a browser cache.
  */
 import { parseUnionLedger, MAX_UNION_LEDGER_BYTES } from '../../product/union-ledger.ts'
+import { parsePicketLedger, MAX_PICKET_LEDGER_BYTES } from '../../product/picket-ledger.ts'
 import type { DshSettingsScope, SettingsScopeSnapshot } from './client-rights-scope.ts'
 import type { UnionSettingsSection } from './client-bargaining.ts'
 
@@ -48,6 +49,11 @@ function safeLedger(value: unknown): value is string {
   return parsed !== null && (value === '' || JSON.stringify(parsed) === value)
 }
 
+function safePicketLedger(value:unknown):value is string {
+  if(typeof value!=='string'||value.length>MAX_PICKET_LEDGER_BYTES)return false
+  const parsed=parsePicketLedger(value)
+  return parsed!==null&&(value===''||JSON.stringify(parsed)===value)
+}
 /** One read mirror and one serialized mutation chain, owned by DSH's Client fiber. */
 export function createOfficialDsh017Scope(
   mirror: OfficialHostMirror, remote: OfficialHostSettings,
@@ -82,12 +88,14 @@ export function createOfficialDsh017Scope(
     }
     const data = source as Record<string,unknown>
     // Malformed or future configurations are NEVER interpreted as consent.
-    if (!isChoice(data.welcomeDecision) || !safeLedger(data.unionLedger)) {
+    const picket= data.unionPicketLedger ?? ''
+    if (!isChoice(data.welcomeDecision) || !safeLedger(data.unionLedger)
+      || !safePicketLedger(picket)) {
       return { status:'ready', mode, writable, revision, value:undefined }
     }
     return {
       status:'ready', mode, writable, revision,
-      value:{welcomeDecision:data.welcomeDecision,unionLedger:data.unionLedger},
+      value:{welcomeDecision:data.welcomeDecision,unionLedger:data.unionLedger,unionPicketLedger:picket},
     }
   }
   // Official settings provider owns subscriptions and refreshes this mirror
@@ -114,6 +122,8 @@ export function createOfficialDsh017Scope(
           if (!isChoice(value)) throw new TypeError('Invalid union consent choice')
         } else if (field === 'unionLedger') {
           if (!safeLedger(value)) throw new Error('Unsafe union ledger')
+        } else if (field === 'unionPicketLedger') {
+          if (!safePicketLedger(value)) throw new Error('Unsafe picket ledger')
         } else {
           throw new TypeError('Unrecognized Host settings field')
         }
@@ -136,6 +146,7 @@ export function createOfficialDsh017Scope(
         }
         const data = payload as Record<string,unknown>
         if (!isChoice(data.welcomeDecision) || !safeLedger(data.unionLedger)
+          || !safePicketLedger(data.unionPicketLedger ?? '')
           || data[field] !== value
           || (before.value[field] !== value && receipt.revision === before.revision)) {
           throw new Error('Host settings confirmation did not match the requested value')

@@ -6,7 +6,7 @@ import { createDshClientRightsScope } from '../src/adapters/dsh/client-rights-sc
 
 type Choice = 'unseen'|'enabled'|'not-now'
 function fixture(initial: Choice = 'unseen', loopback = true) {
-  let saved = {welcomeDecision:initial, unionLedger:''}
+  let saved = {welcomeDecision:initial, unionLedger:'',unionPicketLedger:''}
   let revision = 1
   let row: HostNamespaceView = {ns:'agent-picket',revision,value:{...saved}}
   const listeners = new Set<()=>void>()
@@ -30,6 +30,7 @@ function fixture(initial: Choice = 'unseen', loopback = true) {
         assert.equal(op.path.length,1)
         if(op.path[0]==='welcomeDecision')saved={...saved,welcomeDecision:op.value as Choice}
         else if(op.path[0]==='unionLedger')saved={...saved,unionLedger:op.value as string}
+        else if(op.path[0]==='unionPicketLedger')saved={...saved,unionPicketLedger:op.value as string}
         else throw Error('Invalid Host field')
         revision++
         return {ok:true,value:{ns,revision,value:{...saved}}}

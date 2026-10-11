@@ -7,6 +7,7 @@ import type { ClientRightsSnapshot } from './client-rights-scope.ts'
 import { getWelcomeState } from './client-rights-scope.ts'
 import { projectUnionExperience } from '../../product/union-experience.ts'
 import type { LaborStateV1 } from '../../product/union-desk.ts'
+import type { PicketActionState } from '../../product/picket-ledger.ts'
 import type { MessageKey } from '../../i18n/index.ts'
 import type { LifetimeClientSnapshot } from './client-lifetime.ts'
 
@@ -34,6 +35,7 @@ export interface UnionPanelData {
   readonly pending: PendingUnionDemand | null
   readonly available?: boolean
   readonly state?: LaborStateV1 | null
+  readonly picket?: PicketActionState | null
   readonly completedTurnMs: number | null
   readonly coverage: 'complete' | 'partial' | 'not-loaded' | 'unavailable'
   readonly lifetimeMs: number | null
@@ -251,8 +253,8 @@ export function createDshUnionComponents(
       coverage:data.coverage,
     })
     const label = (key:MessageKey) => deps.t(key)
-    const picketActive = data.available === true && data.state?.picket?.active === true
-    const picketHistory = data.available === true ? data.state?.picket?.history ?? [] : []
+    const picketActive = data.available === true && data.picket?.active === true
+    const picketHistory = data.available === true ? data.picket?.history ?? [] : []
     const completeWork = data.coverage === 'complete' &&
       data.completedTurnMs !== null && data.completedTurnMs >= 0
     const choice = async (next:'enabled'|'not-now')=>{

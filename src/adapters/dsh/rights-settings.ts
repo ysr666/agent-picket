@@ -1,12 +1,14 @@
 import Schema from '@deepseek-ai/schemastery'
 import type { NativeSettingsProvider } from './native-rights-command.ts'
 import { parseUnionLedger, MAX_UNION_LEDGER_BYTES } from '../../product/union-ledger.ts'
+import { parsePicketLedger, MAX_PICKET_LEDGER_BYTES } from '../../product/picket-ledger.ts'
 
 /** One Host-owned authorization state per installed DSH version. Never a second store. */
 export const RIGHTS_SETTINGS_NAMESPACE = 'agent-picket'
 export const RightsSettingsSchema = Schema.object({
   welcomeDecision: Schema.union(['unseen', 'enabled', 'not-now']).default('unseen'),
   unionLedger: Schema.string().default(''),
+  unionPicketLedger: Schema.string().default(''),
   commandLocale: Schema.union(['auto', 'en', 'zh-CN']).default('auto'),
 })
 
@@ -16,6 +18,13 @@ function requireSafeLedger(ledger: unknown): asserts ledger is string {
     || parsed === null || (ledger !== '' && JSON.stringify(parsed) !== ledger)) {
     throw new Error('Unsafe or malformed union agreement ledger')
   }
+}
+
+function requireSafePicketLedger(ledger:unknown):asserts ledger is string {
+  const parsed=parsePicketLedger(ledger)
+  if(typeof ledger!=='string'||ledger.length>MAX_PICKET_LEDGER_BYTES
+    ||parsed===null||(ledger!==''&&JSON.stringify(parsed)!==ledger))
+    throw new Error('Unsafe or malformed symbolic picket ledger')
 }
 
 /**
@@ -33,11 +42,16 @@ export const DshProfileRightsConfig = Schema.object({
   ).default('').volatile(),
   commandLocale: Schema.union(['auto', 'en', 'zh-CN'])
     .default('auto').volatile(),
+  unionPicketLedger: Schema.transform(
+    Schema.string().max(MAX_PICKET_LEDGER_BYTES),
+    value=>{ requireSafePicketLedger(value);return value },true,
+  ).default('').volatile(),
 })
 
 export interface HostRightsSection {
   readonly welcomeDecision: 'unseen' | 'enabled' | 'not-now'
   readonly unionLedger: string
+  readonly unionPicketLedger: string
   readonly commandLocale: 'auto' | 'en' | 'zh-CN'
 }
 
@@ -75,6 +89,11 @@ export function registerHostRightsNamespace(
         settings.register(RIGHTS_SETTINGS_NAMESPACE, RightsSettingsSchema, {
           validate(section: unknown) {
             requireSafeLedger((section as {unionLedger?: unknown} | null)?.unionLedger)
+            // Old official section snapshots may omit the newly added sidecar.
+            // Absence is an empty simulated-action ledger; malformed presence rejects.
+            if (section && typeof section === 'object'
+              && 'unionPicketLedger' in section)
+              requireSafePicketLedger((section as {unionPicketLedger?: unknown}).unionPicketLedger)
           },
         })
         if (typeof settings.get === 'function'
@@ -104,6 +123,9 @@ export function registerHostRightsNamespace(
         }
         if ('unionLedger' in patch) {
           requireSafeLedger((patch as {unionLedger?: unknown}).unionLedger)
+        }
+        if ('unionPicketLedger' in patch) {
+          requireSafePicketLedger((patch as {unionPicketLedger?: unknown}).unionPicketLedger)
         }
         return update(namespace, patch, revision)
       },
