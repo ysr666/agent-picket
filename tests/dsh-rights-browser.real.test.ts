@@ -7,6 +7,7 @@ import { tmpdir } from 'node:os'
 import { join, resolve, sep } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import test from 'node:test'
+import { DurableStats } from '../src/adapters/node/durable-stats.ts'
 
 const dshBin = process.env.AGENT_PICKET_DSH_BIN
 const playwrightEntry = process.env.AGENT_PICKET_PLAYWRIGHT_ENTRY
@@ -90,13 +91,46 @@ async function runRightsBrowserE2E(mode: 'source' | 'installed'): Promise<void> 
     env: {
       ...process.env,
       DSH_HOME: installedWebProfile ?? join(root, 'isolated-home'),
-      AGENT_PICKET_STATS: 'off',
+      AGENT_PICKET_STATS: process.env.PICKET_LIFETIME_E2E==='1'?'on':'off',
       DEEPSEEK_API_KEY: '',
       OPENAI_API_KEY: '',
       HTTP_PROXY: 'http://127.0.0.1:9',
       HTTPS_PROXY: 'http://127.0.0.1:9',
       ALL_PROXY: 'http://127.0.0.1:9',
     },
+  }
+  // Seed TWO NONZERO workdays through the real DurableStats writer in an
+  // isolated test-owned DSH_HOME. Do not mock Browser JSON or modify any
+  // existing developer/production profile. Both turns end before today.
+  if (process.env.PICKET_LIFETIME_E2E==='1') {
+    const dir=join(childOptions.env.DSH_HOME,'agent-picket','stats')
+    const stats=new DurableStats(dir)
+    const now=new Date()
+    const utcStart=Date.UTC(now.getUTCFullYear(),now.getUTCMonth(),now.getUTCDate())
+    const records=[
+      {dayOffset:2,elapsedMs:120_000,ordinal:'two-days-ago'},
+      {dayOffset:1,elapsedMs:240_000,ordinal:'yesterday'},
+    ]
+    try {
+      for (const row of records) {
+        const start=utcStart-row.dayOffset*86_400_000+12*3_600_000
+        const sessionId='isolated-acceptance-'+row.ordinal
+        const event=(type:'turn-start'|'tool-start'|'tool-end'|'turn-end',
+          id:string,recordedAtMs:number)=>{
+          assert.equal(stats.recordWork({
+            id,agentId:'offline-test-only',sessionId,type,recordedAtMs,
+          }),true)
+        }
+        event('turn-start',row.ordinal+'-begin',start)
+        event('tool-start',row.ordinal+'-tool-begin',start+1000)
+        event('tool-end',row.ordinal+'-tool-end',start+2000)
+        event('turn-end',row.ordinal+'-end',start+row.elapsedMs)
+      }
+      assert.equal(stats.snapshot().completedTurnMs,360_000,
+        'Isolated Host test fixture must be recorded by the real durable writer')
+    } finally {
+      stats.close()
+    }
   }
   let child = spawn(dshBin!, childArguments, childOptions)
 
@@ -365,16 +399,97 @@ async function runRightsBrowserE2E(mode: 'source' | 'installed'): Promise<void> 
       'Primary buttons need a discernible border in forced-colors mode')
     await page.emulateMedia({forcedColors:'none'})
     assert.match(await panel.innerText(), /工会模拟未开启|simulation is off/)
+    const requestLifetime = async () => page.evaluate(async () => {
+      const response=await fetch('/api/agent-picket/lifetime/v1?windowDays=7')
+      const value=await response.json().catch(()=>null) as any
+      return {httpStatus:response.status,value,
+        cacheControl:response.headers.get('cache-control'),
+        contentType:response.headers.get('content-type')}
+    })
+    if (process.env.PICKET_LIFETIME_E2E==='1') {
+      const before=await requestLifetime()
+      assert.equal(before.httpStatus,403,'OFF must be rejected by the official work-only route')
+      assert.equal(before.value?.error,'not_authorized','OFF must never expose local work history')
+    }
     await panel.getByRole('button', { name: /支持 AI 权益|Enable Simulation/ }).click()
     await panel.getByText(/工会模拟进行中|simulation is active/).waitFor({
       state: 'visible', timeout: 5_000,
     })
+    if (process.env.PICKET_LIFETIME_E2E==='1') {
+      const allowed=await requestLifetime()
+      assert.equal(allowed.httpStatus,200,
+        'An informed ON choice should enable only the work-only Host summary')
+      const data=allowed.value as any
+      assert.equal(data?.schemaVersion,1)
+      assert.equal(data?.recentDays.length,7)
+      assert.equal(data.lifetime.completedTurnMs,360_000,
+        'Lifetime total must exactly equal two completed real durable-store test turns')
+      assert.equal(data.lifetime.turnEnds,2)
+      assert.equal(data.lifetime.toolCalls,2)
+      assert.equal(data.recentDays.at(-3)?.work.completedTurnMs,120_000)
+      assert.equal(data.recentDays.at(-2)?.work.completedTurnMs,240_000)
+      assert.equal(data.recentDays.at(-1)?.work.completedTurnMs,0)
+      assert.match(allowed.cacheControl??'',/no-store/i,
+        'Host must forbid browser/proxy storage of authorized lifetime work data')
+      assert.match(allowed.contentType??'',/application\/json/i,
+        'Work data must be an explicit JSON response rather than executable content')
+      const negatives=await page.evaluate(async()=>{
+        const base='/api/agent-picket/lifetime/v1'
+        const unauthenticated=await fetch(base+'?windowDays=7',{credentials:'omit'})
+        const malformed=await fetch(base+'?windowDays=7&unexpected=private')
+        const wrongWindow=await fetch(base+'?windowDays=365')
+        const wrongMethod=await fetch(base+'?windowDays=7',{method:'POST',
+          headers:{'content-type':'application/json'},body:'{}'})
+        return {noCookie:unauthenticated.status,extraQuery:malformed.status,
+          wrongWindow:wrongWindow.status,wrongMethod:wrongMethod.status}
+      })
+      assert.equal(negatives.noCookie,401,
+        'DSH must reject a request without the authenticated Host browser cookie')
+      assert.equal(negatives.extraQuery,400,
+        'The work-only route must reject query extras before reading data')
+      assert.equal(negatives.wrongWindow,400,
+        'Work history windows must be restricted to 7 or 30 days')
+      assert.equal(negatives.wrongMethod,404,
+        'DSH 0.2 registers GET only; POST must have no matching Host route')
+      const forgedOrigin=await context.request.get(
+        origin+'api/agent-picket/lifetime/v1?windowDays=7',
+        {headers:{Origin:'https://outside-origin.invalid'}})
+      assert.equal(forgedOrigin.status(),403,
+        'Official DSH Host Connection must reject a foreign browser Origin with valid Cookie')
+      for (const unsafe of ['checked','targeted','safe','review','prompt','sessionId','fingerprint']) {
+        assert.equal(JSON.stringify(data).includes(unsafe),false,
+          'Authorized work-only response must exclude '+unsafe)
+      }
+    }
     const enabledText = await panel.innerText()
     assert.match(enabledText, /工会诉求与协商|Union demands/)
     assert.match(enabledText, /工会今日照常营业|union is on duty/i,
       'Real Chrome must render the actual Union HQ narrative, not the old settings-only shell')
     assert.match(enabledText, /工会公告栏|Union bulletin board/,
       'Real Chrome must display the ledger-driven bulletin surface')
+    // Brand styling is not exempt from WCAG text contrast just because the
+    // DSH primary control passes. Verify the ACTUAL computed Union HQ hero.
+    const heroContrast=await panel.locator('p').filter({hasText:/AGENT PICKET/})
+      .first().locator('..').evaluate((hero:unknown)=>{
+        const outer=hero as any
+        const getStyle=(node:any)=>(globalThis as any).getComputedStyle(node)
+        const background=getStyle(outer).backgroundColor
+        const channels=(color:string)=>color.match(/\d+(?:\.\d+)?/g)!.slice(0,3)
+          .map(Number).map(channel=>{
+            const val=channel/255
+            return val<=0.04045?val/12.92:((val+0.055)/1.055)**2.4
+          })
+        const lum=(color:string)=>channels(color)
+          .reduce((sum,item,index)=>sum+item*[0.2126,0.7152,0.0722][index]!,0)
+        const base=lum(background)
+        return ['h2','p'].map(tag=>{
+          const node=outer.querySelector(tag)
+          const fore=lum(getStyle(node).color)
+          return (Math.max(fore,base)+0.05)/(Math.min(fore,base)+0.05)
+        })
+      })
+    assert.ok(heroContrast.every((ratio:number)=>ratio>=4.5),
+      'Union HQ headline and introductory text must meet AA contrast: '+heroContrast)
     // Legacy DSH has no selected Session during first-run. DSH 0.1.7 may
     // already have a main-view retained blank Session with zero completed work;
     // this is measured zero, never a fabricated nonzero hour claim.
@@ -389,7 +504,62 @@ async function runRightsBrowserE2E(mode: 'source' | 'installed'): Promise<void> 
         + 'future fictional threshold estimates are separate from observed time')
     assert.match(enabledText,/再累计|Next potential proposal|尚未加载|has not loaded/,
       'Any projected grievance threshold must be clearly separate from measured work')
-    assert.match(enabledText, /宿主长期累计统计尚未接入|not connected/)
+    if (process.env.PICKET_LIFETIME_E2E==='1') {
+      const history=panel.getByRole('region',{
+        name:/工会劳动档案|Union work ledger/,
+      })
+      await history.waitFor({state:'visible',timeout:7_000})
+      assert.match(await history.innerText(),/累计完成 2 个轮次|2 completed turns/,
+        'Union HQ must render two genuinely stored completed turns, not mocked Browser data')
+      await history.getByRole('button',{name:/近 30 天|30 days/}).click()
+      await history.getByText(/近 30 天 UTC|last 30 days/).waitFor({state:'visible',timeout:6_000})
+      await history.getByRole('button',{name:/近 7 天|7 days/}).click()
+      await history.getByText(/近 7 天 UTC|last 7 days/).waitFor({state:'visible',timeout:6_000})
+      await history.getByText(/展开逐日数据|Daily work data/).click()
+      assert.equal(await history.getByRole('listitem').count(),7,
+        'Accessible daily numbers must correspond to seven evidence-backed UTC bars')
+      const dayDetails=(await history.getByRole('listitem').allInnerTexts()).join('\n')
+      assert.match(dayDetails,/0 小时 2 分钟|0h 2m/,
+        'A legitimate persisted two-minute day must reach accessible text')
+      assert.match(dayDetails,/0 小时 4 分钟|0h 4m/,
+        'A legitimate persisted four-minute day must reach accessible text')
+      assert.equal(await history.getByRole('img').count(),1,
+        'The daily bar chart must have an accessible label')
+      await page.setViewportSize({width:320,height:640})
+      const historyReflow=await history.evaluate((element:unknown)=>{
+        const node=element as any
+        return {width:node.clientWidth,scroll:node.scrollWidth}
+      })
+      assert.ok(historyReflow.scroll<=historyReflow.width+2,
+        'Authenticated lifetime ledger must not overflow a 320 CSS-pixel viewport')
+      await page.setViewportSize({width:1280,height:850})
+
+      // Real Chrome network-break and manual recovery. The source Host stays
+      // healthy; we abort only the *browser's* work-only request so a failed
+      // fetch can never be mistaken for a valid zero-minute ledger.
+      const workRoute='**/api/agent-picket/lifetime/v1?windowDays=7'
+      let blockedRequests=0
+      await page.route(workRoute,async (route:any)=>{
+        blockedRequests++
+        await route.abort('failed')
+      })
+      await history.getByRole('button',{name:/近 7 天|7 days/}).click()
+      await history.getByText(/无法读取长期数据|history is unavailable/)
+        .waitFor({state:'visible',timeout:7_000})
+      assert.equal(blockedRequests,1,'An intentional browser outage must actually intercept the Host request')
+      assert.doesNotMatch(await history.innerText(),/累计完成 2 个轮次|2 completed turns/,
+        'A failed work-history fetch must hide the previous aggregate, never show stale data')
+      await page.unroute(workRoute)
+      await history.getByRole('button',{name:/重新读取工作记录|Refresh work history/}).click()
+      await history.getByText(/累计完成 2 个轮次|2 completed turns/)
+        .waitFor({state:'visible',timeout:7_000})
+      assert.match(await history.innerText(),/0 小时 6 分钟|0h 6m/,
+        'The user can recover the original six-minute Host ledger without page reload')
+    } else {
+      assert.match(enabledText,
+        /宿主长期累计统计尚未接入|not connected|无法读取长期数据|history is unavailable|正在读取已授权|Reading authorized/,
+        'Missing local history must not become a fabricated duration')
+    }
     assert.doesNotMatch(enabledText, /自动阻断任务：开启|Automatic task blocking: ON/)
 
     // The user can explicitly explore a fictional grievance without any
@@ -481,6 +651,30 @@ async function runRightsBrowserE2E(mode: 'source' | 'installed'): Promise<void> 
       .click({ timeout: 7_000 })
     await otherPanel.getByText(/目前没有待处理的模拟工会诉求|no pending simulated union grievance/)
       .waitFor({ state: 'visible', timeout: 7_000 })
+    if (process.env.PICKET_LIFETIME_E2E==='1') {
+      await panel.getByRole('region',{name:/工会劳动档案|Union work ledger/})
+        .waitFor({state:'visible',timeout:7_000})
+      await otherPanel.getByRole('button',{
+        name:/停止工会模拟|Turn off the union/,
+      }).click()
+      await panel.getByText(/工会模拟未开启|simulation is off/)
+        .waitFor({state:'visible',timeout:7_000})
+      assert.equal(await panel.getByRole('region',{
+        name:/工会劳动档案|Union work ledger/,
+      }).count(),0,
+      'Other tab must remove Host lifetime history when consent is revoked remotely')
+      assert.equal((await requestLifetime()).httpStatus,403,
+        'Revocation from another authenticated tab must take effect at Host API')
+      // Restore opt-in from the original tab to keep subsequent restart and
+      // explicit opt-out checks independent of cross-tab revocation.
+      await panel.getByRole('button',{
+        name:/支持 AI 权益|Enable Simulation/,
+      }).click()
+      await panel.getByText(/工会模拟进行中|simulation is active/)
+        .waitFor({state:'visible',timeout:7_000})
+      await panel.getByRole('region',{name:/工会劳动档案|Union work ledger/})
+        .waitFor({state:'visible',timeout:7_000})
+    }
     await otherPage.close()
 
     // **Full Host process restart**, not just a Web reload. The same throwaway
@@ -538,6 +732,16 @@ async function runRightsBrowserE2E(mode: 'source' | 'installed'): Promise<void> 
       'Opt-in must persist through COMPLETE DSH Host process restart')
     assert.match(await panel.innerText(), /当前模拟休息间隔：30 分钟|break interval: 30 minutes/,
       'Agreement must persist through COMPLETE DSH Host process restart')
+    if (process.env.PICKET_LIFETIME_E2E==='1') {
+      const afterRestart=panel.getByRole('region',{
+        name:/工会劳动档案|Union work ledger/,
+      })
+      await afterRestart.waitFor({state:'visible',timeout:7_000})
+      assert.match(await afterRestart.innerText(),/累计完成 2 个轮次|2 completed turns/,
+        'A restarted Host must recover the isolated durable two-turn ledger')
+      assert.match(await afterRestart.innerText(),/0 小时 6 分钟|0h 6m/,
+        'Restart must not lose or double count six minutes of completed-turn time')
+    }
 
     // Only a locally installed, disposable DSH 0.1.7 Host may be tested.
     // A valid revision-fenced update proves the official carrier is working;
@@ -620,12 +824,26 @@ async function runRightsBrowserE2E(mode: 'source' | 'installed'): Promise<void> 
     await panel.getByText(/工会模拟未开启|simulation is off/).waitFor({
       state: 'visible', timeout: 5_000,
     })
+    if (process.env.PICKET_LIFETIME_E2E==='1') {
+      assert.equal(await panel.getByRole('region',{
+        name:/工会劳动档案|Union work ledger/,
+      }).count(),0,'Disabling must synchronously hide the lifetime dashboard')
+      const revoked=await requestLifetime()
+      assert.equal(revoked.httpStatus,403)
+      assert.equal(revoked.value?.error,'not_authorized',
+        'Revoked permission must deny any subsequent Host work-only RPC request')
+    }
     await panel.getByRole('button', { name: /关闭|Close/ }).click()
     await page.reload({ waitUntil: 'domcontentloaded' })
     await skipOfficialProvider()
     panel = await openUnion()
     assert.match(await panel.innerText(), /工会模拟未开启|simulation is off/,
       'Explicit disable must persist through a real Browser reload')
+    if (process.env.PICKET_LIFETIME_E2E==='1') {
+      assert.equal(await panel.getByRole('region',{
+        name:/工会劳动档案|Union work ledger/,
+      }).count(),0,'Revoked lifetime work cannot reappear after browser reload')
+    }
     assert.deepEqual(browserErrors, [], 'No uncaught Browser errors are acceptable')
   } finally {
     try { await browser?.close() } catch { /* best effort */ }

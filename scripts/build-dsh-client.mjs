@@ -19,6 +19,8 @@ const modules = [
   'product/union-experience.js',
   'adapters/dsh/client-bargaining.js',
   'adapters/dsh/native-rights-ui.js',
+  'adapters/dsh/lifetime-work-contract.js',
+  'adapters/dsh/client-lifetime.js',
   'adapters/dsh/client-dashboard.js',
   'adapters/dsh/client.js',
 ]
@@ -30,9 +32,10 @@ const allowedImports = new Map([
   ['adapters/dsh/client-bargaining.js', new Set([
     '../../product/union-desk.js', '../../product/union-ledger.js',
   ])],
+  ['adapters/dsh/client-lifetime.js', new Set(['./lifetime-work-contract.js'])],
   ['adapters/dsh/client.js', new Set([
     './client-dashboard.js', './client-rights-scope.js', './client-bargaining.js',
-    './native-rights-ui.js', './client-host-settings-017.js', '../../i18n/index.js',
+    './native-rights-ui.js', './client-host-settings-017.js', './client-lifetime.js', '../../i18n/index.js',
   ])],
 ])
 const blocks = []

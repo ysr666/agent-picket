@@ -1,4 +1,5 @@
 import { createBrowserDashboardBridge } from './client-dashboard.ts'
+import { createBrowserLifetimeWorkReader } from './client-lifetime.ts'
 import { createDshBrowserUnionDesk, type UnionSettingsSection } from './client-bargaining.ts'
 import { createDshClientRightsScope, type DshSettingsScope } from './client-rights-scope.ts'
 import { createOfficialDsh017Scope, type OfficialHostMirror, type OfficialHostSettings } from './client-host-settings-017.ts'
@@ -96,6 +97,9 @@ export function apply(ctx: ClientContext, react?: ReactForDsh, portal?: PortalFo
       : scoped.settingsScope!.bind<UnionSettingsSection>({namespace:'agent-picket'})
     unionRegistered = true
     const owner = createDshClientRightsScope(rightsScope)
+    const lifetime = version==='new' ? createBrowserLifetimeWorkReader({
+      authorized:()=>owner.snapshot().laborRightsEnabled,
+    }) : null
     const desk = createDshBrowserUnionDesk({
       scope: ledgerScope,
       consent: () => owner.snapshot().laborRightsEnabled,
@@ -110,13 +114,17 @@ export function apply(ctx: ClientContext, react?: ReactForDsh, portal?: PortalFo
         completedTurnMs: data?.coverage === 'complete'
           ? data.sessionWork?.completedTurnMs ?? null : null,
         coverage: data?.coverage ?? 'not-loaded' as const,
-        lifetimeMs: null,
+        lifetimeMs: lifetime?.snapshot().data?.lifetime.completedTurnMs ?? null,
+        lifetimeWork: lifetime?.snapshot() ?? {status:'unavailable' as const,data:null},
       }
     }
     const subscribeUnion = (listener: () => void): (() => void) => {
       let stopEvents = () => {}
       let currentEpoch = 0
       const onWork = () => {
+        // Recheck the real Host choice, and drop old-session data immediately.
+        lifetime?.setScope(owner.snapshot().laborRightsEnabled,
+          activeId()??'agent-picket:global-work')
         const data = readUnion()
         void desk.observe(data.completedTurnMs, data.coverage)
         listener()
@@ -132,6 +140,7 @@ export function apply(ctx: ClientContext, react?: ReactForDsh, portal?: PortalFo
           if (currentEpoch === epoch) onWork()
         })
       }
+      const stopLifetime = lifetime?.subscribe(listener) ?? (()=>{})
       const stopDesk = desk.subscribe(listener)
       const stopSettings = owner.subscribe(onWork)
       const stopSessions = scoped.sessions.list?.subscribe(rebind) ?? (() => {})
@@ -142,6 +151,7 @@ export function apply(ctx: ClientContext, react?: ReactForDsh, portal?: PortalFo
         stopSessions()
         stopSettings()
         stopDesk()
+        stopLifetime()
       }
     }
     // Background observer is lifecycle-owned and works while the drawer is
@@ -151,6 +161,7 @@ export function apply(ctx: ClientContext, react?: ReactForDsh, portal?: PortalFo
       const stopBackground = subscribeUnion(() => {})
       scoped.effect(() => () => {
         stopBackground()
+        lifetime?.dispose()
         desk.dispose()
         // Both native settings scopes are lifecycle-owned. Silently drain
         // their pending writes on unload rather than leak Host subscriptions.
@@ -167,6 +178,7 @@ export function apply(ctx: ClientContext, react?: ReactForDsh, portal?: PortalFo
       subscribeLocale: listener => scoped.locale!.subscribe(listener),
       readUnion,
       subscribeUnion,
+      refreshLifetime:days=>lifetime?.refresh(days),
       shouldAutoWelcome: () => isDshUnionAutoWelcomeEligible(scoped.sessions.list?.getSnapshot()),
       subscribeSessionVisibility: listener => scoped.sessions.list?.subscribe(listener) ?? (()=>{}),
       // The bargaining state is fictional user-owned DSH settings only.

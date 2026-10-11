@@ -10,6 +10,7 @@ import { homedir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { registerHostRightsNamespace, DshProfileRightsConfig } from './rights-settings.ts'
 import { createNativeUnionCommandPort, type NativeUnionCommandPort } from './native-rights-command.ts'
+import { registerDshLifetimeWorkFetch, type LifetimeHostContext } from './lifetime-work-rpc.ts'
 
 /**
  * Native DeepSeek Harness/Cordis plugin entry. Node 22.19+ TypeScript stripping
@@ -54,6 +55,13 @@ export function apply(ctx: DshIntegrationContext): void {
       // Storage errors must never interrupt agent work. No paths leak to logs.
     }
   }
+  // Opt-in, work-only endpoint on DSH Hosts exposing the official Connection
+  // RPC registry. No custom listener, no prompt or classification data. This
+  // never activates enforcement; it checks the live Host permission per call.
+  registerDshLifetimeWorkFetch(ctx as unknown as LifetimeHostContext, {
+    authorized: () => nativeUnion?.enabled() === true,
+    store: () => lifetime,
+  })
   const durable: DetectionProvider = {
     detect(prompt) {
       const verdict = rules.detect(prompt)

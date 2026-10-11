@@ -8,6 +8,7 @@ import { getWelcomeState } from './client-rights-scope.ts'
 import { projectUnionExperience } from '../../product/union-experience.ts'
 import type { LaborStateV1 } from '../../product/union-desk.ts'
 import type { MessageKey } from '../../i18n/index.ts'
+import type { LifetimeClientSnapshot } from './client-lifetime.ts'
 
 export interface ReactForDsh {
   createElement(type: unknown, props: Record<string, unknown> | null, ...children: unknown[]): unknown
@@ -36,6 +37,7 @@ export interface UnionPanelData {
   readonly completedTurnMs: number | null
   readonly coverage: 'complete' | 'partial' | 'not-loaded' | 'unavailable'
   readonly lifetimeMs: number | null
+  readonly lifetimeWork?: LifetimeClientSnapshot
 }
 export interface DshUnionUiDeps {
   readonly rights: DshRightsPort
@@ -45,6 +47,7 @@ export interface DshUnionUiDeps {
   readonly getLocale?: () => string
   readonly readUnion?: () => UnionPanelData
   readonly subscribeUnion?: (listener: () => void) => () => void
+  readonly refreshLifetime?: (windowDays:7|30)=>Promise<void>|undefined
   readonly shouldAutoWelcome?: () => boolean
   readonly subscribeSessionVisibility?: (listener: () => void) => () => void
   readonly respond?: (id: number, choice: 'accept' | 'decline') => Promise<void>
@@ -354,6 +357,61 @@ export function createDshUnionComponents(
           h('p',{style:secondary},label('hq.score.privacy')),
         ):null,
       ):null,
+      enabled && data.lifetimeWork?.status === 'available' && data.lifetimeWork.data ?
+        h('section',{style:{...card,borderTop:'4px solid #b59a63'},
+          'aria-label':label('hq.lifetime.title')},
+          h('div',{style:{display:'flex',flexWrap:'wrap',alignItems:'center',
+            justifyContent:'space-between',gap:'12px',marginBottom:'12px'}},
+            h('h3',{style:{margin:0}},label('hq.lifetime.title')),
+            deps.refreshLifetime ? h('div',{style:{display:'flex',gap:'7px',flexWrap:'wrap'}},
+              ...([7,30] as const).map(days=>h('button',{
+                type:'button',key:days,
+                'aria-pressed':data.lifetimeWork!.data!.windowDays===days,
+                style:{...quiet,padding:'7px 12px',fontSize:'13px',
+                  borderColor:data.lifetimeWork!.data!.windowDays===days?'#a58244':undefined},
+                onClick:()=>{void deps.refreshLifetime!(days)},
+              },label(days===7?'hq.lifetime.seven':'hq.lifetime.thirty'))),
+            ):null),
+          h('p',{style:{fontSize:'clamp(24px,5vw,34px)',fontWeight:750,margin:'0 0 6px'}},
+            formatDuration(data.lifetimeWork.data.lifetime.completedTurnMs,
+              deps.getLocale?.()??'en')),
+          h('p',{style:{...secondary,margin:'0 0 16px'}},label('hq.lifetime.basis')),
+          h('div',{style:{display:'flex',gap:'18px',flexWrap:'wrap',marginBottom:'18px'}},
+            h('span',{},deps.t('hq.lifetime.turns',{
+              count:data.lifetimeWork.data.lifetime.turnEnds})),
+            h('span',{},deps.t('hq.lifetime.tools',{
+              count:data.lifetimeWork.data.lifetime.toolCalls}))),
+          h('p',{style:{...secondary,margin:'0 0 8px'}},deps.t('hq.lifetime.range',{
+            count:data.lifetimeWork.data.windowDays})),
+          h('div',{role:'img','aria-label':label('hq.lifetime.chartLabel'),
+            style:{display:'flex',alignItems:'end',height:'64px',gap:'3px',
+              padding:'3px 0',overflow:'hidden'}},
+            ...data.lifetimeWork.data.recentDays.map(day=>{
+              const maximum=Math.max(1,...data.lifetimeWork!.data!.recentDays.map(
+                e=>e.work.completedTurnMs))
+              return h('div',{key:day.day,'aria-hidden':'true',style:{
+                background:'#668f7e',borderRadius:'3px 3px 0 0',
+                flex:1,minWidth:0,height:Math.max(3,Math.round(day.work.completedTurnMs/maximum*62))+'px',
+              }})
+            })),
+          h('details',{style:{marginTop:'12px'}},
+            h('summary',{style:{fontWeight:650,cursor:'pointer'}},label('hq.lifetime.dayDetails')),
+            h('ol',{style:{paddingLeft:'21px',fontSize:'13px'}},
+              ...data.lifetimeWork.data.recentDays.map(day=>h('li',{key:day.day,
+                style:{margin:'5px 0'}},day.day+' · '+
+                formatDuration(day.work.completedTurnMs,deps.getLocale?.()??'en'))))),
+          h('p',{style:{...secondary,margin:'14px 0 0'}},label('hq.lifetime.privacy')),
+        ) :
+        enabled && data.lifetimeWork && data.lifetimeWork.status!=='off' ?
+          h('section',{style:card,'aria-label':label('hq.lifetime.title')},
+            h('h3',{style:{marginTop:0}},label('hq.lifetime.title')),
+            h('p',{role:'status',style:secondary},label(
+              data.lifetimeWork.status==='loading'
+                ? 'hq.lifetime.loading':'hq.lifetime.unavailable')),
+            deps.refreshLifetime ? h('button',{type:'button',style:quiet,
+              onClick:()=>{void deps.refreshLifetime!(7)}},
+              label('hq.lifetime.retry')):null,
+          ) : null,
       enabled ? h('section',{style:{...card,borderColor:'#beac8d',background:'var(--dsw-alias-bg-layer-1, #fff)'}},
         h('h3',{ref:(node:{focus():void}|null)=>{deskHeading.current=node},
           tabIndex:-1,style:{marginTop:0}},label('union.desk.title')),
@@ -489,7 +547,8 @@ export function createDshUnionComponents(
           h('ol',{style:{...secondary,paddingLeft:'20px'}},
             ...data.state.history.slice().reverse().map(record=>
               h('li',{key:record.id},
-                deps.t('union.history.entry',{id:record.id,outcome:record.outcome}))))):null,
+                deps.t('union.history.entry',{id:record.id,
+                  outcome:label(('union.history.outcome.'+record.outcome) as MessageKey)}))))):null,
       ):null,
       h('div',{style:card},
         h('h3',{style:{marginTop:0}},label('workday.title')),
@@ -515,7 +574,10 @@ export function createDshUnionComponents(
         h('p',{style:secondary},getDataLabel(deps.t,data)),
         h('p',{style:secondary},label('stats.durationNote')),
         h('p',{style:secondary},
-          data.lifetimeMs === null ? label('stats.lifetime.unavailable') :
+          data.lifetimeMs === null ?
+            label(data.lifetimeWork?.status==='loading'?'hq.lifetime.loading':
+              data.lifetimeWork?.status==='unavailable'?'hq.lifetime.unavailable':
+                'stats.lifetime.unavailable') :
             formatDuration(data.lifetimeMs, deps.getLocale?.() ?? 'en')),
       ),
       error?h('p',{role:'alert','aria-atomic':'true',

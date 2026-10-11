@@ -46,7 +46,22 @@
     "README.md",
     "LICENSE",
     "cordis.patch.yml",
-    "docs/"
+    "docs/",
+    "!docs/AGENT_PICKET_V2_IMPLEMENTATION_AND_SAFETY_20261011.zh.md",
+    "!docs/DSH_02_LIFETIME_AUTH_BRIDGE_RESEARCH.zh.md",
+    "!docs/DSH_LIFETIME_WORK_RPC_V1.zh.md",
+    "!docs/UNION_LIFETIME_WEB_INTEGRATION.zh.md",
+    "!docs/CANONICAL_MERGE_PLAN.md",
+    "!docs/MAIN_23_MERGE_RECONCILIATION.md",
+    "!docs/PARALLEL_BRANCH_PARITY_2026_10_10.md",
+    "!docs/PR_STACK_RELEASE_AUDIT_2026_10_10.md",
+    "!docs/RELEASE_READINESS_2026_10_10.md",
+    "!docs/DSH_017_HOST_PROFILE_EXPERIMENT.md",
+    "!docs/DSH_02_MENU_REFRESH_READY_REVIEW.md",
+    "!docs/PR_87_88_89_MERGE_GATE_20261011.zh.md",
+    "!docs/PREMERGE_SIGNOFF_20261011.zh.md",
+    "!docs/MANUAL_ACCESSIBILITY_UX_SIGNOFF.zh.md",
+    "!docs/SELF_EXECUTED_UI_UX_REVIEW_20261011.zh.md"
   ],
   "dsh": {
     "bundle": {
