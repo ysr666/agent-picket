@@ -20,7 +20,7 @@
 - npm run check：325 total、300 PASS、0 FAIL、25 条环境条件 SKIP（非 PASS）。新增状态保持型 React 假身测试验证取消不记录、首次点击不写 Host、确认举牌/收牌后读回事件。既有 UI 测试与实际 Chrome E2E 同步适配二次确认。
 - **真实 DSH 0.1.2-rc.1 + Google Chrome**：源码、离线安装 2/2 PASS；日志 /tmp/picket-ceremony-dsh01-fixenv.log。
 - **真实 DSH 0.2.0-rc.2 + Google Chrome**：源码、离线安装 2/2 PASS，另加 CommandRuntime 官方模块真实实例 + 隔离 Config 1/1 PASS；日志 /tmp/picket-ceremony-dsh02-fixenv.log。
-- npm pack：241,627 字节，未修改 250,000 字节上限。该开发证据文档保留 GitHub，但不装入 npm 安装包。
+- npm pack：241,645 字节，未修改 250,000 字节上限。该开发证据文档保留 GitHub，但不装入 npm 安装包。
 - **保留失败记录**：初次 0.1/0.2 的失败系测试环境分别错误指定了 Playwright CJS 入口和 DSH Host 包目录而非 node_modules，修正环境后重新执行。不能将首次失败称为通过。
 
 ## 仍待完成
