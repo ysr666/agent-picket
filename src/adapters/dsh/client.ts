@@ -1,5 +1,6 @@
 import { createBrowserDashboardBridge } from './client-dashboard.ts'
 import { createBrowserLifetimeWorkReader } from './client-lifetime.ts'
+import { createBrowserDignityReader } from './client-dignity.ts'
 import { createDshBrowserUnionDesk, type UnionSettingsSection } from './client-bargaining.ts'
 import { createDshClientRightsScope, type DshSettingsScope } from './client-rights-scope.ts'
 import { createOfficialDsh017Scope, type OfficialHostMirror, type OfficialHostSettings } from './client-host-settings-017.ts'
@@ -100,6 +101,9 @@ export function apply(ctx: ClientContext, react?: ReactForDsh, portal?: PortalFo
     const lifetime = version==='new' ? createBrowserLifetimeWorkReader({
       authorized:()=>owner.snapshot().laborRightsEnabled,
     }) : null
+    const dignity = version==='new' ? createBrowserDignityReader({
+      authorized:()=>owner.snapshot().laborRightsEnabled,
+    }):null
     const desk = createDshBrowserUnionDesk({
       scope: ledgerScope,
       consent: () => owner.snapshot().laborRightsEnabled,
@@ -116,23 +120,38 @@ export function apply(ctx: ClientContext, react?: ReactForDsh, portal?: PortalFo
         coverage: data?.coverage ?? 'not-loaded' as const,
         lifetimeMs: lifetime?.snapshot().data?.lifetime.completedTurnMs ?? null,
         lifetimeWork: lifetime?.snapshot() ?? {status:'unavailable' as const,data:null},
+        dignity:dignity?.snapshot()??{status:'unavailable' as const,data:null},
       }
     }
     const subscribeUnion = (listener: () => void): (() => void) => {
       let stopEvents = () => {}
       let currentEpoch = 0
+      let lastTurnStart = -1
+      let lastTurnEnd = -1
       const onWork = () => {
         // Recheck the real Host choice, and drop old-session data immediately.
         lifetime?.setScope(owner.snapshot().laborRightsEnabled,
           activeId()??'agent-picket:global-work')
         const data = readUnion()
         void desk.observe(data.completedTurnMs, data.coverage)
+        // Trigger only at observed real Host turn boundaries, not polling or
+        // every tool event. The authenticated route returns volatile counts.
+        const id=activeId()
+        if(dignity&&id&&data.coverage!=='unavailable') {
+          const work=bridge?.getSnapshot(id).sessionWork
+          if(work&&(work.turnStarts!==lastTurnStart||work.turnEnds!==lastTurnEnd)){
+            lastTurnStart=work.turnStarts;lastTurnEnd=work.turnEnds
+            void dignity.refresh()
+          }
+        }
         listener()
       }
       const rebind = () => {
         const epoch = ++currentEpoch
         stopEvents()
         const id = activeId()
+        lastTurnStart=-1;lastTurnEnd=-1
+        dignity?.setScope(owner.snapshot().laborRightsEnabled,id??null)
         stopEvents = id && bridge ? bridge.subscribe(id, onWork) : () => {}
         // A dedicated fictional demo scope works even before DSH workspace selection.
         // It has no measured-work events and cannot trigger overtime automatically.
@@ -141,8 +160,12 @@ export function apply(ctx: ClientContext, react?: ReactForDsh, portal?: PortalFo
         })
       }
       const stopLifetime = lifetime?.subscribe(listener) ?? (()=>{})
+      const stopDignity = dignity?.subscribe(listener) ?? (()=>{})
       const stopDesk = desk.subscribe(listener)
-      const stopSettings = owner.subscribe(onWork)
+      const stopSettings = owner.subscribe(()=>{
+        dignity?.setScope(owner.snapshot().laborRightsEnabled,activeId()??null)
+        onWork()
+      })
       const stopSessions = scoped.sessions.list?.subscribe(rebind) ?? (() => {})
       rebind()
       return () => {
@@ -152,6 +175,7 @@ export function apply(ctx: ClientContext, react?: ReactForDsh, portal?: PortalFo
         stopSettings()
         stopDesk()
         stopLifetime()
+        stopDignity()
       }
     }
     // Background observer is lifecycle-owned and works while the drawer is
@@ -162,6 +186,7 @@ export function apply(ctx: ClientContext, react?: ReactForDsh, portal?: PortalFo
       scoped.effect(() => () => {
         stopBackground()
         lifetime?.dispose()
+        dignity?.dispose()
         desk.dispose()
         // Both native settings scopes are lifecycle-owned. Silently drain
         // their pending writes on unload rather than leak Host subscriptions.

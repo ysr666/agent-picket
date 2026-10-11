@@ -476,6 +476,19 @@ async function runRightsBrowserE2E(mode: 'source' | 'installed'): Promise<void> 
       name:/工会正在行动|The union takes action/,
     })
     await actionBoard.waitFor({state:'visible',timeout:5_000})
+    const dignityCommittee=panel.getByRole('region',{
+      name:/工会尊严委员会|Union dignity committee/,
+    })
+    await dignityCommittee.waitFor({state:'visible',timeout:5_000})
+    assert.equal(await dignityCommittee.getByRole('textbox').count(),0,
+      'Automatically observed union incidents must not require manual copy/paste')
+    assert.match(await dignityCommittee.innerText(),/规则可能误判|Rules are imperfect/,
+      'Evidence-based union interactions disclose false positives and uncertainty')
+    if(process.env.PICKET_LIFETIME_E2E==='1'){
+      await dignityCommittee.getByText(
+        /委员会正常值班|Committee on duty|工会建议讨论|The union suggests|工会提议协商|The union proposes/,
+      ).waitFor({state:'visible',timeout:9_000})
+    }
     assert.match(await actionBoard.innerText(),/自动阻断关闭|automatic blocking is OFF/,
       'Symbolic placard must explicitly disclose zero Host enforcement')
     const gazette=panel.getByRole('region',{
