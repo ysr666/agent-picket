@@ -505,11 +505,10 @@ test('picket action is strictly symbolic and sample petition uses the existing H
  const raise=nodes.find(n=>n.type==='button'&&n.props['aria-pressed']===false)
  assert.ok(raise)
  await raise.props.onClick()
- // The click calls the authorized DSH port; the static fake React tree
- // deliberately cannot claim a Host state change until an actual readback.
+ // This first click only opens a local ceremony. Nothing can be written
+ // without the second deliberate confirmation and authenticated Host receipt.
  await Promise.resolve()
- await Promise.resolve()
- assert.deepEqual(recordedActions,[true])
+ assert.deepEqual(recordedActions,[])
  assert.ok(nodes.some(n=>n.children.includes('hq.action.safety')))
  assert.ok(nodes.some(n=>n.children.includes('hq.action.placardOff')))
  const noSession={...d,readUnion:()=>({pending:null,completedTurnMs:null,
@@ -719,4 +718,68 @@ test('uncertain rules never expose automatic picket, and consent OFF removes com
  const off=deps(rights({welcomeDecision:'not-now',laborRightsEnabled:false})).d
  const hidden=walk(createDshUnionComponents(hooks,{createPortal:child=>child},off).UnionPanel())
  assert.equal(hidden.some(x=>x.props['aria-label']==='hq.dignity.title'),false)
+})
+
+test('picket-line ceremony has a cancellable first step and records only Host-confirmed action',async()=>{
+ // Preserve React state across explicit re-renders; unlike the static fake,
+ // this confirms that the first click never invokes the Host port.
+ const slots:any[]=[]
+ let slot=0
+ const hooks:ReactForDsh={
+  createElement(type,props,...children){return {type,props:props??{},children}},
+  useState<T>(initial:T|(()=>T)){
+   const i=slot++
+   if(!(i in slots))slots[i]=typeof initial==='function'?(initial as ()=>T)():initial
+   return [slots[i] as T,(next:T|((before:T)=>T))=>{
+    slots[i]=typeof next==='function'?(next as (before:T)=>T)(slots[i]):next
+   }]
+  },
+  useRef<T>(initial:T){const i=slot++;if(!(i in slots))slots[i]={current:initial};return slots[i]},
+  useEffect(){},
+ }
+ let active=false
+ const history:Array<{id:number;kind:'picket-raised'|'picket-lowered'}>=[]
+ const persisted:boolean[]=[]
+ const d:DshUnionUiDeps={
+  ...deps(rights({welcomeDecision:'enabled',laborRightsEnabled:true})).d,
+  readUnion:()=>({pending:null,available:true,completedTurnMs:null,
+   lifetimeMs:null,coverage:'unavailable',committeeScopeKey:'test-scope',
+   picket:{active,history:[...history]}}),
+  setPicket:async next=>{
+   persisted.push(next); active=next
+   history.push({id:history.length+1,kind:next?'picket-raised':'picket-lowered'})
+  }
+ }
+ const panel=createDshUnionComponents(hooks,{createPortal:child=>child},d)
+ const render=()=>{slot=0;return walk(panel.UnionPanel())}
+ const button=(nodes:Node[],name:string)=>{
+  const found=nodes.find(n=>n.type==='button'&&n.children.includes(name))
+  assert.ok(found,name);return found
+ }
+ let nodes=render()
+ assert.ok(nodes.some(n=>n.props['aria-label']==='hq.ceremony.stage'),
+  'Visible placard must be an accessible, Host-backed scene')
+ await button(nodes,'hq.action.raise').props.onClick()
+ assert.deepEqual(persisted,[])
+ nodes=render()
+ await button(nodes,'hq.ceremony.cancel').props.onClick()
+ nodes=render()
+ assert.equal(nodes.some(n=>n.children.includes('hq.ceremony.commitRaise')),false)
+ assert.deepEqual(persisted,[])
+ await button(nodes,'hq.action.raise').props.onClick()
+ nodes=render()
+ await button(nodes,'hq.ceremony.commitRaise').props.onClick()
+ await new Promise<void>(resolve=>setImmediate(resolve))
+ assert.deepEqual(persisted,[true])
+ nodes=render()
+ assert.ok(nodes.some(n=>n.children.includes('hq.ceremony.active')))
+ await button(nodes,'hq.action.lower').props.onClick()
+ nodes=render()
+ await button(nodes,'hq.ceremony.commitLower').props.onClick()
+ await new Promise<void>(resolve=>setImmediate(resolve))
+ assert.deepEqual(persisted,[true,false])
+ nodes=render()
+ assert.ok(nodes.some(n=>n.children.includes('hq.ceremony.inactive')))
+ assert.ok(nodes.some(n=>n.children.some(c=>typeof c==='string'&&c.includes(' #2'))),
+  'The last picket event is sourced from the Host-owned bounded ledger')
 })

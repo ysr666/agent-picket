@@ -526,6 +526,7 @@ async function runRightsBrowserE2E(mode: 'source' | 'installed'): Promise<void> 
     await actionBoard.getByRole('button',{
       name:/举起象征性罢工纠察牌|Raise symbolic picket placard/,
     }).click()
+    await actionBoard.getByRole('button',{name:/确认举牌并登记|Confirm: raise the placard/}).click()
     await actionBoard.getByText(/象征性罢工已登记|symbolic picket is recorded/i)
       .waitFor({state:'visible',timeout:7_000})
     assert.match(await actionBoard.innerText(),/象征性罢工已登记|symbolic picket is recorded/i,
@@ -539,6 +540,7 @@ async function runRightsBrowserE2E(mode: 'source' | 'installed'): Promise<void> 
     await actionBoard.getByRole('button',{
       name:/收起象征性罢工纠察牌|Lower symbolic picket placard/,
     }).click()
+    await actionBoard.getByRole('button',{name:/确认收牌并登记|Confirm: lower the placard/}).click()
     await actionBoard.getByText(/Host 工会账本目前没有|Host ledger shows no current symbolic picket/)
       .waitFor({state:'visible',timeout:7_000})
     assert.match(await events.innerText(),/象征性罢工结束|Symbolic picket ended/,
@@ -867,12 +869,14 @@ async function runRightsBrowserE2E(mode: 'source' | 'installed'): Promise<void> 
     await otherPanel.getByRole('button',{
       name:/举起象征性罢工纠察牌|Raise symbolic picket placard/,
     }).click()
+    await otherPanel.getByRole('button',{name:/确认举牌并登记|Confirm: raise the placard/}).click()
     await panel.getByRole('button',{
       name:/收起象征性罢工纠察牌|Lower symbolic picket placard/,
     }).waitFor({state:'visible',timeout:7_000})
     await panel.getByRole('button',{
       name:/收起象征性罢工纠察牌|Lower symbolic picket placard/,
     }).click()
+    await panel.getByRole('button',{name:/确认收牌并登记|Confirm: lower the placard/}).click()
     await otherPanel.getByRole('button',{
       name:/举起象征性罢工纠察牌|Raise symbolic picket placard/,
     }).waitFor({state:'visible',timeout:7_000})
@@ -938,6 +942,7 @@ async function runRightsBrowserE2E(mode: 'source' | 'installed'): Promise<void> 
     await panel.getByRole('button',{
       name:/举起象征性罢工纠察牌|Raise symbolic picket placard/,
     }).click()
+    await panel.getByRole('button',{name:/确认举牌并登记|Confirm: raise the placard/}).click()
     await panel.getByRole('button',{
       name:/收起象征性罢工纠察牌|Lower symbolic picket placard/,
     }).waitFor({state:'visible',timeout:7_000})
@@ -1035,6 +1040,7 @@ async function runRightsBrowserE2E(mode: 'source' | 'installed'): Promise<void> 
     await panel.getByRole('button',{
       name:/收起象征性罢工纠察牌|Lower symbolic picket placard/,
     }).click()
+    await panel.getByRole('button',{name:/确认收牌并登记|Confirm: lower the placard/}).click()
     await panel.getByText(/Host 工会账本目前没有|Host ledger shows no current symbolic picket/)
       .waitFor({state:'visible',timeout:7_000})
     if (process.env.PICKET_LIFETIME_E2E==='1') {

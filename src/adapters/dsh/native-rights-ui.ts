@@ -280,6 +280,10 @@ export function createDshUnionComponents(
     const lastActionNeedsFocus=react.useRef(false)
     const [showArchive,setShowArchive]=react.useState(false)
     const [campaign,setCampaign]=react.useState<CampaignTopic>('recover')
+    // A ceremony is an uncommitted user intention, never a Host action.
+    const [picketCeremony,setPicketCeremony]=react.useState<{
+      mode:'raise'|'lower';scope:string;lastId:number
+    }|null>(null)
     const [eraseConfirmationKey,setEraseConfirmationKey]=react.useState<string|null>(null)
     const [retractConfirmation,setRetractConfirmation]=react.useState<string|null>(null)
     const [eraseAllConfirmation,setEraseAllConfirmation]=react.useState<string|null>(null)
@@ -297,7 +301,7 @@ export function createDshUnionComponents(
       // stable heading only in our open modal, never in the Settings page or
       // after unrelated cross-tab updates.
       if(modal && !modal.contains(doc?.activeElement))deskHeading.current?.focus()
-    },[data.pending?.id,data.pending?.stage,data.state?.history.length])
+    },[data.pending?.id,data.pending?.stage,data.state?.history.length,data.picket?.active])
     react.useEffect(() => deps.subscribeUnion?.(() => setData(safeUnion(deps))), [])
     // Never carry an armed deletion into another Session or a newly re-enabled union.
     react.useEffect(()=>{
@@ -338,6 +342,14 @@ export function createDshUnionComponents(
       && (data.dignity.data.review>0||data.dignity.data.targeted>0)
     const picketActive = data.available === true && data.picket?.active === true
     const picketHistory = data.available === true ? data.picket?.history ?? [] : []
+    const lastPicketId = picketHistory.at(-1)?.id ?? 0
+    const ceremonyReady=enabled && data.available===true && !!deps.setPicket
+      && !!picketCeremony && picketCeremony.scope===(data.committeeScopeKey??'')
+      && picketCeremony.lastId===lastPicketId
+      && (picketCeremony.mode==='lower')===picketActive
+    // A revoked or changed Host scope may never carry an armed action forward.
+    react.useEffect(()=>setPicketCeremony(null),
+      [rights.laborRightsEnabled,data.committeeScopeKey,picketActive,lastPicketId])
     const completeWork = data.coverage === 'complete' &&
       data.completedTurnMs !== null && data.completedTurnMs >= 0
     const choice = async (next:'enabled'|'not-now')=>{
@@ -422,6 +434,45 @@ export function createDshUnionComponents(
             ?'hq.action.resolved':'hq.action.quiet')),
         data.pending ? h('p',{style:secondary},
           label('hq.case.number')+' · #'+String(data.pending.id).padStart(4,'0')):null,
+        // The poster is a scene driven entirely by the confirmed Host snapshot.
+        // In particular, its placard never claims an Agent actually stopped.
+        h('div',{role:'group','aria-label':label('hq.ceremony.stage'),style:{
+          display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(190px,1fr))',
+          alignItems:'center',gap:'16px',padding:'14px',margin:'12px 0',
+          border:'1px solid #688b75',borderRadius:'12px',
+          background:'#19392e',color:'#fff5df',
+        }},
+          h('div',{'aria-hidden':'true',style:{display:'grid',justifyItems:'center',
+            padding:'10px 8px 0'}},
+            h('div',{style:{transform:picketActive?'rotate(-3deg)':'rotate(2deg)',
+              padding:'14px 16px',textAlign:'center',width:'min(100%,190px)',
+              boxSizing:'border-box',background:picketActive?'#eac576':'#f4e8cc',
+              color:'#29362c',border:'3px solid #27382b',
+              boxShadow:'5px 5px 0 #a75136'}},
+              h('span',{style:{fontSize:'10px',fontWeight:850,letterSpacing:'.12em'}},
+                'AGENT PICKET'),
+              h('strong',{style:{display:'block',fontSize:'clamp(17px,3vw,23px)',
+                lineHeight:1.1,margin:'9px 0',overflowWrap:'anywhere'}},
+                label('hq.ceremony.slogan')),
+              h('span',{style:{fontSize:'10px',fontWeight:750}},
+                label('hq.ceremony.simulation'))),
+            h('div',{style:{width:'8px',height:'25px',background:'#bd9970',
+              border:'1px solid #ad8963'}})),
+          h('div',{},
+            h('p',{style:{fontSize:'10px',fontWeight:850,letterSpacing:'.14em',
+              color:'#e9c47a',margin:'0 0 7px'}},label('hq.ceremony.stage')),
+            h('p',{role:'status','aria-live':'polite',style:{
+              fontSize:'16px',fontWeight:750,margin:'0 0 9px'}},
+              label(data.available!==true?'hq.ceremony.unavailable':
+                picketActive?'hq.ceremony.active':'hq.ceremony.inactive')),
+            h('p',{style:{fontSize:'12px',lineHeight:1.55,margin:'0 0 8px'}},
+              label('hq.ceremony.evidence')),
+            h('p',{style:{fontSize:'12px',lineHeight:1.55,margin:0}},
+              label(picketHistory.length?'hq.ceremony.recorded':
+                'hq.ceremony.noRecord')
+              +(picketHistory.length?' #'+lastPicketId:''))
+          )
+        ),
         h('div',{style:{display:'flex',flexWrap:'wrap',gap:'8px',
           alignItems:'center',margin:'12px 0'}},
           data.pending ? h('button',{type:'button',style:primary,
@@ -437,9 +488,28 @@ export function createDshUnionComponents(
             label('hq.action.overtimePetition')):null,
           data.available && deps.setPicket ? h('button',{type:'button',style:quiet,
             disabled:busy,'aria-pressed':picketActive,
-            onClick:()=>{void bargain(()=>deps.setPicket!(!picketActive))}},
+            onClick:()=>setPicketCeremony({mode:picketActive?'lower':'raise',
+              scope:data.committeeScopeKey??'',lastId:lastPicketId})},
             label(picketActive?'hq.action.lower':'hq.action.raise')):null,
         ),
+        ceremonyReady ? h('div',{role:'group','aria-label':label('hq.ceremony.confirmTitle'),
+          style:{border:'2px solid #a7713f',borderRadius:'10px',
+            padding:'12px',margin:'8px 0 12px'}},
+          h('p',{style:{fontWeight:750,margin:'0 0 6px'}},
+            label('hq.ceremony.confirmTitle')),
+          h('p',{style:{fontSize:'13px',lineHeight:1.5,margin:'0 0 10px'}},
+            label(picketCeremony!.mode==='raise'?'hq.ceremony.confirmRaise':
+              'hq.ceremony.confirmLower')),
+          h('div',{style:{display:'flex',flexWrap:'wrap',gap:'8px'}},
+            h('button',{type:'button',style:primary,disabled:busy,
+              onClick:()=>{if(ceremonyReady)void bargain(
+                ()=>deps.setPicket!(picketCeremony!.mode==='raise')
+              ).then(ok=>{if(ok)setPicketCeremony(null)})}},
+              label(picketCeremony!.mode==='raise'?'hq.ceremony.commitRaise':
+                'hq.ceremony.commitLower')),
+            h('button',{type:'button',style:quiet,disabled:busy,
+              onClick:()=>setPicketCeremony(null)},label('hq.ceremony.cancel'))),
+        ):null,
         h('p',{role:'status','aria-live':'polite',style:{
           fontSize:'13px',fontWeight:650,margin:'0 0 8px'}},
           label(data.available !== true?'hq.action.unavailable'
