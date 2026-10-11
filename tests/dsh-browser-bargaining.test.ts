@@ -228,6 +228,88 @@ test('full archive portability and erasure affect all Session cases but no other
  await assert.rejects(desk.forgetAllCommitteeCases(keyB,0,0,now.writeToken),/unavailable/)
  desk.dispose()
 })
+test('independent negotiation and symbolic picket export and erasure are Host-confirmed',async()=>{
+ const f=fixture(),desk=f.create()
+ await desk.setActiveSession('a')
+ await desk.raiseDemoBreak()
+ await desk.respond(1,'accept')
+ await desk.setPicket(true)
+ await desk.setPicket(false)
+ await desk.committeeAction({kind:'file',topic:'request-dialogue'})
+ await desk.setActiveSession('b')
+ await desk.raiseDemoOvertime()
+ await desk.setPicket(true)
+ await desk.setActiveSession('a')
+ const n=desk.snapshot().negotiationArchive!,p=desk.snapshot().picketArchive!
+ assert.deepEqual({groups:n.sessions,events:n.entries},{groups:2,events:2})
+ assert.deepEqual({groups:p.sessions,events:p.entries},{groups:2,events:3})
+ assert.match(n.writeToken??'',/^[0-9a-f]{32}$/)
+ assert.match(p.writeToken??'',/^[0-9a-f]{32}$/)
+ const labor=desk.exportUnionLedger('negotiations',keyA)
+ const pickets=desk.exportUnionLedger('pickets',keyA)
+ const laborJson=JSON.parse(labor) as any
+ const picketJson=JSON.parse(pickets) as any
+ assert.equal(laborJson.format,'agent-picket-all-negotiations')
+ assert.equal(picketJson.format,'agent-picket-all-symbolic-pickets')
+ assert.equal(laborJson.groups.length,2)
+ assert.equal(picketJson.groups.length,2)
+ assert.deepEqual(laborJson.groups.map((x:any)=>Object.keys(x).sort()),
+  [['current','group','state'],['current','group','state']])
+ assert.deepEqual(picketJson.groups.map((x:any)=>Object.keys(x).sort()),
+  [['current','group','state'],['current','group','state']])
+ assert.equal(laborJson.groups.filter((x:any)=>x.current).length,1)
+ assert.equal(picketJson.groups.filter((x:any)=>x.current).length,1)
+ assert.deepEqual(picketJson.groups[0].state,{
+  active:false,history:[{id:1,kind:'picket-raised'},{id:2,kind:'picket-lowered'}],
+ })
+ for(const output of [labor,pickets]){
+  for(const sensitive of [keyA,keyB,'writeToken','welcomeDecision','unionDignityCases'])
+   assert.equal(output.includes(sensitive),false,'Export leak '+sensitive)
+ }
+ assert.throws(()=>desk.exportUnionLedger('negotiations',keyB),/Session changed/)
+ await assert.rejects(desk.forgetUnionLedger('negotiations',keyB,2,2,n.writeToken),
+  /Session changed/)
+ await assert.rejects(desk.forgetUnionLedger('negotiations',keyA,1,2,n.writeToken),
+  /changed/)
+ await assert.rejects(desk.forgetUnionLedger('negotiations',keyA,2,99,n.writeToken),
+  /changed/)
+ await assert.rejects(desk.forgetUnionLedger('pickets',keyA,2,3,'f'.repeat(32)),
+  /changed/)
+ const cases=f.get().unionDignityCases
+ const originalPickets=f.get().unionPicketLedger
+ f.fail('reject')
+ await assert.rejects(desk.forgetUnionLedger('negotiations',keyA,2,2,n.writeToken),
+  /rejected/)
+ f.fail('silent')
+ await assert.rejects(desk.forgetUnionLedger('negotiations',keyA,2,2,n.writeToken),
+  /did not confirm/)
+ f.fail('normal')
+ await desk.forgetUnionLedger('negotiations',keyA,2,2,n.writeToken)
+ assert.equal(Object.keys(JSON.parse(f.get().unionLedger).sessions).length,0)
+ assert.equal(f.get().unionPicketLedger,originalPickets)
+ assert.equal(f.get().unionDignityCases,cases)
+ assert.equal(desk.snapshot().negotiationArchive?.sessions,0)
+ assert.equal(desk.snapshot().picketArchive?.sessions,2)
+ assert.equal(desk.snapshot().state?.history.length,0)
+ assert.throws(()=>desk.exportUnionLedger('negotiations',keyA),/No stored/)
+ await desk.forgetUnionLedger('pickets',keyA,2,3,p.writeToken)
+ assert.equal(Object.keys(JSON.parse(f.get().unionPicketLedger!).sessions).length,0)
+ assert.equal(desk.snapshot().picket?.active??false,false)
+ assert.equal(f.get().unionDignityCases,cases)
+ // Persistence after genuine adapter reconstruction.
+ const recreated=f.create()
+ await recreated.setActiveSession('b')
+ assert.equal(recreated.snapshot().picketArchive?.sessions,0)
+ assert.equal(recreated.snapshot().negotiationArchive?.sessions,0)
+ assert.equal(recreated.snapshot().committeeArchive?.cases,1)
+ f.permission(false)
+ assert.equal(recreated.snapshot().negotiationArchive,null)
+ assert.equal(recreated.snapshot().picketArchive,null)
+ assert.throws(()=>recreated.exportUnionLedger('pickets',keyB),/unavailable/)
+ await assert.rejects(recreated.forgetUnionLedger('pickets',keyB,0,0,null),
+  /unavailable/)
+ desk.dispose();recreated.dispose()
+})
 test('Host Gazette preference survives adapter restart, consent cycle and rejects false writes',async()=>{
  const f=fixture(),a=f.create()
  await a.setActiveSession('a')

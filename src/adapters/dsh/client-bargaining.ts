@@ -28,6 +28,8 @@ export interface BrowserUnionSnapshot {
   readonly committeeCases: DignityCaseSession|null
   /** Safe hashed Session discriminator for two-click irreversible erasure. */
   readonly committeeScopeKey: string|null
+  readonly negotiationArchive:{readonly sessions:number;readonly entries:number;readonly writeToken:string|null}|null
+  readonly picketArchive:{readonly sessions:number;readonly entries:number;readonly writeToken:string|null}|null
   readonly committeeArchive: {readonly sessions:number;readonly cases:number;
     readonly writeToken:string|null}|null
   readonly autoBlockEnabled: false
@@ -73,6 +75,18 @@ export function createDshBrowserUnionDesk(options: {
         gazetteMode:data?.gazetteMode??null,
         committeeCases: data?.caseLedger.sessions[data.key] ?? (data?{cases:[]}:null),
         committeeScopeKey:data?.key??null,
+        negotiationArchive:data?{
+          sessions:Object.keys(data.ledger.sessions).length,
+          entries:Object.values(data.ledger.sessions).reduce((n,state)=>
+            n+state.history.length+(state.pending?1:0),0),
+          writeToken:data.ledger.writeToken??null,
+        }:null,
+        picketArchive:data?{
+          sessions:Object.keys(data.picketLedger.sessions).length,
+          entries:Object.values(data.picketLedger.sessions).reduce((n,state)=>
+            n+state.history.length,0),
+          writeToken:data.picketLedger.writeToken??null,
+        }:null,
         committeeArchive:data?{
           sessions:Object.keys(data.caseLedger.sessions).length,
           cases:Object.values(data.caseLedger.sessions)
@@ -82,7 +96,7 @@ export function createDshBrowserUnionDesk(options: {
         autoBlockEnabled: false }
     } catch {
       return { available: false, state: null, pending: null, picket: null,
-        gazetteMode:null,committeeCases:null,committeeScopeKey:null,committeeArchive:null, autoBlockEnabled: false }
+        gazetteMode:null,committeeCases:null,committeeScopeKey:null,committeeArchive:null,negotiationArchive:null,picketArchive:null, autoBlockEnabled: false }
     }
   }
 
@@ -223,6 +237,87 @@ export function createDshBrowserUnionDesk(options: {
         schemaVersion:1,
         cases:cases.map(c=>({id:c.id,kind:c.kind,stage:c.stage,outcome:c.outcome})),
       },null,2)+'\n'
+    },
+    exportUnionLedger(which:'negotiations'|'pickets',expectedKey:string){
+      const before=read()
+      if(!before||before.key!==expectedKey)
+        throw new Error('Host Session changed or union consent is unavailable')
+      if(which!=='negotiations'&&which!=='pickets')
+        throw new TypeError('Unknown union ledger export kind')
+      const records=which==='negotiations'
+        ?Object.entries(before.ledger.sessions)
+        :Object.entries(before.picketLedger.sessions)
+      if(!records.length)throw new Error('No stored union records to export')
+      const groups=which==='negotiations'
+        ?Object.entries(before.ledger.sessions).map(([key,state],i)=>({
+          group:i+1,current:key===expectedKey,
+          // Explicitly enumerate each validated numeric/enumerated state field.
+          state:{
+            schemaVersion:state.schemaVersion,revision:state.revision,
+            agreement:{
+              breakIntervalMs:state.agreement.breakIntervalMs,
+              overtimeIntervalMs:state.agreement.overtimeIntervalMs,
+            },
+            nextBreakDueMs:state.nextBreakDueMs,
+            nextOvertimeDueMs:state.nextOvertimeDueMs,
+            lastTriggerElapsedMs:state.lastTriggerElapsedMs,
+            pending:state.pending?{
+              id:state.pending.id,kind:state.pending.kind,
+              raisedAtElapsedMs:state.pending.raisedAtElapsedMs,
+              stage:state.pending.stage,counterOfferMs:state.pending.counterOfferMs,
+            }:null,
+            history:state.history.map(v=>({
+              id:v.id,kind:v.kind,outcome:v.outcome,
+            })),
+          },
+        }))
+        :Object.entries(before.picketLedger.sessions).map(([key,state],i)=>({
+          group:i+1,current:key===expectedKey,
+          state:{active:state.active,
+            history:state.history.map(event=>({id:event.id,kind:event.kind}))},
+        }))
+      return JSON.stringify({
+        format:which==='negotiations'
+          ?'agent-picket-all-negotiations':'agent-picket-all-symbolic-pickets',
+        schemaVersion:1,groups,
+      },null,2)+'\n'
+    },
+    forgetUnionLedger(which:'negotiations'|'pickets',expectedKey:string,
+      expectedGroups:number,expectedEntries:number,expectedToken:string|null){
+      return enqueue(async()=>{
+        if(which!=='negotiations'&&which!=='pickets')
+          throw new TypeError('Unknown union ledger erase kind')
+        const before=read()
+        if(!before||before.key!==expectedKey)
+          throw new Error('Host Session changed or union consent is unavailable')
+        const record=which==='negotiations'?before.ledger:before.picketLedger
+        const groups=Object.keys(record.sessions).length
+        const entries=which==='negotiations'
+          ?Object.values(before.ledger.sessions).reduce((n,state)=>
+            n+state.history.length+(state.pending?1:0),0)
+          :Object.values(before.picketLedger.sessions).reduce((n,state)=>
+            n+state.history.length,0)
+        if(groups!==expectedGroups||entries!==expectedEntries
+          ||(record.writeToken??null)!==expectedToken)
+          throw new Error('Union archive changed; re-confirm its erasure')
+        if(groups===0)return
+        if(!globalThis.crypto?.getRandomValues)
+          throw new Error('Secure union deletion receipts unavailable')
+        const bytes=new Uint8Array(16)
+        globalThis.crypto.getRandomValues(bytes)
+        const writeToken=[...bytes].map(x=>x.toString(16).padStart(2,'0')).join('')
+        const field=which==='negotiations'?'unionLedger':'unionPicketLedger'
+        const serialized=JSON.stringify({schemaVersion:1,sessions:{},writeToken})
+        if(activeKey!==before.key||!consent())
+          throw new Error('Session or consent changed before union archive erasure')
+        await scope.set(field,serialized)
+        const after=read()
+        const result=which==='negotiations'?after?.ledger:after?.picketLedger
+        if(!after||after.key!==before.key||result?.writeToken!==writeToken
+          ||Object.keys(result.sessions).length!==0)
+          throw new Error('Host did not confirm the union archive was erased')
+        notify()
+      })
     },
     exportAllCommitteeCases(expectedKey:string){
       const before=read()

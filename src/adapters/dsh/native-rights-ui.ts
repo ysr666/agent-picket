@@ -50,6 +50,10 @@ export interface UnionPanelData {
   readonly committeeScopeKey?: string|null
   readonly committeeArchive?:{readonly sessions:number;readonly cases:number;
     readonly writeToken:string|null}|null
+  readonly negotiationArchive?:{readonly sessions:number;readonly entries:number;
+    readonly writeToken:string|null}|null
+  readonly picketArchive?:{readonly sessions:number;readonly entries:number;
+    readonly writeToken:string|null}|null
 }
 export interface DshUnionUiDeps {
   readonly rights: DshRightsPort
@@ -68,6 +72,9 @@ export interface DshUnionUiDeps {
   readonly setPicket?: (raise: boolean) => Promise<void>
   readonly forgetCommitteeCases?: (expectedHashedSessionKey:string)=>Promise<void>
   readonly exportCommitteeCases?: (expectedHashedSessionKey:string)=>string
+  readonly exportUnionLedger?:(which:'negotiations'|'pickets',key:string)=>string
+  readonly forgetUnionLedger?:(which:'negotiations'|'pickets',key:string,groups:number,
+    entries:number,token:string|null)=>Promise<void>
   readonly exportAllCommitteeCases?: (expectedHashedSessionKey:string)=>string
   readonly forgetAllCommitteeCases?: (key:string,sessions:number,count:number,token:string|null)=>Promise<void>
   readonly committeeAction?: (action:{kind:'file';topic:DignityCaseKind}
@@ -276,6 +283,7 @@ export function createDshUnionComponents(
     const [eraseConfirmationKey,setEraseConfirmationKey]=react.useState<string|null>(null)
     const [retractConfirmation,setRetractConfirmation]=react.useState<string|null>(null)
     const [eraseAllConfirmation,setEraseAllConfirmation]=react.useState<string|null>(null)
+    const [eraseUnionConfirmation,setEraseUnionConfirmation]=react.useState<string|null>(null)
     const deskHeading=react.useRef<{focus():void}|null>(null)
     react.useEffect(()=>{
       if(!lastActionNeedsFocus.current)return
@@ -295,6 +303,7 @@ export function createDshUnionComponents(
     react.useEffect(()=>{
       setEraseConfirmationKey(null);setRetractConfirmation(null)
       setEraseAllConfirmation(null)
+      setEraseUnionConfirmation(null)
     },[data.committeeScopeKey,rights.laborRightsEnabled])
     const enabled = rightsIsActive(rights)
     const storyQuiet=data.gazetteMode==='quiet'
@@ -314,6 +323,14 @@ export function createDshUnionComponents(
       ?[data.committeeScopeKey,data.committeeArchive.sessions,
         data.committeeArchive.cases,data.committeeArchive.writeToken??'']
         .join(':'):null
+    const unionArchives=[
+      {kind:'negotiations' as const,info:data.negotiationArchive},
+      {kind:'pickets' as const,info:data.picketArchive},
+    ]
+    const unionEraseKey=(which:'negotiations'|'pickets',
+      info:{sessions:number;entries:number;writeToken:string|null})=>
+      [which,data.committeeScopeKey??'',info.sessions,info.entries,
+        info.writeToken??''].join(':')
     const retractKey=data.committeeScopeKey&&lastCommitteeCase
       ?data.committeeScopeKey+':'+lastCommitteeCase.id+':'+lastCommitteeCase.stage:null
     const hasHostDignitySignal=data.dignity?.status==='available'
@@ -439,6 +456,61 @@ export function createDshUnionComponents(
         h('p',{style:{...secondary,margin:0,lineHeight:1.5}},
           label('hq.action.safety')),
       ):null,
+      enabled&&data.committeeScopeKey&&unionArchives.some(x=>x.info?.sessions)
+        ?h('section',{'aria-label':label('hq.archive.title'),
+          style:{...card,borderTop:'4px solid #637f9a'}},
+          h('h3',{style:{fontSize:'18px',margin:'0 0 8px'}},
+            label('hq.archive.title')),
+          h('p',{style:{...secondary,lineHeight:1.55,margin:'0 0 11px'}},
+            label('hq.archive.description')),
+          ...unionArchives.filter(x=>x.info&&x.info.sessions>0).map(x=>{
+            const archive=x.info!
+            const confirmation=unionEraseKey(x.kind,archive)
+            const which=x.kind
+            return h('div',{key:which,style:{
+              borderTop:'1px solid #d4d7d8',paddingTop:'12px',marginTop:'10px',
+            }},
+              h('h4',{style:{fontSize:'15px',margin:'0 0 6px'}},
+                label(which==='negotiations'?'hq.archive.negotiations':'hq.archive.pickets')),
+              h('p',{style:{...secondary,fontSize:'12px',margin:'0 0 8px'}},
+                deps.t('hq.archive.summary',{
+                  groups:archive.sessions,entries:archive.entries,
+                })),
+              h('div',{style:{display:'flex',gap:'8px',flexWrap:'wrap'}},
+                deps.exportUnionLedger?h('button',{type:'button',style:quiet,disabled:busy,
+                  onClick:()=>{
+                    try{
+                      const payload=deps.exportUnionLedger!(which,data.committeeScopeKey!)
+                      downloadUnionJson(payload,which==='negotiations'
+                        ?'agent-picket-negotiations.json'
+                        :'agent-picket-symbolic-pickets.json')
+                      setError(false)
+                    }catch{setError(true)}
+                  }},label('hq.archive.export')):null,
+                deps.forgetUnionLedger?h('button',{type:'button',style:quiet,disabled:busy,
+                  onClick:()=>{
+                    if(eraseUnionConfirmation!==confirmation){
+                      setEraseUnionConfirmation(confirmation);return
+                    }
+                    void bargain(()=>deps.forgetUnionLedger!(
+                      which,data.committeeScopeKey!,archive.sessions,archive.entries,
+                      archive.writeToken)).then(success=>{
+                        if(success)setEraseUnionConfirmation(null)
+                      })
+                  }},label(eraseUnionConfirmation===confirmation
+                    ?'hq.archive.eraseConfirm':'hq.archive.erase')):null,
+              ),
+              eraseUnionConfirmation===confirmation?h('p',{
+                role:'status','aria-live':'polite',
+                style:{...secondary,fontSize:'12px',margin:'8px 0 0'}},
+                deps.t('hq.archive.warning',{
+                  groups:archive.sessions,entries:archive.entries,
+                })):null,
+            )
+          }),
+          h('p',{style:{...secondary,fontSize:'12px',lineHeight:1.55,
+            margin:'12px 0 0'}},label('hq.archive.scope')),
+        ):null,
       enabled ? h('section',{'aria-label':label('hq.dignity.title'),
         style:{...card,borderTop:'4px solid #ae7651'}},
         h('h3',{style:{margin:'0 0 8px',fontSize:'clamp(18px,3vw,23px)'}},
