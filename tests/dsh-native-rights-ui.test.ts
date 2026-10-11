@@ -464,6 +464,8 @@ test('case archive button appears only if genuine Host ledger history exists',()
  assert.ok(archive)
  assert.equal(archive.props['aria-expanded'],false)
  assert.ok(nodes.some(n=>n.children.includes('hq.event.accepted')))
+ assert.equal(nodes.some(n=>n.children.includes('union.history.outcome.accepted')),false,
+   'A collapsed case archive should not expose the outcome labels as visible nodes')
  assert.equal(nodes.some(n=>n.children.includes('union.history.title')),false)
 })
 

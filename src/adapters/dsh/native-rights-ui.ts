@@ -547,7 +547,8 @@ export function createDshUnionComponents(
           h('ol',{style:{...secondary,paddingLeft:'20px'}},
             ...data.state.history.slice().reverse().map(record=>
               h('li',{key:record.id},
-                deps.t('union.history.entry',{id:record.id,outcome:record.outcome}))))):null,
+                deps.t('union.history.entry',{id:record.id,
+                  outcome:label(('union.history.outcome.'+record.outcome) as MessageKey)}))))):null,
       ):null,
       h('div',{style:card},
         h('h3',{style:{marginTop:0}},label('workday.title')),
