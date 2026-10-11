@@ -7,6 +7,7 @@ import { pathToFileURL } from 'node:url'
 import * as picketPlugin from '../src/adapters/dsh/plugin.ts'
 import { nativeSessionKey } from '../src/adapters/dsh/native-rights-command.ts'
 import { parseUnionLedger } from '../src/product/union-ledger.ts'
+import { parsePicketLedger } from '../src/product/picket-ledger.ts'
 
 const modules = process.env.AGENT_PICKET_DSH_HOST
 
@@ -40,6 +41,23 @@ test('real DSH SettingsFile + CommandRuntime share Web union consent and agreeme
     assert.match((await call('/union rights')).text,/OFF/)
     assert.equal((await call('/union rights on')).kind,'success')
     assert.equal(ctx.settings.get('agent-picket').welcomeDecision,'enabled')
+    // Real DSH CommandRuntime writes the SAME authorized Host sidecar that
+    // the Web Client sees. Both ceremonies are fictional, never pre-step
+    // blocking decisions.
+    const started=await call('/union strike')
+    assert.equal(started.kind,'success')
+    assert.match(started.text,/shared Host union ledger/)
+    const nativeKey=nativeSessionKey(session.id)
+    const saved=ctx.settings.get('agent-picket').unionPicketLedger
+    assert.equal(parsePicketLedger(saved)?.sessions[nativeKey]?.active,true)
+    const beforeDuplicate=ctx.settings.describe({redactSecrets:true})
+      .find((entry:any)=>entry.ns==='agent-picket')?.revision
+    assert.equal((await call('/union strike')).kind,'success')
+    assert.equal(ctx.settings.describe({redactSecrets:true})
+      .find((entry:any)=>entry.ns==='agent-picket')?.revision,beforeDuplicate)
+    assert.equal((await call('/union resume')).kind,'success')
+    assert.deepEqual(parsePicketLedger(ctx.settings.get('agent-picket').unionPicketLedger)
+      ?.sessions[nativeKey]?.history.map(e=>e.kind),['picket-raised','picket-lowered'])
     assert.equal((await call('/union petition-demo')).kind,'success')
     assert.equal((await call('/union counter 1 30')).kind,'success')
     assert.equal((await call('/union resolve 1 accept')).kind,'success')
@@ -60,6 +78,11 @@ test('real DSH SettingsFile + CommandRuntime share Web union consent and agreeme
     assert.match((await call('/union rights')).text,/OFF/)
     assert.equal(JSON.parse((await call('/union snapshot')).text).modes.laborRights,'disabled')
     assert.equal((await call('/union petition-demo')).kind,'error')
+    const beforeLocal=ctx.settings.get('agent-picket').unionPicketLedger
+    assert.equal((await call('/union strike')).kind,'success',
+      'Without opt-in, the older command remains a manual in-memory-only demonstration')
+    assert.equal(ctx.settings.get('agent-picket').unionPicketLedger,beforeLocal)
+    assert.equal((await call('/union resume')).kind,'success')
     const persisted=readFileSync(join(root,'settings.json'),'utf8')
     assert.doesNotMatch(persisted,/real-cli-test-session|real-cli-agent|originalMessage/)
     assert.match(persisted,/unionLedger/)

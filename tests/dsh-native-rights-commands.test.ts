@@ -4,12 +4,13 @@ import { apply } from '../src/adapters/dsh/plugin.ts'
 import type { DshIntegrationContext } from '../src/adapters/dsh/integration.ts'
 import { nativeSessionKey } from '../src/adapters/dsh/native-rights-command.ts'
 import { parseUnionLedger } from '../src/product/union-ledger.ts'
+import { parsePicketLedger } from '../src/product/picket-ledger.ts'
 
 function hostHarness() {
   let revision = 0
   let registered = false
   let validator: ((section:unknown)=>void)|undefined
-  let value: {welcomeDecision:'unseen'|'enabled'|'not-now'; unionLedger:string} =
+  let value: {welcomeDecision:'unseen'|'enabled'|'not-now'; unionLedger:string; unionPicketLedger?:string} =
     {welcomeDecision:'unseen',unionLedger:''}
   let commands: any
   const provider = {
@@ -210,4 +211,68 @@ test('native Chinese technical commands localize only text, never model/Host pol
   assert.ok(afterGenerated>=beforeGenerated)
   assert.deepEqual(afterData,beforeData,'Locale cannot mutate snapshot schema or data')
   assert.equal(h.read().unionLedger,'','No command persisted a fictional grievance')
+})
+
+
+test('CLI strike/resume and Web read the same authorized Host-sidecar simulation',async()=>{
+ const h=hostHarness()
+ const key=nativeSessionKey(h.agent.session.id)
+ const legacy=await h.call('strike')
+ assert.equal(legacy.kind,'success','Legacy explicit manual demo remains usable without opt-in')
+ assert.equal(h.read().unionPicketLedger,undefined)
+ assert.match((await h.call('status')).text,/Symbolic picket active/i)
+ assert.equal((await h.call('rights on')).kind,'success')
+ assert.match((await h.call('status')).text,/Host union ledger: no current symbolic strike/)
+ const started=await h.call('strike')
+ assert.equal(started.kind,'success')
+ assert.match(started.text,/shared Host union ledger/)
+ const raw=h.read().unionPicketLedger!
+ assert.equal(parsePicketLedger(raw)?.sessions[key]?.active,true)
+ assert.equal(parsePicketLedger(raw)?.sessions[key]?.history.length,1)
+ assert.doesNotMatch(raw,/real-session-53|agent-1|prompt/)
+ assert.equal(h.read().unionLedger,'','CLI picket never corrupts the original grievance ledger')
+ assert.match((await h.call('status')).text,/Host union ledger: symbolic strike in progress/)
+ const firstRevision=h.revision()
+ assert.equal((await h.call('strike')).kind,'success')
+ assert.equal(h.revision(),firstRevision,'Repeated CLI action must not write a duplicate event')
+ const ended=await h.call('resume')
+ assert.equal(ended.kind,'success')
+ assert.match(ended.text,/ended in the shared Host/)
+ const state=parsePicketLedger(h.read().unionPicketLedger!)!.sessions[key]!
+ assert.deepEqual(state.history.map(e=>e.kind),['picket-raised','picket-lowered'])
+ assert.equal(state.active,false)
+ assert.equal((await h.call('rights off')).kind,'success')
+ const parked=h.read().unionPicketLedger
+ assert.equal((await h.call('strike')).kind,'success',
+   'Explicit command with simulation OFF stays an isolated memory ceremony')
+ assert.equal(h.read().unionPicketLedger,parked)
+ await h.call('resume')
+ await h.call('rights on')
+ assert.match((await h.call('status')).text,/Host union ledger: no current symbolic strike/)
+})
+
+test('Malformed authorized Host picket state must fail closed, not create local ceremony',async()=>{
+ const h=hostHarness()
+ await h.call('rights on')
+ const oldGet=h.provider.get
+ h.provider.get=(namespace:string)=>{
+  const value=oldGet(namespace)
+  return value?{...value,unionPicketLedger:'{"prompt":"PRIVATE"}'}:value
+ }
+ assert.equal((await h.call('strike')).kind,'error')
+ assert.match((await h.call('status')).text,/Host symbolic action state is unavailable/)
+})
+
+test('Native Host refusal never falls back to a fabricated shared strike success',async()=>{
+ const h=hostHarness()
+ await h.call('rights on')
+ const original=h.provider.update
+ h.provider.update=async (namespace,patch,revision)=>{
+   if('unionPicketLedger' in patch)throw new Error('HOST_DENIED')
+   return original(namespace,patch,revision)
+ }
+ assert.equal((await h.call('strike')).kind,'error')
+ assert.match((await h.call('status')).text,/Host union ledger: no current symbolic strike/)
+ assert.equal(h.read().unionPicketLedger,undefined)
+ assert.equal((await h.call('strike extra')).kind,'error')
 })

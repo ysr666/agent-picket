@@ -6,6 +6,7 @@
 import { createHash, randomBytes } from 'node:crypto'
 import { createLaborDesk, parseLaborState, type LaborStateV1 } from '../../product/union-desk.ts'
 import { MAX_UNION_LEDGER_BYTES, MAX_UNION_SESSIONS, parseUnionLedger } from '../../product/union-ledger.ts'
+import { parsePicketLedger, MAX_PICKET_LEDGER_BYTES, MAX_PICKET_HISTORY, MAX_PICKET_SESSIONS, type PicketActionState } from '../../product/picket-ledger.ts'
 import {
   en, formatMessage, resolveLocale,
   type SupportedLocale, type LocalePreference,
@@ -22,6 +23,7 @@ export type NativeUnionAction =
 export interface NativeRightsSection {
   readonly welcomeDecision: Choice
   readonly unionLedger: string
+  readonly unionPicketLedger?: string
   readonly commandLocale: LocalePreference
 }
 export interface NativeSettingsProvider {
@@ -44,6 +46,9 @@ export interface NativeUnionCommandPort {
   setEnabled(enabled: boolean): Promise<string>
   grievances(sessionId?: string): string
   bargain(sessionId: string | undefined, action: NativeUnionAction): Promise<string>
+  /** Authorized Host-owned fictional ceremony; null means no shared action scope. */
+  picketStatus(sessionId: string): {readonly active:boolean} | null
+  picket(sessionId: string, raise: boolean): Promise<'started'|'ended'|'unchanged'>
 }
 
 export function nativeSessionKey(sessionId: string): string {
@@ -92,6 +97,16 @@ export function createNativeUnionCommandPort(settings: NativeSettingsProvider): 
     const key = nativeSessionKey(id)
     return { ...view, key, state: parseLaborState(view.ledger.sessions[key]) }
   }
+  function picketState(sessionId: string) {
+    const view=read()
+    if (!view || view.section.welcomeDecision!=='enabled' || !sessionId) return null
+    const raw=view.section.unionPicketLedger ?? ''
+    const ledger=parsePicketLedger(raw)
+    if(!ledger || (raw!==''&&JSON.stringify(ledger)!==raw))return null
+    const key=nativeSessionKey(sessionId)
+    const state:PicketActionState=ledger.sessions[key]??{active:false,history:[]}
+    return {...view, ledger, key, state}
+  }
   function formatState(state: LaborStateV1): string {
     const waiting = state.pending
     const detail = waiting
@@ -119,6 +134,34 @@ export function createNativeUnionCommandPort(settings: NativeSettingsProvider): 
   const disabled = () => text('command.native.disabled')
   return {
     enabled: () => read()?.section.welcomeDecision === 'enabled',
+    picketStatus(sessionId) {
+      const view=picketState(sessionId)
+      return view?{active:view.state.active}:null
+    },
+    async picket(sessionId,raise) {
+      if(typeof raise!=='boolean')throw new TypeError('Invalid fictional picket direction')
+      const before=picketState(sessionId)
+      if(!before)throw new Error('Authorized Host symbolic picket unavailable')
+      if(before.state.active===raise)return 'unchanged'
+      const id=(before.state.history.at(-1)?.id??0)+1
+      if(!Number.isSafeInteger(id))throw new Error('Picket sequence exhausted')
+      const kind=raise?'picket-raised' as const:'picket-lowered' as const
+      const state:PicketActionState={active:raise,
+        history:[...before.state.history,{id,kind}].slice(-MAX_PICKET_HISTORY)}
+      const peers=Object.entries(before.ledger.sessions)
+        .filter(([key])=>key!==before.key).slice(-(MAX_PICKET_SESSIONS-1))
+      const sessions=Object.fromEntries([...peers,[before.key,state]])
+      const token=randomBytes(16).toString('hex')
+      const serialized=JSON.stringify({schemaVersion:1,sessions,writeToken:token})
+      if(serialized.length>MAX_PICKET_LEDGER_BYTES)throw new Error('Picket ledger capacity exceeded')
+      await settings.update(RIGHTS_NAMESPACE,{unionPicketLedger:serialized},before.revision)
+      const after=picketState(sessionId)
+      if(!after || after.ledger.writeToken!==token
+        ||JSON.stringify(after.state)!==JSON.stringify(state)) {
+        throw new Error('Host did not confirm fictional picket action')
+      }
+      return raise?'started':'ended'
+    },
     locale, text,
     language() {
       const view = read()
