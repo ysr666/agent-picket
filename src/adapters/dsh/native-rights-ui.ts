@@ -70,7 +70,7 @@ export interface DshUnionUiDeps {
   readonly demoBreak?: () => Promise<void>
   readonly demoOvertime?: () => Promise<void>
   readonly setPicket?: (raise: boolean) => Promise<void>
-  readonly forgetCommitteeCases?: (expectedHashedSessionKey:string)=>Promise<void>
+  readonly forgetCommitteeCases?: (key:string,count:number,token:string|null)=>Promise<void>
   readonly exportCommitteeCases?: (expectedHashedSessionKey:string)=>string
   readonly exportUnionLedger?:(which:'negotiations'|'pickets',key:string)=>string
   readonly forgetUnionLedger?:(which:'negotiations'|'pickets',key:string,groups:number,
@@ -319,6 +319,10 @@ export function createDshUnionComponents(
     const currentCampaign=campaignTopics.find(item=>item.id===campaign)??campaignTopics[0]!
     const lastCommitteeCase=data.committeeCases?.cases.at(-1)
     const committeeCaseActive=lastCommitteeCase&&lastCommitteeCase.stage!=='closed'
+    const currentCasesConfirmationKey=data.committeeScopeKey&&data.committeeArchive
+      &&data.committeeCases?.cases.length
+      ?[data.committeeScopeKey,data.committeeCases.cases.length,
+        data.committeeArchive.writeToken??''].join(':'):null
     const allCasesConfirmationKey=data.committeeScopeKey&&data.committeeArchive
       ?[data.committeeScopeKey,data.committeeArchive.sessions,
         data.committeeArchive.cases,data.committeeArchive.writeToken??'']
@@ -660,7 +664,7 @@ export function createDshUnionComponents(
                 }},
                 label('hq.hearing.export')):null,
             !!data.committeeCases.cases.length&&deps.forgetCommitteeCases
-              &&data.committeeScopeKey?h('div',{style:{
+              &&currentCasesConfirmationKey?h('div',{style:{
                 display:'flex',alignItems:'center',flexWrap:'wrap',
                 gap:'8px',paddingTop:'10px',marginTop:'10px',
                 borderTop:'1px solid #d4d7d8',
@@ -668,15 +672,18 @@ export function createDshUnionComponents(
                 h('button',{type:'button',disabled:busy,
                   style:{...quiet,padding:'8px 11px'},
                   onClick:()=>{
-                    if(eraseConfirmationKey!==data.committeeScopeKey){
-                      setEraseConfirmationKey(data.committeeScopeKey!);return
+                    if(!currentCasesConfirmationKey)return
+                    if(eraseConfirmationKey!==currentCasesConfirmationKey){
+                      setEraseConfirmationKey(currentCasesConfirmationKey);return
                     }
-                    void bargain(()=>deps.forgetCommitteeCases!(data.committeeScopeKey!))
-                      .then(success=>{if(success)setEraseConfirmationKey(null)})
+                    void bargain(()=>deps.forgetCommitteeCases!(
+                      data.committeeScopeKey!,data.committeeCases!.cases.length,
+                      data.committeeArchive!.writeToken,
+                    )).then(success=>{if(success)setEraseConfirmationKey(null)})
                   }},
-                  label(eraseConfirmationKey===data.committeeScopeKey
+                  label(eraseConfirmationKey===currentCasesConfirmationKey
                     ?'hq.hearing.eraseConfirm':'hq.hearing.erase')),
-                eraseConfirmationKey===data.committeeScopeKey?h('p',{
+                eraseConfirmationKey===currentCasesConfirmationKey?h('p',{
                   role:'status','aria-live':'polite',
                   style:{...secondary,fontSize:'12px',margin:0}},
                   label('hq.hearing.eraseWarning')):null,

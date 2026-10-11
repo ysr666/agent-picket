@@ -369,13 +369,21 @@ export function createDshBrowserUnionDesk(options: {
         notify()
       })
     },
-    forgetCommitteeCases(expectedKey:string){
+    forgetCommitteeCases(expectedKey:string,expectedCount:number,
+      expectedWriteToken:string|null){
       return enqueue(async()=>{
         const before=read()
         if(!before)throw new Error('Authenticated, opted-in committee records unavailable')
         if(before.key!==expectedKey)throw new Error('Committee Session changed; re-confirm deletion')
         const prior=before.caseLedger.sessions[before.key]
-        if(!prior?.cases.length)return // Nothing in this Session to erase.
+        // The first confirmation applies ONLY to the exact Host archive the
+        // user saw. A second tab can file/convene/close a case after the first
+        // click; even if the case count is unchanged, its fresh write receipt
+        // invalidates the prior authorization to erase.
+        if((prior?.cases.length??0)!==expectedCount
+          ||(before.caseLedger.writeToken??null)!==expectedWriteToken)
+          throw new Error('Committee archive changed; re-confirm deletion')
+        if(!prior?.cases.length)return // No-op is allowed only for a matching empty snapshot.
         const sessions=Object.fromEntries(Object.entries(before.caseLedger.sessions)
           .filter(([key])=>key!==before.key))
         if(!globalThis.crypto?.getRandomValues)throw new Error('Secure deletion receipts unavailable')

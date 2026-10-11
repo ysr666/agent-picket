@@ -92,16 +92,23 @@ test('verified Host deletion removes ONLY current user-owned case history, witho
  assert.equal(before.sessions[keyA].cases.length,1)
  assert.equal(before.sessions[keyB].cases.length,1)
  const writes=f.writeCount()
- await assert.rejects(desk.forgetCommitteeCases(keyA),/Session changed/)
+ // The first consent is a snapshot of the exact Session and Host ledger
+ // version, not permission to erase any records added by another tab.
+ const approval=desk.snapshot().committeeArchive!
+ assert.equal(approval.cases,2)
+ await assert.rejects(desk.forgetCommitteeCases(keyA,1,approval.writeToken),/Session changed/)
  assert.equal(f.writeCount(),writes,'Wrong Session must not even attempt a write')
  await desk.setActiveSession('a')
+ const confirmed=desk.snapshot().committeeArchive!
+ const version=confirmed.writeToken
+ assert.equal(desk.snapshot().committeeCases?.cases.length,1)
  f.fail('reject')
- await assert.rejects(desk.forgetCommitteeCases(keyA),/rejected/)
+ await assert.rejects(desk.forgetCommitteeCases(keyA,1,version),/rejected/)
  f.fail('silent')
- await assert.rejects(desk.forgetCommitteeCases(keyA),/did not confirm/)
+ await assert.rejects(desk.forgetCommitteeCases(keyA,1,version),/did not confirm/)
  assert.equal(desk.snapshot().committeeCases?.cases.length,1)
  f.fail('normal')
- await desk.forgetCommitteeCases(keyA)
+ await desk.forgetCommitteeCases(keyA,1,version)
  const after=JSON.parse(f.get().unionDignityCases!) as any
  assert.equal(Object.hasOwn(after.sessions,keyA),false,'Do not leave an empty pseudonymous Session tombstone')
  assert.deepEqual(after.sessions[keyB],before.sessions[keyB])
@@ -110,14 +117,15 @@ test('verified Host deletion removes ONLY current user-owned case history, witho
  assert.equal(f.get().unionLedger,'')
  assert.equal(f.get().unionPicketLedger,'')
  const savedWrites=f.writeCount()
- await desk.forgetCommitteeCases(keyA)
+ const empty=desk.snapshot().committeeArchive!
+ await desk.forgetCommitteeCases(keyA,0,empty.writeToken)
  assert.equal(f.writeCount(),savedWrites,'Erasure without existing cases is idempotent')
  await desk.setActiveSession('b')
  assert.equal(desk.snapshot().committeeCases?.cases.at(-1)?.kind,'request-dialogue')
  f.permission(false)
  assert.equal(desk.snapshot().committeeCases,null)
  assert.equal(desk.snapshot().committeeScopeKey,null)
- await assert.rejects(desk.forgetCommitteeCases(keyB),/unavailable/)
+ await assert.rejects(desk.forgetCommitteeCases(keyB,1,empty.writeToken),/unavailable/)
  f.permission(true)
  const recreated=f.create()
  await recreated.setActiveSession('a')
@@ -126,6 +134,44 @@ test('verified Host deletion removes ONLY current user-owned case history, witho
  assert.equal(recreated.snapshot().committeeCases?.cases.length,1)
  recreated.dispose();desk.dispose()
 })
+test('stale deletion confirmation refuses even same-count edits from another tab',async()=>{
+ const f=fixture(),first=f.create(),other=f.create()
+ await first.setActiveSession('a')
+ await other.setActiveSession('a')
+ await first.committeeAction({kind:'file',topic:'request-dialogue'})
+ const baseline=first.snapshot()
+ const token=baseline.committeeArchive!.writeToken
+ assert.equal(baseline.committeeCases?.cases.length,1)
+ // Equivalent to a user arming the Delete button in the first tab.
+ // A second tab moves the same case into the hearing stage. No case count
+ // changes, but the exact version the user agreed to delete is superseded.
+ await other.committeeAction({kind:'convene',id:1})
+ assert.equal(first.snapshot().committeeCases?.cases.length,1)
+ const writeCount=f.writeCount()
+ await assert.rejects(first.forgetCommitteeCases(keyA,1,token),/changed; re-confirm/)
+ assert.equal(f.writeCount(),writeCount,'Old confirmation must never write')
+ assert.equal(first.snapshot().committeeCases?.cases[0]?.stage,'hearing')
+ const refreshed=first.snapshot()
+ await first.forgetCommitteeCases(keyA,1,refreshed.committeeArchive!.writeToken)
+ assert.deepEqual(first.snapshot().committeeCases?.cases,[])
+ first.dispose();other.dispose()
+})
+
+test('deletion approval rejects a changed case count and forged expected version',async()=>{
+ const f=fixture(),desk=f.create()
+ await desk.setActiveSession('a')
+ await desk.committeeAction({kind:'file',topic:'question-rule'})
+ const current=desk.snapshot()
+ const token=current.committeeArchive!.writeToken
+ const count=f.writeCount()
+ await assert.rejects(desk.forgetCommitteeCases(keyA,2,token),/changed; re-confirm/)
+ await assert.rejects(desk.forgetCommitteeCases(keyA,1,'f'.repeat(32)),/changed; re-confirm/)
+ await assert.rejects(desk.forgetCommitteeCases(keyA,1,null),/changed; re-confirm/)
+ assert.equal(f.writeCount(),count,'Forged or stale approval cannot erase records')
+ assert.equal(desk.snapshot().committeeCases?.cases.length,1)
+ desk.dispose()
+})
+
 test('user-controlled neutral retract and allowlisted case JSON export are Host-authenticated',async()=>{
  const f=fixture(),desk=f.create()
  await desk.setActiveSession('a')

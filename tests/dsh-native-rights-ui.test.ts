@@ -775,3 +775,64 @@ test('one click raises/lowers Host-backed symbolic picket; no repeated consent p
  assert.ok(nodes.some(n=>n.children.some(c=>typeof c==='string'&&c.includes(' #2'))),
   'The last picket event must come from the actual Host-owned ledger')
 })
+test('current-session erase confirmation expires on another tab’s case update',async()=>{
+ // The first click must confirm the Host snapshot the user actually saw.
+ // A changed ledger receipt, even with an unchanged case count, invalidates
+ // the armed UI and the later Host erase call.
+ const slots:any[]=[]
+ const effects:Array<()=>void|(()=>void)>=[]
+ let slot=0
+ let hostChanged=()=>{}
+ const hooks:ReactForDsh={
+  createElement(type,props,...children){return {type,props:props??{},children}},
+  useState<T>(initial:T|(()=>T)){
+   const i=slot++
+   if(!(i in slots))slots[i]=typeof initial==='function'?(initial as ()=>T)():initial
+   return [slots[i] as T,(next:T|((previous:T)=>T))=>{
+    slots[i]=typeof next==='function'?(next as (previous:T)=>T)(slots[i]):next
+   }]
+  },
+  useRef<T>(initial:T){const i=slot++;if(!(i in slots))slots[i]={current:initial};return slots[i]},
+  useEffect(fn){effects.push(fn)},
+ }
+ let token='a'.repeat(32),stage:'opened'|'hearing'='opened'
+ const eraseArgs:Array<[string,number,string|null]>=[]
+ const d:DshUnionUiDeps={
+  ...deps(rights({welcomeDecision:'enabled',laborRightsEnabled:true})).d,
+  readUnion:()=>({pending:null,available:true,completedTurnMs:null,
+   lifetimeMs:null,coverage:'unavailable',committeeScopeKey:'session-a',
+   committeeCases:{cases:[{id:1,kind:'request-dialogue',stage,outcome:null}]},
+   committeeArchive:{sessions:1,cases:1,writeToken:token}}),
+  committeeAction:async ()=>{},
+  subscribeUnion:fn=>{hostChanged=fn;return()=>{}},
+  forgetCommitteeCases:async (key,count,writeToken)=>{eraseArgs.push([key,count,writeToken])},
+ }
+ const panel=createDshUnionComponents(hooks,{createPortal:child=>child},d)
+ const render=()=>{slot=0;return walk(panel.UnionPanel())}
+ const button=(nodes:Node[],name:string)=>{
+  const target=nodes.find(n=>n.type==='button'&&n.children.includes(name))
+  assert.ok(target,name)
+  return target
+ }
+ let nodes=render()
+ // Simulate React mounting its real official Host subscription.
+ for(const effect of effects.splice(0))effect()
+ nodes=render()
+ button(nodes,'hq.hearing.erase').props.onClick()
+ nodes=render()
+ assert.ok(button(nodes,'hq.hearing.eraseConfirm'))
+ assert.deepEqual(eraseArgs,[])
+ // Another tab updates the case in Host. There is no increase in case count.
+ stage='hearing'
+ token='b'.repeat(32)
+ hostChanged() // Official settings invalidation publishes the newer ledger.
+ nodes=render()
+ assert.equal(nodes.some(n=>n.type==='button'&&n.children.includes('hq.hearing.eraseConfirm')),
+  false,'Stale confirmation is no longer an enabled action')
+ button(nodes,'hq.hearing.erase').props.onClick()
+ nodes=render()
+ await button(nodes,'hq.hearing.eraseConfirm').props.onClick()
+ await new Promise<void>(resolve=>setImmediate(resolve))
+ assert.deepEqual(eraseArgs,[['session-a',1,'b'.repeat(32)]],
+  'Only a fresh exact-Host-version confirmation can call the erasure port')
+})

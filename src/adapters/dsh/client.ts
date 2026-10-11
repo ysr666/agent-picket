@@ -218,7 +218,8 @@ export function apply(ctx: ClientContext, react?: ReactForDsh, portal?: PortalFo
       exportAllCommitteeCases: key=>desk.exportAllCommitteeCases(key),
       forgetAllCommitteeCases: (key,sessions,count,token)=>
         desk.forgetAllCommitteeCases(key,sessions,count,token),
-      forgetCommitteeCases: key=>desk.forgetCommitteeCases(key),
+      forgetCommitteeCases: (key,count,token)=>
+        desk.forgetCommitteeCases(key,count,token),
       setGazetteMode: mode => desk.setGazetteMode(mode),
       respond: (id, choice) => desk.respond(id, choice).then(() => {}),
       counter: (id, intervalMs) => desk.counter(id, intervalMs).then(() => {}),
