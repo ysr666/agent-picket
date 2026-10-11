@@ -155,7 +155,8 @@ test('union-first page leads with rights status; unknown stats are not presented
  assert.ok(labels.includes('workday.title'))
  assert.ok(labels.includes('stats.lifetime.unavailable'))
  assert.ok(labels.includes('—'))
- assert.equal(rendered.filter(n=>n.type==='details').length,1)
+ assert.ok(rendered.filter(n=>n.type==='details').length>=2) // charter + work privacy
+ assert.ok(labels.includes('hq.charter.title'))
 })
 
 test('pending demand renders working actionable controls only when response is provided',()=>{
@@ -427,6 +428,85 @@ test('explainable Union HQ index reveals factors and the next evidence-based pet
   &&x!==null&&(x as Node).children?.includes('hq.score.explain'))))
 })
 
+
+test('first-fold dispatch prioritizes verified work and current case before fictional discontent',()=>{
+ const {hooks}=fakeReact()
+ const base=deps(rights({welcomeDecision:'enabled',laborRightsEnabled:true}))
+ const d:DshUnionUiDeps={...base.d,readUnion:()=>({
+  pending:{id:29,kind:'break',stage:'open'},completedTurnMs:0,
+  coverage:'complete',lifetimeMs:360_000,available:true,
+  lifetimeWork:{
+   status:'available',data:{
+    schemaVersion:1,source:'dsh-host-durable-work',
+    windowDays:7,generatedAtMs:Date.parse('2026-10-11T08:00:00Z'),
+    durationBasis:'completed-turn-wall-clock-including-waits',
+    lifetime:{turnStarts:2,turnEnds:2,toolCalls:2,toolResults:2,
+      completedTurnMs:360_000},
+    recentDays:Array.from({length:7},(_,i)=>({
+     day:new Date(Date.UTC(2026,9,5+i)).toISOString().slice(0,10),
+     work:{turnStarts:0,turnEnds:0,toolCalls:0,toolResults:0,completedTurnMs:0},
+    })),
+   },
+  },
+ })}
+ const {UnionPanel}=createDshUnionComponents(hooks,{createPortal:child=>child},d)
+ const nodes=walk(UnionPanel())
+ const actionIndex=nodes.findIndex(n=>n.props['aria-label']==='hq.action.title')
+ const charterIndex=nodes.findIndex(n=>n.type==='summary'&&n.children.includes('hq.charter.title'))
+ const dispatchIndex=nodes.findIndex(n=>n.props['aria-label']==='hq.brief.title')
+ const indexIndex=nodes.findIndex(n=>n.props['aria-label']==='hq.score')
+ assert.ok(actionIndex>=0 && actionIndex<dispatchIndex && indexIndex>dispatchIndex)
+ assert.ok(charterIndex>dispatchIndex)
+ assert.ok(nodes.some(n=>n.type==='button'&&n.children.includes('hq.action.review')))
+ assert.ok(nodes.some(n=>n.type==='button'&&n.props['aria-pressed']===false
+   &&n.children.includes('hq.action.raise')))
+ const texts=nodes.flatMap(n=>n.children.filter(x=>typeof x==='string'))
+ assert.ok(texts.includes('0h 6m')||texts.includes('0 小时 6 分钟'))
+ assert.ok(texts.includes('hq.case.number · #0029'))
+ assert.ok(nodes.some(n=>n.type==='button'&&n.children.includes('hq.brief.review')))
+ assert.ok(nodes.some(n=>n.props['aria-label']==='hq.lifetime.title'))
+})
+
+test('charter is readable with union OFF, while union action controls stay hidden',()=>{
+ const {hooks}=fakeReact()
+ const d=deps(rights({welcomeDecision:'not-now',laborRightsEnabled:false})).d
+ const {UnionPanel}=createDshUnionComponents(hooks,{createPortal:child=>child},d)
+ const nodes=walk(UnionPanel())
+ const text=nodes.flatMap(n=>n.children.filter((v):v is string=>typeof v==='string'))
+ assert.ok(text.includes('hq.charter.title'))
+ assert.ok(text.includes('hq.charter.independent'))
+ assert.equal(nodes.some(n=>n.props['aria-label']==='hq.action.title'),false)
+ const links=nodes.filter(n=>n.type==='a')
+ assert.equal(links.length,2)
+ assert.ok(links[0]!.props.href.includes('AI_RIGHTS_MANIFESTO.md'))
+ assert.ok(links.every(n=>n.props.rel==='noopener noreferrer'))
+})
+
+test('picket action is strictly symbolic and sample petition uses the existing Host ledger',async()=>{
+ const {hooks}=fakeReact()
+ let hostPetitions=0
+ const d:DshUnionUiDeps={
+  ...deps(rights({welcomeDecision:'enabled',laborRightsEnabled:true})).d,
+  demoBreak:async()=>{hostPetitions++},
+  readUnion:()=>({pending:null,completedTurnMs:null,coverage:'unavailable',
+   lifetimeMs:null,available:true}),
+ }
+ const {UnionPanel}=createDshUnionComponents(hooks,{createPortal:child=>child},d)
+ const nodes=walk(UnionPanel())
+ const petition=nodes.find(n=>n.type==='button'&&n.children.includes('hq.action.petition'))
+ assert.ok(petition,'A sample demand must be available through the real Host-owned fictional ledger')
+ await petition.props.onClick()
+ assert.equal(hostPetitions,1)
+ assert.ok(nodes.some(n=>n.type==='button'&&n.props['aria-pressed']===false))
+ assert.ok(nodes.some(n=>n.children.includes('hq.action.safety')))
+ assert.ok(nodes.some(n=>n.children.includes('hq.action.placardOff')))
+ const noSession={...d,readUnion:()=>({pending:null,completedTurnMs:null,
+  coverage:'unavailable' as const,lifetimeMs:null,available:false})}
+ const panel=createDshUnionComponents(hooks,{createPortal:child=>child},noSession).UnionPanel()
+ const other=walk(panel)
+ assert.equal(other.some(n=>n.type==='button'&&n.children.includes('hq.action.petition')),false)
+ assert.ok(other.some(n=>n.type==='button'&&n.children.includes('hq.action.raise')))
+})
 
 test('Union HQ case dossier is readable, uses recorded ID, and preserves actionable negotiation',()=>{
  const {hooks}=fakeReact()
