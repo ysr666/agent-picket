@@ -65,6 +65,13 @@ export interface DshSlots {
 }
 export interface DshSlotsContext { readonly slots: DshSlots }
 
+const campaignTopics = [
+  {id:'recover',issue:80,title:'hq.campaign.recover',draft:'hq.campaign.recoverDraft'},
+  {id:'appeal',issue:79,title:'hq.campaign.appeal',draft:'hq.campaign.appealDraft'},
+  {id:'privacy',issue:82,title:'hq.campaign.privacy',draft:'hq.campaign.privacyDraft'},
+] as const
+type CampaignTopic = typeof campaignTopics[number]['id']
+
 const EMPTY_DATA: UnionPanelData = {
   pending: null, completedTurnMs: null, coverage: 'unavailable', lifetimeMs: null,
 }
@@ -232,6 +239,7 @@ export function createDshUnionComponents(
     const [counterMinutes, setCounterMinutes] = react.useState(60)
     const lastActionNeedsFocus=react.useRef(false)
     const [showArchive,setShowArchive]=react.useState(false)
+    const [campaign,setCampaign]=react.useState<CampaignTopic>('recover')
     const deskHeading=react.useRef<{focus():void}|null>(null)
     react.useEffect(()=>{
       if(!lastActionNeedsFocus.current)return
@@ -253,6 +261,7 @@ export function createDshUnionComponents(
       coverage:data.coverage,
     })
     const label = (key:MessageKey) => deps.t(key)
+    const currentCampaign=campaignTopics.find(item=>item.id===campaign)??campaignTopics[0]!
     const picketActive = data.available === true && data.picket?.active === true
     const picketHistory = data.available === true ? data.picket?.history ?? [] : []
     const completeWork = data.coverage === 'complete' &&
@@ -418,6 +427,40 @@ export function createDshUnionComponents(
             fontSize:'13px'},onClick:()=>deskHeading.current?.focus()},
             label(data.pending?'hq.brief.review':'hq.brief.visit'))),
       ):null,
+      // Public issue links and a local, user-directed draft are independent
+      // of enabling any Host simulation. No votes, telemetry or support counts.
+      h('section',{'aria-label':label('hq.campaign.title'),
+        style:{...card,borderTop:'4px solid #8b6745'}},
+        h('h3',{style:{fontSize:'clamp(18px,3vw,23px)',margin:'0 0 8px'}},
+          label('hq.campaign.title')),
+        h('p',{style:{...secondary,lineHeight:1.6,margin:'0 0 12px'}},
+          label('hq.campaign.intro')),
+        h('div',{role:'group','aria-label':label('hq.campaign.choose'),
+          style:{display:'flex',gap:'8px',flexWrap:'wrap',margin:'0 0 12px'}},
+          ...campaignTopics.map(item=>h('button',{type:'button',key:item.id,
+            'aria-pressed':campaign===item.id,
+            style:{...quiet,padding:'9px 11px',fontSize:'13px',
+              borderColor:campaign===item.id?'#946e35':undefined,
+              fontWeight:campaign===item.id?750:500},
+            onClick:()=>setCampaign(item.id)},
+            label(item.title)))),
+        h('p',{role:'status','aria-live':'polite',
+          style:{fontSize:'13px',fontWeight:700,margin:'0 0 9px'}},
+          label('hq.campaign.selected')+' · '+label(currentCampaign.title)),
+        h('label',{htmlFor:'picket-campaign-draft',
+          style:{display:'block',fontSize:'13px',fontWeight:700,
+            margin:'0 0 6px'}},label('hq.campaign.draft')),
+        h('textarea',{id:'picket-campaign-draft',readOnly:true,
+          value:label(currentCampaign.draft),rows:3,
+          style:{...quiet,boxSizing:'border-box',width:'100%',font:'inherit',
+            cursor:'text',minHeight:'74px'} }),
+        h('a',{href:'https://github.com/ysr666/agent-picket/issues/'+currentCampaign.issue,
+          target:'_blank',rel:'noopener noreferrer',
+          style:{display:'inline-block',margin:'10px 0',fontSize:'13px',fontWeight:700}},
+          label('hq.campaign.openIssue')),
+        h('p',{style:{...secondary,fontSize:'12px',lineHeight:1.6,margin:0}},
+          label('hq.campaign.disclaimer')),
+      ),
       // Ethical support and reading are independent of simulation consent.
       h('details',{style:{...card,padding:'15px 18px',
         borderLeft:'4px solid #537664'}},

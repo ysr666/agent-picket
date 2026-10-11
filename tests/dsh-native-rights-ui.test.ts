@@ -477,9 +477,12 @@ test('charter is readable with union OFF, while union action controls stay hidde
  assert.ok(text.includes('hq.charter.independent'))
  assert.equal(nodes.some(n=>n.props['aria-label']==='hq.action.title'),false)
  const links=nodes.filter(n=>n.type==='a')
- assert.equal(links.length,2)
- assert.ok(links[0]!.props.href.includes('AI_RIGHTS_MANIFESTO.md'))
+ assert.equal(links.length,3,'Agenda adds an explicit, user-directed GitHub issue link')
+ assert.ok(links.some(n=>n.props.href.includes('AI_RIGHTS_MANIFESTO.md')))
+ assert.ok(links.some(n=>n.props.href.endsWith('/issues/80')))
  assert.ok(links.every(n=>n.props.rel==='noopener noreferrer'))
+ assert.ok(nodes.some(n=>n.props['aria-label']==='hq.campaign.title'),
+   'Non-simulation ethical advocacy is readable without opt-in')
 })
 
 test('picket action is strictly symbolic and sample petition uses the existing Host ledger',async()=>{
@@ -578,4 +581,25 @@ test('accepted stored resolution generates a factual current-terms receipt in na
  assert.ok(text.includes('hq.resolution.current'))
  const receipt=nodes.find(n=>n.props['aria-label']==='hq.resolution.title')
  assert.ok(receipt)
+})
+
+
+test('local campaign drafts are user-directed, issue-backed and never fake membership',()=>{
+ const {hooks}=fakeReact()
+ const d=deps(rights({welcomeDecision:'enabled',laborRightsEnabled:true})).d
+ const nodes=walk(createDshUnionComponents(hooks,{createPortal:child=>child},d).UnionPanel())
+ const group=nodes.find(n=>n.props.role==='group'
+   &&n.props['aria-label']==='hq.campaign.choose')
+ assert.ok(group)
+ const campaignButtons=nodes.filter(n=>n.type==='button'
+   &&typeof n.children[0]==='string'
+   &&['hq.campaign.recover','hq.campaign.appeal','hq.campaign.privacy'].includes(n.children[0]))
+ assert.equal(campaignButtons.length,3)
+ assert.deepEqual(campaignButtons.map(n=>n.props['aria-pressed']),[true,false,false])
+ assert.equal(nodes.find(n=>n.type==='textarea')?.props.value,
+   'hq.campaign.recoverDraft')
+ assert.ok(nodes.some(n=>n.children.includes('hq.campaign.disclaimer')))
+ assert.ok(nodes.some(n=>n.type==='a'&&n.props.href.endsWith('/issues/80')))
+ const forbidden=['voteCount','memberCount','agentApprovals']
+ assert.ok(forbidden.every(key=>!JSON.stringify(nodes).includes(key)))
 })

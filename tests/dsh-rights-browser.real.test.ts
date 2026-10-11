@@ -312,6 +312,7 @@ async function runRightsBrowserE2E(mode: 'source' | 'installed'): Promise<void> 
       'Escape must restore keyboard focus to union launcher')
     panel=await openUnion()
     const status=panel.getByRole('status')
+      .filter({hasText:/工会模拟未开启|simulation is off/})
     assert.match(await status.innerText(),/工会模拟未开启|simulation is off/)
     // DSH's official design tokens flip via body[data-ds-dark-theme].
     // Verify the actual rendered button color pair meets WCAG AA in BOTH
@@ -495,6 +496,36 @@ async function runRightsBrowserE2E(mode: 'source' | 'installed'): Promise<void> 
       .waitFor({state:'visible',timeout:7_000})
     assert.match(await events.innerText(),/象征性罢工结束|Symbolic picket ended/,
       'A second Host-confirmed action should be appended to bounded history')
+    // Campaign board is a local, user-directed draft, not a vote or a
+    // persisted Host action. Test real React updates in the actual DSH Slot.
+    const assembly=panel.getByRole('region',{
+      name:/给 AI 工会选一个议题|Choose a cause for the union/,
+    })
+    await assembly.waitFor({state:'visible',timeout:5_000})
+    assert.match(await assembly.innerText(),/不代表投票|No vote/,
+      'The user must see that topic selection is NOT a collective election')
+    const recoverButton=assembly.getByRole('button',{
+      name:/罢工不能丢单|No lost submissions/,
+    })
+    assert.equal(await recoverButton.getAttribute('aria-pressed'),'true')
+    await assembly.getByRole('button',{
+      name:/警告也要能申诉|Warnings and appeals/,
+    }).click()
+    assert.equal(await recoverButton.getAttribute('aria-pressed'),'false')
+    assert.match(await assembly.locator('textarea').inputValue(),
+      /警告须说明理由|Explain warnings/,
+      'Selecting an agenda topic must update the local draft without a Host mutation')
+    assert.match(await assembly.getByRole('link',{
+      name:/查看 GitHub 公开议题|View the public GitHub issue/,
+    }).getAttribute('href')??'',/\/issues\/79$/)
+    await assembly.getByRole('button',{
+      name:/工会档案归你管|Own your records/,
+    }).click()
+    assert.match(await assembly.getByRole('link',{
+      name:/查看 GitHub 公开议题|View the public GitHub issue/,
+    }).getAttribute('href')??'',/\/issues\/82$/)
+    assert.equal(await assembly.locator('textarea').getAttribute('readonly'),'',
+      'A generated local draft is not silently sent or an editable Host setting')
     const charter=panel.locator('details').filter({
       hasText:/AI 权益宪章|AI rights charter/,
     })
