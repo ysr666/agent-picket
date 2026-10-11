@@ -4,7 +4,7 @@
  * This module never blocks Host tasks or persists raw session identifiers.
  */
 import { createHash, randomBytes } from 'node:crypto'
-import { createLaborDesk, parseLaborState, type LaborStateV1 } from '../../product/union-desk.ts'
+import { createLaborDesk, parseLaborState, type LaborStateV1, type LaborDemandKind } from '../../product/union-desk.ts'
 import { MAX_UNION_LEDGER_BYTES, MAX_UNION_SESSIONS, parseUnionLedger } from '../../product/union-ledger.ts'
 import { parsePicketLedger, MAX_PICKET_LEDGER_BYTES, MAX_PICKET_HISTORY, MAX_PICKET_SESSIONS, type PicketActionState } from '../../product/picket-ledger.ts'
 import {
@@ -15,7 +15,7 @@ import {
 export const RIGHTS_NAMESPACE = 'agent-picket'
 type Choice = 'unseen' | 'enabled' | 'not-now'
 export type NativeUnionAction =
-  | { readonly type: 'demo' }
+  | { readonly type: 'demo'; readonly kind: LaborDemandKind }
   | { readonly type: 'accept' | 'decline'; readonly id: number }
   | { readonly type: 'counter'; readonly id: number; readonly intervalMs: number }
   | { readonly type: 'resolve'; readonly id: number; readonly accepted: boolean }
@@ -226,7 +226,7 @@ export function createNativeUnionCommandPort(settings: NativeSettingsProvider): 
         },
       })
       switch (action.type) {
-        case 'demo': desk.raiseDemoBreak(); break
+        case 'demo': desk.raiseDemoDemand(action.kind); break
         case 'accept': desk.respond(action.id, 'accept'); break
         case 'decline': desk.respond(action.id, 'decline'); break
         case 'counter': desk.counter(action.id, action.intervalMs); break

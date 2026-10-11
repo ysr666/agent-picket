@@ -294,3 +294,22 @@ test('two tabs racing symbolic picket cannot both claim a Host write',async()=>{
   assert.equal(parsePicketLedger(shared.unionPicketLedger)?.sessions[keyA]?.history.length,1)
   a.dispose();b.dispose()
 })
+
+
+test('Web simulated overtime follows the same Host CAS and privacy contract as breaks',async()=>{
+ const f=fixture(),desk=f.create()
+ await desk.setActiveSession('a')
+ const first=await desk.raiseDemoOvertime()
+ assert.equal(first?.kind,'overtime')
+ assert.equal(first?.raisedAtElapsedMs,0)
+ assert.equal(await desk.raiseDemoBreak(),null)
+ assert.equal(desk.snapshot().state?.pending?.kind,'overtime')
+ assert.deepEqual(Object.keys(parseUnionLedger(f.get().unionLedger)!.sessions),[keyA])
+ assert.doesNotMatch(f.get().unionLedger,/real-session|rawPrompt|imageData/)
+ await desk.counter(first!.id,4*H)
+ await desk.resolveCounter(first!.id,true)
+ assert.equal(desk.snapshot().state?.agreement.overtimeIntervalMs,4*H)
+ assert.equal(desk.snapshot().state?.agreement.breakIntervalMs,2*H)
+ assert.equal(desk.snapshot().state?.pending,null)
+ desk.dispose()
+})

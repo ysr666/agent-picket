@@ -35,3 +35,36 @@ test('simulation with no new work does not chain grievances after a demo petitio
  d.respond(demo.id,'decline')
  assert.equal(d.observe(0,'complete'),null)
 })
+
+
+test('simulated overtime petition has audited follow-up and real future thresholds',()=>{
+ const {d,read}=desk()
+ const first=d.raiseDemoDemand('overtime')!
+ assert.equal(first.kind,'overtime')
+ assert.equal(first.raisedAtElapsedMs,0,'Manual demo does not claim observed work')
+ assert.equal(d.raiseDemoDemand('break'),null,'Only one open petition per Session')
+ d.counter(first.id,4*H)
+ d.resolveCounter(first.id,true)
+ assert.equal(read().agreement.overtimeIntervalMs,4*H)
+ assert.equal(read().agreement.breakIntervalMs,2*H)
+ assert.deepEqual(read().history.map(x=>x.outcome),['counter-accepted'])
+ assert.equal(read().nextOvertimeDueMs,8*H,
+   'Shortened policy does not retroactively generate stale overtime petitions')
+ assert.equal(d.observe(0,'complete'),null)
+ assert.equal(d.observe(2*H,'complete')?.kind,'break')
+})
+test('invalid or disabled manual overtime never updates the labor ledger',()=>{
+ let state=freshLaborState()
+ let allowed=false
+ const d=createLaborDesk({store:{load:()=>state,save:next=>{state=next}},
+  consent:()=>allowed})
+ assert.equal(d.raiseDemoDemand('overtime'),null)
+ assert.equal(state.revision,0)
+ allowed=true
+ assert.throws(()=>d.raiseDemoDemand('overtime-extra' as 'overtime'),/Invalid/)
+ assert.equal(state.revision,0)
+ assert.equal(d.raiseDemoDemand('overtime')?.kind,'overtime')
+ allowed=false
+ assert.equal(d.raiseDemoDemand('break'),null)
+ assert.equal(state.pending?.kind,'overtime')
+})

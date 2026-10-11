@@ -104,6 +104,19 @@ test('real DSH 0.2 CommandRuntime routes shared symbolic pickets without model c
     assert.deepEqual(Object.keys(restored.sessions),[key])
     assert.equal(value.unionLedger,'','Symbolic pickets must not rewrite legacy bargaining')
     assert.doesNotMatch(value.unionPicketLedger,/isolated-dsh02-cli-session|isolated-02-agent|rawPrompt/)
+    assert.equal((await call('/union petition-demo overtime')).kind,'success')
+    assert.equal(browser.snapshot().pending?.kind,'overtime',
+      'Genuine DSH 0.2 CLI writes the same pending overtime as the Web desk')
+    assert.equal(browser.snapshot().pending?.raisedAtElapsedMs,0)
+    const overtimeId=browser.snapshot().pending!.id
+    assert.equal((await call('/union counter '+overtimeId+' 240')).kind,'success')
+    assert.equal((await call('/union resolve '+overtimeId+' accept')).kind,'success')
+    assert.equal(browser.snapshot().state?.agreement.overtimeIntervalMs,4*3_600_000)
+    assert.equal(browser.snapshot().state?.agreement.breakIntervalMs,2*3_600_000)
+    const rejectedBefore=revision
+    assert.equal((await call('/union petition-demo untrusted')).kind,'error')
+    assert.equal(revision,rejectedBefore,
+      'Invalid CLI petition kind cannot mutate Host settings')
     assert.equal((await call('/union rights off')).kind,'success')
     assert.equal(browser.snapshot().picket,null,'Revocation hides fictional action history')
     const parked=value.unionPicketLedger

@@ -521,6 +521,24 @@ test('picket action is strictly symbolic and sample petition uses the existing H
  assert.ok(other.some(n=>n.children.includes('hq.action.unavailable')))
 })
 
+test('manual overtime action uses the Host union port, never a synthetic fatigue signal',async()=>{
+ const {hooks}=fakeReact()
+ let called=0
+ const d:DshUnionUiDeps={
+   ...deps(rights({welcomeDecision:'enabled',laborRightsEnabled:true})).d,
+   demoOvertime:async()=>{called++},
+   readUnion:()=>({pending:null,completedTurnMs:null,coverage:'unavailable',
+     lifetimeMs:null,available:true}),
+ }
+ const nodes=walk(createDshUnionComponents(hooks,{createPortal:child=>child},d).UnionPanel())
+ const action=nodes.find(n=>n.type==='button'
+   &&n.children.includes('hq.action.overtimePetition'))
+ assert.ok(action,'A user must explicitly launch this simulated overtime grievance')
+ await action.props.onClick()
+ assert.equal(called,1)
+ // Availability and consent are enforced independently by the underlying Host port.
+ assert.ok(nodes.some(n=>n.children.includes('hq.action.safety')))
+})
 test('Union HQ case dossier is readable, uses recorded ID, and preserves actionable negotiation',()=>{
  const {hooks}=fakeReact()
  const base=deps(rights({welcomeDecision:'enabled',laborRightsEnabled:true}))
