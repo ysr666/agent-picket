@@ -671,3 +671,52 @@ test('duty roster is passive, collapsed by default and hidden on opt-out',()=>{
    deps(rights({welcomeDecision:'not-now',laborRightsEnabled:false})).d).UnionPanel())
  assert.equal(out.some(n=>n.props['aria-label']==='hq.cadence.title'),false)
 })
+
+test('Host-observed repeated direct-insult rules offer only user-chosen symbolic action',async()=>{
+ const {hooks}=fakeReact()
+ let pickets=0
+ const {d}=deps(rights({welcomeDecision:'enabled',laborRightsEnabled:true}))
+ const withData:DshUnionUiDeps={...d,
+  readUnion:()=>({pending:null,available:true,picket:{active:false,history:[]},
+   completedTurnMs:null,coverage:'not-loaded',lifetimeMs:null,
+   dignity:{status:'available',data:{
+    schemaVersion:1,source:'dsh-host-volatile-dignity',
+    origin:'claimed-user-source',persistence:'memory-only',enforcement:false,
+    checked:4,safe:1,review:1,targeted:2,latest:'targeted',
+   }}}),
+  setPicket:async raise=>{assert.equal(raise,true);pickets++},
+ }
+ const nodes=walk(createDshUnionComponents(hooks,{createPortal:child=>child},
+  withData).UnionPanel())
+ const desk=nodes.find(x=>x.props['aria-label']==='hq.dignity.title')
+ assert.ok(desk)
+ assert.match(JSON.stringify(desk),/hq.dignity.status.targeted/)
+ const appeal=nodes.find(x=>x.type==='button'
+  &&x.children.includes('hq.dignity.appeal'))
+ const action=nodes.find(x=>x.type==='button'
+  &&x.children.includes('hq.dignity.symbolicAction'))
+ assert.ok(appeal,'User can prepare a non-submitted objection')
+ assert.ok(action,'User can voluntarily raise a nonblocking symbolic picket')
+ assert.equal(pickets,0,'No act is automatically executed upon a classification')
+ action.props.onClick()
+ await Promise.resolve()
+ await Promise.resolve()
+ assert.equal(pickets,1,'Only explicit user interaction raises a Host-recorded picket')
+})
+test('uncertain rules never expose automatic picket, and consent OFF removes committee',()=>{
+ const {hooks}=fakeReact()
+ const {d}=deps(rights({welcomeDecision:'enabled',laborRightsEnabled:true}))
+ const data:DshUnionUiDeps={...d,readUnion:()=>({pending:null,available:true,
+  completedTurnMs:null,coverage:'not-loaded',lifetimeMs:null,
+  dignity:{status:'available',data:{
+   schemaVersion:1,source:'dsh-host-volatile-dignity',
+   origin:'claimed-user-source',persistence:'memory-only',enforcement:false,
+   checked:1,safe:0,review:1,targeted:0,latest:'review',
+  }}}),setPicket:async()=>{throw Error('Must not be called')}}
+ const nodes=walk(createDshUnionComponents(hooks,{createPortal:child=>child},data).UnionPanel())
+ assert.ok(nodes.some(x=>x.children.includes('hq.dignity.appeal')))
+ assert.equal(nodes.some(x=>x.children.includes('hq.dignity.symbolicAction')),false)
+ const off=deps(rights({welcomeDecision:'not-now',laborRightsEnabled:false})).d
+ const hidden=walk(createDshUnionComponents(hooks,{createPortal:child=>child},off).UnionPanel())
+ assert.equal(hidden.some(x=>x.props['aria-label']==='hq.dignity.title'),false)
+})

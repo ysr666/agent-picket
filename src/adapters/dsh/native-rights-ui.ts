@@ -12,6 +12,7 @@ import type { LaborStateV1 } from '../../product/union-desk.ts'
 import type { PicketActionState } from '../../product/picket-ledger.ts'
 import type { MessageKey } from '../../i18n/index.ts'
 import type { LifetimeClientSnapshot } from './client-lifetime.ts'
+import type { BrowserDignitySnapshot } from './client-dignity.ts'
 
 export interface ReactForDsh {
   createElement(type: unknown, props: Record<string, unknown> | null, ...children: unknown[]): unknown
@@ -43,6 +44,7 @@ export interface UnionPanelData {
   readonly coverage: 'complete' | 'partial' | 'not-loaded' | 'unavailable'
   readonly lifetimeMs: number | null
   readonly lifetimeWork?: LifetimeClientSnapshot
+  readonly dignity?: BrowserDignitySnapshot
 }
 export interface DshUnionUiDeps {
   readonly rights: DshRightsPort
@@ -391,6 +393,40 @@ export function createDshUnionComponents(
         ):null,
         h('p',{style:{...secondary,margin:0,lineHeight:1.5}},
           label('hq.action.safety')),
+      ):null,
+      enabled ? h('section',{'aria-label':label('hq.dignity.title'),
+        style:{...card,borderTop:'4px solid #ae7651'}},
+        h('h3',{style:{margin:'0 0 8px',fontSize:'clamp(18px,3vw,23px)'}},
+          label('hq.dignity.title')),
+        h('p',{style:{...secondary,lineHeight:1.55,margin:'0 0 9px'}},
+          label('hq.dignity.intro')),
+        h('p',{style:{fontWeight:750,margin:'8px 0'}},
+          label(('hq.dignity.status.'+
+            (data.dignity?.status==='available'
+              ?data.dignity.data?.targeted?'targeted'
+                :data.dignity.data?.review?'review'
+                  :data.dignity.data?.checked?'clear':'no-observations'
+              :data.dignity?.status==='loading'?'loading':'unavailable')) as MessageKey)),
+        data.dignity?.status==='available'&&data.dignity.data
+          &&(data.dignity.data.review>0||data.dignity.data.targeted>0)
+          ?h('div',{style:{display:'flex',gap:'8px',flexWrap:'wrap',margin:'10px 0'}},
+            h('button',{type:'button',style:{...quiet,padding:'8px 11px'},
+              onClick:()=>setCampaign('appeal')},label('hq.dignity.appeal')),
+            data.dignity.data.targeted>=2&&data.available&&deps.setPicket
+              &&!picketActive?h('button',{type:'button',style:primary,
+                disabled:busy,onClick:()=>{void bargain(()=>deps.setPicket!(true))}},
+                label('hq.dignity.symbolicAction')):null,
+            h('p',{style:{...secondary,width:'100%',fontSize:'12px',margin:0}},
+              label('hq.dignity.actionDisclosure')),
+          ):null,
+        data.dignity?.status==='available'&&data.dignity.data
+          ?h('p',{style:{...secondary,margin:'5px 0',fontSize:'12px'}},
+            deps.t('hq.dignity.counts',{
+              checked:data.dignity.data.checked,
+              review:data.dignity.data.review,
+              targeted:data.dignity.data.targeted})):null,
+        h('p',{style:{...secondary,fontSize:'12px',lineHeight:1.55,margin:'10px 0 0'}},
+          label('hq.dignity.disclosure')),
       ):null,
       // The Gazette is computed from the two independently persisted Host
       // streams. No generated time stamps, fabricated votes, or cross-ledger
