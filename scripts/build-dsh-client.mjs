@@ -18,6 +18,7 @@ const modules = [
   'product/union-ledger.js',
   'product/picket-ledger.js',
   'product/union-experience.js',
+  'product/union-story.js',
   'adapters/dsh/client-bargaining.js',
   'adapters/dsh/native-rights-ui.js',
   'adapters/dsh/lifetime-work-contract.js',
@@ -29,7 +30,7 @@ const allowedImports = new Map([
   ['i18n/index.js', new Set(['./en.js', './zh-CN.js'])],
   ['adapters/dsh/client-host-settings-017.js', new Set(['../../product/union-ledger.js','../../product/picket-ledger.js'])],
   ['product/union-ledger.js', new Set(['./union-desk.js'])],
-  ['adapters/dsh/native-rights-ui.js', new Set(['./client-rights-scope.js','../../product/union-experience.js'])],
+  ['adapters/dsh/native-rights-ui.js', new Set(['./client-rights-scope.js','../../product/union-experience.js','../../product/union-story.js'])],
   ['adapters/dsh/client-bargaining.js', new Set([
     '../../product/union-desk.js', '../../product/union-ledger.js', '../../product/picket-ledger.js',
   ])],

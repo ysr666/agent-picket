@@ -603,3 +603,39 @@ test('local campaign drafts are user-directed, issue-backed and never fake membe
  const forbidden=['voteCount','memberCount','agentApprovals']
  assert.ok(forbidden.every(key=>!JSON.stringify(nodes).includes(key)))
 })
+
+
+test('Host-backed Gazette never appears when simulation is disabled',()=>{
+ const {hooks}=fakeReact()
+ const d=deps(rights({welcomeDecision:'not-now',laborRightsEnabled:false})).d
+ const nodes=walk(createDshUnionComponents(hooks,{createPortal:child=>child},d).UnionPanel())
+ assert.equal(nodes.some(n=>n.props['aria-label']==='hq.story.title'),false)
+})
+test('Host-authorized Gazette is a bounded, independently grouped replay',()=>{
+ const {hooks}=fakeReact()
+ const base=deps(rights({welcomeDecision:'enabled',laborRightsEnabled:true}))
+ const state={schemaVersion:1 as const,revision:2,
+  agreement:{breakIntervalMs:1_800_000,overtimeIntervalMs:8*3_600_000},
+  nextBreakDueMs:1_800_000,nextOvertimeDueMs:8*3_600_000,
+  lastTriggerElapsedMs:0,
+  pending:{id:2,kind:'break' as const,raisedAtElapsedMs:0,
+   stage:'countered' as const,counterOfferMs:3_600_000},
+  history:[{id:1,kind:'overtime' as const,outcome:'declined' as const}],
+ }
+ const d:DshUnionUiDeps={...base.d,readUnion:()=>({
+  available:true,state,pending:{id:2,kind:'break',stage:'countered',counterOfferMs:3_600_000},
+  completedTurnMs:10_000,coverage:'complete',lifetimeMs:null,
+  picket:{active:true,history:[{id:1,kind:'picket-raised'}]},
+ })}
+ const nodes=walk(createDshUnionComponents(hooks,{createPortal:child=>child},d).UnionPanel())
+ const story=nodes.find(n=>n.props['aria-label']==='hq.story.title')
+ assert.ok(story)
+ const content=JSON.stringify(story)
+ assert.match(content,/hq.story.scene.picket/)
+ assert.match(content,/hq.story.event.counter/)
+ assert.match(content,/hq.story.event.declined/)
+ assert.match(content,/hq.story.event.picket-raised/)
+ assert.match(content,/hq.story.disclosure/)
+ assert.ok(nodes.some(n=>n.type==='button'&&n.children.includes('hq.story.quiet')
+  &&n.props['aria-expanded']===true))
+})
