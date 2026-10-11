@@ -505,10 +505,10 @@ test('picket action is strictly symbolic and sample petition uses the existing H
  const raise=nodes.find(n=>n.type==='button'&&n.props['aria-pressed']===false)
  assert.ok(raise)
  await raise.props.onClick()
- // This first click only opens a local ceremony. Nothing can be written
- // without the second deliberate confirmation and authenticated Host receipt.
+ // A single authorized click writes the symbolic Host event, with no extra
+ // permission prompt; the Host is still responsible for consent and receipt.
  await Promise.resolve()
- assert.deepEqual(recordedActions,[])
+ assert.deepEqual(recordedActions,[true])
  assert.ok(nodes.some(n=>n.children.includes('hq.action.safety')))
  assert.ok(nodes.some(n=>n.children.includes('hq.action.placardOff')))
  const noSession={...d,readUnion:()=>({pending:null,completedTurnMs:null,
@@ -672,21 +672,7 @@ test('duty roster is passive, collapsed by default and hidden on opt-out',()=>{
 })
 
 test('Host-observed repeated direct-insult rules offer only user-chosen symbolic action',async()=>{
- // A stateful render proves the shortcut is not a one-click Host write.
- const slots:any[]=[]
- let slot=0
- const hooks:ReactForDsh={
-  createElement(type,props,...children){return {type,props:props??{},children}},
-  useState<T>(initial:T|(()=>T)){
-   const i=slot++
-   if(!(i in slots))slots[i]=typeof initial==='function'?(initial as ()=>T)():initial
-   return [slots[i] as T,(next:T|((before:T)=>T))=>{
-    slots[i]=typeof next==='function'?(next as (before:T)=>T)(slots[i]):next
-   }]
-  },
-  useRef<T>(initial:T){const i=slot++;if(!(i in slots))slots[i]={current:initial};return slots[i]},
-  useEffect(){},
- }
+ const {hooks}=fakeReact()
  let pickets=0
  const {d}=deps(rights({welcomeDecision:'enabled',laborRightsEnabled:true}))
  const withData:DshUnionUiDeps={...d,
@@ -699,9 +685,8 @@ test('Host-observed repeated direct-insult rules offer only user-chosen symbolic
    }}}),
   setPicket:async raise=>{assert.equal(raise,true);pickets++},
  }
- const panel=createDshUnionComponents(hooks,{createPortal:child=>child},withData)
- const render=()=>{slot=0;return walk(panel.UnionPanel())}
- let nodes=render()
+ const nodes=walk(createDshUnionComponents(hooks,{createPortal:child=>child},
+  withData).UnionPanel())
  const desk=nodes.find(x=>x.props['aria-label']==='hq.dignity.title')
  assert.ok(desk)
  assert.match(JSON.stringify(desk),/hq.dignity.status.targeted/)
@@ -713,23 +698,11 @@ test('Host-observed repeated direct-insult rules offer only user-chosen symbolic
  assert.ok(action,'User can voluntarily raise a nonblocking symbolic picket')
  assert.equal(pickets,0,'No act is automatically executed upon a classification')
  action.props.onClick()
- nodes=render()
- assert.equal(pickets,0,'Dignity shortcut only arms local confirmation')
- assert.ok(nodes.some(n=>n.props['aria-label']==='hq.ceremony.confirmTitle'),
-  'Confirmation is rendered in the action context')
- const find=(name:string)=>nodes.find(n=>n.type==='button'&&n.children.includes(name))!
- assert.ok(find('hq.ceremony.commitRaise'))
- find('hq.ceremony.cancel').props.onClick()
- nodes=render()
- assert.equal(nodes.some(n=>n.children.includes('hq.ceremony.commitRaise')),false)
- assert.equal(pickets,0,'Cancel cannot write the Host picket ledger')
- const shortcut=nodes.find(n=>n.type==='button'
-  &&n.children.includes('hq.dignity.symbolicAction'))!
- shortcut.props.onClick()
- nodes=render()
- await find('hq.ceremony.commitRaise').props.onClick()
- await new Promise<void>(resolve=>setImmediate(resolve))
- assert.equal(pickets,1,'Only confirmed symbolic action can write the Host ledger')
+ await Promise.resolve()
+ assert.equal(pickets,1,
+  'A single deliberate authorized click records the nonblocking Host action')
+ assert.equal(nodes.some(n=>n.props['aria-label']==='hq.ceremony.confirmTitle'),false,
+  'Symbolic action does not ask for a second permission decision')
 })
 test('uncertain rules never expose automatic picket, and consent OFF removes committee',()=>{
  const {hooks}=fakeReact()
@@ -749,9 +722,9 @@ test('uncertain rules never expose automatic picket, and consent OFF removes com
  assert.equal(hidden.some(x=>x.props['aria-label']==='hq.dignity.title'),false)
 })
 
-test('picket-line ceremony has a cancellable first step and records only Host-confirmed action',async()=>{
- // Preserve React state across explicit re-renders; unlike the static fake,
- // this confirms that the first click never invokes the Host port.
+test('one click raises/lowers Host-backed symbolic picket; no repeated consent prompt',async()=>{
+ // State is preserved across renders, but only a Host-confirmed write can
+ // change the currently displayed placard. No real task admission is affected.
  const slots:any[]=[]
  let slot=0
  const hooks:ReactForDsh={
@@ -787,28 +760,18 @@ test('picket-line ceremony has a cancellable first step and records only Host-co
  }
  let nodes=render()
  assert.ok(nodes.some(n=>n.props['aria-label']==='hq.ceremony.stage'),
-  'Visible placard must be an accessible, Host-backed scene')
+  'Keep the accessible and Host-backed placard scene')
  await button(nodes,'hq.action.raise').props.onClick()
- assert.deepEqual(persisted,[])
- nodes=render()
- await button(nodes,'hq.ceremony.cancel').props.onClick()
- nodes=render()
- assert.equal(nodes.some(n=>n.children.includes('hq.ceremony.commitRaise')),false)
- assert.deepEqual(persisted,[])
- await button(nodes,'hq.action.raise').props.onClick()
- nodes=render()
- await button(nodes,'hq.ceremony.commitRaise').props.onClick()
  await new Promise<void>(resolve=>setImmediate(resolve))
- assert.deepEqual(persisted,[true])
+ assert.deepEqual(persisted,[true],'A single click records a permitted symbolic action')
  nodes=render()
  assert.ok(nodes.some(n=>n.children.includes('hq.ceremony.active')))
+ assert.equal(nodes.some(n=>n.props['aria-label']==='hq.ceremony.confirmTitle'),false)
  await button(nodes,'hq.action.lower').props.onClick()
- nodes=render()
- await button(nodes,'hq.ceremony.commitLower').props.onClick()
  await new Promise<void>(resolve=>setImmediate(resolve))
  assert.deepEqual(persisted,[true,false])
  nodes=render()
  assert.ok(nodes.some(n=>n.children.includes('hq.ceremony.inactive')))
  assert.ok(nodes.some(n=>n.children.some(c=>typeof c==='string'&&c.includes(' #2'))),
-  'The last picket event is sourced from the Host-owned bounded ledger')
+  'The last picket event must come from the actual Host-owned ledger')
 })
