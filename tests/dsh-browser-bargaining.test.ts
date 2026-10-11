@@ -18,7 +18,7 @@ function fixture(consent=true) {
     async set(field,next){
       if(mode==='reject')throw new Error('Host rejected write')
       if(mode==='silent')return
-      assert.ok(field==='unionLedger'||field==='unionPicketLedger'||field==='unionGazetteMode')
+      assert.ok(field==='unionLedger'||field==='unionPicketLedger'||field==='unionGazetteMode'||field==='unionDignityCases')
       value={...value,[field]:next as string}
       writes++;for(const listener of listeners)listener()
     },
@@ -35,6 +35,51 @@ function fixture(consent=true) {
     writable:(v:boolean)=>{writable=v}}
 }
 
+test('official Host persists user-owned committee case, hearing and resolution',async()=>{
+ const f=fixture(),desk=f.create()
+ await desk.setActiveSession('a')
+ assert.deepEqual(desk.snapshot().committeeCases?.cases,[])
+ const before=f.writeCount()
+ await desk.committeeAction({kind:'file',topic:'question-rule'})
+ assert.equal(f.writeCount(),before+1)
+ assert.deepEqual(desk.snapshot().committeeCases?.cases,[{
+  id:1,kind:'question-rule',stage:'opened',outcome:null}])
+ await assert.rejects(desk.committeeAction({kind:'file',topic:'question-rule'}),/Resolve/)
+ await desk.committeeAction({kind:'convene',id:1})
+ await desk.committeeAction({kind:'close',id:1,outcome:'withdraw-claim'})
+ assert.equal(desk.snapshot().committeeCases?.cases[0]?.outcome,'withdraw-claim')
+ assert.equal(f.get().unionLedger,'','Never rewrite the historic negotiated rules')
+ assert.equal(f.get().unionPicketLedger,'','Never raise a placard automatically')
+ desk.dispose()
+ const recreated=f.create()
+ await recreated.setActiveSession('a')
+ assert.equal(recreated.snapshot().committeeCases?.cases.at(-1)?.stage,'closed')
+ await recreated.setActiveSession('b')
+ assert.deepEqual(recreated.snapshot().committeeCases?.cases,[])
+ f.permission(false)
+ assert.equal(recreated.snapshot().committeeCases,null)
+ await assert.rejects(recreated.committeeAction({kind:'file',topic:'request-dialogue'}),
+  /unavailable/)
+ f.permission(true)
+ await recreated.setActiveSession('a')
+ assert.equal(recreated.snapshot().committeeCases?.cases.at(-1)?.outcome,'withdraw-claim')
+ recreated.dispose()
+})
+test('Host refusal, silent non-write and lack of write authorization fail closed',async()=>{
+ const f=fixture(),desk=f.create()
+ await desk.setActiveSession('a')
+ f.fail('reject')
+ await assert.rejects(desk.committeeAction({kind:'file',topic:'question-rule'}),/rejected/)
+ f.fail('silent')
+ await assert.rejects(desk.committeeAction({kind:'file',topic:'question-rule'}),/confirm/)
+ assert.equal(desk.snapshot().committeeCases?.cases.length,0)
+ f.fail('normal')
+ await desk.committeeAction({kind:'file',topic:'request-dialogue'})
+ f.writable(false)
+ await assert.rejects(desk.committeeAction({kind:'convene',id:1}),/unavailable/)
+ f.writable(true)
+ desk.dispose()
+})
 test('Host Gazette preference survives adapter restart, consent cycle and rejects false writes',async()=>{
  const f=fixture(),a=f.create()
  await a.setActiveSession('a')

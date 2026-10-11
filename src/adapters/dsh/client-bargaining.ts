@@ -10,12 +10,14 @@ import { createLaborDesk, parseLaborState, type Coverage, type LaborDemand, type
 import { parseUnionLedger, MAX_UNION_SESSIONS, MAX_UNION_LEDGER_BYTES } from '../../product/union-ledger.ts'
 import { parsePicketLedger, MAX_PICKET_LEDGER_BYTES, MAX_PICKET_SESSIONS, MAX_PICKET_HISTORY, type PicketActionState } from '../../product/picket-ledger.ts'
 import type { DshSettingsScope } from './client-rights-scope.ts'
+import { advanceDignityCase, parseDignityCaseLedger, MAX_DIGNITY_CASE_BYTES, MAX_DIGNITY_CASE_SESSIONS, type DignityCaseKind, type DignityCaseOutcome, type DignityCaseSession } from '../../product/dignity-case-ledger.ts'
 
 export interface UnionSettingsSection {
   readonly welcomeDecision: 'unseen' | 'enabled' | 'not-now'
   readonly unionLedger: string
   readonly unionPicketLedger?: string
   readonly unionGazetteMode?: 'visible'|'quiet'
+  readonly unionDignityCases?: string
 }
 export interface BrowserUnionSnapshot {
   readonly available: boolean
@@ -23,6 +25,7 @@ export interface BrowserUnionSnapshot {
   readonly pending: LaborDemand | null
   readonly picket: PicketActionState | null
   readonly gazetteMode: 'visible'|'quiet'|null
+  readonly committeeCases: DignityCaseSession|null
   readonly autoBlockEnabled: false
 }
 
@@ -53,8 +56,9 @@ export function createDshBrowserUnionDesk(options: {
     const ledger = parseUnionLedger(view.value.unionLedger)
     const picketLedger = parsePicketLedger(view.value.unionPicketLedger ?? '')
     const gazetteMode=view.value.unionGazetteMode ?? 'visible'
-    if (!ledger || !picketLedger || (gazetteMode!=='visible'&&gazetteMode!=='quiet')) return null
-    return { view, ledger, picketLedger, gazetteMode, key: activeKey }
+    const caseLedger=parseDignityCaseLedger(view.value.unionDignityCases ?? '')
+    if (!ledger || !picketLedger || !caseLedger || (gazetteMode!=='visible'&&gazetteMode!=='quiet')) return null
+    return { view, ledger, picketLedger, caseLedger, gazetteMode, key: activeKey }
   }
   const snapshot = (): BrowserUnionSnapshot => {
     try {
@@ -62,10 +66,12 @@ export function createDshBrowserUnionDesk(options: {
       const state = data ? parseLaborState(data.ledger.sessions[data.key]) : null
       return { available: state !== null, state, pending: state?.pending ?? null,
         picket: data?.picketLedger.sessions[data.key] ?? null,
-        gazetteMode:data?.gazetteMode??null, autoBlockEnabled: false }
+        gazetteMode:data?.gazetteMode??null,
+        committeeCases: data?.caseLedger.sessions[data.key] ?? (data?{cases:[]}:null),
+        autoBlockEnabled: false }
     } catch {
       return { available: false, state: null, pending: null, picket: null,
-        gazetteMode:null, autoBlockEnabled: false }
+        gazetteMode:null,committeeCases:null, autoBlockEnabled: false }
     }
   }
 
@@ -156,6 +162,34 @@ export function createDshBrowserUnionDesk(options: {
         if(!after||after.key!==key||after.gazetteMode!==mode)
           throw new Error('Host did not confirm Gazette display preference')
         notify()
+      })
+    },
+    committeeAction(action:{kind:'file';topic:DignityCaseKind}
+      |{kind:'convene';id:number}
+      |{kind:'close';id:number;outcome:DignityCaseOutcome}) {
+      return enqueue(async()=>{
+        const before=read()
+        if(!before)throw new Error('Authenticated, opted-in union committee unavailable')
+        const prior=before.caseLedger.sessions[before.key]??{cases:[]}
+        const next=advanceDignityCase(prior,action)
+        const others=Object.entries(before.caseLedger.sessions).filter(([key])=>key!==before.key)
+          .slice(-(MAX_DIGNITY_CASE_SESSIONS-1))
+        const sessions=Object.fromEntries([...others,[before.key,next]])
+        if(!globalThis.crypto?.getRandomValues)throw new Error('Secure case receipts unavailable')
+        const bytes=new Uint8Array(16)
+        globalThis.crypto.getRandomValues(bytes)
+        const writeToken=[...bytes].map(x=>x.toString(16).padStart(2,'0')).join('')
+        const serialized=JSON.stringify({schemaVersion:1,sessions,writeToken})
+        if(serialized.length>MAX_DIGNITY_CASE_BYTES)throw new Error('Committee case history full')
+        if(activeKey!==before.key||!consent())
+          throw new Error('Session or consent changed before case filing')
+        await scope.set('unionDignityCases',serialized)
+        const after=read()
+        if(!after||after.key!==before.key||after.caseLedger.writeToken!==writeToken
+          ||JSON.stringify(after.caseLedger.sessions[before.key])!==JSON.stringify(next))
+          throw new Error('Host did not confirm the committee case')
+        notify()
+        return next
       })
     },
     setPicket(raise: boolean) {
