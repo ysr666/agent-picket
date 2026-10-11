@@ -36,7 +36,8 @@ test('default DSH work stats persist; classifications stay in-memory unless opte
     assert.deepEqual(cont,{kind:'enter'})
     callbacks.get('session/event')!({id:agent.session.id},{type:'turn/start',seq:1,time:100})
     callbacks.get('session/event')!({id:agent.session.id},{type:'turn/end',seq:2,time:180})
-    assert.match(run('report').text,/1 messages/)
+    assert.equal(run('report').kind,'error',
+      'No Host consent owner means ordinary text must not be inspected')
     assert.match(run('lifetime').text,/1 started/)
     assert.match(run('lifetime').text,/80 ms/)
     assert.match(run('days').text,/1970-01-01: 1 turns ended, 0 tool calls, 80 ms/)

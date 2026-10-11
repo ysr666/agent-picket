@@ -31,7 +31,8 @@ test('public plugin exports Cordis identity and remains fully monitor-only', asy
   }
   assert.equal(continued, 4)
   const invoke = (rawInput: string) => command.handler({ rawInput, agent })
-  assert.match(invoke('report').text, /4 explicit-target flags/)
+  assert.equal(invoke('report').kind,'error',
+    'A plugin with no Host consent provider never invokes the classifier')
   assert.match(invoke('status').text, /monitor-only/)
   const safety = invoke('safety')
   assert.equal(safety.kind, 'success')
@@ -56,7 +57,7 @@ test('public plugin exports Cordis identity and remains fully monitor-only', asy
   handlers.get('session/event')!({ id: 'one-session' }, { type: 'turn/end', seq: 2, time: 150 })
   assert.match(invoke('stats').text, /elapsed time in completed turns 50 ms/)
   invoke('reset')
-  assert.match(invoke('report').text, /0 messages/)
+  assert.equal(invoke('report').kind,'error')
   assert.match(invoke('stats').text, /turns started 0/)
 })
 

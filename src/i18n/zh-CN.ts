@@ -57,6 +57,7 @@ export const zhCN = {
   'command.legacy.picketNone': '此前没有开启象征性罢工，真实 Agent 请求始终不受影响。',
   'command.legacy.statsUnavailable': '当前宿主或会话无法提供工作统计。',
   'command.legacy.statsResult': '本地会话工作统计：轮次开始 {turnStarts} 次、结束 {turnEnds} 次；工具调用 {toolCalls} 次、返回 {toolResults} 次；已完成轮次经过时间 {completedTurnMs} 毫秒。仅保存在内存中，轮次间空闲时间不计，轮次内等待可能计入。不调用模型。',
+  'command.legacy.reportDisabled': '工会未授权，自动辱骂检测与分类报告均已关闭。请先主动开启工会模拟。',
   'command.legacy.reportUnavailable': '当前宿主无法使用本地规则检测。',
   'command.legacy.reportResult': '本地规则检查：消息 {checked} 条，未命中 {safe} 条、待复核 {review} 条、明确针对性标记 {targeted} 条。这些试验性标签不能证明存在辱骂。不保存引用原文，自动任务阻断保持关闭。',
   'command.legacy.resetUnavailable': '当前会话没有可重置的本地工作统计。',

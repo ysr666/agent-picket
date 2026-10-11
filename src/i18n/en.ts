@@ -55,6 +55,7 @@ export const en = {
   'command.legacy.picketNone': 'No symbolic picket was active. Real Agent requests have remained unaffected.',
   'command.legacy.statsUnavailable': 'Session work statistics are unavailable on this Host.',
   'command.legacy.statsResult': 'Local session stats: turns started {turnStarts}, turns ended {turnEnds}, tool calls {toolCalls}, tool results {toolResults}, elapsed time in completed turns {completedTurnMs} ms. In-memory only; idle time between turns is excluded, waiting inside turns may count. No model calls.',
+  'command.legacy.reportDisabled': 'Dignity detection is off. Enable union simulation before requesting rule statistics.',
   'command.legacy.reportUnavailable': 'Local rule detection is unavailable on this Host.',
   'command.legacy.reportResult': 'Local rule check: {checked} messages, {safe} no flag, {review} review, {targeted} explicit-target flags. These experimental labels do NOT prove abuse. No quoted text is stored. Automatic blocking disabled.',
   'command.legacy.resetUnavailable': 'No local session work statistics to reset.',

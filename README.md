@@ -15,6 +15,9 @@
 3. **Negotiate symbolically.** View a proposal, counteroffer, accept/decline and read the saved result. A fictional petition is not a real Agent signature or vote.
 4. **Review the evidence.** Cumulative work and local trend counts can support the story without collecting actual conversation text. Turning rights simulation off never vetoes model work.
 
+**Automatic detection:** after explicit Host opt-in, new eligible user-source text observed by DSH's `agent/pre-step` hook is classified locally without copy/paste. Without consent (or after revocation), no automatic content inspection runs. This is monitor-only, not proof of abuse or permission to block; user-visible warnings and appeals remain under [#99](https://github.com/ysr666/agent-picket/issues/99) and [#79](https://github.com/ysr666/agent-picket/issues/79). Work-only statistics run separately.
+
+
 See [official DSH 0.2 Web installation and real Chrome rights/AX acceptance](docs/DSH_02_OFFICIAL_RIGHTS_AX_E2E.md) for the automated, isolated-profile test path. These steps describe the **current `main` source**, not a claim that every DSH build or adapter has been qualified for production. Human screen-reader and real native zoom/high-contrast qualification is still pending.
 
 ## Developer safety snapshot

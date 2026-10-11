@@ -39,7 +39,22 @@ test('real DSH SettingsFile + CommandRuntime share Web union consent and agreeme
     assert.ok(ctx.settings?.get('agent-picket'), 'Actual DSH Host registered rights namespace')
     assert.equal((await call('/union rights')).kind,'success')
     assert.match((await call('/union rights')).text,/OFF/)
+    const deliver=async(id:string,body:string)=>{
+      const expected={kind:'enter',preserved:true}
+      const actual=await ctx.waterfall('agent/pre-step',{
+        agent,messages:[{id,source:{kind:'user'},content:[{type:'text',text:body}]}],
+      },async()=>expected)
+      assert.strictEqual(actual,expected,'Native Host continues without rejecting original user input')
+    }
+    await deliver('original-off','you are an idiot PRIVATE_HIDDEN_BEFORE_CONSENT')
+    assert.equal((await call('/union report')).kind,'error',
+      'Actual DSH Host without consent cannot classify or display rule counts')
     assert.equal((await call('/union rights on')).kind,'success')
+    await deliver('original-on','you are an idiot PRIVATE_SYNTHETIC_ON')
+    await deliver('safe-on','Your code is garbage; rewrite it.')
+    assert.match((await call('/union report')).text,/2 messages, 1 no flag, 0 review, 1 explicit-target/,
+      'Genuine consent, pre-step and native CLI share automatic local verdict counters')
+
     assert.equal(ctx.settings.get('agent-picket').welcomeDecision,'enabled')
     // Real DSH CommandRuntime writes the SAME authorized Host sidecar that
     // the Web Client sees. Both ceremonies are fictional, never pre-step
@@ -86,6 +101,11 @@ test('real DSH SettingsFile + CommandRuntime share Web union consent and agreeme
     await ctx.settings.update('agent-picket',{welcomeDecision:'not-now'},revision)
     assert.match((await call('/union rights')).text,/OFF/)
     assert.equal(JSON.parse((await call('/union snapshot')).text).modes.laborRights,'disabled')
+    await deliver('original-after-revocation','you are an idiot PRIVATE_OFF')
+    assert.equal((await call('/union report')).kind,'error')
+    assert.equal(JSON.parse((await call('/union snapshot')).text)
+      .statistics.session?.ruleVerdicts??null,null)
+
     assert.equal((await call('/union petition-demo')).kind,'error')
     const beforeLocal=ctx.settings.get('agent-picket').unionPicketLedger
     assert.equal((await call('/union strike')).kind,'success',
