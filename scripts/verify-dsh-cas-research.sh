@@ -9,6 +9,8 @@ if [[ -z "$(printenv AGENT_PICKET_DSH_HOST || true)" ||
   echo "REAL_HOST_REQUIRED: supply an installed legacy DSH 0.1 SettingsFile+Commands SDK" >&2
   exit 2
 fi
+echo "RESEARCH_REAL_DSH_SETTINGS_SDK=$(node -p 'require(process.argv[1]).version' "$AGENT_PICKET_DSH_HOST/@deepseek-ai/dsh-settings-file/package.json")"
+echo "RESEARCH_NODE=$(node --version)"
 dir="$(mktemp -d /tmp/ap-cas-research.XXXXXXXX)"
 trap 'rm -rf "$dir"' EXIT
 
@@ -35,6 +37,19 @@ research_test original red 0 3 \
  AGENT_PICKET_DSH_MULTIPROCESS_CHECK=1 \
  node --experimental-strip-types --test --test-reporter=tap \
  --test-name-pattern='P0 #111:' tests/dsh-archive-multiprocess.real.test.ts
+
+# Three failing tests alone are NOT proof of these three bugs. All three
+# could be infrastructure failures (missing module, child crash, timeout).
+# Demand the exact domain-specific failure at each original assertion.
+for expected_message in \
+  'A successful picket must survive the second OS-process Host write' \
+  'Host resurrected the already-confirmed category erasure from another owner stale snapshot' \
+  'A second Host owner silently restored ENABLED after a confirmed consent revocation'; do
+  if ! grep -Fq "$expected_message" "$dir/original.log"; then
+    echo "RESEARCH_INCONCLUSIVE: a known security assertion was not reached; SDK crash is not P0 repro evidence" >&2
+    exit 1
+  fi
+done
 
 research_test content_aba red 0 1 \
  env AGENT_PICKET_DSH_DISK_CAS_EXPERIMENT=1 \

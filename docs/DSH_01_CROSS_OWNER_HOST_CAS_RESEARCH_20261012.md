@@ -72,3 +72,8 @@ The new scripts/verify-dsh-cas-research.sh requires SettingsFile and Commands mo
 Merely skipping tests or failing for an unrelated content-only assertion cannot mark the research summary green. Changes from known observations return an inconclusive error requiring investigation. Even when the command completes, it prints RESEARCH_ONLY and RELEASE_STATUS=P0_NO_GO. The independent real shipping gate is npm run check:dsh-multiowner, run against the UNMODIFIED official SDK. Only its 3/3 passes could contribute toward a future release decision; other blockers remain.
 
 The upstream master branch has migrated away from the old SettingsFile package and GitHub Issues are currently disabled. This is a version-specific reproducible research report, not a current-master patch ready for merge. The modern Host storage/config implementation requires fresh tests.
+
+
+### Reproduction evidence validation
+
+The research runner now prints its genuine installed SettingsFile SDK version and Node version. In addition to requiring a fail status and exactly three failing official tests, it demands each original **domain-specific assertion message** (lost acknowledged picket, resurrected category, and restored consent). Three unrelated initialization crashes or an incompatible SDK therefore produce RESEARCH_INCONCLUSIVE, **not** a false root-cause reproduction. The content-only ABA control likewise requires the actual successful-stale-request assertion, not merely one arbitrary failure. Keep this evidence quality requirement if adding other DSH versions.
