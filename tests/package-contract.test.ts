@@ -66,11 +66,14 @@ test('browser companion is a self-contained DSH loader artifact with a declared 
 })
 
 test('npm dry-run tarball contains prebuilt plugin and no source, tests, or runtime helpers', () => {
-  const output = spawnSync('npm', ['pack', '--ignore-scripts', '--dry-run', '--json'], {
+  const win=process.platform==='win32'
+  const output = spawnSync(win?'cmd.exe':'npm',win?
+    ['/d','/s','/c','npm pack --ignore-scripts --dry-run --json']:
+    ['pack','--ignore-scripts','--dry-run','--json'], {
     cwd: root, encoding: 'utf8', timeout: 20_000,
     env: { ...process.env, npm_config_audit: 'false', npm_config_fund: 'false' },
   })
-  assert.equal(output.status, 0, 'npm pack dry-run failed: ' + output.stderr.slice(-1500))
+  assert.equal(output.status, 0, 'npm pack dry-run failed: ' + String(output.stderr??output.error??'').slice(-1500))
   const [meta] = JSON.parse(output.stdout) as Array<{ files: Array<{ path: string }>; size: number }>
   assert.ok(meta, 'npm returned an empty pack manifest')
   const files = new Set(meta.files.map(f => f.path))
