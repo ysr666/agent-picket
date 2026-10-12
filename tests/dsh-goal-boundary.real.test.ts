@@ -61,7 +61,12 @@ test('isolated real DSH Goal driver settles round before blocking, and resumes w
    'After genuine Host Goal.block(), driver must not dispatch next round')
   await request('session/prompt',{sessionId:sid,contentBlocks:[{type:'text',text:'RESUME_GOAL_PROBE'}]})
   await wait(()=>lines().includes('goal-resumed:active'),'Official GoalService.resume() accepted resumed state')
-  await wait(()=>lines().filter(v=>v==='model-call').length>=4,'Human resume turn and next Goal round')
+  await wait(()=>lines().filter(v=>v==='model-call').length>=7,'Human resume turn plus all four remaining Goal rounds')
+  await new Promise(resolve=>setTimeout(resolve,160))
+  assert.equal(lines().filter(v=>v==='model-call').length,7,
+    'A resumed Goal must not create phantom extra turns')
+  assert.equal(lines().filter(v=>v==='strike-result:blocked').length,1,
+    'Same-day resume must not instantly retrigger the same strike')
   assert.ok(lines().includes('goal-created:active'))
   assert.ok(lines().includes('strike-result:blocked'))
   assert.ok(lines().includes('goal-resumed:active'))

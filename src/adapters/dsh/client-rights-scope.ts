@@ -6,6 +6,7 @@
 export type RightsWelcomeChoice = 'enabled' | 'not-now'
 export interface RightsSection {
   readonly welcomeDecision: 'unseen' | RightsWelcomeChoice
+  readonly realGoalStrikeConsent?: 'off'|'authorized-v1'
   readonly unionLedger?: string
 }
 export interface SettingsScopeSnapshot<T> {
@@ -66,6 +67,14 @@ export function createDshClientRightsScope(scope: DshSettingsScope<RightsSection
       const before = snapshot()
       if (before.state !== 'ready' || !before.writable) {
         throw new Error('Verified Host rights settings are unavailable')
+      }
+      if(choice==='not-now'&&scope.getSnapshot().value?.realGoalStrikeConsent==='authorized-v1'){
+        // Separate official client SettingsScope CAS writes: revoke physical
+        // Goal work permission FIRST, then leave the simulated union. If the
+        // second call fails, staying joined with real stopping OFF is safe.
+        await scope.set('realGoalStrikeConsent','off')
+        if(scope.getSnapshot().value?.realGoalStrikeConsent!=='off')
+          throw new Error('Host did not confirm physical Goal strike revocation')
       }
       await scope.set('welcomeDecision', choice)
       const after = snapshot()

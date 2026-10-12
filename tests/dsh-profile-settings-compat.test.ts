@@ -6,16 +6,19 @@ import {
 } from '../src/adapters/dsh/rights-settings.ts'
 import { createNativeUnionCommandPort, type NativeSettingsProvider } from '../src/adapters/dsh/native-rights-command.ts'
 
-test('new DSH Config uses three volatile Host fields without a blocking flag', () => {
+test('new DSH Config keeps real Goal authorization distinct from legacy union simulation', () => {
   const schema = DshProfileRightsConfig
   assert.equal(schema.type, 'object')
-  for (const name of ['welcomeDecision','unionLedger','commandLocale','unionPicketLedger','unionDignityCases','unionGazetteMode']) {
+  for (const name of ['welcomeDecision','unionLedger','commandLocale','unionPicketLedger','unionDignityCases','unionGazetteMode','realGoalStrikeConsent']) {
     assert.equal(schema.dict![name]?.meta.volatile, true, name)
   }
   assert.deepEqual(Object.keys(schema.dict!).sort(),
-    ['commandLocale','unionDignityCases','unionGazetteMode','unionLedger','unionPicketLedger','welcomeDecision'])
+    ['commandLocale','realGoalStrikeConsent','unionDignityCases','unionGazetteMode','unionLedger','unionPicketLedger','welcomeDecision'])
   const parsed = schema({})
   assert.equal(parsed.welcomeDecision.get(), 'unseen')
+  assert.equal(parsed.realGoalStrikeConsent.get(), 'off')
+  assert.equal(schema({realGoalStrikeConsent:'authorized-v1'}).realGoalStrikeConsent.get(),'authorized-v1')
+  assert.throws(()=>schema({realGoalStrikeConsent:true as never}))
   assert.equal(parsed.unionLedger.get(), '')
   assert.equal(parsed.unionPicketLedger.get(), '')
   assert.equal(parsed.unionDignityCases.get(),'')

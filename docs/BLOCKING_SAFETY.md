@@ -42,7 +42,7 @@ These booleans are not a cryptographic security mechanism; a malicious adapter c
 - input-recovery-unverified
 - user-opt-in-missing
 
-Thus DSH remains **monitor-only**. `/union strike` and `/union resume` are an explicitly **symbolic, non-blocking demo**, never proof that enforcement works.
+Thus DSH **pre-step message admission** remains **monitor-only**. The separately documented safe-boundary Goal mode, explicitly authorized through a new Host setting, can stop the **next autonomous Goal round** without rejecting incoming messages. `/union strike` and `/union resume` are an explicitly **symbolic, non-blocking demo**, never proof that enforcement works.
 
 The command was exercised through actual DSH `CommandRuntime.execute()` in an isolated Cordis 4 runtime. The resulting `command/run` and `command/done` appear in the command log, but AgentPicket's `recordInput: false` prevents storing unnecessary slash-command arguments. Tests verify execution, status text, manual symbolic picket, resume, reset, unloading and that user prompts still enter while the symbolically active flag is on.
 

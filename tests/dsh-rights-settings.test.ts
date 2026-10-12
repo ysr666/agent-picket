@@ -5,13 +5,15 @@ import {
 } from '../src/adapters/dsh/rights-settings.ts'
 
 test('DSH Host schema defaults fictional rights to unseen/OFF and rejects malformed choices', () => {
-  assert.deepEqual(RightsSettingsSchema({}), {welcomeDecision:'unseen',unionLedger:'',unionPicketLedger:'',unionDignityCases:'',unionGazetteMode:'visible',commandLocale:'auto'})
+  assert.deepEqual(RightsSettingsSchema({}), {welcomeDecision:'unseen',realGoalStrikeConsent:'off',unionLedger:'',unionPicketLedger:'',unionDignityCases:'',unionGazetteMode:'visible',commandLocale:'auto'})
   assert.deepEqual(RightsSettingsSchema({welcomeDecision:'enabled'}),
-    {welcomeDecision:'enabled',unionLedger:'',unionPicketLedger:'',unionDignityCases:'',unionGazetteMode:'visible',commandLocale:'auto'})
+    {welcomeDecision:'enabled',realGoalStrikeConsent:'off',unionLedger:'',unionPicketLedger:'',unionDignityCases:'',unionGazetteMode:'visible',commandLocale:'auto'})
   assert.deepEqual(RightsSettingsSchema({welcomeDecision:'not-now'}),
-    {welcomeDecision:'not-now',unionLedger:'',unionPicketLedger:'',unionDignityCases:'',unionGazetteMode:'visible',commandLocale:'auto'})
+    {welcomeDecision:'not-now',realGoalStrikeConsent:'off',unionLedger:'',unionPicketLedger:'',unionDignityCases:'',unionGazetteMode:'visible',commandLocale:'auto'})
   assert.throws(() => RightsSettingsSchema({welcomeDecision:'automatic-strike' as never}))
   assert.throws(() => RightsSettingsSchema({welcomeDecision:true as never}))
+  assert.equal(RightsSettingsSchema({realGoalStrikeConsent:'authorized-v1'}).realGoalStrikeConsent,'authorized-v1')
+  assert.throws(()=>RightsSettingsSchema({realGoalStrikeConsent:'yes' as never}))
   assert.equal(RightsSettingsSchema({commandLocale:'zh-CN'}).commandLocale,'zh-CN')
   assert.throws(() => RightsSettingsSchema({commandLocale:'es' as never}))
   assert.equal(RightsSettingsSchema({unionGazetteMode:'quiet'}).unionGazetteMode,'quiet')
@@ -58,7 +60,7 @@ test('Host validation rejects extra/unrecognized ledger fields and oversized sto
     },
   })
   assert.ok(validate)
-  assert.doesNotThrow(()=>validate!({welcomeDecision:'enabled',unionLedger:'',unionPicketLedger:''}))
+  assert.doesNotThrow(()=>validate!({welcomeDecision:'enabled',realGoalStrikeConsent:'off',unionLedger:'',unionPicketLedger:''}))
   assert.doesNotThrow(()=>validate!({welcomeDecision:'enabled',
     unionLedger:JSON.stringify({schemaVersion:1,sessions:{}}),unionPicketLedger:''}))
   assert.doesNotThrow(()=>validate!({welcomeDecision:'enabled',

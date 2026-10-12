@@ -96,3 +96,19 @@ test('malformed user action does not write',async()=>{
   await assert.rejects(c.choose('yes' as any),TypeError)
   assert.equal(s.getWrites(),0)
 })
+
+test('leaving the union first revokes a separately authorized real Goal strike',async()=>{
+ let current:RightsSection={welcomeDecision:'enabled',realGoalStrikeConsent:'authorized-v1'}
+ const writes:string[]=[]
+ const scope:DshSettingsScope<RightsSection>={
+  getSnapshot:()=>({status:'ready',mode:'host',writable:true,revision:writes.length+1,value:current}),
+  subscribe:()=>()=>{},
+  async set(field,value){writes.push(field);current={...current,[field]:value}},
+ }
+ await createDshClientRightsScope(scope).choose('not-now')
+ assert.deepEqual(writes,['realGoalStrikeConsent','welcomeDecision'])
+ assert.equal(current.realGoalStrikeConsent,'off')
+ await createDshClientRightsScope(scope).choose('enabled')
+ assert.equal(current.realGoalStrikeConsent,'off',
+   'A later simulation rejoin cannot silently restore the prior physical strike grant')
+})

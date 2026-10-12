@@ -1,7 +1,7 @@
 import { appendFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
-import { blockAutonomousGoalAtTurnStopping } from '../../src/adapters/dsh/goal-boundary-strike.ts'
+import { registerDshGoalWorkEnforcement } from '../../src/adapters/dsh/goal-work-enforcement.ts'
 
 export const name='picket-goal-boundary-isolated-smoke'
 export const inject=['llm','goals','agents']
@@ -19,7 +19,7 @@ class OfflineModel extends LlmAdapter {
   yield {type:'finish',reason:{kind:'stop'}}
  }
 }
-let created=false,blockedOnce=false
+let created=false
 export function apply(ctx){
  ctx.llm.registerAdapter(['picket-goal-offline'],new OfflineModel())
  ctx.on('agent/pre-step',({agent,messages},next)=>{
@@ -44,31 +44,13 @@ export function apply(ctx){
  ctx.on('agent/turn-stopping',({agent})=>{
   const goal=ctx.goals.get(agent)
   record('goal-rounds:'+String(goal?.roundsStarted??'none'))
-  if(!blockedOnce&&goal?.roundsStarted>=1){
-   // Test fixture alone supplies simulated accumulated work and consent.
-   // Uses REAL DSH GoalService and actual AgentLoop turn-stopping event.
-   const result=blockAutonomousGoalAtTurnStopping({
-    consent:{kind:'agent-picket-real-goal-strike-v1',hostAuthenticated:true,enabled:true},
-    event:{type:'agent/turn-stopping',reason:'settling',sessionId:agent.session.id},
-    agent,agentSessionId:agent.session.id,
-    work:{coverage:'complete',completedTurnMs:60_000,resumeFloorMs:0,thresholdMs:60_000},
-    goals:{
-      get(a){return ctx.goals.get(a)},
-      block(a,ref,reason){
-        try {
-          const value=ctx.goals.block(a,ref,reason)
-          record('host-block-return:'+JSON.stringify({phase:value.phase,revision:value.revision,activation:value.activation}))
-          return value
-        }catch(error){
-          record('host-block-error:'+String(error?.code??'unknown')+':'+String(error?.message??error))
-          throw error
-        }
-      },
-    },
-   })
-   record('strike-result:'+result.state)
-   if(result.state==='blocked')blockedOnce=true
-  }
+ })
+ // Isolated test-only consent & synthetic work readings. Crucially, use the
+ // EXACT same production registration code with official Host Goal service.
+ registerDshGoalWorkEnforcement(ctx,{
+   consent:()=>({kind:'agent-picket-real-goal-strike-v1',hostAuthenticated:true,enabled:true}),
+   todayWork:()=>8*3_600_000,
+   onResult:result=>record('strike-result:'+result),
  })
  record('fixture-loaded')
 }

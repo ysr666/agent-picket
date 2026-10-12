@@ -37,3 +37,15 @@ node --experimental-strip-types --test tests/dsh-goal-boundary.real.test.ts
 5. **普通聊天不等于 Goal**：已完成的一轮模型调用自然会停，但若要求 *拒绝下一条普通用户输入*，仍需要可靠的 Host 入口或官方权限检查；`composer.blocks` 仅 UI 限制，不能作为完整安全阻断证明。首发可以分别实现和验收，不必把 Goal 罢工绑死在这一项上。
 
 文档中 “真实 Goal 阻断已在隔离 Host 实测” 与 “正式首发 1.0 支持全部四条客户端 × 三操作系统” 是不同断言。`npm run release:gate` 继续 NO-GO，直到完整的版本化授权、用户体验和跨平台验收完成。
+
+## 2026-10-12 生产接线进展（仍未发布）
+
+现已在 `src/adapters/dsh/plugin.ts` **接入生产的官方 DSH 宿主服务**：插件在 Goal + Agent 服务可注入时注册 `agent/turn-stopping` 监听，调用 `src/adapters/dsh/goal-work-enforcement.ts`，读取由 `DurableStats.snapshotDays(31)` 保存的**当前 UTC 日已完成 Turn 时长**（包括轮次内等待，非模型算力时长）。只有真实数值达到八小时，且官方 Host 权限允许时，才调用已有测试验证过的 `blockAutonomousGoalAtTurnStopping`。这个读取不会抓取原始提示词，也不会将当前正在收尾的轮次推测为已完成。无法读取、损坏、没有今天的数据或者 Host 缺少 Goal 服务时保持放行。
+
+新增单独的宿主设置字段 `realGoalStrikeConsent: 'off' | 'authorized-v1'`，默认 `off`。**只有** `welcomeDecision === 'enabled'` 且新字段 `authorized-v1` 同时来自官方 Host 设置时才可执行真实 Goal 轮次阻断。用户以前加入模拟工会并不授权真实阻断；Host 当前授权每次边界重读。Web UI 使用 `createDshRealGoalConsentControl`（`src/adapters/dsh/client-goal-consent.ts`），必须先呈现新版 `goal-safe-boundary-v1` 知情告知；Host 负责 CAS 更新与回读确认。这是供 #120 UI Session 采用的正式数据接口，还不是已完成的真实浏览器 UI 验收。
+
+由于恢复原 Goal 后不能立即再次触发同一个八小时阈值，适配器只允许**同一个 Goal 在同一 UTC 日因该工时条件实际阻断一次**。检查依据是 DSH 自己的持久化 `goal/change` 阻断事件（含 `picket-work-limit` 原因和时间戳），不另外保存用户内容或建立内存式伪排队。跨日可重新在真实八小时工作积累后触发。`/union rights off` 在 Host CAS 补丁中同步撤销新版权限，Web 退出也先撤销再离开；重新加入模拟工会不静默重授真实执行权。
+
+**边界限制：** 目前仅实现已知的八小时 UTC 日工时触发，不将 2 小时提示或不具真实性证明的目标辱骂判断升级为自动阻断。该模式阻断的是 *后续自动 Goal 续轮*，**不会拒绝后来的普通用户提交，也不会自动结束已在排队的其他会话任务**。如果用户已在真实 Goal blocked 状态下关闭工会，他仍须由 Host 官方恢复操作（`/goal resume` 或将来 UI 内经验证的恢复动作）继续该 Goal；撤销权限停止未来新阻断，不意味着自动替用户启动被停下的任务。工时跨越阈值正好发生在本轮时，首个符合条件的后续安全边界才会触发，不补造当前轮时长。
+
+**真实证明与欠账：** 两版独立官方 DSH（0.2.0-rc.2、0.2.1-alpha.2）的 GoalDriver/AgentLoop E2E 已使用真正的 `registerDshGoalWorkEnforcement` 注册函数，通过“完成→阻断下个 Goal→恢复→剩余 Goal 正常续轮、同日不再次罢工”；E2E 为合成授权与模拟阈值。独立测试已用真实 DurableStats 磁盘重启复读验证 UTC 已完成 Turn 时长、严格 Host 设置读写与撤销，但尚未证明**真实用户首次点击同意**、同一安装下三项链路合一、跨操作系统、人类来源鉴别、强制重启和并发竞态下的全部产品级行为。发布闸门必须仍为 `NO-GO`。
