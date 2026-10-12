@@ -245,3 +245,10 @@ AGENT_PICKET_DSH_HOST=<本机真实 DSH 0.1.2 的 node_modules> AGENT_PICKET_DSH
 实验发现仅对比内容不够：两个独立 Host 中 A OFF 后再 ON，旧 B 用完全相同内容的旧授权仍能提交，ABA 复现 RED。因此研究实验在临时 JSON 配置内给每次写入附加持久的随机磁盘代次，加锁后复查内容和代次。三个原始场景与 OFF-ON ABA 在**测试 fixture 的原型**均可拒绝过期写入，测试 2/2 PASS。此实验不在生产插件内，不修改安装的 DSH，不支持 YAML/迁移，也不能取代上游正式协议。完整设计边界见 docs/DSH_01_CROSS_OWNER_HOST_CAS_RESEARCH_20261012.md。
 
 新增 npm run check:dsh-multiowner：缺少真实 SDK 退出码 2；任何原始三项 P0 场景失败则输出 P0_NO_GO、退出码 1；只能在官方未修改的真实 Host 三项全部通过时，本项门禁才合格。原始 SDK 实测仍明确 NO-GO。真实罢工 #80 仍禁止，1.0 不合并不发布。
+
+
+### 2026-10-12 · 0.1.7-rc.2 不是 0.1.2 SettingsFile 模式，不能拿升级推断 #111 已修复
+
+通过 npm 官方发行包另行安装 DSH 0.1.7-rc.2 至隔离临时目录后核实，该版不再提供 dsh-settings-file 模块，而是包含 dsh-storage-json 与新的设置组件。它的实际用户配置语义与 0.1.2 所测 SettingsFile 不同，原始 #111 三项 SettingsFile 测试不适用；既不能证明新版安全，也不能证明新版存在相同问题。第一次真实 Chrome 测试中旧验收程序误把所有 0.1.x 当作旧式立即欢迎页，在新版无欢迎页时触发测试版本假设失败，而不是用户操作缺陷。
+
+现 scripts/verify-dsh-rights-a11y.sh 对 0.1.x 不只检查版本号，还要求真的存在旧版 SettingsFile SDK；如果 0.1.x 已使用新架构，返回 UNREVIEWED_DSH_SETTINGS_LAYOUT / 退出码 2，明确需另写新版 Host 集成测试。不得把这类不可测情况报告为 0.1.7 兼容性通过，也不得当作 #111 上游已修。安装的既有 DSH 0.1.2 和 0.2.0 环境未发生变化。

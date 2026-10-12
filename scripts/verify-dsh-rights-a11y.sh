@@ -18,6 +18,15 @@ echo "DSH=$version"
 echo "Evidence (local only): $proof"
 
 if [[ "$version" == 0.1.* ]]; then
+  # Version numbering alone cannot identify the SDK architecture:
+  # 0.1.2 provides the legacy SettingsFile owner; official 0.1.7-rc.2
+  # switched to dsh-storage-json/config and must NOT be silently treated as
+  # if it had the same consent/write infrastructure. Failing closed is
+  # better than misreporting legacy E2E as a later-Host pass.
+  if [[ ! -f "$AGENT_PICKET_DSH_HOST/@deepseek-ai/dsh-settings-file/lib/index.js" ]]; then
+    echo "UNREVIEWED_DSH_SETTINGS_LAYOUT: DSH $version has no legacy SettingsFile SDK; this test cannot claim modern Host support." >&2
+    exit 2
+  fi
   (cd "$root" && node --experimental-strip-types --test \
     tests/dsh-rights-browser.real.test.ts) > "$proof/legacy-real-ax.log" 2>&1
   rc=$?

@@ -37,3 +37,10 @@ AGENT_PICKET_DSH_HOST=/actual/dsh-0.1/node_modules AGENT_PICKET_DSH_DISK_CAS_EXP
 The new developer command npm run check:dsh-multiowner uses ONLY the original, unpatched DSH installation. Missing real SDK gives error exit 2; a single failing cross-owner scenario gives error exit 1 and P0_NO_GO. The three real tests all FAIL today. Never treat the lab experiment as an official upstream fix. Positive sequential disk restart remains a SEPARATE 2/2 check with npm run check:dsh-host-archives.
 
 The stable 1.0 release remains NO-GO until official Host resolves #111, alongside other pending safety, accessibility and privacy signoffs.
+
+
+## Follow-up: later DSH 0.1.7-rc.2 is a different storage architecture
+
+An isolated npm installation of @deepseek-ai/dsh@0.1.7-rc.2 (separate temporary prefix, no changes to existing DSH 0.1.2) exposes dsh-storage-json, dsh-settings and dsh-config-editor but NOT dsh-settings-file. Its JSON storage implementation describes a per-process one-writer / last-write-wins model; that alone cannot establish safe or unsafe cross-owner behavior of the higher-level Host Settings API. The three DSH 0.1.2 SettingsFile P0 probes cannot be invoked against this materially different architecture. Do not claim #111 fixed simply because the old module disappeared.
+
+An initial real Chrome 0.1.7 test invocation also showed our old E2E routing assumption was wrong: we had treated every 0.1.x CLI as the legacy immediate-onboarding path, while this newer Host starts without that same dialog. The test failed its assumption, not a demonstrated user-consent failure. The wrapper scripts/verify-dsh-rights-a11y.sh now checks the actual legacy SettingsFile module before entering that path; if it is absent, returns UNREVIEWED_DSH_SETTINGS_LAYOUT / exit 2 rather than claiming a compatible pass. A separate, genuine, version-scoped modern-host integration acceptance must be written before DSH 0.1.7 can be treated as a supported migration target.
