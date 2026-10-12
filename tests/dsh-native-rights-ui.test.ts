@@ -927,3 +927,58 @@ test('legacy tokenless committee delete button expires when Host revision change
  assert.deepEqual(eraseArgs,[['legacy-session',1,null,22]],
   'Only the newly confirmed Host revision is passed to the destructive callback')
 })
+
+test('committee retraction confirmation expires if another tab replaces the case without changing its visible ID',async()=>{
+ const slots:any[]=[],effects:Array<()=>void|(()=>void)>=[]
+ let slot=0,notify=()=>{},token='a'.repeat(32)
+ const hooks:ReactForDsh={
+  createElement(type,props,...children){return {type,props:props??{},children}},
+  useState<T>(initial:T|(()=>T)){
+   const i=slot++
+   if(!(i in slots))slots[i]=typeof initial==='function'?(initial as ()=>T)():initial
+   return [slots[i] as T,(next:T|((before:T)=>T))=>{
+    slots[i]=typeof next==='function'?(next as (before:T)=>T)(slots[i]):next
+   }]
+  },
+  useRef<T>(initial:T){const i=slot++;if(!(i in slots))slots[i]={current:initial};return slots[i]},
+  useEffect(fn){effects.push(fn)},
+ }
+ const actionCalls:unknown[][]=[]
+ const d:DshUnionUiDeps={
+  ...deps(rights({welcomeDecision:'enabled',laborRightsEnabled:true})).d,
+  readUnion:()=>({pending:null,available:true,completedTurnMs:null,
+   coverage:'unavailable',lifetimeMs:null,hostRevision:12,
+   committeeScopeKey:'same-session',
+   committeeArchive:{sessions:1,cases:1,writeToken:token},
+   committeeCases:{cases:[{id:1,kind:'question-rule',stage:'opened',outcome:null}]},
+  }),
+  subscribeUnion:callback=>{notify=callback;return()=>{}},
+  committeeAction:async(...args)=>{actionCalls.push(args)},
+ }
+ const panel=createDshUnionComponents(hooks,{createPortal:child=>child},d)
+ const render=()=>{slot=0;return walk(panel.UnionPanel())}
+ const button=(nodes:Node[],name:string)=>{
+  const value=nodes.find(n=>n.type==='button'&&n.children.includes(name))
+  assert.ok(value,name)
+  return value
+ }
+ let nodes=render()
+ for(const effect of effects.splice(0))effect()
+ nodes=render()
+ button(nodes,'hq.hearing.retract').props.onClick()
+ nodes=render()
+ assert.ok(button(nodes,'hq.hearing.retractConfirm'))
+ token='b'.repeat(32) // Another Host tab retracted and filed a replacement case #1.
+ notify()
+ nodes=render()
+ assert.ok(!nodes.some(n=>n.type==='button'&&n.children.includes('hq.hearing.retractConfirm')),
+  'A fresh write receipt invalidates the old destructive retract confirmation')
+ assert.equal(actionCalls.length,0)
+ button(nodes,'hq.hearing.retract').props.onClick()
+ nodes=render()
+ await button(nodes,'hq.hearing.retractConfirm').props.onClick()
+ await new Promise<void>(resolve=>setImmediate(resolve))
+ assert.deepEqual(actionCalls,[[
+  {kind:'retract',id:1},'same-session','b'.repeat(32),12,
+ ]],'Only the current Host committee version can be submitted for retraction')
+})

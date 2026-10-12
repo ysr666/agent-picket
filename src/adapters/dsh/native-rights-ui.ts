@@ -81,7 +81,8 @@ export interface DshUnionUiDeps {
   readonly committeeAction?: (action:{kind:'file';topic:DignityCaseKind}
     |{kind:'convene';id:number}|{kind:'retract';id:number}
     |{kind:'close';id:number;outcome:DignityCaseOutcome},
-    expectedHashedSessionKey?:string)=>Promise<void>
+    expectedHashedSessionKey?:string,expectedWriteToken?:string|null,
+    expectedHostRevision?:number|null)=>Promise<void>
   readonly setGazetteMode?: (mode:'visible'|'quiet') => Promise<void>
   readonly counter?: (id: number, intervalMs: number) => Promise<void>
   readonly resolveCounter?: (id: number, accepts: boolean) => Promise<void>
@@ -341,7 +342,10 @@ export function createDshUnionComponents(
         info.writeToken??'',
         info.writeToken===null?(data.hostRevision??'missing-revision'):''].join(':')
     const retractKey=data.committeeScopeKey&&lastCommitteeCase
-      ?data.committeeScopeKey+':'+lastCommitteeCase.id+':'+lastCommitteeCase.stage:null
+      ?[data.committeeScopeKey,lastCommitteeCase.id,lastCommitteeCase.kind,
+        lastCommitteeCase.stage,data.committeeArchive?.writeToken??'',
+        data.committeeArchive?.writeToken==null
+          ?(data.hostRevision??'missing-revision'):''].join(':'):null
     const hasHostDignitySignal=data.dignity?.status==='available'
       && !!data.dignity.data
       && (data.dignity.data.review>0||data.dignity.data.targeted>0)
@@ -633,7 +637,9 @@ export function createDshUnionComponents(
                     }
                     void bargain(()=>deps.committeeAction!({
                       kind:'retract',id:lastCommitteeCase.id,
-                    },data.committeeScopeKey!)).then(success=>{
+                    },data.committeeScopeKey!,
+                    data.committeeArchive?.writeToken??null,
+                    data.hostRevision)).then(success=>{
                       if(success)setRetractConfirmation(null)
                     })
                   }},

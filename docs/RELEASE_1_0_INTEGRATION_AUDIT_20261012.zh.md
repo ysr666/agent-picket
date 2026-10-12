@@ -224,3 +224,15 @@ AGENT_PICKET_DSH_HOST=<本机真实 DSH 0.1.2 的 node_modules> AGENT_PICKET_DSH
 - 故意 RED 的 #111 多独立 Host 所有者竞争仍由用户明确选择的独立实验命令运行，绝不把三项失败门禁伪装为已修复。
 
 受测环境上的专用脚本已运行并得到 REAL_HOST_ARCHIVES_PASS=2 FAIL=0；未设置真实 SDK 的独立测试得到 REAL_HOST_REQUIRED / 退出码 2。此验收**仅验证安装的 DSH 0.1.2 SettingsFile**，不能扩大为 DSH 0.2 ConfigForms、硬盘断电、备份抹除或真正跨 Host 原子性已完成。
+
+### 2026-10-12 · 委员会撤回案件的 ID 重用与过期两次确认竞态
+
+本轮继续检查不可逆动作的 Host 数据版本绑定：原先 Web UI 的撤回按钮确认 key 只含 Session key、案件数字 ID 与 stage，实际 Host 的 committeeAction(retract) 也只检查可选 Session key。这会发生 A 案件 #1 已被别的标签撤回、另一新案件又获得 #1（ID 从当前剩余 cases 推算）的情况。用户在第一标签原先为 A 武装的第二次撤回，可能意外撤回新案件 B，即使 B 的 kind 不同。
+
+已使用两套 Web Host settingsScope 协议替身和可重复事件顺序，先复现补丁前失败（旧撤回确实误删后来的 B 案件），再修复：
+- 委员会 retract 作为两次确认的破坏性操作，必须携带用户确认时的案件账本 writeToken；Host 写入前读取最新账本，令牌不同则拒绝，不能再因 Session、ID 和 stage 相同继续操作。
+- 对合法旧版缺少 writeToken 的账本，只有带同一次确认的 Host 设置修订号才可撤回；版本无效／缺失时拒绝。普通提交、开会、用户选择的指导结果不重复请求授权，象征性举牌仍是一次点击。
+- UI retractKey 现在包括案件 kind、阶段、账本写入令牌及旧版的 Host 修订号；别的标签重建同一数字编号时第一标签的确认状态自动失效。UI 同时将确切回执与版本转交给 Host 操作函数，不再只依靠渲染按钮的状态。
+- 定向测试包括预修复红、修复后绿的 A→新 B（同 ID）误删回归，以及 React Slot 模拟确认按钮由二次确认退回初次确认；现代和旧版令牌的安全语义不混淆。
+
+本修复不改动原始 Host 分类检测、工会定位或真实 Agent 执行，更不能抵消 #111 独立 DSH Host 多所有者过期写入引发的删除/许可复活。真人无障碍及独立安全审查仍未完成，1.0 保持 NO-GO。

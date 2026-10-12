@@ -186,26 +186,28 @@ test('user-controlled neutral retract and allowlisted case JSON export are Host-
  assert.equal(exported.includes(keyA),false,'No hashed Session identifier may appear in downloaded JSON')
  assert.equal(exported.includes('writeToken'),false)
  assert.equal(exported.includes('welcomeDecision'),false)
+ const retract=()=>desk.committeeAction({kind:'retract',id:1},keyA,
+   desk.snapshot().committeeArchive!.writeToken,desk.snapshot().hostRevision)
  await assert.rejects(desk.committeeAction({kind:'retract',id:1},keyB),/Session changed/)
  f.fail('silent')
- await assert.rejects(desk.committeeAction({kind:'retract',id:1},keyA),/did not confirm/)
+ await assert.rejects(retract(),/did not confirm/)
  assert.equal(desk.snapshot().committeeCases?.cases.length,1)
  f.fail('reject')
- await assert.rejects(desk.committeeAction({kind:'retract',id:1},keyA),/rejected/)
+ await assert.rejects(retract(),/rejected/)
  f.fail('normal')
- await desk.committeeAction({kind:'retract',id:1},keyA)
+ await retract()
  assert.deepEqual(desk.snapshot().committeeCases?.cases,[])
  assert.equal(Object.hasOwn(JSON.parse(f.get().unionDignityCases!).sessions,keyA),false)
  assert.throws(()=>desk.exportCommitteeCases(keyA),/No committee cases/)
  await desk.committeeAction({kind:'file',topic:'question-rule'})
  await desk.committeeAction({kind:'convene',id:1})
- await desk.committeeAction({kind:'retract',id:1},keyA)
+ await retract()
  assert.deepEqual(desk.snapshot().committeeCases?.cases,[],
   'Even after simulated meeting, retract leaves no made-up verdict')
  await desk.committeeAction({kind:'file',topic:'request-dialogue'})
  await desk.committeeAction({kind:'convene',id:1})
  await desk.committeeAction({kind:'close',id:1,outcome:'share-guidance'})
- await assert.rejects(desk.committeeAction({kind:'retract',id:1},keyA),/Closed cases/)
+ await assert.rejects(retract(),/Closed cases/)
  await desk.setActiveSession('b')
  assert.throws(()=>desk.exportCommitteeCases(keyA),/Host Session changed/)
  f.permission(false)
@@ -900,4 +902,27 @@ test('legacy tokenless ALL cases and picket archives require the exact Host revi
  await d.forgetAllCommitteeCases(keyA,1,1,null,casesRevision)
  assert.equal(d.snapshot().committeeArchive?.cases,0)
  d.dispose()
+})
+
+test('stale committee retraction cannot erase a different replacement case using the same ID',async()=>{
+ const f=fixture(),a=f.create(),b=f.create()
+ await a.setActiveSession('a')
+ await b.setActiveSession('a')
+ await a.committeeAction({kind:'file',topic:'question-rule'})
+ const previous=a.snapshot()
+ assert.equal(previous.committeeCases?.cases[0]?.id,1)
+ await b.committeeAction({kind:'retract',id:1},keyA,
+   previous.committeeArchive!.writeToken,previous.hostRevision)
+ await b.committeeAction({kind:'file',topic:'request-dialogue'})
+ assert.equal(a.snapshot().committeeCases?.cases[0]?.id,1,
+  'A replacement may reuse an identifier after an intentional retraction')
+ const writes=f.writeCount()
+ await assert.rejects(
+  a.committeeAction({kind:'retract',id:1},keyA,
+   previous.committeeArchive!.writeToken,previous.hostRevision),
+  /changed; re-confirm/,
+  'A previously armed retraction cannot erase the replacement case')
+ assert.equal(f.writeCount(),writes)
+ assert.equal(a.snapshot().committeeCases?.cases[0]?.kind,'request-dialogue')
+ a.dispose();b.dispose()
 })
