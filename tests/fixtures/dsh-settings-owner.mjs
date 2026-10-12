@@ -16,6 +16,40 @@ const [{Context},settings,commands,plugin]=await Promise.all([
  import(pathToFileURL(join(modules,'@deepseek-ai/dsh-commands/lib/index.js')).href),
  import(pathToFileURL(join(root,'src/adapters/dsh/plugin.ts')).href),
 ])
+// ISOLATED UPSTREAM DESIGN EXPERIMENT: never loaded by production code.
+// Two variants: raw-section equality only (provably fails on OFF->ON ABA),
+// and a durable opaque disk epoch that changes on EVERY persisted write.
+// The epoch is stored only in this disposable JSON fixture and demonstrates
+// the upstream primitive necessary for safe cross-owner rejection; it is not
+// an API/design commitment for real DSH Host configuration migrations.
+if(process.env.AGENT_PICKET_DSH_DISK_CAS_EXPERIMENT==='1'){
+ const [{withFileLock,writeFileAtomic},{deepEqualJson},{mkdir},{dirname},{randomBytes}]=await Promise.all([
+  import(pathToFileURL(join(modules,'@deepseek-ai/dsh-atomic-write/lib/index.js')).href),
+  import(pathToFileURL(join(modules,'@deepseek-ai/dsh-util-values/lib/index.js')).href),
+  import('node:fs/promises'),import('node:path'),import('node:crypto')
+ ])
+ const durable=process.env.AGENT_PICKET_DSH_DISK_CAS_CONTENT_ONLY!=='1'
+ const marker='__test_only_disk_generation__'
+ settings.default.prototype.persistSection=async function(ns,section){
+  if(this.spec.format!=='json')throw new Error('Fixture disk epoch experiment requires JSON')
+  const prior=this.section(ns)
+  const oldEpoch=this.document[marker]??null
+  await mkdir(dirname(this.spec.filename),{recursive:true,mode:0o700})
+  await withFileLock(this.spec.filename,async()=>{
+   await this.reconcileFromDisk()
+   if(!deepEqualJson(prior,this.section(ns))
+      ||(durable&&oldEpoch!==(this.document[marker]??null)))
+    throw new Error('EXPERIMENT_DISK_CAS_CONFLICT: namespace or disk epoch changed in another Host owner')
+   const nextEpoch=randomBytes(16).toString('hex')
+   const raw=JSON.parse(this.renderJson(ns,section))
+   if(durable)raw[marker]=nextEpoch
+   const output=JSON.stringify(raw,null,2)+'\n'
+   await writeFileAtomic(this.spec.filename,output,{mode:0o600,dirMode:0o700})
+   this.text=output
+   if(durable)this.document[marker]=nextEpoch
+  })
+ }
+}
 process.env.AGENT_PICKET_STATS='off'
 const ctx=new Context()
 const settingFiber=ctx.plugin(settings.default,{path,watch:process.env.AGENT_PICKET_TEST_WATCH!=='off'})

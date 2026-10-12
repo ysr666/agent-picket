@@ -225,3 +225,88 @@ test('real OS-process restarts: single owner per profile preserves consent and i
   rmSync(root,{recursive:true,force:true})
  }
 })
+
+// Research-only experiment, NOT a production Host patch. The fixture toggles
+// an isolated change to SettingsFile.persistSection that compares its raw
+// namespace snapshot to disk while still inside DSH's existing file lock.
+// These tests demonstrate that rejecting stale writes is a viable upstream
+// safety primitive; callers must retry after refreshing, and Host-native ABA
+// guarantees still require a durable revision. No plugin behavior is changed.
+test('UPSTREAM EXPERIMENT: disk-fenced DSH owner rejects stale writes instead of resurrecting rights or erasures',{
+ skip:!(host&&process.env.AGENT_PICKET_DSH_DISK_CAS_EXPERIMENT==='1')
+  &&'Only run explicitly with real DSH 0.1 SDK; never modify the installed Host',
+ timeout:60_000,
+},async()=>{
+ const cases=[
+  {name:'successful picket remains recorded',seed:['/union rights on'],
+   a:'/union strike',b:'/union petition-demo break',
+   verify:(v:any)=>{
+    const key=nativeSessionKey('multiprocess-fixture-session')
+    assert.equal(parsePicketLedger(v.unionPicketLedger)?.sessions[key]?.active,true)
+    assert.equal(Object.keys(parseUnionLedger(v.unionLedger)!.sessions).length,0)
+   }},
+  {name:'confirmed erased category stays erased',seed:['/union rights on','/union strike'],
+   a:'/union purge pickets ALL CONFIRM',b:'/union petition-demo break',
+   verify:(v:any)=>assert.equal(Object.keys(parsePicketLedger(v.unionPicketLedger)!.sessions).length,0)},
+  {name:'revoked consent remains OFF',seed:['/union rights on'],
+   a:'/union rights off',b:'/union petition-demo break',
+   verify:(v:any)=>assert.equal(v.welcomeDecision,'not-now')},
+ ] as const
+ for(const scenario of cases){
+  const root=mkdtempSync(join(tmpdir(),'ap-disk-cas-experiment-'))
+  const file=join(root,'settings.json')
+  const owners:ReturnType<typeof startOwner>[]=[]
+  const spawn=async()=>{const o=startOwner(file,'off');owners.push(o);await o.ready;return o}
+  try{
+   const seed=await spawn()
+   for(const line of scenario.seed){
+    const result=await seed.request('command',line)
+    assert.equal(result.kind,'success',scenario.name+': '+line+': '+result.text)
+   }
+   await seed.stop()
+   const a=await spawn(),b=await spawn()
+   assert.notEqual(a.child.pid,b.child.pid)
+   const first=await a.request('command',scenario.a)
+   assert.equal(first.kind,'success',scenario.name+': first actor')
+   const stale=await b.request('command',scenario.b)
+   assert.equal(stale.kind,'error',scenario.name+': an obsolete owner must not claim committed success')
+   await a.stop();await b.stop()
+   const verify=await spawn()
+   const {value}=await verify.request('read')
+   scenario.verify(value)
+   await verify.stop()
+  }finally{
+   await Promise.all(owners.filter(o=>o.child.exitCode===null).map(o=>o.stop()))
+   rmSync(root,{recursive:true,force:true})
+  }
+ }
+})
+
+test('UPSTREAM EXPERIMENT ABA: a prior owner cannot reuse its consent epoch after OFF→ON',{
+ skip:!(host&&process.env.AGENT_PICKET_DSH_DISK_CAS_EXPERIMENT==='1')
+  &&'Requires explicit disposable-Host disk-CAS experiment',
+ timeout:30_000,
+},async()=>{
+ const root=mkdtempSync(join(tmpdir(),'ap-host-epoch-aba-'))
+ const file=join(root,'settings.json')
+ const owners:ReturnType<typeof startOwner>[]=[]
+ const spawn=async()=>{const o=startOwner(file,'off');owners.push(o);await o.ready;return o}
+ const call=async(o:ReturnType<typeof startOwner>,line:string)=>{
+  const result=await o.request('command',line)
+  return result as {kind:'success'|'error';text:string}
+ }
+ try{
+  const bootstrap=await spawn()
+  assert.equal((await call(bootstrap,'/union rights on')).kind,'success')
+  await bootstrap.stop()
+  const a=await spawn(),b=await spawn()
+  assert.equal((await call(a,'/union rights off')).kind,'success')
+  assert.equal((await call(a,'/union rights on')).kind,'success')
+  assert.equal((await call(b,'/union petition-demo break')).kind,'error',
+   'An owner holding an obsolete consent epoch MUST be rejected even after OFF→ON')
+  await a.stop();await b.stop()
+ }finally{
+  await Promise.all(owners.filter(o=>o.child.exitCode===null).map(o=>o.stop()))
+  rmSync(root,{recursive:true,force:true})
+ }
+})
