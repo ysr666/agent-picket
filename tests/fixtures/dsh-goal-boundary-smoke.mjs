@@ -20,10 +20,34 @@ class OfflineModel extends LlmAdapter {
  }
 }
 let created=false
+let restoredHandle
 export function apply(ctx){
  ctx.llm.registerAdapter(['picket-goal-offline'],new OfflineModel())
- ctx.on('agent/pre-step',({agent,messages},next)=>{
+ ctx.on('agent/pre-step',async ({agent,messages},next)=>{
   const text=messages.flatMap(x=>x.content??[]).map(x=>x.text??'').join(' ')
+  if(text.includes('ATTACH_RESTORED_GOAL_PROBE')){
+   try {
+    restoredHandle=await ctx.agents.resume({
+     resumeSessionId:'picket-goal-native-session',
+     agentOptions:{provider:'picket-goal-offline',model:'offline-test'},
+    })
+    const restored=ctx.goals.get(restoredHandle.agent)
+    record('agent-reattached:'+String(restored?.phase??'none'))
+    record('agent-restored-rounds:'+String(restored?.roundsStarted??-1))
+    record('agent-restored-block-history:'+alreadyBlockedGoalToday(
+      restoredHandle.agent.session.snapshotEvents(),restored?.id??'',Date.now()))
+   }catch(error){
+    record('agent-reattach-error:'+String(error?.message??error))
+   }
+  }
+  if(text.includes('RESUME_RESTORED_GOAL_PROBE')){
+   const original=restoredHandle?.agent
+   const prior=original&&ctx.goals.get(original)
+   if(prior?.phase==='blocked'){
+    const after=ctx.goals.resume(original,{id:prior.id,revision:prior.revision})
+    record('goal-resumed:'+after.phase)
+   }else record('goal-restored-not-blocked')
+  }
   if(text.includes('START_GOAL_PROBE')&&!created){
    created=true
    const goal=ctx.goals.create(agent,{objective:'Synthetic native Goal boundary round test',maxGoalRounds:5})

@@ -61,3 +61,11 @@ node --experimental-strip-types --test tests/dsh-goal-boundary.real.test.ts
 - #120 UI Session 负责更新已过时的“仅模拟、阻断不可用”文案，并让同一个启用按钮调用 `chooseFirstRun(...)`。集成 Session 保持不改动对方拥有的 UI/翻译文件。
 
 新版 UI 尚待合并及真实 Chrome 首次点击验收，发布闸门继续 NO-GO。
+
+## 2026-10-12 · 官方 DSH 跨重启 Goal 恢复已实测
+
+在两套独立安装的 0.2.0-rc.2 与 0.2.1-alpha.2 Host 中，新增完整冷重启 E2E：自动 Goal 完成第 1 轮后工会真实阻断；Host 关闭并将 `goal/change` 保存至官方 JSONL；再次启动时不会自动开工；通过 **官方 `agents.resume({resumeSessionId})`** 重新打开原 Agent，真实 Goal 投影仍为 `blocked`，轮次计数、工会阻断原因和当日已阻断历史均保留；随后通过官方 `goals.resume` 恢复，剩余 Goal 轮次全部完成且没有重复模型调用和再次罢工。每版 2/2 原生 E2E 通过，均使用离线模型、隔离目录，不动用户个人配置。
+
+先前 `sdk-minimal` 提示 `session already exists` 的根因是测试误用 `agents.create`，不是 Host 无法恢复。正确恢复入口为 `AgentRegistry.resume`，该接口也是 DSH API Session、ACP 等官方组件采用的路径。完整 E2E 使用可信本地测试控制插件在第二进程执行官方恢复；**并不等于 DSH Web/Desktop UI 的最终真人恢复按钮已经完成验收**。
+
+仍需 #120 完成首次启动的一次知情授权、真实停工状态与恢复界面；仍需多标签页、并发 Steering、3 操作系统及其它 Agent 平台实测，发布闸门继续 NO-GO。

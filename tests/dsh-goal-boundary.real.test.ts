@@ -9,7 +9,7 @@ import {fileURLToPath} from 'node:url'
 const dshBin=process.env.AGENT_PICKET_DSH_BIN
 const hostRoot=process.env.AGENT_PICKET_DSH_HOST
 const run=!!dshBin&&!!hostRoot&&process.env.AGENT_PICKET_GOAL_BOUNDARY_NATIVE==='1'
-for (const restartBeforeResume of [false,true]) test('isolated DSH Goal '+(restartBeforeResume?'cold-restart persistence and SDK recovery limitation':'safe strike and resume'),{
+for (const restartBeforeResume of [false,true]) test('isolated DSH Goal '+(restartBeforeResume?'cold-restart persistence, official Agent resume and Goal continuation':'safe strike and resume'),{
  skip:!run&&'Set isolated DSH bin/root and AGENT_PICKET_GOAL_BOUNDARY_NATIVE=1',timeout:40_000,
 },async()=>{
  const dir=mkdtempSync(join(tmpdir(),'ap-goal-native-'))
@@ -92,13 +92,29 @@ for (const restartBeforeResume of [false,true]) test('isolated DSH Goal '+(resta
      'Cold Host restart may not autonomously continue a persistently blocked Goal')
   }
   if(restartBeforeResume){
-   const frame=await request('session/prompt',{sessionId:sid,
-     contentBlocks:[{type:'text',text:'RESUME_GOAL_PROBE'}]},true)
-   assert.match(String(frame.error?.message??''),/already exists/,
-     'sdk-minimal cannot attach an Agent to an already restored Session ID')
-   await new Promise(resolve=>setTimeout(resolve,130))
-   assert.equal(lines().filter(v=>v==='model-call').length,2,
-     'Failed native restart attachment does not duplicate user/Goal work')
+   const control='picket-goal-restoration-control'
+   await request('session/prompt',{sessionId:control,
+     contentBlocks:[{type:'text',text:'ATTACH_RESTORED_GOAL_PROBE'}]})
+   await wait(()=>lines().some(v=>v==='agent-reattached:blocked')
+     ||lines().some(v=>v.startsWith('agent-reattach-error:')),
+     'Official AgentRegistry.resume must load the persisted blocked Goal')
+   assert.ok(lines().includes('agent-reattached:blocked'),
+     'Official agents.resume restores a genuinely blocked Goal')
+   assert.ok(lines().includes('agent-restored-rounds:1'))
+   assert.ok(lines().includes('agent-restored-block-history:true'))
+   await new Promise(resolve=>setTimeout(resolve,160))
+   assert.equal(lines().filter(v=>v==='model-call').length,3,
+     'Restore control turn may run, but a blocked Goal cannot auto-run')
+   await request('session/prompt',{sessionId:control,
+     contentBlocks:[{type:'text',text:'RESUME_RESTORED_GOAL_PROBE'}]})
+   await wait(()=>lines().includes('goal-resumed:active'),'Restored Goal accepts official resume')
+   await wait(()=>lines().filter(v=>v==='model-call').length>=8,
+     'After official cold resume, all remaining autonomous Goal rounds finish')
+   await new Promise(resolve=>setTimeout(resolve,160))
+   assert.equal(lines().filter(v=>v==='model-call').length,8,
+     'Cold-restored Goal should execute remaining rounds only once')
+   assert.equal(lines().filter(v=>v==='strike-result:blocked').length,1,
+     'Persisted union block prevents immediate repeated strike on cold resume')
    await request('shutdown',{})
    return
   }
