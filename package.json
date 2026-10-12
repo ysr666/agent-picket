@@ -101,7 +101,9 @@
     "!docs/DSH_WEB_CAPABILITIES.zh.md",
     "!docs/DSH_02_OFFICIAL_RIGHTS_AX_E2E.md",
     "!docs/RELEASE_1_0_INTEGRATION_AUDIT_20261012.zh.md",
-    "!docs/RELEASE_1_0_PRODUCT_ACCEPTANCE_20261012.zh.md"
+    "!docs/RELEASE_1_0_PRODUCT_ACCEPTANCE_20261012.zh.md",
+    "!docs/ROADMAP.zh.md",
+    "!docs/ARCHITECTURE.md"
   ],
   "dsh": {
     "bundle": {
