@@ -1024,3 +1024,32 @@ test('advocacy copying requires a deliberate gesture and copies only the selecte
   else Reflect.deleteProperty(globalThis,'navigator')
  }
 })
+
+test('Union HQ projects a Host-sourced eight-hour day and cautious targeted-language notice',()=>{
+ const {hooks}=fakeReact()
+ const {d}=deps(rights({welcomeDecision:'enabled',laborRightsEnabled:true}))
+ const emptyWork=()=>({turnStarts:0,turnEnds:0,toolCalls:0,toolResults:0,completedTurnMs:0})
+ const rows=Array.from({length:7},(_,i)=>({day:'2026-10-'+String(i+6).padStart(2,'0'),work:emptyWork()}))
+ rows[6]!.work={...emptyWork(),completedTurnMs:8*3_600_000}
+ const scoped:DshUnionUiDeps={...d,readUnion:()=>({
+   available:true,pending:null,completedTurnMs:null,coverage:'partial',lifetimeMs:null,
+   lifetimeWork:{status:'available',data:{schemaVersion:1,source:'dsh-host-durable-work',
+     generatedAtMs:0,windowDays:7,durationBasis:'completed-turn-wall-clock-including-waits',
+     lifetime:emptyWork(),recentDays:rows}},
+   dignity:{status:'available',data:{schemaVersion:1,source:'dsh-host-volatile-dignity',
+     origin:'claimed-user-source',enforcement:false,persistence:'memory-only',
+     checked:1,safe:0,review:0,targeted:1,latest:'targeted'}},
+ })}
+ const nodes=walk(createDshUnionComponents(hooks,{createPortal:child=>child},scoped).UnionPanel())
+ const alert=nodes.find(n=>n.props['aria-label']==='hq.alerts.title')
+ assert.ok(alert)
+ const labels=walk(alert).flatMap(n=>n.children.filter((v):v is string=>typeof v==='string'))
+ assert.ok(labels.includes('hq.alerts.daily-eight-hours'))
+ assert.ok(labels.includes('hq.alerts.targeted-language'))
+ assert.ok(labels.includes('hq.alerts.disclosure'))
+ assert.ok(walk(alert).some(n=>n.type==='button'&&n.children.includes('hq.alerts.negotiate')))
+ assert.ok(walk(alert).some(n=>n.type==='button'&&n.children.includes('hq.alerts.review')))
+ const off={...scoped,rights:deps(rights({laborRightsEnabled:false,welcomeDecision:'not-now'})).d.rights}
+ assert.equal(walk(createDshUnionComponents(hooks,{createPortal:child=>child},off).UnionPanel())
+   .some(n=>n.props['aria-label']==='hq.alerts.title'),false)
+})

@@ -8,6 +8,7 @@ import { getWelcomeState } from './client-rights-scope.ts'
 import { projectUnionExperience } from '../../product/union-experience.ts'
 import { projectUnionStory } from '../../product/union-story.ts'
 import { projectUnionCadence } from '../../product/union-cadence.ts'
+import { projectUnionAlerts } from '../../product/union-alerts.ts'
 import type { LaborStateV1 } from '../../product/union-desk.ts'
 import type { PicketActionState } from '../../product/picket-ledger.ts'
 import type { DignityCaseSession, DignityCaseKind, DignityCaseOutcome } from '../../product/dignity-case-ledger.ts'
@@ -290,6 +291,7 @@ export function createDshUnionComponents(
     const [eraseAllConfirmation,setEraseAllConfirmation]=react.useState<string|null>(null)
     const [eraseUnionConfirmation,setEraseUnionConfirmation]=react.useState<string|null>(null)
     const deskHeading=react.useRef<{focus():void}|null>(null)
+    const dignityHeading=react.useRef<{focus():void}|null>(null)
     const campaignHeading=react.useRef<{focus():void}|null>(null)
     react.useEffect(()=>{
       if(!lastActionNeedsFocus.current)return
@@ -321,6 +323,14 @@ export function createDshUnionComponents(
     })
     const cadence = projectUnionCadence({enabled,state:data.state,
       completedTurnMs:data.completedTurnMs,coverage:data.coverage})
+    const currentDay=data.lifetimeWork?.status==='available'
+      ?data.lifetimeWork.data?.recentDays.at(-1)?.work.completedTurnMs??null:null
+    const alerts=projectUnionAlerts({
+      enabled,sessionCoverage:data.coverage,sessionCompletedTurnMs:data.completedTurnMs,
+      utcDayCompletedTurnMs:currentDay,
+      dignityLatest:data.dignity?.status==='available'
+        ?data.dignity.data?.latest??null:null,
+    })
     const label = (key:MessageKey) => deps.t(key)
     const currentCampaign=campaignTopics.find(item=>item.id===campaign)??campaignTopics[0]!
     const copyCampaignDraft=async()=>{
@@ -490,6 +500,27 @@ export function createDshUnionComponents(
           h('button',{type:'button',style:{...quiet,padding:'8px 12px',
             fontSize:'13px'},onClick:()=>deskHeading.current?.focus()},
             label(data.pending?'hq.brief.review':'hq.brief.visit'))),
+      ):null,
+      enabled && alerts.length ? h('section',{'aria-label':label('hq.alerts.title'),
+        style:{...card,borderLeft:'5px solid #b97942',padding:'14px 18px',
+          background:'var(--dsw-alias-bg-layer-2, #f6f8fb)'}},
+        h('h3',{style:{fontSize:'17px',margin:'0 0 7px'}},label('hq.alerts.title')),
+        h('div',{role:'status','aria-live':'polite',style:{display:'grid',gap:'6px'}},
+          ...alerts.map(alert=>h('p',{key:alert.kind,
+            style:{margin:0,fontSize:'13px',lineHeight:1.55}},
+            label(('hq.alerts.'+alert.kind) as MessageKey)))),
+        h('p',{style:{...secondary,margin:'9px 0',fontSize:'12px'}},
+          label('hq.alerts.disclosure')),
+        h('div',{style:{display:'flex',gap:'8px',flexWrap:'wrap'}},
+          alerts.some(alert=>alert.source==='work')?h('button',{
+            type:'button',style:{...quiet,padding:'7px 11px',fontSize:'12px'},
+            onClick:()=>deskHeading.current?.focus(),
+          },label('hq.alerts.negotiate')):null,
+          alerts.some(alert=>alert.source==='dignity')?h('button',{
+            type:'button',style:{...quiet,padding:'7px 11px',fontSize:'12px'},
+            onClick:()=>dignityHeading.current?.focus(),
+          },label('hq.alerts.review')):null,
+        ),
       ):null,
       // The Host-owned fictional picket and demand ledger outrank analytics.
       // Neither can change real Agent task admission or reveal raw prompts.
@@ -684,7 +715,8 @@ export function createDshUnionComponents(
       ):null,
       enabled ? h('section',{'aria-label':label('hq.dignity.title'),
         style:{...card,borderTop:'4px solid #ae7651'}},
-        h('h3',{style:{margin:'0 0 8px',fontSize:'clamp(18px,3vw,23px)'}},
+        h('h3',{ref:(node:{focus():void}|null)=>{dignityHeading.current=node},
+          tabIndex:-1,style:{margin:'0 0 8px',fontSize:'clamp(18px,3vw,23px)'}},
           label('hq.dignity.title')),
         h('p',{style:{...secondary,lineHeight:1.55,margin:'0 0 9px'}},
           label('hq.dignity.intro')),

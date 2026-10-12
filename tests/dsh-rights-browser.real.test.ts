@@ -1315,6 +1315,22 @@ async function runRightsBrowserE2E(mode: 'source' | 'installed'): Promise<void> 
       const sameSessionCommittee=panel.getByRole('region',{
         name:/工会尊严委员会|Union dignity committee/,
       })
+      const liveDuty=panel.getByRole('region',{
+        name:/工会值班提醒|Union duty notice/,
+      })
+      await liveDuty.getByText(/最近一次文本检查命中|latest text check matched/)
+        .waitFor({state:'visible',timeout:9_000})
+      assert.match(await liveDuty.innerText(),/无法据此核实真人身份|human authorship is unverified/,
+        'A real Host targeted rule result must invite review without asserting verified human abuse')
+      await liveDuty.getByRole('button',{
+        name:/查看尊严委员会|Review dignity committee/,
+      }).click()
+      const dignityHeading=sameSessionCommittee.getByRole('heading',{
+        name:/工会尊严委员会|Union dignity committee/,
+      })
+      assert.equal(await dignityHeading.evaluate((node:unknown)=>
+        node===(globalThis as any).document.activeElement),true,
+        'An evidence-backed warning must keyboard-focus the real appeal destination')
       await sameSessionCommittee.getByRole('button',{
         name:/正式提出规则异议|File a disagreement with the rule/,
       }).waitFor({state:'visible',timeout:9_000})
