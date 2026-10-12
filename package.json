@@ -53,6 +53,7 @@
     "!dist/**/*.d.ts.map",
     "!dist/adapters/codex/**",
     "!dist/adapters/node/windows-private-acl.*",
+    "!dist/adapters/node/windows-ledger-layout.*",
     "README.md",
     "LICENSE",
     "cordis.patch.yml",
