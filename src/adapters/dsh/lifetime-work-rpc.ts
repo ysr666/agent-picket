@@ -129,11 +129,16 @@ export function registerDshLifetimeWorkFetch(ctx: LifetimeHostContext, options: 
   ctx.effect(() => () => { disposed=true; const fn=stop; stop=undefined; if(fn) void fn() })
   ctx.inject(['connection'], child => {
     if (disposed || stop || typeof child.connection?.fetch?.register !== 'function') return
+    // Official Connection fibers may detach/rebind independently of the
+    // parent plugin. Unregister does not necessarily revoke an in-flight
+    // browser request that has already entered this handler.
+    let connectionActive=true
     try {
       const registered=child.connection.fetch.register({
         path:LIFETIME_WORK_FETCH_PATH,methods:['GET'],requestBody:'buffered',
         async fetch(request:Request):Promise<Response> {
-          if (disposed || request.signal.aborted) return responseError('unavailable',503)
+          if (disposed || !connectionActive || request.signal.aborted)
+            return responseError('unavailable',503)
           const days=parseHorizon(request)
           if (!days) return responseError('invalid_request',400)
           try {
@@ -142,7 +147,14 @@ export function registerDshLifetimeWorkFetch(ctx: LifetimeHostContext, options: 
             if (!store) return responseError('unavailable',503)
             const output=projectLifetimeWork(
               store.snapshot(),store.snapshotDays(31),days,(options.now??Date.now)())
-            if (request.signal.aborted || options.authorized()!==true) {
+            // Unregistering the route does not cancel a request that the
+            // official Host already admitted. The owning plugin could have
+            // unmounted while snapshot() was being projected: its reply must
+            // not release the now-detached work aggregates.
+            if (disposed || !connectionActive || request.signal.aborted) {
+              return responseError('unavailable',503)
+            }
+            if (options.authorized()!==true) {
               return responseError('not_authorized',403)
             }
             return Response.json(output,{status:200,headers:{'cache-control':'no-store'}})
@@ -151,6 +163,7 @@ export function registerDshLifetimeWorkFetch(ctx: LifetimeHostContext, options: 
       })
       stop=registered
       child.effect?.(() => () => {
+        connectionActive=false
         if (stop===registered) stop=undefined
         void registered()
       })

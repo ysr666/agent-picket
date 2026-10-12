@@ -110,3 +110,64 @@ test('30-day work rollup preserves exact nonzero UTC days across a month boundar
  assert.equal(response.recentDays[29]?.work.completedTurnMs,30*60_000)
  assert.equal(JSON.stringify(response).includes('targeted'),false)
 })
+
+test('Host lifetime Fetch must not serve a response after plugin scope is disposed during projection',async()=>{
+ let handler:((request:Request)=>Promise<Response>)|undefined
+ let cleanup=()=>{},registered=0,unregistered=0
+ const ctx={
+   effect(fn:()=>()=>void){cleanup=fn()},
+   inject(_services:string[],fn:(s:any)=>void){fn({connection:{fetch:{
+     register(route:{fetch:(r:Request)=>Promise<Response>}){
+       handler=route.fetch;registered++
+       return async()=>{unregistered++}
+     },
+   }}})},
+ }
+ let snapshots=0
+ registerDshLifetimeWorkFetch(ctx,{
+  authorized:()=>true,
+  store:()=>({
+    snapshot(){
+      snapshots++
+      // A different Host fiber can dispose this plugin in the middle of
+      // an already accepted request (even with authorization unchanged).
+      cleanup()
+      return blank()
+    },
+    snapshotDays(){return []},
+  }),
+  now:()=>today,
+ })
+ assert.equal(registered,1)
+ const result=await handler!(new Request('http://localhost'+LIFETIME_WORK_FETCH_PATH+'?windowDays=7'))
+ assert.equal(result.status,503,'Disposed Host owner must never return durable data')
+ assert.equal((await result.json() as any).error,'unavailable')
+ assert.equal(unregistered,1)
+ assert.equal(snapshots,1)
+})
+
+test('detached Host Connection fiber cannot complete a previously admitted work Fetch',async()=>{
+ let handler:((request:Request)=>Promise<Response>)|undefined
+ let detach=()=>{},removed=0
+ const ctx={
+   effect(_fn:()=>()=>void){},
+   inject(_deps:string[],onBind:(child:any)=>void){
+     onBind({connection:{fetch:{register(route:any){
+       handler=route.fetch
+       return async()=>{removed++}
+     }}},effect(fn:()=>()=>void){detach=fn()}})
+   },
+ }
+ registerDshLifetimeWorkFetch(ctx,{
+   authorized:()=>true,
+   store:()=>({snapshot(){
+     detach() // Connection provider changed while an admitted GET was being read
+     return blank()
+   },snapshotDays:()=>[]}),
+   now:()=>today,
+ })
+ const response=await handler!(new Request('http://localhost'+LIFETIME_WORK_FETCH_PATH+'?windowDays=7'))
+ assert.equal(response.status,503,
+   'Detached connection cannot transmit work aggregates even with permission ON')
+ assert.equal(removed,1)
+})

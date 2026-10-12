@@ -96,3 +96,28 @@ test('Host dignity route allowlists live count data even when its source carries
  assert.equal((await get()).status,503,
   'Host must refuse accidental enforcement/provenance claim changes')
 })
+
+test('detached official Connection cannot complete prior dignity GET or disclose counts',async()=>{
+ let route:{fetch:(r:Request)=>Promise<Response>}|undefined
+ let detach=()=>{},removed=0
+ const ctx={
+   effect(_fn:()=>()=>void){},
+   inject(_deps:string[],onBind:(child:any)=>void){
+     onBind({connection:{fetch:{register(spec:any){
+       route=spec
+       return async()=>{removed++}
+     }}},effect(fn:()=>()=>void){detach=fn()}})
+   },
+ }
+ const key='a'.repeat(64)
+ registerDshDignityFetch(ctx,{authorized:()=>true,lookup:()=>{
+   detach() // Official Host Connection disappears midflight
+   return {schemaVersion:1,source:'dsh-host-volatile-dignity',
+    checked:1,safe:0,review:0,targeted:1,latest:'targeted',
+    origin:'claimed-user-source',enforcement:false,persistence:'memory-only'}
+ }})
+ const response=await route!.fetch(new Request('http://localhost'+DIGNITY_FETCH_PATH+'?sessionKey='+key))
+ assert.equal(response.status,503,
+   'Only an active official Connection may disclose consented sensitive counts')
+ assert.equal(removed,1)
+})

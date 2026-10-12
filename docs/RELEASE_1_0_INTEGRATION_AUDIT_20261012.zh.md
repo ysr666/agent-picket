@@ -124,3 +124,19 @@
 **2. 发现并修复跨会话异步工会误写。** 一次异步 Host CAS 写入能阻塞浏览器端串行队列，旧 Session A 的“已完成 2 小时工作”自动通知或用户在 A 点击举牌、休息诉求，可能在界面切到 B 后才开始执行；此前动作会按**执行时**当前 activeKey 读取 Host，导致将 A 的动作错误写成 B 的诉求/举牌。已先构建带挂起 Host 写入的**修复前真实失败测试**，不是光看结果猜测。现所有 queued union actions 都绑定入队瞬间的 sessionEpoch 和哈希 Session 键：跨 Session 直接报错、后台观察安静作废；每次读回仍受官方 Host CAS 和 writeToken 校验。相同 Session 的重复重绑不产生多余失效，因此不会平白取消正常用户操作。未修改真实 Agent 请求传输，亦没有启用真正任务阻断。
 
 > 真实旧版回退 PASS 只是 #91 已完成的一项；剩余 Host 版本矩阵、重装与 OFF→ON 可理解性、用户对留存的期待仍不能标成 PASS。1.0 仍是 Draft/NO-GO。
+
+## 2026-10-12 · Official Host Connection 中途卸载的数据出口竞态（修复）
+
+本轮针对 #99 自动尊严检测所使用的 Host→Web 计数出站接口和长期工时只读出站接口做了同一生命周期的对抗审查。不是新功能，不会上传提示词／附件，也不启用真实罢工。
+
+明确复现并修复三个原先缺失的生命周期门禁：
+
+1. 整个插件已卸载，但 Work Fetch 在同一事件循环中继续完成旧请求。原 lifetime-work-rpc 只在入站检查 disposed、最后仅再次检查授权；即使真正卸载发生于 Store.snapshot() 中间，仍 HTTP 200 返回 Work aggregate。修复后在最终响应前再次检查父 Host 插件存活状态，已卸载立即 HTTP 503。
+2. 官方 Connection Child Fiber 已替换或解绑，之前已进入的 Work Fetch 仍成功返回。父插件可能尚在，权限也仍 ON，但原发请求的网络承载层已失效。引入每个注册 Connection 的内存态存活门禁，解绑时先失效、再注销；旧 handler 的最后一步检查必须 HTTP 503，重新绑定的 Connection 可以正常注册。
+3. 尊严计数 Fetch 的相同 Child Fiber 解绑竞态。隐私计数本身不存原始文本，但已经断开的身份／网络上下文不能继续收到 Host 的敏感分类分布。同样按每次注册独立失效 token，旧请求无法返回计数；其他 OAuth/Host 授权与入口鉴权逻辑保持不变。
+
+三类问题均由明确的补丁前失败、补丁后通过的合成 Host 生命周期回归复现；没有把自动化模拟当作真人无障碍和安全审计。相关测试位于 tests/dsh-lifetime-work-rpc.test.ts、tests/dsh-dignity-live.test.ts。测试中人工在 Store.snapshot()/lookup() 同步期间触发父 Fiber 或 Child Connection 解绑，旧代码返回 200，修复后 503。没有修改任务输入、请求附件、授权 UI、罢工状态和协商账本格式。
+
+额外将已经存在的 /union export negotiations|pickets|cases 与 /union purge CATEGORY ALL CONFIRM 纳入 DSH 0.2 官方 CommandRuntime 的隔离验证，使用 0.2 公开的 Config 做严格字段验证。覆盖三类实际 CLI 读写、跨类别保留、错误确认词、OFF 拒绝，以及无 Session 标识导出。注意测试的 Settings provider 是隔离的严格替身；它不是完整真实浏览器 ConfigForms HTTP 写入，不能把这两者混淆。
+
+真实 Host 的 Worker/Connection 并发和 OEM 定制 Host 仍需独立确认。1.0 继续 NO-GO：#80 无损真实阻断缺失，#86 真人无障碍及完整第三方隐私安全审查未签收。

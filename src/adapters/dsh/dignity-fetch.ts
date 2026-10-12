@@ -39,11 +39,15 @@ export function registerDshDignityFetch(ctx:LifetimeHostContext,options:{
   ctx.effect(()=>()=>{disposed=true;const fn=stop;stop=undefined;if(fn)void fn()})
   ctx.inject(['connection'],child=>{
     if(disposed||stop||typeof child.connection?.fetch?.register!=='function')return
+    // A Connection can be detached while an accepted GET is processing;
+    // never let its obsolete route serve sensitive counts after detach.
+    let connectionActive=true
     try{
       const registered=child.connection.fetch.register({
         path:DIGNITY_FETCH_PATH,methods:['GET'],requestBody:'buffered',
         async fetch(request:Request):Promise<Response>{
-          if(disposed||request.signal.aborted)return error('unavailable',503)
+          if(disposed||!connectionActive||request.signal.aborted)
+            return error('unavailable',503)
           try{
             const url=new URL(request.url)
             const key=url.searchParams.get('sessionKey')
@@ -52,14 +56,19 @@ export function registerDshDignityFetch(ctx:LifetimeHostContext,options:{
             if(options.authorized()!==true)return error('not_authorized',403)
             const response=safeDignityProjection(options.lookup(key))
             if(!response)return error('unavailable',503)
-            if(disposed||request.signal.aborted||options.authorized()!==true)
-              return error('not_authorized',403)
+            if(disposed||!connectionActive||request.signal.aborted)
+              return error('unavailable',503)
+            if(options.authorized()!==true)return error('not_authorized',403)
             return Response.json(response,{headers:{'cache-control':'no-store'}})
           }catch{return error('unavailable',503)}
         },
       })
       stop=registered
-      child.effect?.(()=>()=>{if(stop===registered)stop=undefined;void registered()})
+      child.effect?.(()=>()=>{
+        connectionActive=false
+        if(stop===registered)stop=undefined
+        void registered()
+      })
     }catch{}
   })
 }

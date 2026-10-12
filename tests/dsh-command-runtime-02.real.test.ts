@@ -21,8 +21,8 @@ test('real DSH 0.2 CommandRuntime routes shared symbolic pickets without model c
   const commands = await import(pathToFileURL(join(modules!, '@deepseek-ai/dsh-commands/lib/index.js')).href)
   const ctx = new Context()
   type Choice = 'unseen' | 'enabled' | 'not-now'
-  let value: { welcomeDecision: Choice; unionLedger: string; unionPicketLedger: string; commandLocale: 'auto'|'en'|'zh-CN' } =
-    {welcomeDecision:'unseen',unionLedger:'',unionPicketLedger:'',commandLocale:'auto'}
+  let value: { welcomeDecision: Choice; unionLedger: string; unionPicketLedger: string; unionDignityCases:string; commandLocale: 'auto'|'en'|'zh-CN' } =
+    {welcomeDecision:'unseen',unionLedger:'',unionPicketLedger:'',unionDignityCases:'',commandLocale:'auto'}
   let revision = 0
   let rejectPicket = false
   const listeners = new Set<() => void>()
@@ -42,6 +42,7 @@ test('real DSH 0.2 CommandRuntime routes shared symbolic pickets without model c
         welcomeDecision:parsed.welcomeDecision.get(),
         unionLedger:parsed.unionLedger.get(),
         unionPicketLedger:parsed.unionPicketLedger.get(),
+        unionDignityCases:parsed.unionDignityCases.get(),
         commandLocale:parsed.commandLocale.get(),
       }
       revision++
@@ -155,6 +156,46 @@ test('real DSH 0.2 CommandRuntime routes shared symbolic pickets without model c
       'Host mutation refusal must not become an in-memory success')
     assert.equal(value.unionPicketLedger,parked)
     assert.equal(browser.snapshot().autoBlockEnabled,false)
+
+    // Real DSH 0.2 CommandRuntime + strict exported 0.2 settings Config,
+    // covering the newly shipped category-scoped archive CLI in addition
+    // to the existing DSH 0.1.2 authentic SettingsFile test.
+    rejectPicket=false
+    const exampleCases=JSON.stringify({schemaVersion:1,sessions:{[key]:{
+      cases:[{id:1,kind:'question-rule',stage:'opened',outcome:null}],
+    }}})
+    await hostSettings.update('agent-picket',{unionDignityCases:exampleCases},revision)
+    for(const kind of ['negotiations','pickets','cases']){
+      const exported=await call('/union export '+kind)
+      assert.equal(exported.kind,'success','DSH 0.2 export '+kind)
+      const parsed=JSON.parse(exported.text)
+      assert.equal(parsed.format,'agent-picket-union-'+kind)
+      assert.equal(parsed.groups[0]?.current,true)
+      for(const secret of [session.id,agent.id,key,'writeToken','PRIVATE_OFF']){
+        assert.ok(!exported.text.includes(secret),'Unexpected private field in '+kind)
+      }
+    }
+    const beforeArchiveDelete=revision
+    assert.equal((await call('/union purge cases CONFIRM')).kind,'error')
+    assert.equal((await call('/union purge pickets ALL confirm')).kind,'error')
+    assert.equal((await call('/union purge all ALL CONFIRM')).kind,'error')
+    assert.equal(revision,beforeArchiveDelete)
+    const priorPickets=value.unionPicketLedger
+    const priorCases=value.unionDignityCases
+    assert.equal((await call('/union purge negotiations ALL CONFIRM')).kind,'success')
+    assert.equal(value.unionPicketLedger,priorPickets)
+    assert.equal(value.unionDignityCases,priorCases)
+    assert.equal((await call('/union export negotiations')).kind,'error')
+    assert.equal((await call('/union purge cases ALL CONFIRM')).kind,'success')
+    assert.equal(value.unionPicketLedger,priorPickets)
+    assert.equal((await call('/union export cases')).kind,'error')
+    assert.equal((await call('/union purge pickets ALL CONFIRM')).kind,'success')
+    assert.equal((await call('/union export pickets')).kind,'error')
+    assert.equal(browser.snapshot().autoBlockEnabled,false)
+    assert.equal((await call('/union rights off')).kind,'success')
+    assert.equal((await call('/union purge negotiations ALL CONFIRM')).kind,'error')
+    assert.equal((await call('/union export pickets')).kind,'error')
+
     assert.ok(events.some(e=>e.type==='command/run'))
     assert.ok(events.some(e=>e.type==='command/done'))
     assert.equal(events.length%2,0)
