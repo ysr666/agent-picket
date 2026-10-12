@@ -7,12 +7,14 @@ import { createHash, randomBytes } from 'node:crypto'
 import { createLaborDesk, parseLaborState, type LaborStateV1, type LaborDemandKind } from '../../product/union-desk.ts'
 import { MAX_UNION_LEDGER_BYTES, MAX_UNION_SESSIONS, parseUnionLedger } from '../../product/union-ledger.ts'
 import { parsePicketLedger, MAX_PICKET_LEDGER_BYTES, MAX_PICKET_HISTORY, MAX_PICKET_SESSIONS, type PicketActionState } from '../../product/picket-ledger.ts'
+import { parseDignityCaseLedger } from '../../product/dignity-case-ledger.ts'
 import {
   en, formatMessage, resolveLocale,
   type SupportedLocale, type LocalePreference,
 } from '../../i18n/index.ts'
 
 export const RIGHTS_NAMESPACE = 'agent-picket'
+export type UnionArchiveKind = 'negotiations'|'pickets'|'cases'
 type Choice = 'unseen' | 'enabled' | 'not-now'
 export type NativeUnionAction =
   | { readonly type: 'demo'; readonly kind: LaborDemandKind }
@@ -24,6 +26,7 @@ export interface NativeRightsSection {
   readonly welcomeDecision: Choice
   readonly unionLedger: string
   readonly unionPicketLedger?: string
+  readonly unionDignityCases?: string
   readonly commandLocale: LocalePreference
 }
 export interface NativeSettingsProvider {
@@ -49,6 +52,8 @@ export interface NativeUnionCommandPort {
   /** Authorized Host-owned fictional ceremony; null means no shared action scope. */
   picketStatus(sessionId: string): {readonly active:boolean} | null
   picket(sessionId: string, raise: boolean): Promise<'started'|'ended'|'unchanged'>
+  exportArchive(sessionId:string, kind:UnionArchiveKind): string
+  purgeArchive(sessionId:string, kind:UnionArchiveKind): Promise<void>
 }
 
 export function nativeSessionKey(sessionId: string): string {
@@ -107,6 +112,21 @@ export function createNativeUnionCommandPort(settings: NativeSettingsProvider): 
     const state:PicketActionState=ledger.sessions[key]??{active:false,history:[]}
     return {...view, ledger, key, state}
   }
+  function archive(sessionId:string,kind:UnionArchiveKind) {
+    const view=read()
+    if(!view||view.section.welcomeDecision!=='enabled'||!sessionId)
+      throw new Error('Authorized Host union archive unavailable')
+    const field=kind==='negotiations'?'unionLedger'
+      :kind==='pickets'?'unionPicketLedger':'unionDignityCases'
+    const raw=kind==='negotiations'?view.section.unionLedger
+      :kind==='pickets'?(view.section.unionPicketLedger??'')
+      :(view.section.unionDignityCases??'')
+    const ledger=kind==='negotiations'?view.ledger
+      :kind==='pickets'?parsePicketLedger(raw):parseDignityCaseLedger(raw)
+    if(!ledger||(raw!==''&&JSON.stringify(ledger)!==raw))
+      throw new Error('Invalid or unavailable Host archive')
+    return {view,field,ledger,key:nativeSessionKey(sessionId)}
+  }
   function formatState(state: LaborStateV1): string {
     const waiting = state.pending
     const detail = waiting
@@ -134,6 +154,37 @@ export function createNativeUnionCommandPort(settings: NativeSettingsProvider): 
   const disabled = () => text('command.native.disabled')
   return {
     enabled: () => read()?.section.welcomeDecision === 'enabled',
+    exportArchive(sessionId,kind) {
+      if(!['negotiations','pickets','cases'].includes(kind))
+        throw new TypeError('Unsupported export category')
+      const source=archive(sessionId,kind)
+      const entries=Object.entries(source.ledger.sessions)
+      if(!entries.length)throw new Error('No stored records in this category')
+      return JSON.stringify({
+        format:'agent-picket-union-'+kind,schemaVersion:1,
+        // Group numbers are local to this export and never hashed Session IDs.
+        groups:entries.map(([key,state],i)=>({
+          group:i+1,current:key===source.key,
+          state:kind==='cases'
+            ?{cases:(state as {cases:unknown[]}).cases}
+            :state,
+        })),
+      },null,2)+'\n'
+    },
+    async purgeArchive(sessionId,kind) {
+      if(!['negotiations','pickets','cases'].includes(kind))
+        throw new TypeError('Unsupported erase category')
+      const before=archive(sessionId,kind)
+      // Empty is an authenticated no-op; no Host revision changes.
+      if(!Object.keys(before.ledger.sessions).length)return
+      const token=randomBytes(16).toString('hex')
+      const empty=JSON.stringify({schemaVersion:1,sessions:{},writeToken:token})
+      await settings.update(RIGHTS_NAMESPACE,{[before.field]:empty},before.view.revision)
+      const after=archive(sessionId,kind)
+      if(after.ledger.writeToken!==token
+        ||Object.keys(after.ledger.sessions).length!==0)
+        throw new Error('Host did not confirm archive deletion')
+    },
     picketStatus(sessionId) {
       const view=picketState(sessionId)
       return view?{active:view.state.active}:null

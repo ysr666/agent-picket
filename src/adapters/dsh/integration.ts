@@ -1,4 +1,4 @@
-import type { NativeUnionCommandPort, NativeUnionAction } from './native-rights-command.ts'
+import type { NativeUnionCommandPort, NativeUnionAction, UnionArchiveKind } from './native-rights-command.ts'
 import { en, formatMessage } from '../../i18n/index.ts'
 import { inspectBlockingReadiness } from '../../core/block-readiness.ts'
 import { resolveHostAction, type UnionEngine } from '../../core/engine.ts'
@@ -259,7 +259,7 @@ export function registerDshIntegration(
       // Union commands do not need the raw command suffix in Session history.
       // Command result and lifecycle still remain auditable in DSH.
       recordInput: false,
-      input: { hint: '[status|rights [on|off]|language [auto|en|zh-CN]|grievances|petition-demo [break|overtime]|strike|resume|accept ID|decline ID|counter ID MINUTES|resolve ID accept|decline|stats|report|help]' },
+      input: { hint: '[status|export CATEGORY|purge CATEGORY ALL CONFIRM|rights [on|off]|language [auto|en|zh-CN]|grievances|petition-demo [break|overtime]|strike|resume|accept ID|decline ID|counter ID MINUTES|resolve ID accept|decline|stats|report|help]' },
       handler: invocation => {
         const raw = (invocation?.rawInput ?? '').trim()
         const verb = raw.split(/\s+/, 1)[0]?.toLowerCase() || 'status'
@@ -278,7 +278,7 @@ export function registerDshIntegration(
         // owner as the Web UI. Never activate the experimental Node-local
         // consent writer as a second source of truth.
         if (['rights','language','lang','grievances','petition-demo','accept','decline',
-          'counter','resolve'].includes(verb)) {
+          'counter','resolve','export','purge'].includes(verb)) {
           const native = options.getNativeUnion?.()
           if (!native) return { kind:'error',
             text:en['command.native.unavailable'] }
@@ -287,6 +287,23 @@ export function registerDshIntegration(
           const fail = (text: string): DshCommandResult => ({kind:'error',text})
           const ok = (text: string): DshCommandResult => ({kind:'success',text})
           const id = typeof sessionId === 'string' && sessionId ? sessionId : undefined
+          if(verb==='export'||verb==='purge'){
+            const category=arg[0]
+            if(!['negotiations','pickets','cases'].includes(category??'')
+              ||(verb==='export'&&arg.length!==1)
+              ||(verb==='purge'&&(arg.length!==3||arg[1]!=='ALL'||arg[2]!=='CONFIRM')))
+              return fail(native.text(verb==='export'
+                ?'command.native.exportUsage':'command.native.purgeUsage'))
+            if(!id)return fail(native.text('command.native.sessionRequired'))
+            const kind=category as UnionArchiveKind
+            if(verb==='export'){
+              try{return ok(native.exportArchive(id,kind))}
+              catch{return fail(native.text('command.native.archiveUnavailable'))}
+            }
+            return native.purgeArchive(id,kind).then(
+              ()=>ok(native.text('command.native.purgeDone')),
+              ()=>fail(native.text('command.native.purgeFailed')))
+          }
           if (verb === 'language' || verb === 'lang') {
             if (arg.length === 0) return ok(native.language())
             if (arg.length !== 1 || !['auto','en','zh-CN'].includes(arg[0] ?? ''))

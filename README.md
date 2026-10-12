@@ -80,3 +80,7 @@ npm run test:dsh:real
 ```
 
 The adapter is **observe-only**: simulation-based strikes never delay, reject or interrupt real Agent requests, regardless of Host capabilities. Local statistics and session-scoped `WorkTracker`, `DetectionCounter` and `SymbolicUnion` support `/union status`, `/union stats`, `/union report`, `/union check <text>` (manual, non-blocking), `/union strike` (demo only), `/union resume`, `/union safety`, `/union reset` and `/union help` in clients that mount DSH's command service.
+
+### DSH 工会数据导出和清理 / Host-owned union archives
+
+在已授权的真实 DSH Session 中，使用 /union export negotiations|pickets|cases 分别导出当前保留的模拟协商、举牌和尊严委员会记录。如需删除某一类别全部保留会话分组，使用 /union purge negotiations|pickets|cases ALL CONFIRM；其他类别及 DSH 对话不受影响。本地累计工时另用 /union forget-lifetime CONFIRM，不是一次覆盖所有存储的原子擦除。详见 docs/STATS_STORAGE.zh.md。

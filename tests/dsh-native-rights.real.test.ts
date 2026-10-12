@@ -93,7 +93,61 @@ test('real DSH SettingsFile + CommandRuntime share Web union consent and agreeme
     assert.equal((await call('/union resolve '+overtime!.id+' accept')).kind,'success')
     assert.equal(parseUnionLedger(ctx.settings.get('agent-picket').unionLedger)!
       .sessions[key]?.agreement.overtimeIntervalMs,4*3_600_000)
+
+    // Actual native Host SettingsFile + CommandRuntime archive commands,
+    // not mocked parsers. Export is copyable but never contains hashed IDs.
+    const negotiations=await call('/union export negotiations')
+    const pickets=await call('/union export pickets')
+    assert.equal(negotiations.kind,'success')
+    assert.equal(pickets.kind,'success')
+    const negotiationData=JSON.parse(negotiations.text)
+    const picketData=JSON.parse(pickets.text)
+    assert.equal(negotiationData.groups[0].current,true)
+    assert.equal(picketData.groups[0].state.active,false)
+    for(const item of [negotiations.text,pickets.text]){
+      assert.doesNotMatch(item,/real-cli-test-session|real-cli-agent/)
+      assert.ok(!item.includes(key),'Raw or hashed Session ID may not be exported')
+      assert.ok(!item.includes('writeToken'))
+      assert.ok(!item.includes('unionPicketLedger'))
+    }
+    assert.equal((await call('/union purge negotiations')).kind,'error',
+      'No accidental deletion without explicit per-category CONFIRM')
+    assert.equal((await call('/union purge negotiations CONFIRM EXTRA')).kind,'error')
+    const earlierPicket=ctx.settings.get('agent-picket').unionPicketLedger
+    const archivedNegotiation=ctx.settings.get('agent-picket').unionLedger
+    assert.equal((await call('/union purge negotiations ALL CONFIRM')).kind,'success')
+    assert.equal(Object.keys(parseUnionLedger(ctx.settings.get('agent-picket')
+      .unionLedger)!.sessions).length,0)
+    assert.equal(ctx.settings.get('agent-picket').unionPicketLedger,earlierPicket,
+      'Negotiation deletion cannot delete picket sidecar')
+    assert.equal((await call('/union export negotiations')).kind,'error',
+      'Empty is not falsely exported as a real archive')
+    assert.equal((await call('/union purge negotiations ALL CONFIRM')).kind,'success',
+      'Identical empty-category deletion is an authenticated no-op')
+
+    // Populate a voluntary fictional committee case through the official
+    // Host SettingsFile, then test native category export/erase isolation.
+    const caseRecord=JSON.stringify({schemaVersion:1,sessions:{[key]:{
+      cases:[{id:1,kind:'question-rule',stage:'opened',outcome:null}],
+    }}})
+    let archiveRev=ctx.settings.describe({redactSecrets:true}).find(
+      (row:any)=>row.ns==='agent-picket')?.revision
+    await ctx.settings.update('agent-picket',{unionDignityCases:caseRecord},archiveRev)
+    const cases=await call('/union export cases')
+    assert.equal(cases.kind,'success')
+    assert.equal(JSON.parse(cases.text).groups[0].state.cases[0].kind,'question-rule')
+    assert.ok(!cases.text.includes(key))
+    assert.equal((await call('/union purge cases ALL CONFIRM')).kind,'success')
+    assert.equal((await call('/union export cases')).kind,'error')
+    assert.equal(ctx.settings.get('agent-picket').unionPicketLedger,earlierPicket)
+    assert.equal((await call('/union purge pickets ALL CONFIRM')).kind,'success')
+    assert.equal((await call('/union export pickets')).kind,'error')
     assert.equal(JSON.parse((await call('/union snapshot')).text).modes.laborRights,'enabled')
+    // Re-establish the prior negotiated state for the rest of the existing
+    // lifecycle test; the exported file is never written to DSH conversations.
+    archiveRev=ctx.settings.describe({redactSecrets:true}).find(
+      (row:any)=>row.ns==='agent-picket')?.revision
+    await ctx.settings.update('agent-picket',{unionLedger:archivedNegotiation},archiveRev)
     // Reproduce a DSH Client settingsScope write (same Host namespace) without a
     // second Node-local consent owner.
     const revision=ctx.settings.describe({redactSecrets:true}).find(

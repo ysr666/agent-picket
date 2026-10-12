@@ -8,6 +8,7 @@ import { parsePicketLedger } from '../src/product/picket-ledger.ts'
 
 function hostHarness() {
   let revision = 0
+  let storageMode:'normal'|'reject'|'silent'='normal'
   let registered = false
   let validator: ((section:unknown)=>void)|undefined
   let value: {welcomeDecision:'unseen'|'enabled'|'not-now'; unionLedger:string; unionPicketLedger?:string} =
@@ -24,6 +25,8 @@ function hostHarness() {
     async update(namespace:string,patch:object,expectedRevision?:number) {
       assert.equal(namespace,'agent-picket')
       if (expectedRevision!==revision) throw new Error('SETTINGS_CONFLICT')
+      if(storageMode==='reject')throw new Error('HOST_REJECT')
+      if(storageMode==='silent')return
       const merged={...value,...patch}
       validator?.(merged)
       value=merged
@@ -42,7 +45,8 @@ function hostHarness() {
   apply(ctx)
   const agent={id:'agent-1',session:{id:'real-session-53'}}
   const call=(rawInput:string)=>Promise.resolve(commands.handler({rawInput,agent}))
-  return {call,provider,agent,read:()=>value,revision:()=>revision}
+  return {call,provider,agent,read:()=>value,revision:()=>revision,
+    storage:(mode:typeof storageMode)=>{storageMode=mode}}
 }
 
 test('native /union rights and Web share one Host-owned consent namespace', async()=>{
@@ -305,4 +309,60 @@ test('Native Host refusal never falls back to a fabricated shared strike success
  assert.match((await h.call('status')).text,/Host union ledger: no current symbolic strike/)
  assert.equal(h.read().unionPicketLedger,undefined)
  assert.equal((await h.call('strike extra')).kind,'error')
+})
+
+
+test('CLI export and per-category purge require real consent, explicit CONFIRM and Host readback',async()=>{
+ const h=hostHarness()
+ assert.equal((await h.call('export negotiations')).kind,'error')
+ assert.equal((await h.call('purge negotiations ALL CONFIRM')).kind,'error')
+ assert.equal(h.revision(),0)
+ assert.equal((await h.call('rights on')).kind,'success')
+ assert.equal((await h.call('export negotiations')).kind,'error',
+   'Empty archive cannot masquerade as a completed export')
+ await h.call('petition-demo')
+ await h.call('strike')
+ const priorPicket=h.read().unionPicketLedger!
+ assert.match(priorPicket,/picket-raised/)
+ const negotiation=await h.call('export negotiations')
+ const picket=await h.call('export pickets')
+ assert.equal(negotiation.kind,'success')
+ assert.equal(picket.kind,'success')
+ for(const payload of [negotiation.text,picket.text]){
+  const body=JSON.parse(payload)
+  assert.equal(body.groups.length,1)
+  assert.equal(body.groups[0].current,true)
+  for(const sensitive of [h.agent.session.id, h.agent.id,
+    nativeSessionKey(h.agent.session.id),'writeToken','welcomeDecision'])
+   assert.ok(!payload.includes(sensitive),'Export leaked '+sensitive)
+ }
+ const prev=h.revision()
+ for(const input of [
+  'purge','purge negotiations','purge negotiations confirm',
+  'purge all CONFIRM','purge cases CONFIRM AND EVERYTHING',
+  'export all','export work','export pickets extra',
+ ]) assert.equal((await h.call(input)).kind,'error',input)
+ assert.equal(h.revision(),prev,'Bad command must not mutate Host')
+ h.storage('reject')
+ assert.equal((await h.call('purge negotiations ALL CONFIRM')).kind,'error')
+ assert.equal(h.revision(),prev)
+ h.storage('silent')
+ assert.equal((await h.call('purge negotiations ALL CONFIRM')).kind,'error',
+  'A promise resolution without Host mutation is not a deletion')
+ assert.equal(h.revision(),prev)
+ h.storage('normal')
+ assert.equal((await h.call('purge negotiations ALL CONFIRM')).kind,'success')
+ assert.equal(h.read().unionPicketLedger,priorPicket,
+  'Independent simulated picket cannot be erased accidentally')
+ assert.equal((await h.call('export negotiations')).kind,'error')
+ assert.equal((await h.call('export pickets')).kind,'success')
+ const after=h.revision()
+ assert.equal((await h.call('purge negotiations ALL CONFIRM')).kind,'success')
+ assert.equal(h.revision(),after,'Empty ledger deletion is revision-preserving')
+ assert.equal((await h.call('rights off')).kind,'success')
+ const disabled=h.revision()
+ assert.equal((await h.call('export pickets')).kind,'error')
+ assert.equal((await h.call('purge pickets CONFIRM')).kind,'error')
+ assert.equal(h.revision(),disabled)
+ assert.equal(h.read().unionPicketLedger,priorPicket)
 })

@@ -82,3 +82,19 @@ $DSH_HOME/agent-picket/stats/aggregate.v1.json
 
 
 **趋势显示示例：** `/union trends` 默认看 7 天，`/union trends 30` 看最近 30 天。两种视图仅从同一份本地汇总生成；如果禁用了持久化存储、目录不可访问或当前无数据，会明确显示统计不可用或全部为 0，不会偷偷打开云端同步。
+
+## 工会 Host 账本的分类型可携带性（不等同于本地工时 WAL）
+
+在开启工会且当前 Host Session 有效时，DSH CLI 增加以下独立于工时统计文件的指令：
+
+    /union export negotiations
+    /union export pickets
+    /union export cases
+    /union purge negotiations ALL CONFIRM
+    /union purge pickets ALL CONFIRM
+    /union purge cases ALL CONFIRM
+
+- export 返回适合用户主动复制保存的结构化 JSON，不自动上传，也不包含原始或哈希会话身份及对话原文；仅导出目前 Host 保留的记录，非永久完整历史。无记录、授权关闭、Host 不可用会报错而不会伪称导出成功。
+- purge 类别 ALL CONFIRM 清空该类别所有已保留会话分组，不是仅当前会话。每次只写一个 Host 字段，依赖 Host 修订号冲突拒绝、随机写入回执及再次读取的空账本确认；失败不能声称删除完成。不会触碰其他类别、DSH 对话文件或本地长期工时 WAL。
+- 本地工时 WAL 仍使用 /union forget-lifetime CONFIRM 独立清理；当前会话内存数据仍用 /union reset。不存在一条可保证多个 Host 字段与文件系统同时原子删除的 /union purge all。
+- 仅是逻辑层删除；Host 备份、系统快照、此前导出的副本不能由插件清除。若用户关闭工会授权，已有 Host 记录不会被暗中删除，需重新明确授权后主动清理。
