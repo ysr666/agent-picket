@@ -52,7 +52,7 @@ export function verifyPrivateNtfsAcl(path:string,kind:'file'|'directory'):boolea
     const encoded=Buffer.from(INSPECT_SCRIPT,'utf16le').toString('base64')
     const result=spawnSync('powershell.exe',[
       '-NoLogo','-NoProfile','-NonInteractive','-EncodedCommand',encoded,
-    ],{encoding:'utf8',windowsHide:true,timeout:7_000,maxBuffer:65_536,
+    ],{encoding:'utf8',windowsHide:true,timeout:12_000,maxBuffer:65_536,
       env:{...process.env,AGENT_PICKET_ACL_CHECK_PATH:path}})
     return result.status===0&&result.stdout.trim()==='PRIVATE_NTFS_DACL_VERIFIED'
   }catch{return false}
@@ -108,7 +108,7 @@ export function createProtectedNtfsDirectory(path:string):boolean {
    const encoded=Buffer.from(PROTECT_NEW_DIRECTORY,'utf16le').toString('base64')
    const result=spawnSync('powershell.exe',[
     '-NoLogo','-NoProfile','-NonInteractive','-EncodedCommand',encoded,
-   ],{encoding:'utf8',windowsHide:true,timeout:7_000,maxBuffer:65_536,
+   ],{encoding:'utf8',windowsHide:true,timeout:12_000,maxBuffer:65_536,
       env:{...process.env,AGENT_PICKET_ACL_CHECK_PATH:path}})
    if(result.status!==0||result.stdout.trim()!=='NEW_NTFS_DACL_PROTECTED')return false
    return verifyPrivateNtfsAcl(path,'directory')

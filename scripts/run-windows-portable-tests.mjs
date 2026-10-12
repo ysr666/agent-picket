@@ -23,7 +23,13 @@ const selected=all.filter(f=>!excluded.has(f)).map(f=>join(root,'tests',f))
 for(const name of excluded)if(!all.includes(name))throw Error(`Excluded test file missing: ${name}`)
 console.warn(`WINDOWS_DURABLE_LEDGER_UNVERIFIED: skipped ${excluded.size} entire test files: ${[...excluded].join(', ')}`)
 console.warn('Windows installed Host & NTFS ACL security acceptance remain mandatory for 1.0; this job is PORTABLE ONLY.')
-const run=spawnSync(process.execPath,['--experimental-strip-types','--test',...selected],{
+// NTFS DACL verification invokes a separate PowerShell/.NET process.
+// Under high native test-file parallelism on two-vCPU Windows runners,
+// isolated ACL probes can hit their conservative 7s process timeout and
+// refuse a legitimate private directory. Serialize test files to obtain
+// meaningful owner/ACL verdicts instead of load-dependent false negatives.
+const run=spawnSync(process.execPath,['--experimental-strip-types','--test',
+  '--test-concurrency=1',...selected],{
   cwd:root,stdio:'inherit',windowsHide:true,
 })
 if(run.error){console.error(String(run.error));process.exit(1)}

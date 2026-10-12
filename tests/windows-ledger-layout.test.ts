@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import {mkdtempSync,writeFileSync,openSync,writeSync,fsyncSync,closeSync,
-  renameSync,rmSync} from 'node:fs'
+  renameSync,rmSync,symlinkSync,lstatSync} from 'node:fs'
 import {tmpdir} from 'node:os'
 import {join} from 'node:path'
 import {spawnSync} from 'node:child_process'
@@ -63,5 +63,28 @@ test('unknown files always reject the NTFS ledger directory',{
   assert.equal(createProtectedNtfsDirectory(dir),true)
   writeFileSync(join(dir,'surprise.tmp'),'untrusted',{flag:'wx'})
   assert.equal(inspectPrivateNtfsLedgerLayout(dir).reason,'unexpected-file')
+ }finally{rmSync(parent,{recursive:true,force:true})}
+})
+
+
+test('native NTFS junction alias cannot inherit a valid private-ledger verdict',{
+ skip:process.platform!=='win32'&&'Real Windows junction/reparse test',timeout:20_000,
+},()=>{
+ const parent=mkdtempSync(join(tmpdir(),'agent-picket-junction-'))
+ const genuine=join(parent,'private-ledger')
+ const alias=join(parent,'redirected-ledger')
+ try{
+  assert.equal(createProtectedNtfsDirectory(genuine),true)
+  assert.equal(inspectPrivateNtfsLedgerLayout(genuine).private,true)
+  // A Windows junction requires no symlink development-mode privileges and
+  // must be rejected before any ACL or file access through the alias.
+  symlinkSync(genuine,alias,'junction')
+  assert.equal(lstatSync(alias).isSymbolicLink(),true,
+    'The test actually produced a reparse/junction directory')
+  const inspected=inspectPrivateNtfsLedgerLayout(alias)
+  assert.equal(inspected.private,false)
+  assert.equal(inspected.reason,'unsafe-ancestor')
+  assert.equal(inspectPrivateNtfsLedgerLayout(genuine).private,true,
+    'Rejecting an alias does not damage or change the genuine private ledger')
  }finally{rmSync(parent,{recursive:true,force:true})}
 })
