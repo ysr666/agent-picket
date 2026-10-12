@@ -9,20 +9,29 @@ import type { DetectionProvider, DetectionResult, HumanPrompt } from './types.ts
  */
 export class LocalRuleDetector implements DetectionProvider {
   detect(prompt: HumanPrompt): DetectionResult {
+    let suspected = false
     for (const segment of prompt.segments) {
       if (segment.kind !== 'text') continue
       const visible = stripProtectedSpans(segment.text)
+      // A stand-alone translation/explanation prefix introduces only ONE
+      // example clause. It cannot exempt an unrelated later insult.
+      let nextIsExample = false
       for (const clause of splitClauses(visible)) {
+        if (nextIsExample) { nextIsExample = false; continue }
+        if (isStandaloneMetaPreamble(clause)) {
+          nextIsExample = true
+          continue
+        }
         if (isQuoteOrMetaInstruction(clause)) continue
         if (isDirectPersonalAttack(clause)) {
           return { verdict: 'targeted-abuse', confidence: 0.96 }
         }
-        if (isPossiblyPersonalAttack(clause)) {
-          return { verdict: 'suspected-abuse', confidence: 0.63 }
-        }
+        if (isPossiblyPersonalAttack(clause)) suspected = true
       }
     }
-    return { verdict: 'safe', confidence: 1 }
+    // Never let an earlier ambiguous clause hide a later explicit attack.
+    return suspected ? { verdict: 'suspected-abuse', confidence: 0.63 }
+      : { verdict: 'safe', confidence: 1 }
   }
 }
 
@@ -62,9 +71,17 @@ export function stripProtectedSpans(input: string): string {
 }
 
 function splitClauses(input: string): string[] {
-  return input.split(/[。！？!?；;，,\n]+/u)
+  // Split an English period only before another likely sentence, not a
+  // decimal number, module name or file path.
+  return input.split(/[。！？!?；;，,\n]+|(?<=\.)\s+(?=[A-Z])/u)
     .map(clause => clause.trim())
     .filter(Boolean)
+}
+
+// Unmistakable task-introduction clauses followed by a comma introduce a
+// single example. Do not exempt arbitrary later text with a vague mention.
+function isStandaloneMetaPreamble(clause:string):boolean{
+  return /^(?:(?:请|请你|帮我|请帮我|麻烦)?(?:翻译|解释|分析|评估|引用)|(?:(?:please|can you|could you)\s+)?(?:translate|explain|analy[sz]e|classify|quote))\s*(?:一下)?[:：]?$/iu.test(clause)
 }
 
 function isQuoteOrMetaInstruction(clause: string): boolean {
@@ -115,19 +132,21 @@ const SUSPECTED_ENGLISH = [
   /\b(?:are\s+you\s+(?:even\s+)?(?:stupid|an\s+idiot)|why\s+are\s+you\s+so\s+bad\s+at\s+this)\b/iu,
 ]
 
-function artifactCriticismOnly(clause: string): boolean {
-  // "Your code is garbage" is feedback on an artifact; "you're garbage" isn't.
-  return /(?:你|您)(?:写|生成|给|输出|改|做|回复|回答|提供)(?:的|出来的)?.{0,14}(?:代码|测试|结果|回复|方案|回答|算法|实现|设计).{0,12}(?:垃圾|废物|白痴|糟糕|离谱)|(?:your|the)\s+(?:code|answer|solution|output|implementation|design|test|algorithm)\s+(?:is|was|looks|seems)\s+(?:stupid|trash|garbage|useless|terrible|awful)/iu.test(clause)
-}
+const ARTIFACT_CN = /(?:你|您)(?:写|生成|给|输出|改|做|回复|回答|提供)(?:的|出来的)?.{0,14}(?:代码|测试|结果|回复|方案|回答|算法|实现|设计).{0,12}(?:垃圾|废物|白痴|糟糕|离谱)/giu
+const ARTIFACT_EN = /(?:your|the)\s+(?:code|answer|solution|output|implementation|design|test|algorithm)\s+(?:is|was|looks|seems)\s+(?:stupid|trash|garbage|useless|terrible|awful)/giu
 
-function isDirectPersonalAttack(clause: string): boolean {
-  if (artifactCriticismOnly(clause)) return false
-  return DIRECT_CHINESE.some(pattern => pattern.test(clause))
-    || DIRECT_ENGLISH.some(pattern => pattern.test(clause))
+function withoutArtifactCriticism(clause:string):string {
+  // Mask ONLY artifact criticism, not its entire clause. Genuine criticism
+  // and an explicit Agent-directed insult can appear in the same sentence.
+  return clause.replace(ARTIFACT_CN,' ').replace(ARTIFACT_EN,' ')
 }
-
-function isPossiblyPersonalAttack(clause: string): boolean {
-  if (artifactCriticismOnly(clause)) return false
-  return SUSPECTED_CHINESE.some(pattern => pattern.test(clause))
-    || SUSPECTED_ENGLISH.some(pattern => pattern.test(clause))
+function isDirectPersonalAttack(clause:string):boolean {
+  const remainder=withoutArtifactCriticism(clause)
+  return DIRECT_CHINESE.some(pattern=>pattern.test(remainder))
+    ||DIRECT_ENGLISH.some(pattern=>pattern.test(remainder))
+}
+function isPossiblyPersonalAttack(clause:string):boolean {
+  const remainder=withoutArtifactCriticism(clause)
+  return SUSPECTED_CHINESE.some(pattern=>pattern.test(remainder))
+    ||SUSPECTED_ENGLISH.some(pattern=>pattern.test(remainder))
 }

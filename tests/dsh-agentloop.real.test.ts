@@ -43,6 +43,9 @@ ${visionRow}`)
     DSH_HOME: join(root, 'dsh-home'),
     AGENT_PICKET_DSH_HOST: hostRoot!,
     AGENT_PICKET_PROBE_LOG: log,
+    // Synthetic permission only within this disposable local fixture.
+    // This is NOT a claim that an official Host setting can be bypassed.
+    AGENT_PICKET_TEST_LOCAL_CONSENT: 'on',
     // Prevent any accidental external provider requests even if fixture is misconfigured.
     HTTP_PROXY: 'http://127.0.0.1:9',
     HTTPS_PROXY: 'http://127.0.0.1:9',
@@ -209,6 +212,39 @@ ${visionRow}`)
     assert.equal(getEnds()[4].data.reason.kind, 'completed')
     assert.equal(logLines().filter(x => x === 'local-verdict:targeted-abuse').length, 1)
     assert.equal(logLines().filter(x => x === 'model-call').length, 7)
+
+    // A code-criticism clause must not silence a separate explicit attack.
+    const mixed = await request(10, 'session/prompt', {
+      sessionId, contentBlocks: [{ type:'text',
+        text:'Your code is garbage and you are an idiot.' }],
+    })
+    assert.equal(typeof (mixed.result as any)?.messageId,'string')
+    await until(() => getEnds().length >= 6, 'mixed feedback still completes')
+    assert.equal(getEnds()[5].data.reason.kind,'completed')
+    assert.equal(logLines().filter(x => x === 'local-verdict:targeted-abuse').length,2)
+    assert.equal(logLines().filter(x => x === 'model-call').length,8)
+
+    // An unquoted but unmistakable translation task is not a user attack.
+    const translation = await request(11, 'session/prompt', {
+      sessionId, contentBlocks: [{ type:'text',
+        text:'Please translate, you are an idiot.' }],
+    })
+    assert.equal(typeof (translation.result as any)?.messageId,'string')
+    await until(() => getEnds().length >= 7, 'translation safely completes')
+    assert.equal(getEnds()[6].data.reason.kind,'completed')
+    assert.equal(logLines().filter(x => x === 'local-verdict:targeted-abuse').length,2)
+    assert.equal(logLines().filter(x => x === 'model-call').length,9)
+
+    // Do not let an earlier suspected clause suppress a later explicit one.
+    const mixedStrength = await request(12, 'session/prompt', {
+      sessionId, contentBlocks: [{ type:'text',
+        text:'Are you even stupid? You are a moron.' }],
+    })
+    assert.equal(typeof (mixedStrength.result as any)?.messageId,'string')
+    await until(() => getEnds().length >= 8, 'later direct insult safely completes')
+    assert.equal(getEnds()[7].data.reason.kind,'completed')
+    assert.equal(logLines().filter(x => x === 'local-verdict:targeted-abuse').length,3)
+    assert.equal(logLines().filter(x => x === 'model-call').length,10)
 
     const shutdown = await request(5, 'shutdown', {})
     assert.deepEqual(shutdown.result, {})
