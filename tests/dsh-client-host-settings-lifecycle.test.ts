@@ -134,3 +134,20 @@ test('official Host no-op at same revision is valid only for unchanged consent',
   assert.equal(h.view().revision,1)
   assert.equal(createDshClientRightsScope(h.scope).snapshot().laborRightsEnabled,false)
 })
+
+test('a broken rights UI subscriber cannot misreport an authenticated Host opt-in as failed',async()=>{
+  const h=harness()
+  let healthyUpdates=0
+  h.scope.subscribe(()=>{throw new Error('stale settings UI listener')})
+  h.scope.subscribe(()=>{healthyUpdates++})
+  const task=h.scope.set('welcomeDecision','enabled')
+  await Promise.resolve()
+  h.finish({ok:true,value:row('enabled',2)})
+  await task
+  assert.equal(createDshClientRightsScope(h.scope).snapshot().laborRightsEnabled,true)
+  assert.equal(h.view().revision,2)
+  assert.equal(healthyUpdates,1,
+    'A bad subscriber cannot block subsequent healthy views')
+  assert.equal(h.updates(),1,
+    'The trusted official Host receipt should publish exactly once')
+})

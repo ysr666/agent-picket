@@ -217,3 +217,23 @@ test('one verified completed turn triggers exactly one new lifetime read across 
  assert.equal(shouldRefresh('b',8),true)
  assert.equal(shouldRefresh('b',4),false,'A reset or truncated stream cannot invent a new turn')
 })
+
+test('disposed work reader cannot be revived by a stale Host callback',async()=>{
+ let calls=0,notifications=0
+ const reader=createBrowserLifetimeWorkReader({
+  authorized:()=>true,
+  fetcher:async()=>{calls++;return fetchOk()},
+ })
+ reader.setScope(true,'session-a')
+ await settle()
+ assert.equal(calls,1)
+ reader.dispose()
+ reader.subscribe(()=>notifications++)
+ reader.setScope(true,'session-a')
+ await reader.refresh()
+ assert.equal(notifications,0,
+  'A disposed reader must not emit into a stale or remounted UI callback')
+ assert.equal(calls,1,
+  'Host data access must remain permanently off for this disposed reader')
+ assert.deepEqual(reader.snapshot(),{status:'off',data:null})
+})

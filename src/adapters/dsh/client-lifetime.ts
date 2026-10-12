@@ -119,6 +119,9 @@ export function createBrowserLifetimeWorkReader(options:{
     return value
   }
   async function load(days?:7|30):Promise<void>{
+    // A stale Host event or callback after Client fiber disposal must not
+    // reenter the work reader, emit UI notifications or make new requests.
+    if(terminated)return
     const requested=days??horizon
     if(requested!==7&&requested!==30)throw new TypeError('Invalid work history range')
     if(!allowed()){
@@ -178,6 +181,7 @@ export function createBrowserLifetimeWorkReader(options:{
     },
     refresh(days?:7|30){return load(days)},
     dispose(){
+      if(terminated)return
       terminated=true;permission=false;previousSession=null
       invalidate('off');listeners.clear()
     },

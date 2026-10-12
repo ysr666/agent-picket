@@ -114,7 +114,14 @@ export function createOfficialDsh017Scope(
     getSnapshot: snapshot,
     subscribe(listener) {
       if (disposed) return () => {}
-      const stop = mirror.subscribe(() => { if (!disposed) listener() })
+      // Observers execute after the authoritative Host CAS and must never
+      // throw back into mirror.acceptView(). Otherwise a confirmed consent
+      // change is reported as failed and later panels miss the notification.
+      const stop = mirror.subscribe(() => {
+        if (!disposed) {
+          try { listener() } catch { /* isolate broken UI observers */ }
+        }
+      })
       subscriptions.add(stop)
       return () => { subscriptions.delete(stop); stop() }
     },
