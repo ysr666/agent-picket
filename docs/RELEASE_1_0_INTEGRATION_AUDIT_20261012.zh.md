@@ -158,3 +158,20 @@
 **隐私口径校正**：本产品 Host 设置的工会账本中以确定性 SHA-256 的 Session key 分组，这些哈希确实持久化在 Host 私有 settings 文件里；不得把这描述成完全匿名或“Host 设置里没有哈希键”。真正已证明的是：用户 CLI JSON 导出不会带这些原始或哈希 Session key，不带原始提示词/附件，且保留的 Host 文件不包含明文 Session ID。禁止将这些更准确的事实偷换成未验证的匿名性保证。
 
 #80 真实任务阻断仍是独立 NO-GO：现有受测 DSH 0.2 agent/pre-step reject 不带用户可见拒绝理由、原文＋附件恢复载荷或独立真实人源证据。已复核文档/源码与离线真实 SDK 拒绝机制，没有获得符合 1.0 强制阻断安全门禁的新证据。暂不扩大阻断权限。
+
+### 2026-10-12 · #111 升级至真正独立 OS 进程复现（三项 P0）
+
+继续在受测 macOS / DSH 0.1.2-rc.1 环境对上述根因做更强的 E2E。tests/fixtures/dsh-settings-owner.mjs 使用 Node IPC 驱动一个真实 Cordis + DSH SettingsFile + CommandRuntime + Agent Picket 子进程；tests/dsh-archive-multiprocess.real.test.ts 的父进程 fork 不同 PID 的所有者 A/B，所有子进程都 watch:true，统一使用受控的临时 settings.json，不写普通用户 Host home，长期统计关掉。不是同进程模拟，也未用自写的文件持久化替身。
+
+显式运行时，三个门禁都 FAILED（准确说明当前 Host 不支持这种使用方式）：
+1. A CLI 说“举牌成功”，B CLI 随后说“提出诉求成功”，新启动的第三个 Host 读取磁盘发现 A 的已确认举牌消失。
+2. A CLI 的 /union purge pickets ALL CONFIRM 说“删除成功”，B 使用已缓存的旧分区执行无关诉求写入，新启动的第三个 Host 发现已删除的举牌档案复活。这是删除权和数据可携带性安全问题，不只是 UI 状态闪烁。
+3. A CLI 的 /union rights off 返回成功，B 随后用过期的启用视图写入无关诉求，第三个 Host 从磁盘读取 welcomeDecision=enabled，撤销授权被旧数据悄然回滚。这是明确的 opt-out 隔离失败。
+
+真实执行命令为（仅在明确希望复现高风险已知问题的隔离临时 Profile 中）：
+AGENT_PICKET_DSH_HOST=<本机真实 DSH 0.1.2 的 node_modules> AGENT_PICKET_DSH_MULTIPROCESS_CHECK=1 node --experimental-strip-types --test tests/dsh-archive-multiprocess.real.test.ts。
+此门禁默认跳过，在受影响 Host 上故意 RED，直到上游提供实质的跨 owner 原子 CAS／单写入所有权保证。不得对用户宣称普通 CI 全绿就等于这三项通过。
+
+真实进程正向对照 PASS：无需开启失败门禁，只需要显式真实 Host 模块路径，5 个独立 Node OS 进程严格顺序使用同一临时配置；创建许可和举牌→进程退出；下一进程创建休息诉求→退出；下一进程读取两者并按类别删除举牌→退出；下一进程确认举牌未复活而诉求仍在，关闭工会许可→退出；最后进程确认许可仍为 OFF、禁止新举牌、之前的协商保留。这个路径通过，证明不能把同一文件的顺序进程重启和并发进程多所有者混为一谈。
+
+风险仍然需要由 DSH 设置服务或部署配置明确解决：不可用临时绕过 #111 的产品检查或在未做物理压力测试的情况下自行下结论。#80 真实强制阻断和不完整的自动化真人身份保障继续 OFF。
