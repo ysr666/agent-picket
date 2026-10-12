@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import * as picketPlugin from '../src/adapters/dsh/plugin.ts'
-import { nativeSessionKey } from '../src/adapters/dsh/native-rights-command.ts'
+import { nativeSessionKey,createNativeUnionCommandPort } from '../src/adapters/dsh/native-rights-command.ts'
 import { parseUnionLedger } from '../src/product/union-ledger.ts'
 import { parsePicketLedger } from '../src/product/picket-ledger.ts'
 
@@ -99,6 +99,20 @@ test('real DSH SettingsFile + CommandRuntime share Web union consent and agreeme
 
     // Actual native Host SettingsFile + CommandRuntime archive commands,
     // not mocked parsers. Export is copyable but never contains hashed IDs.
+    const nativeArchive=createNativeUnionCommandPort(ctx.settings)
+    const beforeEpoch=nativeArchive.exportArchiveRevision(session.id,'negotiations')
+    let mutationRev=ctx.settings.describe({redactSecrets:true})
+      .find((row:any)=>row.ns==='agent-picket')?.revision
+    await ctx.settings.update('agent-picket',{welcomeDecision:'not-now'},mutationRev)
+    mutationRev=ctx.settings.describe({redactSecrets:true})
+      .find((row:any)=>row.ns==='agent-picket')?.revision
+    await ctx.settings.update('agent-picket',{welcomeDecision:'enabled'},mutationRev)
+    assert.ok(nativeArchive.exportArchiveRevision(session.id,'negotiations')>beforeEpoch,
+      'Genuine Host settings revision changes across consent OFF→ON')
+    // An in-flight export must be stalled at the actual file await to
+    // exercise the race deterministically; the isolated fault test owns
+    // that sequence. Rapid independent Host writes cannot establish it.
+
     const negotiations=await call('/union export negotiations '+join(root,'negotiations.json'))
     const pickets=await call('/union export pickets '+join(root,'pickets.json'))
     assert.equal(negotiations.kind,'success')

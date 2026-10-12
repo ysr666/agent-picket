@@ -53,6 +53,8 @@ export interface NativeUnionCommandPort {
   picketStatus(sessionId: string): {readonly active:boolean} | null
   picket(sessionId: string, raise: boolean): Promise<'started'|'ended'|'unchanged'>
   exportArchive(sessionId:string, kind:UnionArchiveKind): string
+  /** Host namespace epoch for an authorized export; invalidated by OFF→ON. */
+  exportArchiveRevision(sessionId:string, kind:UnionArchiveKind): number
   purgeArchive(sessionId:string, kind:UnionArchiveKind): Promise<void>
 }
 
@@ -154,6 +156,12 @@ export function createNativeUnionCommandPort(settings: NativeSettingsProvider): 
   const disabled = () => text('command.native.disabled')
   return {
     enabled: () => read()?.section.welcomeDecision === 'enabled',
+    exportArchiveRevision(sessionId,kind){
+      const revision=archive(sessionId,kind).view.revision
+      if(!Number.isSafeInteger(revision)||revision<0)
+        throw new Error('Invalid Host settings revision')
+      return revision
+    },
     exportArchive(sessionId,kind) {
       if(!['negotiations','pickets','cases'].includes(kind))
         throw new TypeError('Unsupported export category')

@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import {mkdtempSync,readFileSync,writeFileSync,lstatSync,rmSync,symlinkSync} from 'node:fs'
+import {mkdtempSync,readFileSync,writeFileSync,lstatSync,rmSync,symlinkSync,renameSync} from 'node:fs'
 import {tmpdir} from 'node:os'
 import {join} from 'node:path'
 import {writeExplicitUnionArchive} from '../src/adapters/dsh/secure-archive-export.ts'
@@ -55,4 +55,46 @@ test('a Host consent revocation during export unlinks the newly written file',as
   assert.ok(checks>=3)
   assert.throws(()=>readFileSync(file),'A revoked Host cannot leave an extra export copy')
  } finally {rmSync(root,{recursive:true,force:true})}
+})
+
+test('revoked export never deletes a different file swapped into its destination',async()=>{
+ const root=mkdtempSync(join(tmpdir(),'picket-export-replace-race-'))
+ try {
+  const original=join(root,'case.json')
+  const moved=join(root,'old-export.json')
+  let calls=0
+  await assert.rejects(writeExplicitUnionArchive(original,'PRIVATE_SECRET_EXPORT',undefined,()=>{
+   calls++
+   if(calls===3){
+    // A separate actor renamed the newly created export to a different path
+    // and installed an unrelated valuable file at the original path.
+    renameSync(original,moved)
+    writeFileSync(original,'USER_FILE_DO_NOT_DELETE')
+    return false
+   }
+   return true
+  }),/revoked/)
+  assert.equal(readFileSync(original,'utf8'),'USER_FILE_DO_NOT_DELETE',
+   'Cleanup must never unlink a replacement belonging to another actor')
+ } finally{rmSync(root,{recursive:true,force:true})}
+})
+
+test('a swapped destination cannot be falsely reported as a successful private export',async()=>{
+ const root=mkdtempSync(join(tmpdir(),'picket-export-swapped-success-'))
+ try{
+  const destination=join(root,'original.json')
+  const relocated=join(root,'relocated-secret.json')
+  let probes=0
+  await assert.rejects(writeExplicitUnionArchive(destination,'PRIVATE_EXPORTED_JSON',undefined,()=>{
+   probes++
+   if(probes===3){
+    renameSync(destination,relocated)
+    writeFileSync(destination,'DIFFERENT_USER_FILE')
+   }
+   return true
+  }),/replaced|destination|changed/,
+  'Host must not claim export success if the user-selected path no longer contains its file')
+  assert.equal(readFileSync(destination,'utf8'),'DIFFERENT_USER_FILE',
+   'Never delete or overwrite the replacement user file')
+ }finally{rmSync(root,{recursive:true,force:true})}
 })

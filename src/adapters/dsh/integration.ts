@@ -308,9 +308,12 @@ export function registerDshIntegration(
               // The user must supply a destination and no existing file
               // may be silently overwritten.
               try {
+                const epoch=native.exportArchiveRevision(id,kind)
                 const json=native.exportArchive(id,kind)
                 return writeExplicitUnionArchive(filePath,json,invocation?.signal,
-                  ()=>native.enabled()&&native.exportArchive(id,kind)===json)
+                  ()=>native.enabled()
+                    &&native.exportArchiveRevision(id,kind)===epoch
+                    &&native.exportArchive(id,kind)===json)
                   .then(()=>ok(native.text('command.native.exportSaved')),
                     ()=>fail(native.text('command.native.exportFailed')))
               } catch {

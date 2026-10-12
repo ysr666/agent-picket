@@ -168,6 +168,12 @@ test('real DSH 0.2 CommandRuntime routes shared symbolic pickets without model c
       cases:[{id:1,kind:'question-rule',stage:'opened',outcome:null}],
     }}})
     await hostSettings.update('agent-picket',{unionDignityCases:exampleCases},revision)
+    const epochBefore=revision
+    await hostSettings.update('agent-picket',{welcomeDecision:'not-now'},revision)
+    await hostSettings.update('agent-picket',{welcomeDecision:'enabled'},revision)
+    assert.ok(revision>epochBefore,
+      'DSH 0.2 strict Config adapter changes Host epoch across OFF→ON')
+
     for(const kind of ['negotiations','pickets','cases']){
       const selectedPath=join(exportRoot,kind==='cases'?'case history.json':kind+'.json')
       const exported=await call('/union export '+kind+' "'+selectedPath+'"')

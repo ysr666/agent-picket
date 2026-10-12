@@ -398,3 +398,21 @@ test('an archive erased during an in-flight native file export cannot reappear a
   assert.throws(()=>readFileSync(path))
  } finally {rmSync(root,{recursive:true,force:true})}
 })
+
+test('Host consent OFF then ON during an old export cannot reactivate the old authority epoch',async()=>{
+ const root=mkdtempSync(join(tmpdir(),'picket-export-consent-aba-'))
+ try {
+  const h=hostHarness()
+  assert.equal((await h.call('rights on')).kind,'success')
+  assert.equal((await h.call('petition-demo')).kind,'success')
+  const destination=join(root,'revoked-epoch.json')
+  const priorRevision=h.revision()
+  const exporting=h.call('export negotiations '+destination)
+  await h.provider.update('agent-picket',{welcomeDecision:'not-now'},h.revision())
+  await h.provider.update('agent-picket',{welcomeDecision:'enabled'},h.revision())
+  assert.ok(h.revision()>priorRevision)
+  assert.equal((await exporting).kind,'error',
+   'An old export must not cross a Host OFF→ON transition even if JSON is identical')
+  assert.throws(()=>readFileSync(destination))
+ }finally{rmSync(root,{recursive:true,force:true})}
+})
