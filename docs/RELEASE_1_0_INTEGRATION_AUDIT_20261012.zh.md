@@ -258,3 +258,13 @@ AGENT_PICKET_DSH_HOST=<本机真实 DSH 0.1.2 的 node_modules> AGENT_PICKET_DSH
 持久化随机磁盘代次原型仍只存在于隔离测试 fixture。新增三项真正独立 OS 进程研究验证：两个 Host 同时提交举牌和申诉，只允许一个旧快照获得成功回执，冷启动第三进程只能看到成功档案；A 删除举牌后，B 旧申诉先被拒绝，再次读取真实磁盘后重新发起非破坏性申诉可成功且不会复活删除内容；A 撤销权限后，B 旧请求与刷新后的重试均被拒绝，OFF 与空档案保持不变。
 
 研究原型现合计 5/5 PASS，而未修改的官方 DSH 仍 0/3，安全边界没有放宽。新增 npm run research:dsh-disk-cas 独立复现脚本，真实旧 SDK 必需，依次核验原始官方 0/3 失败、纯内容比较 OFF-ON ABA 0/1 失败、持久化代次原型 5/5 通过；打印 RESEARCH_ONLY 与 RELEASE_STATUS=P0_NO_GO，避免把隔离原型当成上游正式修复。正式发布门禁仍由 npm run check:dsh-multiowner 单独决定。研究脚本与 fixture 不打包，也不接触真正的 DSH 用户 Profile。
+
+### 2026-10-12 · 现代 DSH JSON 存储的双进程与迁移删除复活（隔离实测）
+
+针对 DSH 0.1.7-rc.2 与 0.2.0-rc.2 的真实官方 dsh-storage-json SDK，用两个独立 OS 进程加冷启动实测，均得到 5/5：single 整文件陈旧进程写入无关键会覆盖另一进程已删除记录或恢复旧值；per-record 不同键隔离、相同键仍无 CAS；更重要的是从旧 single 格式迁移到 per-record 后，删除最后一个新格式 JSON 文件，下一次读取和冷启动仍从保留的旧整文件重新导入该记录。已经核实文件确已物理删除，新旧文件是否存在，而不只是 UI 缓存差异。
+
+同时核查当前上游 master 的 per-record-unit.ts，保留相同的迁移触发逻辑；需上游定义持久化迁移完成标记或删除墓碑，防止清空新布局后又触发旧数据 bootstrap。详情见 docs/DSH_MODERN_JSON_STORAGE_RESEARCH_20261012.md 与 npm run research:dsh-modern-storage。
+
+严格证据边界：这是真实 KV 存储层的行为，不等于新版 Host SettingsForms 授权安全已判定失败。新版 ConfigEditor 单独用 profile 文件锁，且在锁内重新协调配置，需要另行直接测试 SettingsForms 的跨 Host CAS 和 OFF-ON ABA。Agent Picket 当前账本是否经过上述 per-record 迁移路径尚未证实。不修改真实 DSH，不启用真实任务拦截，1.0 NO-GO 不变。
+
+本次又加严格的迁移删除安全门禁 npm run check:dsh-modern-migration，要求实际旧布局单记录迁移后删除、冷启动仍为空。真实 DSH 0.1.7-rc.2 和 0.2.0-rc.2 官方 storage-json SDK 均实测 FAIL / MIGRATION_ERASURE_NO_GO，缺失 SDK 也不可标绿。应清楚区分：research:dsh-modern-storage 的 5/5 是成功观察危险行为，check:dsh-modern-migration 的 0/1 才是“删除不可恢复”安全要求。目前不把这些低层文件行为扩大成未经证实的正式 Host 工会授权缺陷。该验收需在上游修复和实际 Host 使用该迁移路径时才有对应产品适用性。
