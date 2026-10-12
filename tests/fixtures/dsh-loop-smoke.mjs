@@ -70,6 +70,10 @@ export function apply(ctx) {
     policy: { ...DEFAULT_POLICY, mode:'observe' }
   })
   registerDshIntegration(ctx, {
+    // Isolated smoke test only. Production uses the *current official Host
+    // settings* for this callback and remains OFF without an explicit opt-in.
+    // Never make the real Adapter's default consent true to satisfy a test.
+    getLaborRightsEnabled: () => process.env.AGENT_PICKET_TEST_LOCAL_CONSENT === 'on',
     engine, clock: { now: () => Date.now() },
     tracker: new WorkTracker(),
     detections,

@@ -26,8 +26,8 @@ test('manual local check catches explicitly targeted insult without persisting i
   assert.match(result.text, /NOT proof of abuse/)
   assert.doesNotMatch(result.text, /confidential-token-7654|idiot/)
   assert.equal(definition().recordInput, false)
-  assert.equal(invoke('report').text.includes('0 messages'), true,
-    'Manual checks never modify ordinary message counters')
+  assert.equal(invoke('report').kind,'error',
+    'Manual checks do not bypass the Host consent needed for automatic reports')
 })
 
 test('nonpersonal code criticism and quotes are not flagged as directed abuse', () => {

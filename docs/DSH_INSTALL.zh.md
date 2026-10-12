@@ -1,83 +1,68 @@
-# AgentPicket — DSH 源码安装预览
+# Agent Picket · DSH 隔离安装与验证（当前开发版）
 
-> 如需不依赖源码 TypeScript 的 JS 安装预览，参见 [本地 npm tarball 构建与安装](PACKAGING.zh.md)。
->
-> 仅供开发测试：**不是正式发布的 npm 插件**，尚未经过 Web UI、多版本兼容、完整冷恢复的最终验收。当前只监测和统计，**绝不自动拒绝、取消或修改用户请求**。
+> **更新：2026-10-12。不是正式发行安装教程。** 当前公开的 `main` 已包含经过合并的工会基础版（截至 #70），但最新 1.0 候选仍位于 [Draft PR #110](https://github.com/ysr666/agent-picket/pull/110)，**没有合入 main，也没有发布 npm**。当前 `package.json` 为 `0.0.0`、`private: true`。请不要误认为安装 `main` 能得到 PR #110 中所有新功能。
 
-## 一、前置条件
+**推荐入口：** [当前研发状态](STATUS.zh.md) · [构建本地私有包与官方 DSH 安装](PACKAGING.zh.md) · [1.0 候选集成审计](RELEASE_1_0_INTEGRATION_AUDIT_20261012.zh.md)。
 
-- Node.js 22.19+（已有实测为 Node 24.5.0）
-- 一个支持 Cordis 4 的 DSH 环境；当前仅实际验证 `@deepseek-ai/dsh@0.2.0-rc.2`
-- 不需要云端分类 API、额外密钥、本地 LLM 或后台进程
+## 一、适用版本和保护措施
 
-如果你已有 DSH，**不要**因为安装 AgentPicket 而直接升级或覆盖全局 DSH，也不要覆盖原有的 DSH profile / `dsh-vision-router` 工作目录。
+- Node.js 22.19+；不要直接覆盖用户已有的 DSH 安装、`DSH_HOME`、Web Profile 或其他插件。
+- 在隔离真实浏览器测试中，**DSH 0.1.2-rc.1 与 0.2.0-rc.2** 均已分别完成当前 1.0 候选的源码/离线安装验证（每个版本 2/2）；此证据只适用于当时的确切构建及测试场景，不表示所有 DSH 版本正式兼容。
+- **DSH 0.2 的 Web 插件首选官方 `plugin --profile web add` 命令**，不需要对 Host 核心打补丁，也不应为了安装而修改用户的真实 Profile。早期以 `sdk-minimal --patch` 加载源码的方案仅是历史研究路径，不能作为目前面向用户的 Web 安装步骤。
+- 这些命令默认只用临时目录，不调用真实云模型，也不需要模型 API 密钥。
 
-## 二、隔离测试安装
+## 二、从已合并 main 构建本地私有包
 
-下面的演示将 DSH 安装到独立临时目录。选择你自己的安全测试目录，并从 AgentPicket 仓库根目录执行：
+在全新的工作目录运行：
 
 ```sh
 git clone https://github.com/ysr666/agent-picket.git
 cd agent-picket
-# 在相关 PR 合并前，请切换到含有原生插件入口的开发分支：
-git switch feat/dsh-monitor-plugin
-npm ci
+git switch main
+npm ci --ignore-scripts
+npm run check
 
-# 不触碰全局 dsh，可换成你自己的临时目录
-mkdir -p /tmp/agent-picket-dsh-test
-npm install --prefix /tmp/agent-picket-dsh-test --ignore-scripts \
-  @deepseek-ai/dsh@0.2.0-rc.2
-
-# 在 AgentPicket 根目录，以独立的 DSH_HOME 启动
-DSH_HOME=/tmp/agent-picket-profile-test \
-  /tmp/agent-picket-dsh-test/node_modules/.bin/dsh \
-  --profile sdk-minimal --patch ./cordis.patch.yml
+mkdir -p /tmp/agent-picket-dist
+npm pack --ignore-scripts --pack-destination /tmp/agent-picket-dist
 ```
 
-`cordis.patch.yml` 会添加 `agent-picket-monitor` 一行，加载 `src/adapters/dsh/plugin.ts`。这里使用源码 TypeScript；需要 Host 运行 Node 的原生类型剥离能力。路径解析已在上述受测 DSH 版本中验证。
+目前版本的包文件名为 `agent-picket-0.0.0.tgz`。**上述代码来自 main，而非未合并的 PR #110。** 审查 1.0 候选的开发者应明确检出 PR #110 的实际提交，重新跑相同构建和验收；不得借用旧版测试结果。
 
-**注意：** `sdk-minimal` 是 SDK/无界面 Profile，不保证开放聊天 UI 中的斜杠命令；它主要用于 SDK 集成测试。使用提供 `commands` 服务的交互式宿主时，才会注册并显示 `/union`。
+## 三、用官方命令安装到隔离 Web Profile
 
-## 三、已有能力
+请先单独安装一份准备验证的 DSH，确认实际二进制路径和版本（下例路径须由本地真实目录替换）：
 
-在支持 DSH 命令面的客户端：
+```sh
+DSH_BIN=/absolute/path/to/isolated/node_modules/.bin/dsh
+PACK=/tmp/agent-picket-dist/agent-picket-0.0.0.tgz
+TEST_HOME="$(mktemp -d /tmp/agent-picket-test-home-XXXXXXXX)"
 
-| 命令 | 实际功能 |
-|---|---|
-| `/union status` | 当前监测状态；自动罢工关闭 |
-| `/union stats` | 本地轮次、工具次数和已完成轮次经过时间 |
-| `/union report` | 中英文保守规则的本地分类计数，不含原话 |
-| `/union strike` | **手动开启象征性罢工演示**，显示仲裁状态；不暂停任何请求 |
-| `/union resume` | 结束象征性罢工演示，不影响真实模型运行 |
-| `/union reset` | 清空本会话的内存计数 |
-| `/union help` | 显示可用命令 |
-| `/union safety` | 展示为什么当前版本尚不允许真实阻断（来源、提示、恢复等安全条件） |
-| `/union check <文本>` | **用户主动触发的本地预检**，仅返回规则判断，不触发模型或阻断 |
+DSH_HOME="$TEST_HOME" "$DSH_BIN" plugin --profile web add "$PACK"
+DSH_HOME="$TEST_HOME" "$DSH_BIN" plugin --profile web list
+```
 
-**没有实现的能力：** 自动/真实阻断、完整人工来源证明、可自动触发的劳动仲裁。**默认本地长期工作汇总已在开发分支实现**（见 [STATS_STORAGE.zh.md](STATS_STORAGE.zh.md)），但正式可靠性仍需更多 Host/系统测试。注意 `strike` 和 `resume` 目前只控制会话内存中的**演示状态**。
+之后仅在该 **测试用** `DSH_HOME` 中启动相应 DSH Web Profile，并使用浏览器检查官方欢迎页、工会面板与设置。不要将旧开发分支、源码路径或编译包冒充已发布的 1.0 版本。原始编译包测试、实际安装回归及可用配置详见 [PACKAGING.zh.md](PACKAGING.zh.md) 和 [DSH 0.2 实机测试说明](DSH_02_OFFICIAL_RIGHTS_AX_E2E.md)。
 
-所有计数只存在于插件进程内存，重启消失；`/union report` 的分类是**实验性规则命中**，不等于确认用户辱骂。AgentPicket 自身不发送额外网络请求；但 DSH 的模型服务仍可能按宿主原有配置正常联网。
+## 四、现在的工会行为
 
-## 四、测试与卸载
+- **首次明确授权**：工会权益模拟默认 OFF；用户可选启用或暂不开启。授权由官方 DSH Host Settings 保存，之后可以撤销。长期工作统计与权益模拟分开管理。
+- **象征性工会行动**：已授权时，Web 举牌/收牌只需点击一次，Host 负责记录及核验状态；不额外强制重复确认。原生 `/union strike` 与 `/union resume` 也是非阻断的象征性工会命令。模拟动作不会暂停、丢弃、拒绝或修改真实任务。
+- **工会诉求**：有用户可以参与的模拟休息/加班提案、反提案、接受/拒绝、结案与 Host 记录。历史资料的可导出、删除受各自权限与数据范围限制，**不可恢复的删除才需要额外明确确认**。
+- **本地检测**：授权后的合格用户源文本通过本地规则观察；结果是保守信号，不是对辱骂行为的确定判决。没有授权或撤销后不自动检查内容，不保存完整聊天和附件到工会账本。
+- **真实罢工阻断**：目前仍然 **OFF**。已知 DSH `agent/pre-step` 拒绝可能吞掉原始消息或附件，缺少安全的恢复/继续/绕过证明。不能将象征性行动说成真实拦截。真实阻断未来需要全新版本化知情许可及 #80 的官方 Host 无损验证。
 
-纯 Core + 模拟适配测试：
+实际能力依 DSH 版本和 Host 提供的官方 API 变化，缺失功能应显示不可用而不是伪造数据或成功结果。
+
+## 五、复测、停用与发布限制
 
 ```sh
 npm run check
-```
-
-要运行真实 DSH 测试，使用两个环境变量明确指向**隔离安装**：
-
-```sh
-AGENT_PICKET_DSH_HOST=/tmp/agent-picket-dsh-test/node_modules \
-AGENT_PICKET_DSH_BIN=/tmp/agent-picket-dsh-test/node_modules/.bin/dsh \
+# 仅在独立安装的真实 DSH 及相应测试依赖就绪后：
+AGENT_PICKET_DSH_HOST=/absolute/path/to/isolated/node_modules \
+AGENT_PICKET_DSH_BIN=/absolute/path/to/isolated/node_modules/.bin/dsh \
 npm run test:dsh:real
 ```
 
-卸载本源码安装，只需**停止测试 DSH 进程并移除命令行中的 `--patch ./cordis.patch.yml`**。该插件无后台守护进程，也不会修改 DSH 核心代码。临时 profile 目录仅在确认不再需要时由你手动清理。
+源码自测或 CI 通过不等于真实浏览器、真人无障碍或正式发布验收。停止隔离 DSH 进程、移除该测试 Profile 的插件或在确认无其他用途后清理临时目录；**不得在不确定数据归属时清除真实 `DSH_HOME`**。导出与擦除工会账本不能覆盖 Host 原有对话或工作统计。
 
-## 五、明确的安全限制
-
-DSH 的 `source.kind:'user'` 目前只作为“声称来自真人”处理，不能作为确证；拒绝输入还可能消耗已领取的消息，且 UI 不一定有清晰可恢复的拒绝提示。因此当前适配器无论规则分类为何，都会继续传递原请求，**不会触发自动罢工**。
-
-详见 [DSH Web 接口验证与手动预检](DSH_WEB_CAPABILITIES.zh.md)、[真实阻断安全条件](BLOCKING_SAFETY.md)、[本地检测说明](LOCAL_DETECTION.md)、[工作统计](WORK_TRACKING.md) 和 [DSH 实测证据](DSH_INTEGRATION.md)。
+当前 1.0 Release Candidate 仍需 [真人无障碍签收](HUMAN_ACCESSIBILITY_SIGNOFF.zh.md)、隐私/安全/兼容性独立审查，以及维护者对合并、打标签和公开发布的明确批准。

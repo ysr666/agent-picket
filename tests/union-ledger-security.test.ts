@@ -69,6 +69,12 @@ test('legacy countered requests and legitimate agreement history remain valid',(
   assert.doesNotThrow(()=>validator()({welcomeDecision:'enabled',unionLedger:ledger}))
 })
 
+test('picket extensions inside legacy agreements must remain rejected',()=>{
+ const state={...freshLaborState(),picket:{active:true,history:[{id:1,kind:'picket-raised'}]}}
+ assert.equal(parseUnionLedger(encoded(state)),null)
+ assert.throws(()=>validator()({welcomeDecision:'enabled',unionLedger:encoded(state)}),/Unsafe/)
+})
+
 test('unknown future or malformed nested bargain fails without silent sanitization',()=>{
   const state = freshLaborState()
   for(const candidate of [

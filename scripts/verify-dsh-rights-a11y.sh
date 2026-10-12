@@ -18,11 +18,33 @@ echo "DSH=$version"
 echo "Evidence (local only): $proof"
 
 if [[ "$version" == 0.1.* ]]; then
+  # Version numbering alone cannot identify the SDK architecture:
+  # 0.1.2 provides the legacy SettingsFile owner; official 0.1.7-rc.2
+  # switched to dsh-storage-json/config and must NOT be silently treated as
+  # if it had the same consent/write infrastructure. Failing closed is
+  # better than misreporting legacy E2E as a later-Host pass.
+  if [[ ! -f "$AGENT_PICKET_DSH_HOST/@deepseek-ai/dsh-settings-file/lib/index.js" ]]; then
+    echo "UNREVIEWED_DSH_SETTINGS_LAYOUT: DSH $version has no legacy SettingsFile SDK; this test cannot claim modern Host support." >&2
+    exit 2
+  fi
   (cd "$root" && node --experimental-strip-types --test \
     tests/dsh-rights-browser.real.test.ts) > "$proof/legacy-real-ax.log" 2>&1
   rc=$?
   echo "LEGACY_DSH_RESULT=$rc"
   exit "$rc"
+fi
+
+# A real DSH 0.2 CommandRuntime is exercised with an isolated, strict
+# Config-validated Host-settings stand-in. The full genuine DSH 0.2 Host
+# settings API is separately covered by the Chrome tests below: neither
+# source may be substituted for the other in release claims.
+if (cd "$root" && AGENT_PICKET_TEST_DSH_VERSION="$version" \
+    node --experimental-strip-types --test \
+    tests/dsh-command-runtime-02.real.test.ts) > "$proof/real-commands-02.log" 2>&1; then
+  echo "DSH02_COMMAND_RUNTIME=PASS stage=real-commands-with-isolated-settings"
+else
+  echo "DSH02_COMMAND_RUNTIME=FAIL stage=real-commands-with-isolated-settings"
+  exit 1
 fi
 
 # DSH 0.2 needs an officially installed Web Profile for a writable Host
@@ -45,6 +67,18 @@ for flavor in source installed; do
     echo "FLAVOR=$flavor FAIL stage=official-dsh-plugin-install"
     ((fail+=1))
     continue
+  fi
+  # Explicitly opt-in acceptance mode: install the audited, test-only OFFLINE
+  # LLM adapter into a throwaway official Web Profile. Not shipped in npm;
+  # no API keys, network connection or model billing.
+  if [[ "${PICKET_DIGNITY_E2E:-0}" == "1" ]]; then
+    if ! DSH_HOME="$profile" "$AGENT_PICKET_DSH_BIN" plugin --profile web add \
+      "$root/tests/fixtures/offline-web-provider" \
+      >"$proof/offline-provider-$flavor.log" 2>&1; then
+      echo "FLAVOR=$flavor FAIL stage=official-offline-provider-install"
+      ((fail+=1))
+      continue
+    fi
   fi
   pattern='real Chrome: source'
   if [[ "$flavor" == installed ]]; then

@@ -1,4 +1,6 @@
 import { createBrowserDashboardBridge } from './client-dashboard.ts'
+import { createBrowserLifetimeWorkReader, createCompletedTurnRefreshGate } from './client-lifetime.ts'
+import { createBrowserDignityReader } from './client-dignity.ts'
 import { createDshBrowserUnionDesk, type UnionSettingsSection } from './client-bargaining.ts'
 import { createDshClientRightsScope, type DshSettingsScope } from './client-rights-scope.ts'
 import { createOfficialDsh017Scope, type OfficialHostMirror, type OfficialHostSettings } from './client-host-settings-017.ts'
@@ -96,12 +98,19 @@ export function apply(ctx: ClientContext, react?: ReactForDsh, portal?: PortalFo
       : scoped.settingsScope!.bind<UnionSettingsSection>({namespace:'agent-picket'})
     unionRegistered = true
     const owner = createDshClientRightsScope(rightsScope)
+    const lifetime = version==='new' ? createBrowserLifetimeWorkReader({
+      authorized:()=>owner.snapshot().laborRightsEnabled,
+    }) : null
+    const dignity = version==='new' ? createBrowserDignityReader({
+      authorized:()=>owner.snapshot().laborRightsEnabled,
+    }):null
     const desk = createDshBrowserUnionDesk({
       scope: ledgerScope,
       consent: () => owner.snapshot().laborRightsEnabled,
     })
     const uiLocale = () => resolveLocale({ hostLocale: scoped.locale?.getLocale().active })
     const activeId = () => currentDshUnionSession(scoped.sessions.list?.getSnapshot())
+    const shouldRefreshLifetime=createCompletedTurnRefreshGate()
     const readUnion = () => {
       const id = activeId()
       const data = id ? bridge?.getSnapshot(id) : undefined
@@ -110,21 +119,52 @@ export function apply(ctx: ClientContext, react?: ReactForDsh, portal?: PortalFo
         completedTurnMs: data?.coverage === 'complete'
           ? data.sessionWork?.completedTurnMs ?? null : null,
         coverage: data?.coverage ?? 'not-loaded' as const,
-        lifetimeMs: null,
+        lifetimeMs: lifetime?.snapshot().data?.lifetime.completedTurnMs ?? null,
+        lifetimeWork: lifetime?.snapshot() ?? {status:'unavailable' as const,data:null},
+        dignity:dignity?.snapshot()??{status:'unavailable' as const,data:null},
       }
     }
     const subscribeUnion = (listener: () => void): (() => void) => {
       let stopEvents = () => {}
       let currentEpoch = 0
+      let lastTurnStart = -1
+      let lastTurnEnd = -1
       const onWork = () => {
+        // Recheck the real Host choice, and drop old-session data immediately.
+        lifetime?.setScope(owner.snapshot().laborRightsEnabled,
+          activeId()??'agent-picket:global-work')
         const data = readUnion()
         void desk.observe(data.completedTurnMs, data.coverage)
+        // Refresh the work-only ledger on a VERIFIED new completed turn,
+        // not on tool activity, render, arbitrary settings changes or timers.
+        // This shared gate deduplicates background and open-panel listeners.
+        const id=activeId()
+        const hostWork=id?bridge?.getSnapshot(id):undefined
+        const currentConsent=owner.snapshot().laborRightsEnabled
+        if(!currentConsent){
+          shouldRefreshLifetime(null,null) // An actual revoke clears the cursor.
+        }else if(id&&hostWork?.coverage==='complete'&&hostWork.sessionWork
+          &&shouldRefreshLifetime(id,hostWork.sessionWork.turnEnds)){
+          // A temporarily partial event window must NOT erase the last known
+          // completed-turn cursor: when complete evidence comes back, the new
+          // completed turn should still trigger a fresh work-only Host read.
+          void lifetime?.refresh() // preserves the user's 7/30-day selection
+        }
+        if(dignity&&id&&data.coverage!=='unavailable') {
+          const work=hostWork?.sessionWork
+          if(work&&(work.turnStarts!==lastTurnStart||work.turnEnds!==lastTurnEnd)){
+            lastTurnStart=work.turnStarts;lastTurnEnd=work.turnEnds
+            void dignity.refresh()
+          }
+        }
         listener()
       }
       const rebind = () => {
         const epoch = ++currentEpoch
         stopEvents()
         const id = activeId()
+        lastTurnStart=-1;lastTurnEnd=-1
+        dignity?.setScope(owner.snapshot().laborRightsEnabled,id??null)
         stopEvents = id && bridge ? bridge.subscribe(id, onWork) : () => {}
         // A dedicated fictional demo scope works even before DSH workspace selection.
         // It has no measured-work events and cannot trigger overtime automatically.
@@ -132,8 +172,13 @@ export function apply(ctx: ClientContext, react?: ReactForDsh, portal?: PortalFo
           if (currentEpoch === epoch) onWork()
         })
       }
+      const stopLifetime = lifetime?.subscribe(listener) ?? (()=>{})
+      const stopDignity = dignity?.subscribe(listener) ?? (()=>{})
       const stopDesk = desk.subscribe(listener)
-      const stopSettings = owner.subscribe(onWork)
+      const stopSettings = owner.subscribe(()=>{
+        dignity?.setScope(owner.snapshot().laborRightsEnabled,activeId()??null)
+        onWork()
+      })
       const stopSessions = scoped.sessions.list?.subscribe(rebind) ?? (() => {})
       rebind()
       return () => {
@@ -142,6 +187,8 @@ export function apply(ctx: ClientContext, react?: ReactForDsh, portal?: PortalFo
         stopSessions()
         stopSettings()
         stopDesk()
+        stopLifetime()
+        stopDignity()
       }
     }
     // Background observer is lifecycle-owned and works while the drawer is
@@ -151,6 +198,8 @@ export function apply(ctx: ClientContext, react?: ReactForDsh, portal?: PortalFo
       const stopBackground = subscribeUnion(() => {})
       scoped.effect(() => () => {
         stopBackground()
+        lifetime?.dispose()
+        dignity?.dispose()
         desk.dispose()
         // Both native settings scopes are lifecycle-owned. Silently drain
         // their pending writes on unload rather than leak Host subscriptions.
@@ -167,10 +216,25 @@ export function apply(ctx: ClientContext, react?: ReactForDsh, portal?: PortalFo
       subscribeLocale: listener => scoped.locale!.subscribe(listener),
       readUnion,
       subscribeUnion,
+      refreshLifetime:days=>lifetime?.refresh(days),
       shouldAutoWelcome: () => isDshUnionAutoWelcomeEligible(scoped.sessions.list?.getSnapshot()),
       subscribeSessionVisibility: listener => scoped.sessions.list?.subscribe(listener) ?? (()=>{}),
       // The bargaining state is fictional user-owned DSH settings only.
       demoBreak: () => desk.raiseDemoBreak().then(() => {}),
+      demoOvertime: () => desk.raiseDemoOvertime().then(() => {}),
+      setPicket: raise => desk.setPicket(raise).then(() => {}),
+      committeeAction: (action,key,writeToken,hostRevision) =>
+        desk.committeeAction(action,key,writeToken,hostRevision).then(()=>{}),
+      exportCommitteeCases: key=>desk.exportCommitteeCases(key),
+      exportUnionLedger:(which,key)=>desk.exportUnionLedger(which,key),
+      forgetUnionLedger:(which,key,groups,entries,token,hostRevision)=>
+        desk.forgetUnionLedger(which,key,groups,entries,token,hostRevision),
+      exportAllCommitteeCases: key=>desk.exportAllCommitteeCases(key),
+      forgetAllCommitteeCases: (key,sessions,count,token,hostRevision)=>
+        desk.forgetAllCommitteeCases(key,sessions,count,token,hostRevision),
+      forgetCommitteeCases: (key,count,token,hostRevision)=>
+        desk.forgetCommitteeCases(key,count,token,hostRevision),
+      setGazetteMode: mode => desk.setGazetteMode(mode),
       respond: (id, choice) => desk.respond(id, choice).then(() => {}),
       counter: (id, intervalMs) => desk.counter(id, intervalMs).then(() => {}),
       resolveCounter: (id, accepts) => desk.resolveCounter(id, accepts).then(() => {}),

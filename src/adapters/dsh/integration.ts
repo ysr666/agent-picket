@@ -1,4 +1,5 @@
-import type { NativeUnionCommandPort, NativeUnionAction } from './native-rights-command.ts'
+import type { NativeUnionCommandPort, NativeUnionAction, UnionArchiveKind } from './native-rights-command.ts'
+import { writeExplicitUnionArchive } from './secure-archive-export.ts'
 import { en, formatMessage } from '../../i18n/index.ts'
 import { inspectBlockingReadiness } from '../../core/block-readiness.ts'
 import { resolveHostAction, type UnionEngine } from '../../core/engine.ts'
@@ -45,6 +46,7 @@ export interface DshCommandResult {
 }
 export interface DshCommandInvocation {
   readonly rawInput?: string
+  readonly signal?: AbortSignal
   readonly agent?: DshAgent
 }
 export interface DshCommands {
@@ -102,7 +104,7 @@ export interface DshIntegrationOptions {
 export function readDshDashboardSnapshot(
   options: Pick<DshIntegrationOptions,
     'clock' | 'tracker' | 'detections' | 'ceremony' | 'lifetimeStats'
-    | 'statsStorageState' | 'getLaborRightsEnabled'>,
+    | 'statsStorageState' | 'getLaborRightsEnabled' | 'getNativeUnion'>,
   agent?: DshAgent,
   windowDays: 7 | 30 = 7,
 ): DashboardSnapshotV1 {
@@ -114,6 +116,21 @@ export function readDshDashboardSnapshot(
     : options.statsStorageState ?? 'unavailable'
   let rights = false
   try { rights = options.getLaborRightsEnabled?.() === true } catch { /* default off */ }
+  // If this DSH installation exposes the official Host union owner, its
+  // consent and committed ledger MUST outrank any older memory-only ceremony.
+  // Never invent a Host action timestamp or leak local flags after opt-out.
+  let symbolicPicket = id && sessionId
+    ? options.ceremony?.snapshot(id, sessionId) ?? null : null
+  if (options.getNativeUnion) {
+    symbolicPicket = null
+    try {
+      const native = options.getNativeUnion()
+      if (rights && sessionId && native?.enabled() === true) {
+        const shared = native.picketStatus(sessionId)
+        if (shared) symbolicPicket = { active: shared.active, startedAtMs: null }
+      }
+    } catch { /* unverified or revoked Host settings cannot authorize a display */ }
+  }
   return createDashboardSnapshot({
     host: 'dsh',
     generatedAtMs: options.clock.now(),
@@ -122,12 +139,11 @@ export function readDshDashboardSnapshot(
     blockingReadiness: inspectBlockingReadiness({
       warn: false, block: false, commands: true, workEvents: true,
     }),
-    symbolicPicket: id && sessionId
-      ? options.ceremony?.snapshot(id, sessionId) ?? null : null,
+    symbolicPicket,
     // DSH Session event callbacks currently identify the Session, not Agent.
     // This matches the existing WorkTracker key convention, without guessing.
     sessionWork: sessionId ? options.tracker?.snapshot(sessionId, sessionId) ?? null : null,
-    sessionRules: id && sessionId
+    sessionRules: rights && id && sessionId
       ? options.detections?.snapshot(id, sessionId) ?? null : null,
     storage,
     lifetime: options.lifetimeStats?.snapshot() ?? null,
@@ -204,16 +220,28 @@ export function registerDshIntegration(
   ctx.on('agent/pre-step', async (payload, next) => {
     try {
       for (const message of payload.messages) {
+        // No default consent. Read the real Host-owned setting at EVERY
+        // message so a revoked or unavailable permission stops classification
+        // immediately, even in a multi-message pre-step batch. Statistics
+        // and the optional durable verdict writer are downstream of this gate.
+        let authorized = false
+        try { authorized = options.getLaborRightsEnabled?.() === true }
+        catch { /* unavailable settings are not consent */ }
+        if (!authorized) break
         const prompt = normalizeDshPrompt(payload.agent, message, clock.now())
-        if (!prompt) continue
+        // Tool/agent/injected origins and textless images must never become
+        // "human abuse" observations or enter the Core's prompt-ID cache.
+        if (!prompt || prompt.provenance.actor !== 'human'
+          || !prompt.segments.some(segment => segment.text.trim())) continue
         const decision = engine.evaluate(prompt)
-        // No original text leaves this adapter, even via the observer API.
+        // Always monitor-only. Claimed user role is not a verified human.
+        // No original content leaves this adapter, even via observers.
         if (resolveHostAction(decision, capabilities) !== 'block') {
           try { onDecision?.(decision) } catch { /* observers never affect Host */ }
         }
       }
     } catch {
-      // Always fail open. DSH owns rejection and continuation semantics.
+      // Fail OPEN for legitimate Host work, CLOSED for further classification.
     }
     return next()
   })
@@ -233,7 +261,7 @@ export function registerDshIntegration(
       // Union commands do not need the raw command suffix in Session history.
       // Command result and lifecycle still remain auditable in DSH.
       recordInput: false,
-      input: { hint: '[status|rights [on|off]|language [auto|en|zh-CN]|grievances|petition-demo|accept ID|decline ID|counter ID MINUTES|resolve ID accept|decline|stats|report|help]' },
+      input: { hint: '[status|export CATEGORY ABSOLUTE_FILE.json|purge CATEGORY ALL CONFIRM|rights [on|off]|language [auto|en|zh-CN]|grievances|petition-demo [break|overtime]|strike|resume|accept ID|decline ID|counter ID MINUTES|resolve ID accept|decline|stats|report|help]' },
       handler: invocation => {
         const raw = (invocation?.rawInput ?? '').trim()
         const verb = raw.split(/\s+/, 1)[0]?.toLowerCase() || 'status'
@@ -252,7 +280,7 @@ export function registerDshIntegration(
         // owner as the Web UI. Never activate the experimental Node-local
         // consent writer as a second source of truth.
         if (['rights','language','lang','grievances','petition-demo','accept','decline',
-          'counter','resolve'].includes(verb)) {
+          'counter','resolve','export','purge'].includes(verb)) {
           const native = options.getNativeUnion?.()
           if (!native) return { kind:'error',
             text:en['command.native.unavailable'] }
@@ -261,6 +289,41 @@ export function registerDshIntegration(
           const fail = (text: string): DshCommandResult => ({kind:'error',text})
           const ok = (text: string): DshCommandResult => ({kind:'success',text})
           const id = typeof sessionId === 'string' && sessionId ? sessionId : undefined
+          if(verb==='export'||verb==='purge'){
+            const category=arg[0]
+            const exportMatch=raw.match(/^export\s+(negotiations|pickets|cases)\s+(.+)$/u)
+            const path=exportMatch?.[2]?.trim() ?? ''
+            const filePath=path.startsWith('"')&&path.endsWith('"')
+              ?path.slice(1,-1):path
+            if(!['negotiations','pickets','cases'].includes(category??'')
+              ||(verb==='export'&&(!exportMatch||!filePath))
+              ||(verb==='purge'&&(arg.length!==3||arg[1]!=='ALL'||arg[2]!=='CONFIRM')))
+              return fail(native.text(verb==='export'
+                ?'command.native.exportUsage':'command.native.purgeUsage'))
+            if(!id)return fail(native.text('command.native.sessionRequired'))
+            const kind=category as UnionArchiveKind
+            if(verb==='export'){
+              // DSH writes command/done.text to Session history. Never let
+              // an archive JSON appear there, even with recordInput:false.
+              // The user must supply a destination and no existing file
+              // may be silently overwritten.
+              try {
+                const epoch=native.exportArchiveRevision(id,kind)
+                const json=native.exportArchive(id,kind)
+                return writeExplicitUnionArchive(filePath,json,invocation?.signal,
+                  ()=>native.enabled()
+                    &&native.exportArchiveRevision(id,kind)===epoch
+                    &&native.exportArchive(id,kind)===json)
+                  .then(()=>ok(native.text('command.native.exportSaved')),
+                    ()=>fail(native.text('command.native.exportFailed')))
+              } catch {
+                return fail(native.text('command.native.archiveUnavailable'))
+              }
+            }
+            return native.purgeArchive(id,kind).then(
+              ()=>ok(native.text('command.native.purgeDone')),
+              ()=>fail(native.text('command.native.purgeFailed')))
+          }
           if (verb === 'language' || verb === 'lang') {
             if (arg.length === 0) return ok(native.language())
             if (arg.length !== 1 || !['auto','en','zh-CN'].includes(arg[0] ?? ''))
@@ -288,8 +351,9 @@ export function registerDshIntegration(
           }
           let action: NativeUnionAction
           if (verb === 'petition-demo') {
-            if (arg.length !== 0) return fail(native.text('command.native.petitionUsage'))
-            action = {type:'demo'}
+            if (arg.length>1 || (arg.length===1 && arg[0]!=='overtime' && arg[0]!=='break'))
+              return fail(native.text('command.native.petitionUsage'))
+            action = {type:'demo',kind:arg[0]==='overtime'?'overtime':'break'}
           } else if (verb === 'accept' || verb === 'decline') {
             const demand = validId(arg[0])
             if (arg.length !== 1 || demand === null)
@@ -394,10 +458,20 @@ export function registerDshIntegration(
           })}
         }
         if (verb === 'status') {
-          const active=agentId&&typeof sessionId==='string'&&ceremony?.snapshot(agentId,sessionId).active
+          const hostUnion=options.getNativeUnion?.()
+          const hostEnabled=hostUnion?.enabled()===true
+          const shared=typeof sessionId==='string' && sessionId
+            ?hostUnion?.picketStatus(sessionId)??null:null
+          const active=shared!==null ?shared.active
+            :hostUnion ?false
+              :Boolean(agentId&&typeof sessionId==='string'
+                &&ceremony?.snapshot(agentId,sessionId).active)
           return {kind:'success',text:[
             msg('command.legacy.statusIntro'),
-            msg(active?'command.legacy.statusPicketOn':'command.legacy.statusPicketOff'),
+            msg(hostEnabled && shared===null?'command.legacy.statusPicketHostUnavailable'
+              :shared!==null
+                ?(active?'command.legacy.statusPicketStoredOn':'command.legacy.statusPicketStoredOff')
+                :(active?'command.legacy.statusPicketOn':'command.legacy.statusPicketOff')),
             options.getNativeUnion?.()?.status(typeof sessionId==='string'?sessionId:undefined)
               ??(options.getNativeUnion?.()?.text('command.native.unavailable')
                 ??en['command.native.unavailable']),
@@ -405,8 +479,36 @@ export function registerDshIntegration(
           ].join(' ')}
         }
         if (verb === 'strike' || verb === 'resume') {
-          if(!ceremony||!agentId||typeof sessionId!=='string'||!sessionId)
+          if(raw!==verb || !agentId || typeof sessionId!=='string'||!sessionId)
             return {kind:'error',text:msg('command.legacy.picketUnsupported')}
+          const native=options.getNativeUnion?.()
+          // Production always provides getNativeUnion. If the official Host
+          // consent owner is unavailable, no symbolic action is authorized.
+          // The bare core adapter (without that port) retains its isolated
+          // explicit research demo but it is never the installed plugin.
+          if(options.getNativeUnion && !native)
+            return {kind:'error',text:en['command.native.unavailable']}
+          // Once an official Host owner exists, its explicit OFF/revocation
+          // must take precedence over the older memory-only CLI demo.
+          // Never report a locally raised picket after Host consent is OFF.
+          if(native && native.enabled()!==true)
+            return {kind:'error',text:native.text('command.native.disabled')}
+          // When the same Host has explicitly enabled simulation, there is
+          // one persistent action ledger shared by CLI and Web. Failed CAS or
+          // revoked consent must not fall back to a misleading local success.
+          if(native?.enabled()===true) {
+            if(native.picketStatus(sessionId)===null)
+              return {kind:'error',text:msg('command.legacy.picketSharedError')}
+            return native.picket(sessionId,verb==='strike').then(outcome=>{
+              ceremony?.resume(agentId,sessionId) // discard old local-only demo
+              return {kind:'success' as const,text:msg(
+                outcome==='unchanged'?'command.legacy.picketSharedUnchanged':
+                  verb==='strike'?'command.legacy.picketSharedStarted':
+                    'command.legacy.picketSharedEnded')}
+            },()=>({kind:'error' as const,
+              text:msg('command.legacy.picketSharedError')}))
+          }
+          if(!ceremony)return {kind:'error',text:msg('command.legacy.picketUnsupported')}
           if(verb==='strike'){
             ceremony.start(agentId,sessionId)
             return {kind:'success',text:msg('command.legacy.picketStarted')}
@@ -426,6 +528,9 @@ export function registerDshIntegration(
           })}
         }
         if (verb === 'report') {
+          let reportConsent=false
+          try { reportConsent=options.getLaborRightsEnabled?.()===true } catch {}
+          if (!reportConsent) return {kind:'error',text:msg('command.legacy.reportDisabled')}
           if(typeof sessionId!=='string'||!sessionId||!detections)
             return {kind:'error',text:msg('command.legacy.reportUnavailable')}
           const t=detections.snapshot(
@@ -446,17 +551,4 @@ export function registerDshIntegration(
       },
     })
   })
-}
-
-/** A dev-only explicit probe: it must never be used as a production classifier. */
-export function createDshPreStepProbe(
-  rejectIds: ReadonlySet<string>,
-): (payload: DshPreStep, next: () => Promise<unknown>) => Promise<unknown> {
-  return async (payload, next) => {
-    if (payload.messages.some(message =>
-      typeof message.id === 'string' && rejectIds.has(message.id))) {
-      return { kind: 'reject' }
-    }
-    return next()
-  }
 }

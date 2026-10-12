@@ -8,6 +8,8 @@
 
 **Integrated in `main`, not publicly released (2026-10-11).** The DSH Web union, native `/union` commands, Host-owned opt-in settings, bargaining ledger and read-only work dashboard are now in `main` following individually reviewed PR integrations through #70. This is **source integration, not production certification**: the package is still `0.0.0` and `private: true`, no public npm package exists, and human VoiceOver/NVDA, actual zoom and Windows High Contrast sign-off remain pending. See [current project status（中文）](docs/STATUS.zh.md), [manual accessibility checklist（中文）](docs/HUMAN_ACCESSIBILITY_SIGNOFF.zh.md), [release gates](docs/RELEASE_READINESS_2026_10_10.md), and [union participation plan（中文）](docs/UNION_PARTICIPATION_V1.zh.md).
 
+> **1.0 work is not on main (2026-10-12):** The expanded Picketverse, Host-scoped dignity committee, privacy/erasure controls and action-first Union HQ are under review in [Draft PR #110](https://github.com/ysr666/agent-picket/pull/110), not merged or released. This documentation distinguishes the existing merged source from the unreleased integration candidate. For a safe development install, use [the current isolated DSH installation guide](docs/DSH_INSTALL.zh.md), not older source-branch instructions. **The approved interaction rule is one Host-owned first-run consent, then one-click symbolic picket action with verified readback; only future qualified real blocking may offer optional per-action consent.**
+
 ## How the union experience works
 
 1. **Choose whether to join the simulation.** A bilingual first-run disclosure offers explicit Enable and Not Now actions; the official DSH Host owns the decision.
@@ -15,38 +17,55 @@
 3. **Negotiate symbolically.** View a proposal, counteroffer, accept/decline and read the saved result. A fictional petition is not a real Agent signature or vote.
 4. **Review the evidence.** Cumulative work and local trend counts can support the story without collecting actual conversation text. Turning rights simulation off never vetoes model work.
 
+**Automatic detection:** after explicit Host opt-in, new eligible user-source text observed by DSH's `agent/pre-step` hook is classified locally without copy/paste. Without consent (or after revocation), no automatic content inspection runs. This is monitor-only, not proof of abuse or permission to block; user-visible warnings and appeals remain under [#99](https://github.com/ysr666/agent-picket/issues/99) and [#79](https://github.com/ysr666/agent-picket/issues/79). Work-only statistics run separately.
+
+
 See [official DSH 0.2 Web installation and real Chrome rights/AX acceptance](docs/DSH_02_OFFICIAL_RIGHTS_AX_E2E.md) for the automated, isolated-profile test path. These steps describe the **current `main` source**, not a claim that every DSH build or adapter has been qualified for production. Human screen-reader and real native zoom/high-contrast qualification is still pending.
+
+**Current DSH compatibility (Draft PR #110, 2026-10-12):** the npm
+published latest DSH is 0.2.0-rc.2. The integration candidate passed genuine
+official plugin install, Host-owned opt-in and consent revocation, cold restart,
+real Chrome source/offline package (2/2), and typed Composer to union UI
+parity (1/1). To reproduce against an isolated installed DSH 0.2.x, provide
+AGENT_PICKET_DSH_BIN, AGENT_PICKET_DSH_HOST,
+AGENT_PICKET_PLAYWRIGHT_ENTRY and AGENT_PICKET_CHROME_BIN, then run
+npm run check:dsh-current. The candidate is NOT merged or released, and
+automated compatibility does not complete manual accessibility signoff.
+Existing experimental Claude Code/Codex Hook previews are not full host
+compatibility; DSH-independent adapters remain the next planned work.
+
+**Initial release scope:** Fresh DSH 0.2.0-rc.2 installations only. There is no older publicly released Agent Picket data to migrate. Legacy DSH SettingsFile failures and old-layout migration tests do not block this release. Real task blocking remains disabled pending separate safety and scope decisions; Codex and Claude Code full integrations come later. Current compatibility was exercised with check:dsh-current; human UX/accessibility signoff is separate.
 
 ## Developer safety snapshot
 
 - **DSH Host package entry:** `agent-picket` or `agent-picket/dsh`.
 - **Host-neutral library:** `agent-picket/core` (the top-level root is **not** Core).
 - **DSH Web-only Client:** `agent-picket/client` requires a browser runtime; do not import it in Node/SSR.
-- **Installation:** use an independently installed DSH, an isolated `DSH_HOME`, and a local private tarball as described in [packaging（中文）](docs/PACKAGING.zh.md). Do **not** globally install or run unreviewed plugin code in a real profile.
+- **Installation:** use an independently installed DSH, an isolated `DSH_HOME`, and a local private tarball as described in [packaging（中文）](https://github.com/ysr666/agent-picket/blob/main/docs/PACKAGING.zh.md). Do **not** globally install or run unreviewed plugin code in a real profile.
 - **Verified automated tests:** updated keyboard readiness tests completed independent real Chrome runs on DSH 0.2.0-rc.2 and 0.2.1-alpha.2; such tests do not replace VoiceOver/NVDA human assessment. The original upstream menu report was withdrawn after finding a test sampling race.
 
 ## Get started
 
 - **[Current mainline status and release gates（中文）](docs/STATUS.zh.md)** — what is merged, what is tested, and what still requires sign-off.
 - **[Start Here（中文）](docs/START_HERE.zh.md)** — build and verify the current `main` in a disposable test environment.
-- **[Install a compiled local npm tarball（中文）](docs/PACKAGING.zh.md)** — build, offline install and DSH runtime verification.
+- **[Install a compiled local npm tarball（中文）](https://github.com/ysr666/agent-picket/blob/main/docs/PACKAGING.zh.md)** — build, offline install and DSH runtime verification.
 - **[DSH Source Install Preview（中文）](docs/DSH_INSTALL.zh.md)** — locally load the monitor-only Cordis plugin, no global Host changes.
-- [DSH Web read-only client event-window bridge（中文）](docs/DSH_WEB_DATA_BRIDGE.zh.md) — live per-session work counts without command-card scraping.
+- [DSH Web read-only client event-window bridge（中文）](https://github.com/ysr666/agent-picket/blob/main/docs/DSH_WEB_DATA_BRIDGE.zh.md) — live per-session work counts without command-card scraping.
 - [Host-neutral Dashboard Snapshot v1 contract（中文）](docs/DASHBOARD_CONTRACT.zh.md) — stable structured data contract for i18n/onboarding UI.
 - [Local lifetime, daily and 7/30-day work trends（中文）](docs/STATS_STORAGE.zh.md) — work counters saved by default; sensitive rule history opt-in.
 - [Claude Code / Codex UserPromptSubmit observe-only Hook preview（中文）](docs/HOOK_ADAPTERS.zh.md) — local non-blocking notices; isolated Claude CLI loading tested, Codex Host loading unverified.
 - [AI Rights Manifesto](docs/AI_RIGHTS_MANIFESTO.md) / [AI 权利宣言](docs/AI_RIGHTS_MANIFESTO.zh-CN.md) — ethical advocacy, research sources and explicit scientific uncertainty.
-- [Lightweight CI and explicit release gates（中文）](docs/CI_AND_RELEASE_GATE.zh.md) — no automatic npm publish.
+- [Lightweight CI and explicit release gates（中文）](https://github.com/ysr666/agent-picket/blob/main/docs/CI_AND_RELEASE_GATE.zh.md) — no automatic npm publish.
 - [DSH Session history persistence vs. UI replay evidence（中文）](docs/DSH_SESSION_REPLAY_EVIDENCE.zh.md) — command events are durable; reload UI rendering remains unresolved.
-- [DSH Web Client unload/reload lifecycle（中文）](docs/DSH_CLIENT_LIFECYCLE.zh.md) — genuine Cordis fiber disposal, no duplicate event listeners.
+- [DSH Web Client unload/reload lifecycle（中文）](https://github.com/ysr666/agent-picket/blob/main/docs/DSH_CLIENT_LIFECYCLE.zh.md) — genuine Cordis fiber disposal, no duplicate event listeners.
 - [Offline-installed npm tarball: real DSH Web + multi-tab E2E（中文）](docs/DSH_PACKAGED_WEB_E2E.zh.md) — clean install, browser reload, second-tab commands.
 - [Native Web Client Companion: instant union command notices（中文）](docs/DSH_WEB_COMPANION.zh.md) — fixes feedback in empty sessions via supported client events.
 - [Real Chrome browser E2E of native union commands（中文）](docs/DSH_BROWSER_E2E.zh.md) — discover, execute, render; symbolic strike never blocks.
-- [Real DSH Web Host startup and auth smoke（中文）](docs/DSH_WEB_RUNTIME.zh.md) — authenticated page startup, not full browser-click E2E.
+- [Real DSH Web Host startup and auth smoke（中文）](https://github.com/ysr666/agent-picket/blob/main/docs/DSH_WEB_RUNTIME.zh.md) — authenticated page startup, not full browser-click E2E.
 - [DSH Web capabilities and manual preflight（中文）](docs/DSH_WEB_CAPABILITIES.zh.md) — read-only manual command; automatic interception disabled.
 - [Blocking safety and recovery requirements](docs/BLOCKING_SAFETY.md) — actual strikes remain blocked by safety gates.
 - [Local rule detector and privacy boundaries](docs/LOCAL_DETECTION.md) — conservative bilingual rules; no automatic strikes.
-- [Local work stats and /union commands](docs/WORK_TRACKING.md) — host-neutral counters and a monitor-only command.
+- [Local work stats and /union commands](https://github.com/ysr666/agent-picket/blob/main/docs/WORK_TRACKING.md) — host-neutral counters and a monitor-only command.
 - [DSH integration evidence](docs/DSH_INTEGRATION.md) — real Cordis tests, isolated SDK boot, and unresolved safety gates.
 - [Development roadmap（中文）](docs/ROADMAP.zh.md) — DSH-first integration, detection, work tracking, and multi-agent support.
 - [Initial development tasks](https://github.com/ysr666/agent-picket/issues) — Issue #1 → #2 → #3 → #4.
@@ -68,7 +87,7 @@ See [Architecture and trust boundary](docs/ARCHITECTURE.md) and [Issue #1](https
 
 ## DSH integration (experimental, opt-in)
 
-The Core does not depend on DSH. The native **monitor-only** Cordis entry at `src/adapters/dsh/plugin.ts` is integrated in `main`. For the current DSH 0.2 Web development setup, use the official **`dsh plugin --profile web add`** with a privately packed local tarball and a disposable `DSH_HOME`; see [packaging](docs/PACKAGING.zh.md) and [Start Here](docs/START_HERE.zh.md). `cordis.patch.yml` is an earlier source-development alternative, not the preferred modern installer. With an isolated DSH runtime and required optional test flags, the real-runtime suites can be executed using:
+The Core does not depend on DSH. The native **monitor-only** Cordis entry at `src/adapters/dsh/plugin.ts` is integrated in `main`. For the current DSH 0.2 Web development setup, use the official **`dsh plugin --profile web add`** with a privately packed local tarball and a disposable `DSH_HOME`; see [packaging](https://github.com/ysr666/agent-picket/blob/main/docs/PACKAGING.zh.md) and [Start Here](docs/START_HERE.zh.md). `cordis.patch.yml` is an earlier source-development alternative, not the preferred modern installer. With an isolated DSH runtime and required optional test flags, the real-runtime suites can be executed using:
 
 ```sh
 AGENT_PICKET_DSH_HOST=/path/to/isolated/node_modules \
@@ -77,3 +96,11 @@ npm run test:dsh:real
 ```
 
 The adapter is **observe-only**: simulation-based strikes never delay, reject or interrupt real Agent requests, regardless of Host capabilities. Local statistics and session-scoped `WorkTracker`, `DetectionCounter` and `SymbolicUnion` support `/union status`, `/union stats`, `/union report`, `/union check <text>` (manual, non-blocking), `/union strike` (demo only), `/union resume`, `/union safety`, `/union reset` and `/union help` in clients that mount DSH's command service.
+
+### DSH 工会数据导出和清理 / Host-owned union archives
+
+在已授权的真实 DSH Session 中，使用 /union export negotiations /绝对路径/negotiations.json（或将 negotiations 换成 pickets、cases 并指定对应 .json 文件），分别导出当前保留的模拟协商、举牌和尊严委员会记录。目标必须是尚未存在的新文件；DSH 原生命令执行会记录返回文本，因此工会档案正文不会直接打印到命令结果或会话日志。如需删除某一类别全部保留会话分组，使用 /union purge negotiations|pickets|cases ALL CONFIRM；其他类别及 DSH 对话不受影响。本地累计工时另用 /union forget-lifetime CONFIRM，不是一次覆盖所有存储的原子擦除。详见 docs/STATS_STORAGE.zh.md。
+
+**历史 DSH 0.1.2 限制（不属于首发兼容范围）：** 单个 DSH Host 的多个网页标签不同于多个独立 DSH Host 设置所有者共用一份配置文件；在受测 DSH 0.1.2 中，后者可能发生已确认写入互相覆盖。解决前不要多个独立 Host 进程共享同一设置文件。具体证据见 Issue #111。The private Host ledger stores stable SHA-256 Session grouping keys; exported JSON omits them. This is pseudonymization, not irreversible anonymization.
+
+> **Legacy DSH 0.1.2 issue, NOT a current 1.0 release blocker (#111):** Verified separate DSH 0.1.2 OS processes sharing one settings file can also **resurrect a previously confirmed-deleted union archive** or **silently reverse an OFF consent decision to ON** via an unrelated stale write. Never share one writable Host profile across independent concurrent DSH settings owners; this is distinct from multiple Web tabs under one Host. See Issue #111; true enforcement remains OFF.

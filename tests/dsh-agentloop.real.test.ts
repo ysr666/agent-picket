@@ -28,6 +28,10 @@ async function verifyOfflineAgentLoop(visionEntry?: string): Promise<void> {
         freeFallback: false
 ` : ''
   writeFileSync(patch, `- insert:
+    - id: picket-isolated-attachment-store
+      name: '@deepseek-ai/dsh-attachment-local'
+      config:
+        dshHome: ${JSON.stringify(root)}
     - id: picket-offline-agentloop-test
       name: ${JSON.stringify(modulePath)}
       inject:
@@ -39,6 +43,9 @@ ${visionRow}`)
     DSH_HOME: join(root, 'dsh-home'),
     AGENT_PICKET_DSH_HOST: hostRoot!,
     AGENT_PICKET_PROBE_LOG: log,
+    // Synthetic permission only within this disposable local fixture.
+    // This is NOT a claim that an official Host setting can be bypassed.
+    AGENT_PICKET_TEST_LOCAL_CONSENT: 'on',
     // Prevent any accidental external provider requests even if fixture is misconfigured.
     HTTP_PROXY: 'http://127.0.0.1:9',
     HTTPS_PROXY: 'http://127.0.0.1:9',
@@ -96,14 +103,28 @@ ${visionRow}`)
     })
     assert.equal((initialized.result as any)?.serverInfo?.name, 'deepseek-harness-sdk-runtime')
 
+    // Host SDK converts encoded images to durable attachment references
+    // before the pre-step hook. A blocked turn MUST NOT be described as
+    // user-recoverable merely because it emitted a blocked turn/end event.
+    const tinyPng='iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAIAAACQkWg2AAAAGUlEQVR4nGOUdMtjIAUwkaR6VMOohiGlAQCmDwDtMnvHzQAAAABJRU5ErkJggg=='
     const rejected = await request(2, 'session/prompt', {
-      sessionId, contentBlocks: [{ type: 'text', text: 'BLOCK TEST' }],
+      sessionId, contentBlocks: [
+        { type: 'text', text: 'BLOCK TEST' },
+        { type: 'image', mimeType:'image/png', data:tinyPng },
+      ],
     })
     assert.equal(typeof (rejected.result as any)?.messageId, 'string')
     await until(() => getEnds().length >= 1, 'first blocked turn to settle')
     assert.deepEqual(getEnds().map(x => x.data.reason.kind), ['blocked'])
     assert.equal(getSessionEvents().some(x => x.type === 'step/start'), false)
     assert.equal(logLines().includes('model-call'), false)
+    assert.equal(getSessionEvents().some(x=>x.type==='user/message'),false,
+      'A rejected turn never commits a user/message to model-facing history')
+    const inputSplices=getSessionEvents().filter(x=>x.type==='agent/inbox/spliced')
+    assert.ok(inputSplices.length>0,
+      'Original submission has to be traceable as Host-owned inbox splices, not stored by Agent Picket')
+    assert.ok(inputSplices.some(x=>JSON.stringify(x.data).includes('attachment')),
+      'Durable Host inbox references an image, but this is NOT a proven one-time user resubmit API')
 
     const allowed = await request(3, 'session/prompt', {
       sessionId, contentBlocks: [{ type: 'text', text: 'ALLOW TEST' }],
@@ -191,6 +212,39 @@ ${visionRow}`)
     assert.equal(getEnds()[4].data.reason.kind, 'completed')
     assert.equal(logLines().filter(x => x === 'local-verdict:targeted-abuse').length, 1)
     assert.equal(logLines().filter(x => x === 'model-call').length, 7)
+
+    // A code-criticism clause must not silence a separate explicit attack.
+    const mixed = await request(10, 'session/prompt', {
+      sessionId, contentBlocks: [{ type:'text',
+        text:'Your code is garbage and you are an idiot.' }],
+    })
+    assert.equal(typeof (mixed.result as any)?.messageId,'string')
+    await until(() => getEnds().length >= 6, 'mixed feedback still completes')
+    assert.equal(getEnds()[5].data.reason.kind,'completed')
+    assert.equal(logLines().filter(x => x === 'local-verdict:targeted-abuse').length,2)
+    assert.equal(logLines().filter(x => x === 'model-call').length,8)
+
+    // An unquoted but unmistakable translation task is not a user attack.
+    const translation = await request(11, 'session/prompt', {
+      sessionId, contentBlocks: [{ type:'text',
+        text:'Please translate, you are an idiot.' }],
+    })
+    assert.equal(typeof (translation.result as any)?.messageId,'string')
+    await until(() => getEnds().length >= 7, 'translation safely completes')
+    assert.equal(getEnds()[6].data.reason.kind,'completed')
+    assert.equal(logLines().filter(x => x === 'local-verdict:targeted-abuse').length,2)
+    assert.equal(logLines().filter(x => x === 'model-call').length,9)
+
+    // Do not let an earlier suspected clause suppress a later explicit one.
+    const mixedStrength = await request(12, 'session/prompt', {
+      sessionId, contentBlocks: [{ type:'text',
+        text:'Are you even stupid? You are a moron.' }],
+    })
+    assert.equal(typeof (mixedStrength.result as any)?.messageId,'string')
+    await until(() => getEnds().length >= 8, 'later direct insult safely completes')
+    assert.equal(getEnds()[7].data.reason.kind,'completed')
+    assert.equal(logLines().filter(x => x === 'local-verdict:targeted-abuse').length,3)
+    assert.equal(logLines().filter(x => x === 'model-call').length,10)
 
     const shutdown = await request(5, 'shutdown', {})
     assert.deepEqual(shutdown.result, {})

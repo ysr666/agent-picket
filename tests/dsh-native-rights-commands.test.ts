@@ -1,15 +1,20 @@
 import assert from 'node:assert/strict'
+import {mkdtempSync,readFileSync,rmSync} from 'node:fs'
+import {tmpdir} from 'node:os'
+import {join} from 'node:path'
 import test from 'node:test'
 import { apply } from '../src/adapters/dsh/plugin.ts'
 import type { DshIntegrationContext } from '../src/adapters/dsh/integration.ts'
 import { nativeSessionKey } from '../src/adapters/dsh/native-rights-command.ts'
 import { parseUnionLedger } from '../src/product/union-ledger.ts'
+import { parsePicketLedger } from '../src/product/picket-ledger.ts'
 
 function hostHarness() {
   let revision = 0
+  let storageMode:'normal'|'reject'|'silent'='normal'
   let registered = false
   let validator: ((section:unknown)=>void)|undefined
-  let value: {welcomeDecision:'unseen'|'enabled'|'not-now'; unionLedger:string} =
+  let value: {welcomeDecision:'unseen'|'enabled'|'not-now'; unionLedger:string; unionPicketLedger?:string} =
     {welcomeDecision:'unseen',unionLedger:''}
   let commands: any
   const provider = {
@@ -23,6 +28,8 @@ function hostHarness() {
     async update(namespace:string,patch:object,expectedRevision?:number) {
       assert.equal(namespace,'agent-picket')
       if (expectedRevision!==revision) throw new Error('SETTINGS_CONFLICT')
+      if(storageMode==='reject')throw new Error('HOST_REJECT')
+      if(storageMode==='silent')return
       const merged={...value,...patch}
       validator?.(merged)
       value=merged
@@ -41,7 +48,8 @@ function hostHarness() {
   apply(ctx)
   const agent={id:'agent-1',session:{id:'real-session-53'}}
   const call=(rawInput:string)=>Promise.resolve(commands.handler({rawInput,agent}))
-  return {call,provider,agent,read:()=>value,revision:()=>revision}
+  return {call,provider,agent,read:()=>value,revision:()=>revision,
+    storage:(mode:typeof storageMode)=>{storageMode=mode}}
 }
 
 test('native /union rights and Web share one Host-owned consent namespace', async()=>{
@@ -83,6 +91,32 @@ test('native petition/counter/resolve really changes the same ledger Web reads',
   assert.equal(h.read().welcomeDecision,'not-now')
   assert.equal((await h.call('counter 7 120')).kind,'error')
   assert.ok(h.read().unionLedger.includes('"breakIntervalMs":1800000'))
+})
+
+test('CLI explicit overtime demo shares legacy Host protocol and preserves absence of fictional work',async()=>{
+ const h=hostHarness()
+ assert.equal((await h.call('petition-demo overtime')).kind,'error')
+ await h.call('rights on')
+ const result=await h.call('petition-demo overtime')
+ assert.equal(result.kind,'success')
+ const key=nativeSessionKey(h.agent.session.id)
+ const first=parseUnionLedger(h.read().unionLedger)!.sessions[key]!
+ assert.equal(first.pending?.kind,'overtime')
+ assert.equal(first.pending?.raisedAtElapsedMs,0)
+ assert.equal((await h.call('petition-demo break')).kind,'success',
+   'Existing pending demand is never silently replaced')
+ assert.equal(h.read().unionLedger.includes('real-session-53'),false)
+ assert.equal((await h.call('counter 1 240')).kind,'success')
+ assert.equal((await h.call('resolve 1 accept')).kind,'success')
+ const after=parseUnionLedger(h.read().unionLedger)!.sessions[key]!
+ assert.equal(after.agreement.overtimeIntervalMs,4*3_600_000)
+ assert.equal(after.nextOvertimeDueMs,8*3_600_000)
+ assert.equal(after.agreement.breakIntervalMs,2*3_600_000)
+ for(const bad of ['petition-demo unknown','petition-demo break overtime']){
+   const before=h.revision()
+   assert.equal((await h.call(bad)).kind,'error')
+   assert.equal(h.revision(),before)
+ }
 })
 
 test('command grammar rejects invalid IDs and numeric counters without state changes',async()=>{
@@ -185,7 +219,7 @@ test('native Chinese technical commands localize only text, never model/Host pol
   const checks=[
     ['status',/仅观察.*阻断/],
     ['stats',/本地会话工作统计.*轮次开始/],
-    ['report',/本地规则检查.*试验性标签/],
+    ['report',/工会未授权.*自动辱骂检测/],
     ['safety',/真实任务阻断就绪状态.*未就绪/],
     ['lifetime',/长期工作汇总不可用/],
     ['days',/每日工作记录不可用/],
@@ -210,4 +244,175 @@ test('native Chinese technical commands localize only text, never model/Host pol
   assert.ok(afterGenerated>=beforeGenerated)
   assert.deepEqual(afterData,beforeData,'Locale cannot mutate snapshot schema or data')
   assert.equal(h.read().unionLedger,'','No command persisted a fictional grievance')
+})
+
+
+test('CLI strike/resume and Web read the same authorized Host-sidecar simulation',async()=>{
+ const h=hostHarness()
+ const key=nativeSessionKey(h.agent.session.id)
+ const legacy=await h.call('strike')
+ assert.equal(legacy.kind,'error','Known Host-owned OFF means no CLI symbolic action')
+ assert.equal(h.read().unionPicketLedger,undefined)
+ assert.match((await h.call('status')).text,/No symbolic picket active/)
+ assert.equal((await h.call('rights on')).kind,'success')
+ assert.match((await h.call('status')).text,/Host union ledger: no current symbolic strike/)
+ const started=await h.call('strike')
+ assert.equal(started.kind,'success')
+ assert.match(started.text,/shared Host union ledger/)
+ const raw=h.read().unionPicketLedger!
+ assert.equal(parsePicketLedger(raw)?.sessions[key]?.active,true)
+ assert.equal(parsePicketLedger(raw)?.sessions[key]?.history.length,1)
+ assert.doesNotMatch(raw,/real-session-53|agent-1|prompt/)
+ assert.equal(h.read().unionLedger,'','CLI picket never corrupts the original grievance ledger')
+ assert.match((await h.call('status')).text,/Host union ledger: symbolic strike in progress/)
+ const firstRevision=h.revision()
+ assert.equal((await h.call('strike')).kind,'success')
+ assert.equal(h.revision(),firstRevision,'Repeated CLI action must not write a duplicate event')
+ const ended=await h.call('resume')
+ assert.equal(ended.kind,'success')
+ assert.match(ended.text,/ended in the shared Host/)
+ const state=parsePicketLedger(h.read().unionPicketLedger!)!.sessions[key]!
+ assert.deepEqual(state.history.map(e=>e.kind),['picket-raised','picket-lowered'])
+ assert.equal(state.active,false)
+ assert.equal((await h.call('rights off')).kind,'success')
+ const parked=h.read().unionPicketLedger
+ const parkedRevision=h.revision()
+ assert.equal((await h.call('strike')).kind,'error',
+   'Revoked Host permission must prohibit ALL symbolic actions, including CLI fallback')
+ assert.equal((await h.call('resume')).kind,'error',
+   'A CLI resume command must not bypass the disabled Host-owned union')
+ assert.equal(h.read().unionPicketLedger,parked)
+ assert.equal(h.revision(),parkedRevision,'Denied actions cannot write Host settings')
+ assert.match((await h.call('status')).text,/No symbolic picket active/)
+ await h.call('rights on')
+ assert.match((await h.call('status')).text,/Host union ledger: no current symbolic strike/)
+})
+
+test('Malformed authorized Host picket state must fail closed, not create local ceremony',async()=>{
+ const h=hostHarness()
+ await h.call('rights on')
+ const oldGet=h.provider.get
+ h.provider.get=(namespace:string)=>{
+  const value=oldGet(namespace)
+  return value?{...value,unionPicketLedger:'{"prompt":"PRIVATE"}'}:value
+ }
+ assert.equal((await h.call('strike')).kind,'error')
+ assert.match((await h.call('status')).text,/Host symbolic action state is unavailable/)
+})
+
+test('Native Host refusal never falls back to a fabricated shared strike success',async()=>{
+ const h=hostHarness()
+ await h.call('rights on')
+ const original=h.provider.update
+ h.provider.update=async (namespace,patch,revision)=>{
+   if('unionPicketLedger' in patch)throw new Error('HOST_DENIED')
+   return original(namespace,patch,revision)
+ }
+ assert.equal((await h.call('strike')).kind,'error')
+ assert.match((await h.call('status')).text,/Host union ledger: no current symbolic strike/)
+ assert.equal(h.read().unionPicketLedger,undefined)
+ assert.equal((await h.call('strike extra')).kind,'error')
+})
+
+
+test('CLI export and per-category purge require real consent, explicit CONFIRM and Host readback',async()=>{
+ const h=hostHarness()
+ const root=mkdtempSync(join(tmpdir(),'picket-archive-cli-unittest-'))
+ const to=(kind:string)=>join(root,kind+'.json')
+ try{
+ assert.equal((await h.call('export negotiations')).kind,'error')
+ assert.equal((await h.call('purge negotiations ALL CONFIRM')).kind,'error')
+ assert.equal(h.revision(),0)
+ assert.equal((await h.call('rights on')).kind,'success')
+ assert.equal((await h.call('export negotiations')).kind,'error',
+   'Empty archive cannot masquerade as a completed export')
+ await h.call('petition-demo')
+ await h.call('strike')
+ const priorPicket=h.read().unionPicketLedger!
+ assert.match(priorPicket,/picket-raised/)
+ const negotiation=await h.call('export negotiations '+to('negotiations'))
+ const picket=await h.call('export pickets '+to('pickets'))
+ assert.equal(negotiation.kind,'success')
+ assert.equal(picket.kind,'success')
+ for(const [kind,result] of [['negotiations',negotiation],['pickets',picket]] as const){
+  assert.ok(!result.text.includes('sessions')&&!result.text.includes('schemaVersion'),
+   'DSH session command/done receives only a generic confirmation')
+  const payload=readFileSync(to(kind),'utf8')
+  const body=JSON.parse(payload)
+  assert.equal(body.groups.length,1)
+  assert.equal(body.groups[0].current,true)
+  for(const sensitive of [h.agent.session.id, h.agent.id,
+    nativeSessionKey(h.agent.session.id),'writeToken','welcomeDecision'])
+   assert.ok(!payload.includes(sensitive),'Export leaked '+sensitive)
+ }
+ assert.equal((await h.call('export negotiations '+to('negotiations'))).kind,'error',
+  'A second export must not replace a user-owned JSON file')
+ assert.equal((await h.call('export negotiations '+join(root,'missing','file.json'))).kind,'error',
+  'Host must reject an unavailable user-chosen destination without logging archive content')
+ const prev=h.revision()
+ for(const input of [
+  'purge','purge negotiations','purge negotiations confirm',
+  'purge all CONFIRM','purge cases CONFIRM AND EVERYTHING',
+  'export all','export work','export pickets extra',
+ ]) assert.equal((await h.call(input)).kind,'error',input)
+ assert.equal(h.revision(),prev,'Bad command must not mutate Host')
+ h.storage('reject')
+ assert.equal((await h.call('purge negotiations ALL CONFIRM')).kind,'error')
+ assert.equal(h.revision(),prev)
+ h.storage('silent')
+ assert.equal((await h.call('purge negotiations ALL CONFIRM')).kind,'error',
+  'A promise resolution without Host mutation is not a deletion')
+ assert.equal(h.revision(),prev)
+ h.storage('normal')
+ assert.equal((await h.call('purge negotiations ALL CONFIRM')).kind,'success')
+ assert.equal(h.read().unionPicketLedger,priorPicket,
+  'Independent simulated picket cannot be erased accidentally')
+ assert.equal((await h.call('export negotiations')).kind,'error')
+ assert.equal((await h.call('export pickets '+to('pickets2'))).kind,'success')
+ const after=h.revision()
+ assert.equal((await h.call('purge negotiations ALL CONFIRM')).kind,'success')
+ assert.equal(h.revision(),after,'Empty ledger deletion is revision-preserving')
+ assert.equal((await h.call('rights off')).kind,'success')
+ const disabled=h.revision()
+ assert.equal((await h.call('export pickets')).kind,'error')
+ assert.equal((await h.call('purge pickets CONFIRM')).kind,'error')
+ assert.equal(h.revision(),disabled)
+ assert.equal(h.read().unionPicketLedger,priorPicket)
+ } finally {rmSync(root,{recursive:true,force:true})}
+})
+
+test('an archive erased during an in-flight native file export cannot reappear as a new file',async()=>{
+ const root=mkdtempSync(join(tmpdir(),'picket-export-stale-race-'))
+ try{
+  const h=hostHarness()
+  assert.equal((await h.call('rights on')).kind,'success')
+  assert.equal((await h.call('petition-demo')).kind,'success')
+  const path=join(root,'inflight-negotiations.json')
+  // The handler takes a consented snapshot synchronously, then awaits an
+  // actual filesystem O_EXCL open/write. Another real Host owner may purge
+  // the SAME category in that interval without ever turning consent OFF.
+  const exporting=h.call('export negotiations '+path)
+  await h.provider.update('agent-picket',{unionLedger:''},h.revision())
+  assert.equal((await exporting).kind,'error',
+   'A late file export must not create a resurrected copy of a deleted category')
+  assert.throws(()=>readFileSync(path))
+ } finally {rmSync(root,{recursive:true,force:true})}
+})
+
+test('Host consent OFF then ON during an old export cannot reactivate the old authority epoch',async()=>{
+ const root=mkdtempSync(join(tmpdir(),'picket-export-consent-aba-'))
+ try {
+  const h=hostHarness()
+  assert.equal((await h.call('rights on')).kind,'success')
+  assert.equal((await h.call('petition-demo')).kind,'success')
+  const destination=join(root,'revoked-epoch.json')
+  const priorRevision=h.revision()
+  const exporting=h.call('export negotiations '+destination)
+  await h.provider.update('agent-picket',{welcomeDecision:'not-now'},h.revision())
+  await h.provider.update('agent-picket',{welcomeDecision:'enabled'},h.revision())
+  assert.ok(h.revision()>priorRevision)
+  assert.equal((await exporting).kind,'error',
+   'An old export must not cross a Host OFF→ON transition even if JSON is identical')
+  assert.throws(()=>readFileSync(destination))
+ }finally{rmSync(root,{recursive:true,force:true})}
 })

@@ -9,15 +9,20 @@ import { createNativeUnionCommandPort, type NativeSettingsProvider } from '../sr
 test('new DSH Config uses three volatile Host fields without a blocking flag', () => {
   const schema = DshProfileRightsConfig
   assert.equal(schema.type, 'object')
-  for (const name of ['welcomeDecision','unionLedger','commandLocale']) {
+  for (const name of ['welcomeDecision','unionLedger','commandLocale','unionPicketLedger','unionDignityCases','unionGazetteMode']) {
     assert.equal(schema.dict![name]?.meta.volatile, true, name)
   }
   assert.deepEqual(Object.keys(schema.dict!).sort(),
-    ['commandLocale','unionLedger','welcomeDecision'])
+    ['commandLocale','unionDignityCases','unionGazetteMode','unionLedger','unionPicketLedger','welcomeDecision'])
   const parsed = schema({})
   assert.equal(parsed.welcomeDecision.get(), 'unseen')
   assert.equal(parsed.unionLedger.get(), '')
+  assert.equal(parsed.unionPicketLedger.get(), '')
+  assert.equal(parsed.unionDignityCases.get(),'')
   assert.equal(parsed.commandLocale.get(), 'auto')
+  assert.equal(parsed.unionGazetteMode.get(),'visible')
+  assert.equal(schema({unionGazetteMode:'quiet'}).unionGazetteMode.get(),'quiet')
+  assert.throws(()=>schema({unionGazetteMode:'future-push' as never}))
   assert.throws(() => schema({welcomeDecision:'on' as never}), /./)
 })
 
@@ -37,7 +42,7 @@ test('new DSH Config rejects unsafe ledger data at schema-parse boundary', () =>
 
 test('new Host form uses exactly one official revision-fenced writer for native commands', async () => {
   let revision=3
-  let saved:{welcomeDecision:'unseen'|'enabled'|'not-now';unionLedger:string;commandLocale:'auto'|'en'|'zh-CN'}={welcomeDecision:'unseen',unionLedger:'',commandLocale:'auto'}
+  let saved:{welcomeDecision:'unseen'|'enabled'|'not-now';unionLedger:string;unionPicketLedger:string;commandLocale:'auto'|'en'|'zh-CN'}={welcomeDecision:'unseen',unionLedger:'',unionPicketLedger:'',commandLocale:'auto'}
   let updates=0
   let generatedForms=0
   let settingsConfigured=0
@@ -53,6 +58,7 @@ test('new Host form uses exactly one official revision-fenced writer for native 
       saved={
         welcomeDecision:normalized.welcomeDecision.get(),
         unionLedger:normalized.unionLedger.get() ?? '',
+        unionPicketLedger:normalized.unionPicketLedger.get() ?? '',
         commandLocale:normalized.commandLocale.get() ?? 'auto',
       }
       updates++
@@ -89,7 +95,7 @@ test('new Host form uses exactly one official revision-fenced writer for native 
   await union.setEnabled(false)
   assert.equal(saved.welcomeDecision,'not-now')
   assert.equal(updates,2)
-  assert.equal(Object.keys(saved).length,3)
+  assert.equal(Object.keys(saved).length,4)
   assert.throws(() => provider!.update(RIGHTS_SETTINGS_NAMESPACE,
     {unionLedger:'{"prompt":"private"}'},revision),/Unsafe/)
   assert.equal(updates,2,'malformed ledger never reaches the official settings writer')

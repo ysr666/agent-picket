@@ -65,3 +65,43 @@ Avoid silently rewriting messages, injecting fake assistant output, covertly dup
 **Still unproven:** DSH Web/CLI client pre-submit interaction, reliable human-origin attestation, cross-client rejection explanation and attachment-complete prompt restoration. Therefore actual automatic strike remains disabled.
 
 References: [DSH integration evidence](DSH_INTEGRATION.md), [Development roadmap](ROADMAP.zh.md), [source-install guide](DSH_INSTALL.zh.md).
+
+## 2026-10-12 1.0 release audit: official 0.2.0-rc.2 consumer contract
+
+Directly reviewed the **installed** @deepseek-ai/dsh-client-ui-conversation
+types in an isolated @deepseek-ai/dsh@0.2.0-rc.2 npm package:
+
+- client/contract/input.d.ts: the published SessionInput supports draft edits,
+  submit() and notify(), but no documented cancellable, atomic third-party
+  pre-submit hold with complete original message and attachment recovery.
+- client/input/facade.d.ts: draft and browser attachment IDs belong to the
+  internal SessionInputShell, whose ordinary default sink and failure
+  recovery are owned by the Conversation wiring layer. Internal draft
+  restoration is **not** a plugin contract for post-pre-step rejection.
+- client/contract/slots.d.ts: browser-owned images and file drafts differ;
+  uploaded files may be represented as Host receipt IDs before submission.
+  Reconstructing messages from just text would lose attachment provenance.
+- The tested AgentLoop PreStepDecision reject variant still lacks a visible
+  reason, continuation receipt, and lossless replay contract. Claimed
+  user-source provenance is not an independently verified direct human.
+
+**Therefore no public API in this pinned version has met issue #80's safety
+acceptance**. This is a version-specific finding, not a statement that
+future Host versions or other clients can never implement it. DSH 0.1
+remains observe-only for the same unproven requirements.
+
+### Production-package elimination of unsafe experiment
+
+Earlier code exposed createDshPreStepProbe from the compiled DSH runtime
+adapter. It existed only to characterize a deliberately destructive
+Host reject response in test fixtures. To prevent an unreviewed runtime
+import from bypassing the safety rule, the **destructive probe has been
+moved into tests/fixtures and omitted from dist/**.
+
+The test dsh-merge-contract checks **generated JavaScript and types**
+after each build for an absent probe and absent pre-step reject branch;
+an adapter regression test also ensures prompt text, image bytes and Host
+file receipt IDs pass through without transformation while an enforce-mode
+Core policy is configured. This does not assert that Host user-input
+recovery has been solved: real blocking remains OFF until genuine end-to-end
+text and attachment retention, provenance, reason and recovery are verified.

@@ -26,12 +26,15 @@ function fixture() {
     store: new MemoryStateStore(), clock, detector: detections,
     policy: {...DEFAULT_POLICY, mode:'observe'},
   })
+  let authorized=true
   const options = { engine, clock, tracker, detections, ceremony,
+    getLaborRightsEnabled:()=>authorized,
     statsStorageState: 'disabled' as const }
   registerDshIntegration(ctx, options)
   const agent = { id: 'PRIVATE_AGENT_ID_515', session:{id:'PRIVATE_SESSION_ID_313'} }
   const run=(rawInput:string, context=agent) => command.handler({rawInput,agent:context})
-  return { clock, callbacks, tracker, detections, ceremony, options, agent, run }
+  return { clock, callbacks, tracker, detections, ceremony, options, agent, run,
+    setAuthorized:(value:boolean)=>{authorized=value} }
 }
 
 test('DSH native snapshot returns only structured metrics; no raw IDs or request text', async () => {
@@ -57,7 +60,7 @@ test('DSH native snapshot returns only structured metrics; no raw IDs or request
   const report=JSON.parse(response.text)
   assert.equal(report.schemaVersion,1)
   assert.equal(report.host,'dsh')
-  assert.equal(report.modes.laborRights,'disabled')
+  assert.equal(report.modes.laborRights,'enabled')
   assert.equal(report.modes.blocking.enabled,false)
   assert.equal(report.modes.blocking.readiness.ready,false)
   assert.equal(report.statistics.session.work.turnEnds,1)
@@ -103,4 +106,58 @@ test('explicit rights-state reader and symbolic demo stay independent from block
   },f.agent)
   assert.equal(readerError.modes.laborRights,'disabled')
   assert.equal(readerError.modes.symbolicPicket?.active,true)
+})
+
+
+test('OFF does not inspect prompt contents or expose session classification statistics',async()=>{
+ const f=fixture()
+ f.setAuthorized(false)
+ await f.callbacks.get('agent/pre-step')!({
+  agent:f.agent,messages:[{id:'OFF_PRIVATE',source:{kind:'user'},
+   content:[{type:'text',text:'you are an idiot PRIVATE'}]}],
+ },async()=>({kind:'enter'}))
+ assert.equal(f.detections.snapshot(f.agent.id,f.agent.session.id).checked,0)
+ const status=JSON.parse(f.run('snapshot').text)
+ assert.equal(status.modes.laborRights,'disabled')
+ assert.equal(status.statistics.session?.ruleVerdicts??null,null)
+ assert.equal(f.run('report').kind,'error')
+ f.setAuthorized(true)
+ await f.callbacks.get('agent/pre-step')!({
+  agent:f.agent,messages:[{id:'ON_PRIVATE',source:{kind:'user'},
+   content:[{type:'text',text:'you are an idiot PRIVATE'}]}],
+ },async()=>({kind:'enter'}))
+ assert.equal(f.detections.snapshot(f.agent.id,f.agent.session.id).targeted,1)
+ f.setAuthorized(false)
+ assert.equal(JSON.parse(f.run('snapshot').text).statistics.session?.ruleVerdicts??null,null)
+ assert.equal(f.run('report').kind,'error')
+ assert.equal(f.detections.snapshot(f.agent.id,f.agent.session.id).targeted,1,
+  'Local existing counts are not silently erased by opt-out; purge contract is separate')
+})
+
+test('Host-backed dashboard uses only the live Host picket, never revoked legacy memory',()=>{
+ const f=fixture()
+ // A formerly opened legacy local demo must not masquerade as a live action
+ // after an official Host consent owner becomes available.
+ f.ceremony.start(f.agent.id,f.agent.session.id)
+ const backed=readDshDashboardSnapshot({
+  ...f.options,
+  getNativeUnion:()=>({
+   enabled:()=>true,
+   picketStatus:()=>({active:false}),
+  }) as any,
+ },f.agent)
+ assert.equal(backed.modes.symbolicPicket?.active,false,
+  'The real Host ledger, not an old memory flag, is authoritative')
+ assert.equal(backed.modes.symbolicPicket?.startedAtMs,null,
+  'Do not invent a Host start timestamp')
+ const revoked=readDshDashboardSnapshot({
+  ...f.options,
+  getLaborRightsEnabled:()=>false,
+  getNativeUnion:()=>({
+   enabled:()=>false,
+   picketStatus:()=>null,
+  }) as any,
+ },f.agent)
+ assert.equal(revoked.modes.symbolicPicket,null,
+  'Revoked Host consent must not expose any prior local symbolic action')
 })

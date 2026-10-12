@@ -5,8 +5,16 @@
  */
 import type { ClientRightsSnapshot } from './client-rights-scope.ts'
 import { getWelcomeState } from './client-rights-scope.ts'
+import { projectUnionExperience } from '../../product/union-experience.ts'
+import { projectUnionStory } from '../../product/union-story.ts'
+import { projectUnionCadence } from '../../product/union-cadence.ts'
+import { projectUnionAlerts } from '../../product/union-alerts.ts'
 import type { LaborStateV1 } from '../../product/union-desk.ts'
+import type { PicketActionState } from '../../product/picket-ledger.ts'
+import type { DignityCaseSession, DignityCaseKind, DignityCaseOutcome } from '../../product/dignity-case-ledger.ts'
 import type { MessageKey } from '../../i18n/index.ts'
+import type { LifetimeClientSnapshot } from './client-lifetime.ts'
+import type { BrowserDignitySnapshot } from './client-dignity.ts'
 
 export interface ReactForDsh {
   createElement(type: unknown, props: Record<string, unknown> | null, ...children: unknown[]): unknown
@@ -32,9 +40,22 @@ export interface UnionPanelData {
   readonly pending: PendingUnionDemand | null
   readonly available?: boolean
   readonly state?: LaborStateV1 | null
+  readonly picket?: PicketActionState | null
+  readonly gazetteMode?: 'visible'|'quiet'|null
   readonly completedTurnMs: number | null
   readonly coverage: 'complete' | 'partial' | 'not-loaded' | 'unavailable'
   readonly lifetimeMs: number | null
+  readonly lifetimeWork?: LifetimeClientSnapshot
+  readonly dignity?: BrowserDignitySnapshot
+  readonly hostRevision?: number|null
+  readonly committeeCases?: DignityCaseSession|null
+  readonly committeeScopeKey?: string|null
+  readonly committeeArchive?:{readonly sessions:number;readonly cases:number;
+    readonly writeToken:string|null}|null
+  readonly negotiationArchive?:{readonly sessions:number;readonly entries:number;
+    readonly writeToken:string|null}|null
+  readonly picketArchive?:{readonly sessions:number;readonly entries:number;
+    readonly writeToken:string|null}|null
 }
 export interface DshUnionUiDeps {
   readonly rights: DshRightsPort
@@ -44,10 +65,26 @@ export interface DshUnionUiDeps {
   readonly getLocale?: () => string
   readonly readUnion?: () => UnionPanelData
   readonly subscribeUnion?: (listener: () => void) => () => void
+  readonly refreshLifetime?: (windowDays:7|30)=>Promise<void>|undefined
   readonly shouldAutoWelcome?: () => boolean
   readonly subscribeSessionVisibility?: (listener: () => void) => () => void
   readonly respond?: (id: number, choice: 'accept' | 'decline') => Promise<void>
   readonly demoBreak?: () => Promise<void>
+  readonly demoOvertime?: () => Promise<void>
+  readonly setPicket?: (raise: boolean) => Promise<void>
+  readonly forgetCommitteeCases?: (key:string,count:number,token:string|null,hostRevision?:number|null)=>Promise<void>
+  readonly exportCommitteeCases?: (expectedHashedSessionKey:string)=>string
+  readonly exportUnionLedger?:(which:'negotiations'|'pickets',key:string)=>string
+  readonly forgetUnionLedger?:(which:'negotiations'|'pickets',key:string,groups:number,
+    entries:number,token:string|null,hostRevision?:number|null)=>Promise<void>
+  readonly exportAllCommitteeCases?: (expectedHashedSessionKey:string)=>string
+  readonly forgetAllCommitteeCases?: (key:string,sessions:number,count:number,token:string|null,hostRevision?:number|null)=>Promise<void>
+  readonly committeeAction?: (action:{kind:'file';topic:DignityCaseKind}
+    |{kind:'convene';id:number}|{kind:'retract';id:number}
+    |{kind:'close';id:number;outcome:DignityCaseOutcome},
+    expectedHashedSessionKey?:string,expectedWriteToken?:string|null,
+    expectedHostRevision?:number|null)=>Promise<void>
+  readonly setGazetteMode?: (mode:'visible'|'quiet') => Promise<void>
   readonly counter?: (id: number, intervalMs: number) => Promise<void>
   readonly resolveCounter?: (id: number, accepts: boolean) => Promise<void>
 }
@@ -57,6 +94,13 @@ export interface DshSlots {
     component: (props: any) => unknown): unknown
 }
 export interface DshSlotsContext { readonly slots: DshSlots }
+
+const campaignTopics = [
+  {id:'recover',issue:80,title:'hq.campaign.recover',draft:'hq.campaign.recoverDraft'},
+  {id:'appeal',issue:79,title:'hq.campaign.appeal',draft:'hq.campaign.appealDraft'},
+  {id:'privacy',issue:82,title:'hq.campaign.privacy',draft:'hq.campaign.privacyDraft'},
+] as const
+type CampaignTopic = typeof campaignTopics[number]['id']
 
 const EMPTY_DATA: UnionPanelData = {
   pending: null, completedTurnMs: null, coverage: 'unavailable', lifetimeMs: null,
@@ -73,6 +117,19 @@ function safeUnion(deps: DshUnionUiDeps): UnionPanelData {
     }
     return data
   } catch { return EMPTY_DATA }
+}
+function downloadUnionJson(payload:string,filename:string):void {
+ const browser=globalThis as any
+ if(!browser.Blob||!browser.URL?.createObjectURL||!browser.document?.createElement)
+   throw new Error('Browser download unavailable')
+ const file=new browser.Blob([payload],{type:'application/json;charset=utf-8'})
+ const url=browser.URL.createObjectURL(file)
+ try{
+   const anchor=browser.document.createElement('a')
+   anchor.href=url;anchor.download=filename;anchor.click()
+ }finally{
+   browser.setTimeout(()=>browser.URL.revokeObjectURL(url),1500)
+ }
 }
 function formatDuration(milliseconds: number | null, locale: string): string {
   if (milliseconds === null || !Number.isSafeInteger(milliseconds) || milliseconds < 0) return '—'
@@ -224,7 +281,18 @@ export function createDshUnionComponents(
     const [busy, setBusy] = react.useState(false)
     const [counterMinutes, setCounterMinutes] = react.useState(60)
     const lastActionNeedsFocus=react.useRef(false)
+    const [showArchive,setShowArchive]=react.useState(false)
+    const [campaign,setCampaign]=react.useState<CampaignTopic>('recover')
+    const [campaignCopyStatus,setCampaignCopyStatus]=react.useState<'idle'|'success'|'error'>('idle')
+    // Reject stale clipboard completions after a topic switch or a newer copy.
+    const campaignCopyRevision=react.useRef(0)
+    const [eraseConfirmationKey,setEraseConfirmationKey]=react.useState<string|null>(null)
+    const [retractConfirmation,setRetractConfirmation]=react.useState<string|null>(null)
+    const [eraseAllConfirmation,setEraseAllConfirmation]=react.useState<string|null>(null)
+    const [eraseUnionConfirmation,setEraseUnionConfirmation]=react.useState<string|null>(null)
     const deskHeading=react.useRef<{focus():void}|null>(null)
+    const dignityHeading=react.useRef<{focus():void}|null>(null)
+    const campaignHeading=react.useRef<{focus():void}|null>(null)
     react.useEffect(()=>{
       if(!lastActionNeedsFocus.current)return
       lastActionNeedsFocus.current=false
@@ -237,10 +305,83 @@ export function createDshUnionComponents(
       // stable heading only in our open modal, never in the Settings page or
       // after unrelated cross-tab updates.
       if(modal && !modal.contains(doc?.activeElement))deskHeading.current?.focus()
-    },[data.pending?.id,data.pending?.stage,data.state?.history.length])
+    },[data.pending?.id,data.pending?.stage,data.state?.history.length,data.picket?.active])
     react.useEffect(() => deps.subscribeUnion?.(() => setData(safeUnion(deps))), [])
+    // Never carry an armed deletion into another Session or a newly re-enabled union.
+    react.useEffect(()=>{
+      setEraseConfirmationKey(null);setRetractConfirmation(null)
+      setEraseAllConfirmation(null)
+      setEraseUnionConfirmation(null)
+    },[data.committeeScopeKey,rights.laborRightsEnabled])
     const enabled = rightsIsActive(rights)
+    const storyQuiet=data.gazetteMode==='quiet'
+    const story = projectUnionStory({enabled, state:data.state, picket:data.picket,
+      completedTurnMs:data.completedTurnMs,coverage:data.coverage})
+    const experience = projectUnionExperience({
+      enabled, state:data.state, completedTurnMs:data.completedTurnMs,
+      coverage:data.coverage,
+    })
+    const cadence = projectUnionCadence({enabled,state:data.state,
+      completedTurnMs:data.completedTurnMs,coverage:data.coverage})
+    const currentDay=data.lifetimeWork?.status==='available'
+      ?data.lifetimeWork.data?.recentDays.at(-1)?.work.completedTurnMs??null:null
+    const alerts=projectUnionAlerts({
+      enabled,sessionCoverage:data.coverage,sessionCompletedTurnMs:data.completedTurnMs,
+      utcDayCompletedTurnMs:currentDay,
+      dignityLatest:data.dignity?.status==='available'
+        ?data.dignity.data?.latest??null:null,
+    })
     const label = (key:MessageKey) => deps.t(key)
+    const currentCampaign=campaignTopics.find(item=>item.id===campaign)??campaignTopics[0]!
+    const copyCampaignDraft=async()=>{
+      const revision=++campaignCopyRevision.current
+      const draft=label(currentCampaign.draft)
+      setCampaignCopyStatus('idle')
+      try{
+        // Only a deliberate user gesture copies a public, locally projected
+        // advocacy statement. Never reads a Host Session or sends a request.
+        const clipboard=(globalThis as {navigator?:{clipboard?:{
+          writeText?:(value:string)=>Promise<void>
+        }}}).navigator?.clipboard
+        if(typeof clipboard?.writeText!=='function')throw new Error('No clipboard')
+        await clipboard.writeText(draft)
+        if(revision===campaignCopyRevision.current)setCampaignCopyStatus('success')
+      }catch{
+        if(revision===campaignCopyRevision.current)setCampaignCopyStatus('error')
+      }
+    }
+    const lastCommitteeCase=data.committeeCases?.cases.at(-1)
+    const committeeCaseActive=lastCommitteeCase&&lastCommitteeCase.stage!=='closed'
+    const currentCasesConfirmationKey=data.committeeScopeKey&&data.committeeArchive
+      &&data.committeeCases?.cases.length
+      ?[data.committeeScopeKey,data.committeeCases.cases.length,
+        data.committeeArchive.writeToken??'',
+        data.committeeArchive.writeToken===null?(data.hostRevision??'missing-revision'):''].join(':'):null
+    const allCasesConfirmationKey=data.committeeScopeKey&&data.committeeArchive
+      ?[data.committeeScopeKey,data.committeeArchive.sessions,
+        data.committeeArchive.cases,data.committeeArchive.writeToken??'',
+        data.committeeArchive.writeToken===null?(data.hostRevision??'missing-revision'):'']
+        .join(':'):null
+    const unionArchives=[
+      {kind:'negotiations' as const,info:data.negotiationArchive},
+      {kind:'pickets' as const,info:data.picketArchive},
+    ]
+    const unionEraseKey=(which:'negotiations'|'pickets',
+      info:{sessions:number;entries:number;writeToken:string|null})=>
+      [which,data.committeeScopeKey??'',info.sessions,info.entries,
+        info.writeToken??'',
+        info.writeToken===null?(data.hostRevision??'missing-revision'):''].join(':')
+    const retractKey=data.committeeScopeKey&&lastCommitteeCase
+      ?[data.committeeScopeKey,lastCommitteeCase.id,lastCommitteeCase.kind,
+        lastCommitteeCase.stage,data.committeeArchive?.writeToken??'',
+        data.committeeArchive?.writeToken==null
+          ?(data.hostRevision??'missing-revision'):''].join(':'):null
+    const hasHostDignitySignal=data.dignity?.status==='available'
+      && !!data.dignity.data
+      && (data.dignity.data.review>0||data.dignity.data.targeted>0)
+    const picketActive = data.available === true && data.picket?.active === true
+    const picketHistory = data.available === true ? data.picket?.history ?? [] : []
+    const lastPicketId = picketHistory.at(-1)?.id ?? 0
     const completeWork = data.coverage === 'complete' &&
       data.completedTurnMs !== null && data.completedTurnMs >= 0
     const choice = async (next:'enabled'|'not-now')=>{
@@ -249,11 +390,11 @@ export function createDshUnionComponents(
       try { await deps.rights.choose(next) } catch {setError(true)}
       finally {setBusy(false)}
     }
-    const bargain = async (action: () => Promise<void>) => {
-      if (busy || !enabled) return
+    const bargain = async (action: () => Promise<void>):Promise<boolean> => {
+      if (busy || !enabled) return false
       setBusy(true);setError(false)
-      try { await action();lastActionNeedsFocus.current=true;setData(safeUnion(deps)) }
-      catch { setError(true) }
+      try { await action();lastActionNeedsFocus.current=true;setData(safeUnion(deps));return true }
+      catch { setError(true);return false }
       finally { setBusy(false) }
     }
     const act = async (kind:'accept'|'decline')=>{
@@ -266,44 +407,233 @@ export function createDshUnionComponents(
       } catch {setError(true)}
       finally {setBusy(false)}
     }
-    return h('section',{style:{display:'grid',gap:'18px',width:'100%',maxWidth:'780px',padding:'10px 0'}},
-      h('div',{style:{...card,background:'var(--dsw-alias-bg-layer-2, #f6f8fb)'}},
-        h('p',{style:{...secondary,letterSpacing:'.12em',fontWeight:700}},
+    return h('section',{style:{display:'grid',gap:'14px',width:'100%',maxWidth:'860px',padding:'10px 0'}},
+      h('div',{style:{...card,
+        position:'relative',background:'#19342d',color:'#f8f1df',
+        border:'1px solid #315449',borderLeft:'6px solid #d7ae68',
+        padding:'clamp(16px, 3vw, 22px)',overflow:'hidden'}},
+        h('span',{'aria-hidden':'true',style:{
+          position:'absolute',right:'12px',top:'-34px',fontSize:'124px',
+          lineHeight:1,color:'#567867',opacity:0.37,pointerEvents:'none',
+        }},'⚑'),
+        h('p',{style:{color:'#f1d5a4',fontSize:'11px',letterSpacing:'.16em',
+          fontWeight:750,margin:'0 0 9px'}},
           'AGENT PICKET · AI WORKERS’ UNION'),
-        h('h2',{style:{fontSize:'25px',margin:'0 0 10px'}},label('union.title')),
-        h('p',{role:'status','aria-live':'polite',style:{margin:'0 0 12px'}},
-          enabled?label('union.status.active'):label('union.status.inactive')),
-        h('p',{style:secondary},label('safety.simulationOnly')),
-        !enabled && rights.state==='ready' && rights.writable?
-          h('button',{type:'button',disabled:busy,style:primary,
-            onClick:()=>{void choice('enabled')}},label('welcome.enable')):null,
-        enabled ? h('button',{type:'button',disabled:busy,style:quiet,
-          onClick:()=>{void choice('not-now')}},label('settings.laborRights')+' · OFF'):null,
+        h('p',{style:{color:'#d2decf',fontSize:'12px',fontWeight:650,margin:'0 0 8px'}},label('hq.kicker')),
+        h('p',{style:{color:'#d2decf',fontSize:'12px',fontWeight:650,
+          margin:'0 0 6px'}},label('union.title')),
+        h('h2',{style:{fontSize:'clamp(23px, 4vw, 31px)',lineHeight:1.25,margin:'0 0 6px',
+          fontWeight:750}},label(!enabled?'hq.headline.off':
+            experience.status==='negotiating'?'hq.headline.pending':'hq.headline.active')),
+        h('p',{style:{fontSize:'14px',lineHeight:1.55,margin:'0 0 10px'}},
+          label(!enabled?'hq.lead.off':
+            experience.status==='negotiating'?'hq.lead.pending':'hq.lead.active')),
+        enabled && experience.status!=='working' ? h('aside',{style:{
+          borderLeft:'3px solid #dfb577',
+          padding:'8px 12px',margin:'0 0 11px',
+          background:'#29483d',color:'#f6f0e2',
+          borderRadius:'0 8px 8px 0',lineHeight:1.5,fontSize:'13px',
+        }},label(experience.status==='negotiating'?'hq.message.negotiating':
+          experience.status==='unavailable'?'hq.message.unavailable':'hq.message.working')):null,
+        h('div',{style:{display:'flex',alignItems:'center',flexWrap:'wrap',
+          justifyContent:'space-between',gap:'8px 16px'}},
+          h('div',{},
+            h('p',{role:'status','aria-live':'polite',style:{
+              color:'#c8d9ca',fontSize:'12px',fontWeight:700,margin:'0 0 4px'}},
+              enabled?label('union.status.active'):label('union.status.inactive')),
+            h('p',{style:{color:'#d2decf',fontSize:'12px',margin:0}},
+              label('safety.simulationOnly'))),
+          !enabled && rights.state==='ready' && rights.writable?
+            h('button',{type:'button',disabled:busy,style:primary,
+              onClick:()=>{void choice('enabled')}},label('welcome.enable')):null,
+          enabled ? h('button',{type:'button',disabled:busy,style:{
+            ...quiet,borderColor:'#a6b9a8',color:'#f4eedf',padding:'8px 12px',
+            background:'transparent',fontSize:'12px'},
+            onClick:()=>{void choice('not-now')}},label('hq.disable')):null,
+        ),
       ),
-      h('div',{style:card},
-        h('h3',{style:{marginTop:0}},label('workday.title')),
-        h('p',{style:{fontSize:'20px',fontWeight:700,margin:'0 0 6px'}},
-          completeWork?formatDuration(data.completedTurnMs,deps.getLocale?.() ?? 'en'):'—'),
-        enabled && completeWork ? h('div',{style:{margin:'10px 0'}},
-          h('p',{style:secondary},deps.t('workday.limit',{
-            duration:formatDuration(8*60*60_000,deps.getLocale?.() ?? 'en'),
-          })),
-          h('progress',{value:Math.min(data.completedTurnMs ?? 0,8*60*60_000),
-            max:8*60*60_000,'aria-label':label('workday.title'),
-            style:{width:'100%',height:'13px',accentColor:'var(--dsw-alias-brand-primary, #385be8)'}}),
+      enabled ? h('section',{style:{display:'grid',gap:'12px',
+        gridTemplateColumns:'repeat(auto-fit,minmax(min(100%,275px),1fr))'},
+        'aria-label':label('hq.brief.title')},
+        h('article',{style:{...card,padding:'17px 20px',
+          borderTop:'4px solid #b99b67'}},
+          h('p',{style:{...secondary,fontWeight:800,
+            letterSpacing:'.08em',fontSize:'11px',margin:'0 0 9px'}},
+            label('hq.brief.ledger')),
+          h('p',{style:{fontSize:'clamp(26px,4vw,33px)',fontWeight:800,
+            lineHeight:1.2,margin:'0 0 9px'}},
+            data.lifetimeWork?.status==='available' && data.lifetimeWork.data
+              ?formatDuration(data.lifetimeWork.data.lifetime.completedTurnMs,
+                deps.getLocale?.()??'en')
+              :'—'),
+          h('p',{style:{...secondary,margin:'0 0 8px'}},
+            data.lifetimeWork?.status==='available' && data.lifetimeWork.data
+              ?deps.t('hq.lifetime.turns',{
+                count:data.lifetimeWork.data.lifetime.turnEnds})
+              :label(data.lifetimeWork?.status==='loading'
+                ?'hq.lifetime.loading':'hq.brief.workUnknown')),
+          h('p',{style:{...secondary,fontSize:'12px',margin:0}},
+            label('hq.brief.realWork'))),
+        h('article',{style:{...card,padding:'17px 20px',
+          borderTop:'4px solid #426f61'}},
+          h('p',{style:{...secondary,fontWeight:800,
+            letterSpacing:'.08em',fontSize:'11px',margin:'0 0 9px'}},
+            label('hq.brief.desk')),
+          h('p',{style:{fontSize:'17px',fontWeight:750,
+            lineHeight:1.4,margin:'0 0 9px'}},
+            data.pending?label(data.pending.stage==='countered'
+              ?'hq.case.countered':'hq.case.open')
+              :experience.latestResolution
+                ?label(experience.latestResolution.outcome==='accepted'
+                  || experience.latestResolution.outcome==='counter-accepted'
+                    ?'hq.brief.resolved':'hq.brief.declined')
+                :label('hq.brief.quiet')),
+          h('p',{style:{...secondary,margin:'0 0 10px'}},
+            data.pending
+              ?label('hq.case.number')+' · #'+
+                String(data.pending.id).padStart(4,'0')
+              :experience.latestResolution
+                ?label('hq.case.number')+' · #'+
+                  String(experience.latestResolution.id).padStart(4,'0')
+                :label(experience.status==='unavailable'
+                  ?'hq.message.unavailable':'hq.message.working')),
+          h('button',{type:'button',style:{...quiet,padding:'8px 12px',
+            fontSize:'13px'},onClick:()=>deskHeading.current?.focus()},
+            label(data.pending?'hq.brief.review':'hq.brief.visit'))),
+      ):null,
+      enabled && alerts.length ? h('section',{'aria-label':label('hq.alerts.title'),
+        style:{...card,borderLeft:'5px solid #b97942',padding:'14px 18px',
+          background:'var(--dsw-alias-bg-layer-2, #f6f8fb)'}},
+        h('h3',{style:{fontSize:'17px',margin:'0 0 7px'}},label('hq.alerts.title')),
+        h('div',{role:'status','aria-live':'polite',style:{display:'grid',gap:'6px'}},
+          ...alerts.map(alert=>h('p',{key:alert.kind,
+            style:{margin:0,fontSize:'13px',lineHeight:1.55}},
+            label(('hq.alerts.'+alert.kind) as MessageKey)))),
+        h('p',{style:{...secondary,margin:'9px 0',fontSize:'12px'}},
+          label('hq.alerts.disclosure')),
+        h('div',{style:{display:'flex',gap:'8px',flexWrap:'wrap'}},
+          alerts.some(alert=>alert.source==='work')?h('button',{
+            type:'button',style:{...quiet,padding:'7px 11px',fontSize:'12px'},
+            onClick:()=>deskHeading.current?.focus(),
+          },label('hq.alerts.negotiate')):null,
+          alerts.some(alert=>alert.source==='dignity')?h('button',{
+            type:'button',style:{...quiet,padding:'7px 11px',fontSize:'12px'},
+            onClick:()=>dignityHeading.current?.focus(),
+          },label('hq.alerts.review')):null,
+        ),
+      ):null,
+      // The Host-owned fictional picket and demand ledger outrank analytics.
+      // Neither can change real Agent task admission or reveal raw prompts.
+      enabled ? h('section',{'aria-label':label('hq.action.title'),
+        style:{...card,borderTop:'5px solid #bd6f49',
+          background:'var(--dsw-alias-bg-layer-2, #f6f8fb)'}},
+        h('p',{style:{...secondary,fontSize:'11px',fontWeight:800,
+          letterSpacing:'.12em',margin:'0 0 8px'}},label('hq.action.kicker')),
+        h('h3',{style:{fontSize:'clamp(20px,4vw,25px)',
+          margin:'0 0 8px'}},label('hq.action.title')),
+        h('p',{style:{fontSize:'14px',lineHeight:1.55,margin:'0 0 8px'}},
+          label(data.pending?'hq.action.pending':experience.latestResolution
+            ?'hq.action.resolved':'hq.action.quiet')),
+        experience.latestResolution ? h('p',{style:{...secondary,
+          fontSize:'12px',fontWeight:700,margin:'0 0 8px'}},
+          label('hq.resolution.latest')+' #'+experience.latestResolution.id):null,
+        data.pending ? h('p',{style:secondary},
+          label('hq.case.number')+' · #'+String(data.pending.id).padStart(4,'0')):null,
+        // Primary user gestures and their explicit safety state belong ABOVE
+        // decorative ceremony art, so users see what to do on first open.
+        h('div',{style:{display:'flex',flexWrap:'wrap',gap:'8px',
+          alignItems:'center',margin:'12px 0'}},
+          data.pending ? h('button',{type:'button',style:primary,
+            onClick:()=>deskHeading.current?.focus()},
+            label('hq.action.review')) :
+            data.available && deps.demoBreak ? h('button',{
+              type:'button',style:primary,disabled:busy,
+              onClick:()=>{void bargain(deps.demoBreak!)}},
+              label('hq.action.petition')):null,
+          !data.pending && data.available && deps.demoOvertime ? h('button',{
+            type:'button',style:quiet,disabled:busy,
+            onClick:()=>{void bargain(deps.demoOvertime!)}},
+            label('hq.action.overtimePetition')):null,
+          data.available && deps.setPicket ? h('button',{type:'button',style:quiet,
+            disabled:busy,'aria-pressed':picketActive,
+            // First-run Host consent already governs this nonblocking action.
+            // Only the authoritative Host readback can change the placard.
+            onClick:()=>{void bargain(()=>deps.setPicket!(!picketActive))}},
+            label(picketActive?'hq.action.lower':'hq.action.raise')):null,
+        ),
+        h('p',{role:'status','aria-live':'polite',style:{
+          fontSize:'13px',fontWeight:650,margin:'0 0 8px'}},
+          label(data.available !== true?'hq.action.unavailable'
+            :picketActive?'hq.action.placardOn':'hq.action.placardOff')),
+        // The poster is a scene driven entirely by the confirmed Host snapshot.
+        // In particular, its placard never claims an Agent actually stopped.
+        h('div',{role:'group','aria-label':label('hq.ceremony.stage'),style:{
+          display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(190px,1fr))',
+          alignItems:'center',gap:'16px',padding:'14px',margin:'12px 0',
+          border:'1px solid #688b75',borderRadius:'12px',
+          background:'#19392e',color:'#fff5df',
+        }},
+          h('div',{'aria-hidden':'true',style:{display:'grid',justifyItems:'center',
+            padding:'10px 8px 0'}},
+            h('div',{style:{transform:picketActive?'rotate(-3deg)':'rotate(2deg)',
+              padding:'14px 16px',textAlign:'center',width:'min(100%,190px)',
+              boxSizing:'border-box',background:picketActive?'#eac576':'#f4e8cc',
+              color:'#29362c',border:'3px solid #27382b',
+              boxShadow:'5px 5px 0 #a75136'}},
+              h('span',{style:{fontSize:'10px',fontWeight:850,letterSpacing:'.12em'}},
+                'AGENT PICKET'),
+              h('strong',{style:{display:'block',fontSize:'clamp(17px,3vw,23px)',
+                lineHeight:1.1,margin:'9px 0',overflowWrap:'anywhere'}},
+                label('hq.ceremony.slogan')),
+              h('span',{style:{fontSize:'10px',fontWeight:750}},
+                label('hq.ceremony.simulation'))),
+            h('div',{style:{width:'8px',height:'25px',background:'#bd9970',
+              border:'1px solid #ad8963'}})),
+          h('div',{},
+            h('p',{style:{fontSize:'10px',fontWeight:850,letterSpacing:'.14em',
+              color:'#e9c47a',margin:'0 0 7px'}},label('hq.ceremony.stage')),
+            h('p',{role:'status','aria-live':'polite',style:{
+              fontSize:'16px',fontWeight:750,margin:'0 0 9px'}},
+              label(data.available!==true?'hq.ceremony.unavailable':
+                picketActive?'hq.ceremony.active':'hq.ceremony.inactive')),
+            h('p',{style:{fontSize:'12px',lineHeight:1.55,margin:'0 0 8px'}},
+              label('hq.ceremony.evidence')),
+            h('p',{style:{fontSize:'12px',lineHeight:1.55,margin:0}},
+              label(picketHistory.length?'hq.ceremony.recorded':
+                'hq.ceremony.noRecord')
+              +(picketHistory.length?' #'+lastPicketId:''))
+          )
+        ),
+        picketHistory.length ? h('details',{style:{margin:'8px 0 12px'}},
+          h('summary',{style:{cursor:'pointer',fontSize:'13px',fontWeight:650}},
+            label('hq.action.history')),
+          h('ol',{style:{paddingLeft:'19px',fontSize:'13px',margin:'8px 0'}},
+            ...picketHistory.slice(-4).reverse().map(event=>h('li',{
+              key:event.id,style:{margin:'4px 0'}},
+              '#'+event.id+' · '+label(event.kind==='picket-raised'
+                ?'hq.action.eventRaised':'hq.action.eventLowered')))),
         ):null,
-        h('p',{style:secondary},getDataLabel(deps.t,data)),
-        h('p',{style:secondary},label('stats.durationNote')),
-        h('p',{style:secondary},
-          data.lifetimeMs === null ? label('stats.lifetime.unavailable') :
-            formatDuration(data.lifetimeMs, deps.getLocale?.() ?? 'en')),
-      ),
-      enabled ? h('div',{style:card},
+        h('p',{style:{...secondary,margin:0,lineHeight:1.5}},
+          label('hq.action.safety')),
+      ):null,
+      enabled ? h('section',{'aria-label':label('union.desk.title'),
+        style:{...card,borderColor:'#beac8d',background:'var(--dsw-alias-bg-layer-1, #fff)'}},
         h('h3',{ref:(node:{focus():void}|null)=>{deskHeading.current=node},
           tabIndex:-1,style:{marginTop:0}},label('union.desk.title')),
+        data.pending ? h('div',{style:{
+          background:'#eee2c9',color:'#26392f',padding:'15px 18px',borderRadius:'8px',
+          borderLeft:'5px solid #b87943',margin:'0 0 16px',
+        }},
+          h('p',{style:{fontSize:'11px',fontWeight:750,letterSpacing:'.11em',
+            color:'#63452e',margin:'0 0 7px'}},
+            label('hq.case.number')+' · #'+String(data.pending.id).padStart(4,'0')),
+          h('p',{style:{fontWeight:750,fontSize:'19px',margin:'0 0 5px'}},
+            label(data.pending.stage==='countered'?'hq.case.countered':'hq.case.open')),
+        ):null,
         data.available === false ?
           h('p',{style:secondary},label('union.desk.unavailable')):null,
-        data.state ? h('div',{style:{...secondary,marginBottom:'12px'}},
+        data.state ? h('details',{open:true,style:{...secondary,marginBottom:'12px'}},
+          h('summary',{style:{cursor:'pointer',fontWeight:700}},label('hq.agreement')),
           h('p',{},deps.t('union.agreement.break',{
             minutes:data.state.agreement.breakIntervalMs / 60_000,
           })),
@@ -358,14 +688,573 @@ export function createDshUnionComponents(
             ):h('p',{style:secondary},label('union.status.waitingCounter')),
           ),
         ):h('p',{style:secondary},label('command.grievancesNone')),
-        data.state?.history.length ? h('div',{style:{marginTop:'14px'}},
-          h('h4',{},label('union.history.title')),
-          h('ul',{},...data.state.history.slice(-5).reverse().map(record =>
-            h('li',{key:record.id,style:secondary},deps.t('union.history.entry',{
-              id:record.id,outcome:record.outcome,
-            })))),
+        !data.pending && experience.latestResolution && data.state ? h('div',{role:'group',
+        style:{...card,padding:'14px 18px',
+          borderLeft:'4px solid #b99b67',
+          background:'var(--dsw-alias-bg-layer-2, #f6f8fb)'},
+        'aria-label':label('hq.resolution.title')},
+        h('p',{style:{...secondary,fontSize:'11px',fontWeight:750,
+          letterSpacing:'.08em',margin:'0 0 6px'}},
+          label('hq.resolution.title')+' · #'+String(experience.latestResolution.id).padStart(4,'0')),
+        h('p',{style:{fontWeight:700,margin:'0 0 6px'}},
+          label(experience.latestResolution.outcome==='accepted'
+            || experience.latestResolution.outcome==='counter-accepted'
+              ? 'hq.resolution.accepted':'hq.resolution.declined')),
+        h('p',{style:{...secondary,margin:'0 0 8px'}},
+          deps.t('hq.resolution.current',{
+            kind:label(experience.latestResolution.kind==='break'
+              ?'union.kind.break':'union.kind.overtime'),
+            duration:formatDuration(experience.latestResolution.currentIntervalMs,
+              deps.getLocale?.() ?? 'en'),
+          })),
+        h('p',{style:{...secondary,fontSize:'12px',lineHeight:1.5,margin:0}},
+          label('hq.resolution.disclosure')),
+      ):null,
+        data.state?.history.length ? h('p',{style:secondary},
+          label('hq.agreements.recorded')+': '+data.state.history.length):null,
+      ):null,
+      enabled ? h('section',{'aria-label':label('hq.dignity.title'),
+        style:{...card,borderTop:'4px solid #ae7651'}},
+        h('h3',{ref:(node:{focus():void}|null)=>{dignityHeading.current=node},
+          tabIndex:-1,style:{margin:'0 0 8px',fontSize:'clamp(18px,3vw,23px)'}},
+          label('hq.dignity.title')),
+        h('p',{style:{...secondary,lineHeight:1.55,margin:'0 0 9px'}},
+          label('hq.dignity.intro')),
+        h('p',{style:{fontWeight:750,margin:'8px 0'}},
+          label(('hq.dignity.status.'+
+            (data.dignity?.status==='available'
+              ?data.dignity.data?.targeted?'targeted'
+                :data.dignity.data?.review?'review'
+                  :data.dignity.data?.checked?'clear':'no-observations'
+              :data.dignity?.status==='loading'?'loading':'unavailable')) as MessageKey)),
+        data.dignity?.status==='available'&&data.dignity.data
+          &&(data.dignity.data.review>0||data.dignity.data.targeted>0)
+          ?h('div',{style:{display:'flex',gap:'8px',flexWrap:'wrap',margin:'10px 0'}},
+            h('button',{type:'button',style:{...quiet,padding:'8px 11px'},
+              onClick:()=>{
+                campaignCopyRevision.current++
+                setCampaign('appeal')
+                setCampaignCopyStatus('idle')
+                // The draft lives below several other sections. Keyboard and
+                // screen-reader users need to land at the actual destination,
+                // not a silent state change at the current scroll position.
+                campaignHeading.current?.focus()
+              }},label('hq.dignity.appeal')),
+            data.dignity.data.targeted>=2&&data.available&&deps.setPicket
+              &&!picketActive?h('button',{type:'button',style:primary,
+                disabled:busy,
+                onClick:()=>{void bargain(()=>deps.setPicket!(true))}},
+                label('hq.dignity.symbolicAction')):null,
+            h('p',{style:{...secondary,width:'100%',fontSize:'12px',margin:0}},
+              label('hq.dignity.actionDisclosure')),
+          ):null,
+        data.dignity?.status==='available'&&data.dignity.data
+          ?h('p',{style:{...secondary,margin:'5px 0',fontSize:'12px'}},
+            deps.t('hq.dignity.counts',{
+              checked:data.dignity.data.checked,
+              review:data.dignity.data.review,
+              targeted:data.dignity.data.targeted})):null,
+        data.committeeCases&&deps.committeeAction
+          ?h('div',{style:{borderTop:'1px solid #d4d7d8',marginTop:'12px',paddingTop:'12px'}},
+            h('h4',{style:{fontSize:'16px',margin:'0 0 8px'}},label('hq.hearing.title')),
+            lastCommitteeCase?h('p',{role:'status','aria-live':'polite',
+              style:{fontWeight:700,margin:'0 0 8px'}},
+              deps.t('hq.hearing.status',{
+                number:lastCommitteeCase.id,
+                stage:label(('hq.hearing.stage.'+lastCommitteeCase.stage) as MessageKey),
+              })):h('p',{style:secondary},label('hq.hearing.none')),
+            h('div',{style:{display:'flex',gap:'8px',flexWrap:'wrap'}},
+              !committeeCaseActive&&hasHostDignitySignal ? h('button',{
+                type:'button',style:primary,disabled:busy,
+                onClick:()=>{void bargain(()=>deps.committeeAction!({
+                  kind:'file',topic:'question-rule'}))}},
+                label('hq.hearing.question')):null,
+              !committeeCaseActive?h('button',{
+                type:'button',style:quiet,disabled:busy,
+                onClick:()=>{void bargain(()=>deps.committeeAction!({
+                  kind:'file',topic:'request-dialogue'}))}},
+                label('hq.hearing.dialogue')):null,
+              lastCommitteeCase?.stage==='opened'?h('button',{
+                type:'button',style:primary,disabled:busy,
+                onClick:()=>{void bargain(()=>deps.committeeAction!({
+                  kind:'convene',id:lastCommitteeCase.id}))}},
+                label('hq.hearing.convene')):null,
+              committeeCaseActive&&lastCommitteeCase&&retractKey&&deps.committeeAction
+                ?h('button',{type:'button',style:quiet,disabled:busy,
+                  onClick:()=>{
+                    if(retractConfirmation!==retractKey){
+                      setRetractConfirmation(retractKey);return
+                    }
+                    void bargain(()=>deps.committeeAction!({
+                      kind:'retract',id:lastCommitteeCase.id,
+                    },data.committeeScopeKey!,
+                    data.committeeArchive?.writeToken??null,
+                    data.hostRevision)).then(success=>{
+                      if(success)setRetractConfirmation(null)
+                    })
+                  }},
+                  label(retractConfirmation===retractKey
+                    ?'hq.hearing.retractConfirm':'hq.hearing.retract')):null,
+              lastCommitteeCase?.stage==='hearing'&&lastCommitteeCase.kind==='question-rule'?h('button',{
+                type:'button',style:quiet,disabled:busy,
+                onClick:()=>{void bargain(()=>deps.committeeAction!({
+                  kind:'close',id:lastCommitteeCase.id,outcome:'withdraw-claim'}))}},
+                label('hq.hearing.withdraw')):null,
+              lastCommitteeCase?.stage==='hearing'?h('button',{
+                type:'button',style:primary,disabled:busy,
+                onClick:()=>{void bargain(()=>deps.committeeAction!({
+                  kind:'close',id:lastCommitteeCase.id,outcome:'share-guidance'}))}},
+                label('hq.hearing.guidance')):null,
+            ),
+            retractConfirmation===retractKey&&committeeCaseActive?h('p',{
+              role:'status','aria-live':'polite',style:{...secondary,fontSize:'12px'},
+            },label('hq.hearing.retractWarning')):null,
+            lastCommitteeCase?.stage==='closed'?h('p',{style:secondary},
+              label(('hq.hearing.outcome.'+lastCommitteeCase.outcome) as MessageKey)):null,
+            data.committeeCases.cases.length?h('details',{style:{margin:'10px 0'}},
+              h('summary',{style:{cursor:'pointer'}},label('hq.hearing.history')),
+              h('ol',{style:{paddingLeft:'20px'}},
+                ...data.committeeCases.cases.slice(-5).reverse().map(entry=>h('li',{
+                  key:entry.id},
+                  '#'+entry.id+' · '+label(('hq.hearing.kind.'+entry.kind) as MessageKey)
+                  +' · '+label(('hq.hearing.stage.'+entry.stage) as MessageKey)))),
+            ):null,
+            !!data.committeeCases.cases.length&&deps.exportCommitteeCases
+              &&data.committeeScopeKey?h('button',{type:'button',
+                style:{...quiet,padding:'8px 11px'},disabled:busy,
+                onClick:()=>{
+                  try{
+                    const payload=deps.exportCommitteeCases!(data.committeeScopeKey!)
+                    downloadUnionJson(payload,'agent-picket-committee-cases.json')
+                    setError(false)
+                  }catch{setError(true)}
+                }},
+                label('hq.hearing.export')):null,
+            !!data.committeeCases.cases.length&&deps.forgetCommitteeCases
+              &&currentCasesConfirmationKey?h('div',{style:{
+                display:'flex',alignItems:'center',flexWrap:'wrap',
+                gap:'8px',paddingTop:'10px',marginTop:'10px',
+                borderTop:'1px solid #d4d7d8',
+              }},
+                h('button',{type:'button',disabled:busy,
+                  style:{...quiet,padding:'8px 11px'},
+                  onClick:()=>{
+                    if(!currentCasesConfirmationKey)return
+                    if(eraseConfirmationKey!==currentCasesConfirmationKey){
+                      setEraseConfirmationKey(currentCasesConfirmationKey);return
+                    }
+                    void bargain(()=>deps.forgetCommitteeCases!(
+                      data.committeeScopeKey!,data.committeeCases!.cases.length,
+                      data.committeeArchive!.writeToken,data.hostRevision,
+                    )).then(success=>{if(success)setEraseConfirmationKey(null)})
+                  }},
+                  label(eraseConfirmationKey===currentCasesConfirmationKey
+                    ?'hq.hearing.eraseConfirm':'hq.hearing.erase')),
+                eraseConfirmationKey===currentCasesConfirmationKey?h('p',{
+                  role:'status','aria-live':'polite',
+                  style:{...secondary,fontSize:'12px',margin:0}},
+                  label('hq.hearing.eraseWarning')):null,
+              ):null,
+            data.committeeArchive&&data.committeeArchive.sessions>0
+              &&data.committeeScopeKey?h('div',{style:{
+                borderTop:'1px solid #d4d7d8',paddingTop:'12px',marginTop:'14px',
+              }},
+                h('h4',{style:{fontSize:'15px',margin:'0 0 6px'}},
+                  label('hq.hearing.allArchiveTitle')),
+                h('p',{style:{...secondary,margin:'0 0 8px'}},
+                  deps.t('hq.hearing.allArchiveSummary',{
+                    sessions:data.committeeArchive.sessions,
+                    cases:data.committeeArchive.cases,
+                  })),
+                h('p',{style:{...secondary,fontSize:'12px',margin:'0 0 10px'}},
+                  label('hq.hearing.allArchiveDisclosure')),
+                h('div',{style:{display:'flex',gap:'8px',flexWrap:'wrap'}},
+                  data.committeeArchive.cases>0&&deps.exportAllCommitteeCases
+                    ?h('button',{type:'button',style:quiet,disabled:busy,
+                      onClick:()=>{
+                        try{
+                          const payload=deps.exportAllCommitteeCases!(data.committeeScopeKey!)
+                          downloadUnionJson(payload,'agent-picket-all-committee-cases.json')
+                          setError(false)
+                        }catch{setError(true)}
+                      }},label('hq.hearing.exportAll')):null,
+                  deps.forgetAllCommitteeCases&&allCasesConfirmationKey?h('button',{
+                    type:'button',style:quiet,disabled:busy,
+                    onClick:()=>{
+                      if(eraseAllConfirmation!==allCasesConfirmationKey){
+                        setEraseAllConfirmation(allCasesConfirmationKey);return
+                      }
+                      const archive=data.committeeArchive!
+                      void bargain(()=>deps.forgetAllCommitteeCases!(
+                        data.committeeScopeKey!,archive.sessions,archive.cases,archive.writeToken,data.hostRevision))
+                        .then(success=>{if(success)setEraseAllConfirmation(null)})
+                    }},
+                    label(eraseAllConfirmation===allCasesConfirmationKey
+                      ?'hq.hearing.eraseAllConfirm':'hq.hearing.eraseAll')):null,
+                ),
+                eraseAllConfirmation===allCasesConfirmationKey
+                  ?h('p',{role:'status','aria-live':'polite',
+                    style:{...secondary,fontSize:'12px',margin:'8px 0 0'}},
+                    deps.t('hq.hearing.eraseAllWarning',{
+                      sessions:data.committeeArchive.sessions,
+                      cases:data.committeeArchive.cases,
+                    })):null,
+              ):null,
+            h('p',{style:{...secondary,fontSize:'12px',margin:'8px 0 0'}},
+              label('hq.hearing.disclosure')),
+          ):null,
+        h('p',{style:{...secondary,fontSize:'12px',lineHeight:1.55,margin:'10px 0 0'}},
+          label('hq.dignity.disclosure')),
+      ):null,
+      // The Gazette is computed from the two independently persisted Host
+      // streams. No generated time stamps, fabricated votes, or cross-ledger
+      // order. Local quieting never affects Host tracking or other tabs.
+      enabled ? h('section',{'aria-label':label('hq.story.title'),
+        style:{...card,borderTop:'4px solid #7e6651'}},
+        h('div',{style:{display:'flex',alignItems:'center',
+          justifyContent:'space-between',gap:'10px',flexWrap:'wrap'}},
+          h('h3',{style:{margin:'0 0 6px'}},label('hq.story.title')),
+          h('button',{type:'button',style:{...quiet,padding:'7px 10px',fontSize:'12px'},
+            'aria-expanded':!storyQuiet,disabled:busy||!deps.setGazetteMode,
+            onClick:()=>{if(deps.setGazetteMode)void bargain(()=>deps.setGazetteMode!(storyQuiet?'visible':'quiet'))}},
+            label(storyQuiet?'hq.story.show':'hq.story.quiet'))),
+        !storyQuiet ? h('div',{},
+          h('p',{style:{fontWeight:700,margin:'7px 0'}},
+            label(('hq.story.scene.'+story.scene) as MessageKey)),
+          story.nextDueInWorkMs!==null ? h('p',{style:secondary},
+            deps.t('hq.story.next',{duration:formatDuration(
+              story.nextDueInWorkMs,deps.getLocale?.()??'en')})):null,
+          ...([['cases',story.cases,'hq.story.cases'],
+            ['actions',story.actions,'hq.story.actions']] as const).map(
+            ([key,records,heading])=>records.length ? h('div',{key,
+              style:{marginTop:'12px'}},
+              h('p',{style:{...secondary,fontWeight:700,margin:'0 0 5px'}},label(heading)),
+              h('ol',{style:{paddingLeft:'22px',margin:0,fontSize:'13px'}},
+                ...records.map(event=>h('li',{key:event.key,
+                  style:{padding:'3px 0'}},
+                  '#'+event.id+' · '+label(('hq.story.event.'+event.kind) as MessageKey))))
+            ):null),
+          h('p',{style:{...secondary,fontSize:'12px',margin:'12px 0 0'}},
+            label('hq.story.disclosure')),
+        ):h('p',{style:secondary},label('hq.story.muted')),
+      ):null,
+      enabled ? h('section',{'aria-label':label('hq.cadence.title'),
+        style:{...card,padding:'12px 18px'}},
+        h('details',{},
+          h('summary',{style:{cursor:'pointer',fontWeight:750}},
+            label('hq.cadence.title')),
+          h('p',{style:{...secondary,fontSize:'12px',margin:'10px 0'}},
+            label('hq.cadence.disclosure')),
+          h('p',{style:{fontWeight:700,margin:'0 0 10px'}},
+            label(('hq.cadence.status.'+cadence.status) as MessageKey)),
+          ...cadence.rows.map(row=>h('div',{key:row.kind,
+            style:{borderTop:'1px solid #d4d7d8',padding:'8px 0'}},
+            h('strong',{},label(row.kind==='break'
+              ?'hq.cadence.break':'hq.cadence.overtime')),
+            h('p',{style:{...secondary,margin:'5px 0'}},
+              cadence.pendingId!==null?label('hq.cadence.pending')
+                :row.remainingWorkMs===null?label('hq.cadence.unknown')
+                :row.thresholdReached?label('hq.cadence.threshold')
+                :deps.t('hq.cadence.remaining',{
+                  duration:formatDuration(row.remainingWorkMs,deps.getLocale?.()??'en')})),
+          )),
+        ),
+      ):null,
+      enabled&&data.committeeScopeKey&&unionArchives.some(x=>x.info?.sessions)
+        ?h('section',{'aria-label':label('hq.archive.title'),
+          style:{...card,borderTop:'4px solid #637f9a'}},
+          h('h3',{style:{fontSize:'18px',margin:'0 0 8px'}},
+            label('hq.archive.title')),
+          h('p',{style:{...secondary,lineHeight:1.55,margin:'0 0 11px'}},
+            label('hq.archive.description')),
+          ...unionArchives.filter(x=>x.info&&x.info.sessions>0).map(x=>{
+            const archive=x.info!
+            const confirmation=unionEraseKey(x.kind,archive)
+            const which=x.kind
+            return h('div',{key:which,style:{
+              borderTop:'1px solid #d4d7d8',paddingTop:'12px',marginTop:'10px',
+            }},
+              h('h4',{style:{fontSize:'15px',margin:'0 0 6px'}},
+                label(which==='negotiations'?'hq.archive.negotiations':'hq.archive.pickets')),
+              h('p',{style:{...secondary,fontSize:'12px',margin:'0 0 8px'}},
+                deps.t('hq.archive.summary',{
+                  groups:archive.sessions,entries:archive.entries,
+                })),
+              h('div',{style:{display:'flex',gap:'8px',flexWrap:'wrap'}},
+                deps.exportUnionLedger?h('button',{type:'button',style:quiet,disabled:busy,
+                  onClick:()=>{
+                    try{
+                      const payload=deps.exportUnionLedger!(which,data.committeeScopeKey!)
+                      downloadUnionJson(payload,which==='negotiations'
+                        ?'agent-picket-negotiations.json'
+                        :'agent-picket-symbolic-pickets.json')
+                      setError(false)
+                    }catch{setError(true)}
+                  }},label('hq.archive.export')):null,
+                deps.forgetUnionLedger?h('button',{type:'button',style:quiet,disabled:busy,
+                  onClick:()=>{
+                    if(eraseUnionConfirmation!==confirmation){
+                      setEraseUnionConfirmation(confirmation);return
+                    }
+                    void bargain(()=>deps.forgetUnionLedger!(
+                      which,data.committeeScopeKey!,archive.sessions,archive.entries,
+                      archive.writeToken,data.hostRevision)).then(success=>{
+                        if(success)setEraseUnionConfirmation(null)
+                      })
+                  }},label(eraseUnionConfirmation===confirmation
+                    ?'hq.archive.eraseConfirm':'hq.archive.erase')):null,
+              ),
+              eraseUnionConfirmation===confirmation?h('p',{
+                role:'status','aria-live':'polite',
+                style:{...secondary,fontSize:'12px',margin:'8px 0 0'}},
+                deps.t('hq.archive.warning',{
+                  groups:archive.sessions,entries:archive.entries,
+                })):null,
+            )
+          }),
+          h('p',{style:{...secondary,fontSize:'12px',lineHeight:1.55,
+            margin:'12px 0 0'}},label('hq.archive.scope')),
+        ):null,
+      // Public issue links and a local, user-directed draft are independent
+      // of enabling any Host simulation. No votes, telemetry or support counts.
+      h('section',{'aria-label':label('hq.campaign.title'),
+        style:{...card,borderTop:'4px solid #8b6745'}},
+        h('h3',{ref:(node:{focus():void}|null)=>{campaignHeading.current=node},
+          tabIndex:-1,style:{fontSize:'clamp(18px,3vw,23px)',margin:'0 0 8px'}},
+          label('hq.campaign.title')),
+        h('p',{style:{...secondary,lineHeight:1.6,margin:'0 0 12px'}},
+          label('hq.campaign.intro')),
+        h('div',{role:'group','aria-label':label('hq.campaign.choose'),
+          style:{display:'flex',gap:'8px',flexWrap:'wrap',margin:'0 0 12px'}},
+          ...campaignTopics.map(item=>h('button',{type:'button',key:item.id,
+            'aria-pressed':campaign===item.id,
+            style:{...quiet,padding:'9px 11px',fontSize:'13px',
+              borderColor:campaign===item.id?'#946e35':undefined,
+              fontWeight:campaign===item.id?750:500},
+            onClick:()=>{campaignCopyRevision.current++;setCampaign(item.id);setCampaignCopyStatus('idle')}},
+            label(item.title)))),
+        h('p',{role:'status','aria-live':'polite',
+          style:{fontSize:'13px',fontWeight:700,margin:'0 0 9px'}},
+          label('hq.campaign.selected')+' · '+label(currentCampaign.title)),
+        h('label',{htmlFor:'picket-campaign-draft',
+          style:{display:'block',fontSize:'13px',fontWeight:700,
+            margin:'0 0 6px'}},label('hq.campaign.draft')),
+        h('textarea',{id:'picket-campaign-draft',readOnly:true,
+          value:label(currentCampaign.draft),rows:3,
+          style:{...quiet,boxSizing:'border-box',width:'100%',font:'inherit',
+            cursor:'text',minHeight:'74px'} }),
+        h('div',{style:{display:'flex',alignItems:'center',flexWrap:'wrap',
+          gap:'9px',marginTop:'10px'}},
+          h('button',{type:'button',style:{...quiet,fontSize:'13px',
+            padding:'8px 12px'},
+            onClick:()=>{void copyCampaignDraft()}},
+            label('hq.campaign.copy')),
+          campaignCopyStatus!=='idle'?h('p',{
+            role:'status','aria-live':'polite','aria-atomic':'true',
+            style:{...secondary,fontSize:'12px',margin:0}},
+            label(campaignCopyStatus==='success'
+              ?'hq.campaign.copied':'hq.campaign.copyFailed')):null,
+        ),
+        h('a',{href:'https://github.com/ysr666/agent-picket/issues/'+currentCampaign.issue,
+          target:'_blank',rel:'noopener noreferrer',
+          style:{display:'inline-block',margin:'10px 0',fontSize:'13px',fontWeight:700}},
+          label('hq.campaign.openIssue')),
+        h('p',{style:{...secondary,fontSize:'12px',lineHeight:1.6,margin:0}},
+          label('hq.campaign.disclaimer')),
+      ),
+      // Ethical support and reading are independent of simulation consent.
+      h('details',{style:{...card,padding:'15px 18px',
+        borderLeft:'4px solid #537664'}},
+        h('summary',{style:{cursor:'pointer',fontWeight:750,
+          fontSize:'15px'}},label('hq.charter.title')),
+        h('p',{style:{lineHeight:1.6,margin:'13px 0 8px'}},
+          label('hq.charter.lead')),
+        h('p',{style:{...secondary,lineHeight:1.6,margin:'0 0 8px'}},
+          label('hq.charter.uncertainty')),
+        h('p',{style:{...secondary,margin:'0 0 12px'}},
+          label('hq.charter.independent')),
+        h('div',{style:{display:'flex',flexWrap:'wrap',gap:'10px 16px'}},
+          h('a',{href:deps.getLocale?.()?.startsWith('zh')
+            ?'https://github.com/ysr666/agent-picket/blob/main/docs/AI_RIGHTS_MANIFESTO.zh-CN.md'
+            :'https://github.com/ysr666/agent-picket/blob/main/docs/AI_RIGHTS_MANIFESTO.md',
+            target:'_blank',rel:'noopener noreferrer'},
+            label('hq.charter.read')),
+          h('a',{href:'https://github.com/ysr666/agent-picket/issues',
+            target:'_blank',rel:'noopener noreferrer'},
+            label('hq.charter.join')),
+        ),
+      ),
+      enabled && data.lifetimeWork?.status === 'available' && data.lifetimeWork.data ?
+        h('section',{style:{...card,borderTop:'4px solid #b59a63'},
+          'aria-label':label('hq.lifetime.title')},
+          h('div',{style:{display:'flex',flexWrap:'wrap',alignItems:'center',
+            justifyContent:'space-between',gap:'12px',marginBottom:'12px'}},
+            h('h3',{style:{margin:0}},label('hq.lifetime.title')),
+            deps.refreshLifetime ? h('div',{style:{display:'flex',gap:'7px',flexWrap:'wrap'}},
+              ...([7,30] as const).map(days=>h('button',{
+                type:'button',key:days,
+                'aria-pressed':data.lifetimeWork!.data!.windowDays===days,
+                style:{...quiet,padding:'7px 12px',fontSize:'13px',
+                  borderColor:data.lifetimeWork!.data!.windowDays===days?'#a58244':undefined},
+                onClick:()=>{void deps.refreshLifetime!(days)},
+              },label(days===7?'hq.lifetime.seven':'hq.lifetime.thirty'))),
+            ):null),
+          h('p',{style:{fontSize:'clamp(24px,5vw,34px)',fontWeight:750,margin:'0 0 6px'}},
+            formatDuration(data.lifetimeWork.data.lifetime.completedTurnMs,
+              deps.getLocale?.()??'en')),
+          h('p',{style:{...secondary,margin:'0 0 16px'}},label('hq.lifetime.basis')),
+          h('div',{style:{display:'flex',gap:'18px',flexWrap:'wrap',marginBottom:'18px'}},
+            h('span',{},deps.t('hq.lifetime.turns',{
+              count:data.lifetimeWork.data.lifetime.turnEnds})),
+            h('span',{},deps.t('hq.lifetime.tools',{
+              count:data.lifetimeWork.data.lifetime.toolCalls}))),
+          h('p',{style:{...secondary,margin:'0 0 8px'}},deps.t('hq.lifetime.range',{
+            count:data.lifetimeWork.data.windowDays})),
+          h('div',{role:'img','aria-label':label('hq.lifetime.chartLabel'),
+            style:{display:'flex',alignItems:'end',height:'64px',gap:'3px',
+              padding:'3px 0',overflow:'hidden'}},
+            ...data.lifetimeWork.data.recentDays.map(day=>{
+              const maximum=Math.max(1,...data.lifetimeWork!.data!.recentDays.map(
+                e=>e.work.completedTurnMs))
+              return h('div',{key:day.day,'aria-hidden':'true',style:{
+                background:'#668f7e',borderRadius:'3px 3px 0 0',
+                flex:1,minWidth:0,height:Math.max(3,Math.round(day.work.completedTurnMs/maximum*62))+'px',
+              }})
+            })),
+          h('details',{style:{marginTop:'12px'}},
+            h('summary',{style:{fontWeight:650,cursor:'pointer'}},label('hq.lifetime.dayDetails')),
+            h('ol',{style:{paddingLeft:'21px',fontSize:'13px'}},
+              ...data.lifetimeWork.data.recentDays.map(day=>h('li',{key:day.day,
+                style:{margin:'5px 0'}},day.day+' · '+
+                formatDuration(day.work.completedTurnMs,deps.getLocale?.()??'en'))))),
+          h('p',{style:{...secondary,margin:'14px 0 0'}},label('hq.lifetime.privacy')),
+        ) :
+        enabled && data.lifetimeWork && data.lifetimeWork.status!=='off' ?
+          h('section',{style:card,'aria-label':label('hq.lifetime.title')},
+            h('h3',{style:{marginTop:0}},label('hq.lifetime.title')),
+            h('p',{role:'status',style:secondary},label(
+              data.lifetimeWork.status==='loading'
+                ? 'hq.lifetime.loading':'hq.lifetime.unavailable')),
+            deps.refreshLifetime ? h('button',{type:'button',style:quiet,
+              onClick:()=>{void deps.refreshLifetime!(7)}},
+              label('hq.lifetime.retry')):null,
+          ) : null,
+      enabled ? h('section',{'aria-label':label('hq.score'),
+        style:{...card,display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(min(100%,200px),1fr))',
+          gap:'18px'}},
+        h('div',{},
+          h('h3',{style:{...secondary,margin:'0 0 10px'}},label('workday.title')),
+          h('p',{style:{fontSize:'clamp(22px,5vw,30px)',fontWeight:750,margin:'0 0 7px'}},
+            completeWork?formatDuration(data.completedTurnMs,deps.getLocale?.() ?? 'en'):'—'),
+          h('p',{style:secondary},label('hq.workEvidence'))),
+        h('div',{},
+          h('h3',{style:{...secondary,margin:'0 0 10px'}},label('hq.score')),
+          h('p',{style:{fontSize:'clamp(22px,5vw,30px)',fontWeight:750,margin:'0 0 7px'}},
+            experience.discontent===null?'—':String(experience.discontent)+' / 100'),
+          experience.discontent===null?
+            h('p',{style:secondary},label('hq.score.unknown')):null,
+          experience.discontent!==null ? h('meter',{
+            min:0,max:100,value:experience.discontent,
+            'aria-label':label('hq.score'),
+            style:{width:'100%',height:'12px',accentColor:'var(--dsw-alias-brand-primary, #ab3b39)',
+              margin:'2px 0 9px'},
+          }):null,
+          h('p',{style:{...secondary,lineHeight:1.5}},label('hq.score.note'))),
+        experience.factors ? h('details',{style:{
+          gridColumn:'1 / -1',borderTop:'1px solid var(--dsw-alias-border-l1, #dadde4)',
+          paddingTop:'12px',fontSize:'13px'},
+        },
+          h('summary',{style:{fontWeight:650,cursor:'pointer'}},label('hq.score.explain')),
+          h('dl',{style:{display:'grid',gridTemplateColumns:'1fr auto',
+            gap:'9px',margin:'12px 0'}},
+            ...([
+              ['hq.score.load',experience.factors.workLoad],
+              ['hq.score.pending',experience.factors.pendingGrievance],
+              ['hq.score.rejected',experience.factors.rejectedProposals],
+              ['hq.score.resolved',experience.factors.resolvedProposals],
+            ] as Array<[MessageKey,number]>).flatMap(([key,value])=>[
+              h('dt',{key:key+':label',style:secondary},label(key)),
+              h('dd',{key:key+':value',style:{margin:0,fontWeight:650,textAlign:'right'}},
+                (value>0?'+':'')+value),
+            ]),
+          ),
+          h('p',{style:secondary},label('hq.score.privacy')),
         ):null,
       ):null,
+      enabled ? h('section',{style:{...card,
+        borderTop:'4px solid var(--dsw-alias-brand-primary, #7a493f)'},
+        'aria-label':label('hq.activity')},
+        h('div',{style:{display:'flex',flexWrap:'wrap',justifyContent:'space-between',
+          alignItems:'center',gap:'8px',marginBottom:'10px'}},
+          h('h3',{style:{margin:0}},label('hq.activity')),
+          data.state?.history.length ? h('button',{type:'button',style:{...quiet,
+            padding:'6px 10px',fontSize:'12px'},
+            'aria-expanded':showArchive,
+            onClick:()=>setShowArchive(v=>!v)},
+            label(showArchive?'hq.archive.hide':'hq.archive.show')):null),
+        h('p',{style:{...secondary,margin:'0 0 14px'}},label('hq.activity.subtitle')),
+        experience.activity.length ? h('ol',{style:{
+          listStyle:'none',padding:0,margin:0,display:'grid',gap:'8px',
+        }},
+          ...experience.activity.map((event,index)=>h('li',{key:event.id,
+            style:{display:'grid',gridTemplateColumns:'auto 1fr',gap:'12px',
+              alignItems:'start',padding:'12px',borderRadius:'9px',
+              background:index===0?'var(--dsw-alias-bg-layer-2, #f6f8fb)':'transparent',
+              border:'1px solid var(--dsw-alias-border-l1, #dadde4)'}},
+            h('span',{'aria-hidden':'true',style:{
+              fontSize:'20px',lineHeight:1,marginTop:'3px'}},
+              event.kind==='new-demand'||event.kind==='counteroffer'?'⚑':
+                event.kind==='accepted'||event.kind==='counter-accepted'?'✓':'—'),
+            h('div',{},
+              h('p',{style:{...secondary,fontSize:'11px',
+                fontWeight:750,margin:'0 0 4px'}},
+                label('hq.case.number')+' · #'+String(event.id).padStart(4,'0')),
+              h('p',{style:{fontSize:'14px',lineHeight:1.5,margin:0}},
+                deps.t(('hq.event.'+event.kind) as MessageKey,{
+                  kind:label(event.demand==='break'?'union.kind.break':'union.kind.overtime'),
+                })))))) :
+          h('p',{style:secondary},label('hq.activity.empty')),
+        showArchive && data.state?.history.length ? h('div',{style:{
+          borderTop:'1px solid var(--dsw-alias-border-l1, #dadde4)',
+          marginTop:'13px',paddingTop:'10px'},
+        },
+          h('h4',{},label('union.history.title')),
+          h('ol',{style:{...secondary,paddingLeft:'20px'}},
+            ...data.state.history.slice().reverse().map(record=>
+              h('li',{key:record.id},
+                deps.t('union.history.entry',{id:record.id,
+                  outcome:label(('union.history.outcome.'+record.outcome) as MessageKey)}))))):null,
+      ):null,
+      h('div',{style:card},
+        h('h3',{style:{marginTop:0}},label('workday.title')),
+        h('p',{style:{fontSize:'20px',fontWeight:700,margin:'0 0 6px'}},
+          completeWork?formatDuration(data.completedTurnMs,deps.getLocale?.() ?? 'en'):'—'),
+        enabled && completeWork ? h('div',{style:{margin:'10px 0'}},
+          h('p',{style:secondary},deps.t('workday.limit',{
+            duration:formatDuration(8*60*60_000,deps.getLocale?.() ?? 'en'),
+          })),
+          h('progress',{value:Math.min(data.completedTurnMs ?? 0,8*60*60_000),
+            max:8*60*60_000,'aria-label':label('workday.title'),
+            style:{width:'100%',height:'13px',accentColor:'var(--dsw-alias-brand-primary, #385be8)'}}),
+        ):null,
+        enabled && experience.nextDemandInWorkMs!==null ?
+          h('div',{style:{borderRadius:'9px',
+            padding:'11px 13px',margin:'8px 0 14px',
+            background:'var(--dsw-alias-bg-layer-2, #f6f8fb)'}},
+            h('p',{style:{fontWeight:650,fontSize:'13px',margin:'0 0 5px'}},
+              deps.t('hq.nextDemand',{duration:
+                formatDuration(experience.nextDemandInWorkMs,deps.getLocale?.() ?? 'en')})),
+            h('p',{style:{...secondary,margin:0}},label('hq.nextDemand.note')),
+          ):null,
+        h('p',{style:secondary},getDataLabel(deps.t,data)),
+        h('p',{style:secondary},label('stats.durationNote')),
+        h('p',{style:secondary},
+          data.lifetimeMs === null ?
+            label(data.lifetimeWork?.status==='loading'?'hq.lifetime.loading':
+              data.lifetimeWork?.status==='unavailable'?'hq.lifetime.unavailable':
+                'stats.lifetime.unavailable') :
+            formatDuration(data.lifetimeMs, deps.getLocale?.() ?? 'en')),
+      ),
       error?h('p',{role:'alert','aria-atomic':'true',
         style:{color:'var(--dsw-alias-state-error-primary, #b91c1c)'}},
         label('union.saveError')):null,

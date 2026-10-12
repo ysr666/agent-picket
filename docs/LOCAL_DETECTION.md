@@ -2,6 +2,16 @@
 
 > **Status:** A deterministic Chinese/English rule baseline, not a semantic classifier and not a reliable determination of whether any user has mistreated an AI. No automated strike or external reporting is enabled.
 
+## Automatic opt-in DSH text classification
+
+The live DSH `agent/pre-step` adapter checks the **current official Host-owned union consent before every candidate message**. When consent is unseen, Not Now, revoked, or unavailable, it does not call the detector or increment sensitive verdict counters; all normal Host requests continue. The source label `user` remains *claimed*, not verified human origin.
+
+When enabled, each new qualifying user-source text message observed in the hook is assessed locally. Tool outputs, generated Agent text, injected/unknown origins and image-only submissions are not inspected. Same-ID replay is deduplicated by the existing bounded in-memory policy store. The hook alone has not proven coverage across every possible DSH input surface.
+
+`/union report` and session verdict data are unavailable when the union is OFF, even if historical aggregate counts still exist. Revoking authorization stops **new** inspections but does not automatically erase previously captured aggregates; #82 covers export/erasure. The independently requested `/union check <text>` stays available as an uncounted manual diagnostic, not the core product flow. Work-only timing stats remain separate.
+
+**Unfinished:** Host-derived verdicts are not yet a visible warning/arbitration journey in Union HQ. #99 tracks the privacy-safe Host→Web bridge and #79 tracks warning, review and appeals. No real blocking is enabled.
+
 ## How it works
 
 AgentPicket's `LocalRuleDetector` implements the existing host-neutral `DetectionProvider`:
@@ -40,7 +50,7 @@ The reviewed fixtures also include explicit direct abuse following a comma-separ
 
 Counters are **in-memory only** and reset on process exit or `/union reset`; deduplication keeps at most 1024 IDs per session by default, so very old replays can be counted again. A verdict counter is not a history of raw evidence and cannot prove a finding after the fact.
 
-When a DSH Host provides native command registration and an instance of the same `DetectionCounter` is passed to both `UnionEngine` and `registerDshIntegration`, `/union report` displays the counts and a warning that they are experimental. `/union check <text>` performs a separate **user-triggered**, non-counting preview and returns only a verdict explanation without ever calling a model. Neither a verdict nor an uncertainty label changes Host admission. `/union status`, `/union stats` and `/union reset` remain monitor-only.
+Only with active Host union consent, native command registration and an instance of the same `DetectionCounter` is passed to both `UnionEngine` and `registerDshIntegration`, `/union report` displays the counts and a warning that they are experimental. `/union check <text>` performs a separate **user-triggered**, non-counting preview and returns only a verdict explanation without ever calling a model. Neither a verdict nor an uncertainty label changes Host admission. `/union status`, `/union stats` and `/union reset` remain monitor-only.
 
 ## Why auto-strike remains off
 

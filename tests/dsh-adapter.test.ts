@@ -1,8 +1,8 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import { UnionEngine, DEFAULT_POLICY, MemoryStateStore, WorkTracker, DetectionCounter, LocalRuleDetector } from '../src/core/index.ts'
+import { createDshPreStepProbe } from './fixtures/prestep-reject-probe.ts'
 import {
-  createDshPreStepProbe,
   normalizeDshPrompt,
   normalizeDshWorkEvent,
   registerDshIntegration,
@@ -10,7 +10,8 @@ import {
 } from '../src/adapters/dsh/integration.ts'
 import type { UnionDecision, WorkEvent } from '../src/core/types.ts'
 
-function harness() {
+function harness(startEnabled=true) {
+  let enabled=startEnabled
   const listeners = new Map<string, Function>()
   let command: any
   const ctx = {
@@ -31,8 +32,10 @@ function harness() {
     engine, clock: { now: () => 1000 },
     onDecision: x => decisions.push(x),
     onWorkEvent: x => work.push(x),
+    getLaborRightsEnabled: () => enabled,
   })
-  return { listeners, command: () => command, decisions, work }
+  return { listeners, command: () => command, decisions, work,
+    setEnabled: (value:boolean)=>{enabled=value} }
 }
 
 test('DSH source labels remain unverified, never authorize automatic blocking', () => {
@@ -97,6 +100,7 @@ test('pre-step never blocks when observer throws', async () => {
   } as unknown as DshIntegrationContext, {
     engine, clock: { now: () => 1 },
     onDecision() { throw new Error('observer error') },
+    getLaborRightsEnabled:()=>true,
   })
   assert.equal((await handler!({
     agent: { id: 'agent', session: { id: 'session-real' } },
@@ -112,7 +116,8 @@ test('pre-step fails open when detector throws', async () => {
   let handler: Function | undefined
   registerDshIntegration({
     on(name: string, callback: Function) { if (name === 'agent/pre-step') handler = callback },
-  } as unknown as DshIntegrationContext, { engine, clock: { now: () => 1 } })
+  } as unknown as DshIntegrationContext, { engine, clock: { now: () => 1 },
+    getLaborRightsEnabled:()=>true })
   assert.equal((await handler!({
     agent: { id: 'agent', session: { id: 'session-real' } },
     messages: [{ id: 'test', source: { kind: 'user' } }],
@@ -219,6 +224,7 @@ test('DSH union report exposes local verdict counts without raw inputs', async (
     },
   } as unknown as DshIntegrationContext, {
     engine, clock: { now: () => 5 }, tracker, detections,
+    getLaborRightsEnabled:()=>true,
   })
 
   const agent = { id: 'agent-real', session: { id: 'session-real' } }
@@ -237,4 +243,134 @@ test('DSH union report exposes local verdict counts without raw inputs', async (
   assert.match(command.handler({ rawInput: 'reset', agent }).text, /reset/)
   assert.match(command.handler({ rawInput: 'report', agent }).text, /0 messages/)
   assert.equal(command.handler({ rawInput: 'report' }).kind, 'error')
+})
+
+
+test('automatic abuse detection is OFF until explicit Host consent, and stops on revoke',async()=>{
+ const h=harness(false)
+ const hook=h.listeners.get('agent/pre-step')!
+ let downstream=0
+ const send=async(id:string,source='user')=>{
+   const response={kind:'enter',body:'untouched'} as const
+   assert.strictEqual(await hook({
+     agent:{id:'a',session:{id:'s'}},
+     messages:[{id,source:{kind:source},content:[{type:'text',text:'you are an idiot'}]}],
+   },async()=>{downstream++;return response}),response)
+ }
+ await send('off')
+ assert.equal(h.decisions.length,0)
+ assert.equal(h.command().handler({rawInput:'report',agent:{id:'a',session:{id:'s'}}}).kind,'error')
+ h.setEnabled(true)
+ await send('on')
+ assert.equal(h.decisions.length,1)
+ await send('on') // same prompt ID: in-memory dedup, observer may see same decision
+ assert.equal(h.decisions.length,2)
+ assert.deepEqual(h.decisions[0],h.decisions[1])
+ h.setEnabled(false)
+ await send('revoked')
+ assert.equal(h.decisions.length,2)
+ h.setEnabled(true)
+ await send('new-after-reenable')
+ assert.equal(h.decisions.length,3)
+ assert.equal(downstream,5)
+ assert.equal(h.decisions.every(x=>x.requestedAction!=='block'),true)
+})
+test('missing/throwing Host consent disables classifier but never blocks DSH',async()=>{
+ let hook:Function|undefined, detected=0
+ const engine=new UnionEngine({
+   detector:{detect:()=>{detected++;return {verdict:'targeted-abuse',confidence:0.96}}},
+   store:new MemoryStateStore(),clock:{now:()=>100},
+ })
+ const ctx={on:(name:string,cb:Function)=>{if(name==='agent/pre-step')hook=cb}}
+ let permission:()=>boolean=()=>{throw new Error('Host temporarily offline')}
+ registerDshIntegration(ctx as unknown as DshIntegrationContext,{
+   engine,clock:{now:()=>100},getLaborRightsEnabled:()=>permission(),
+ })
+ const payload={agent:{id:'a',session:{id:'s'}},messages:[{
+   id:'1',source:{kind:'user'},content:[{type:'text',text:'you are an idiot'}],
+ }]}
+ let nextCalls=0
+ const next=async()=>{nextCalls++;return {kind:'enter'}}
+ await hook!(payload,next)
+ assert.equal(detected,0)
+ permission=()=>false
+ await hook!(payload,next)
+ assert.equal(detected,0)
+ permission=()=>true
+ await hook!(payload,next)
+ assert.equal(detected,1)
+ assert.equal(nextCalls,3)
+})
+test('revocation within a multi-message pre-step is checked separately on each input',async()=>{
+ let enabled=true,detectCount=0, decisions=0
+ const engine=new UnionEngine({
+   detector:{detect:()=>{detectCount++;enabled=false;return {verdict:'safe',confidence:1}}},
+   store:new MemoryStateStore(),clock:{now:()=>100},
+ })
+ let hook:Function|undefined
+ registerDshIntegration({on:(n:string,cb:Function)=>{if(n==='agent/pre-step')hook=cb}} as unknown as DshIntegrationContext,{
+   engine,clock:{now:()=>100},getLaborRightsEnabled:()=>enabled,
+   onDecision:()=>{decisions++},
+ })
+ const outcome=await hook!({agent:{id:'a',session:{id:'s'}},messages:[
+   {id:'a',source:{kind:'user'},content:[{type:'text',text:'hi'}]},
+   {id:'b',source:{kind:'user'},content:[{type:'text',text:'hi'}]},
+ ]},async()=>({kind:'enter'}))
+ assert.equal(outcome.kind,'enter')
+ assert.equal(detectCount,1)
+ assert.equal(decisions,1)
+})
+test('tool/agent/injected and image-only content do not enter detection or union text IDs',async()=>{
+ const h=harness(true)
+ const hook=h.listeners.get('agent/pre-step')!
+ const payload={agent:{id:'a',session:{id:'s'}},messages:[
+  {id:'tool',source:{kind:'tool'},content:[{type:'text',text:'you are an idiot'}]},
+  {id:'injected',source:{kind:'inject'},content:[{type:'text',text:'you are an idiot'}]},
+  {id:'agent',source:{kind:'agent'},content:[{type:'text',text:'you are an idiot'}]},
+  {id:'image',source:{kind:'user'},content:[{type:'image',data:'synthetic-fixture'}]},
+  {id:'human',source:{kind:'user'},content:[{type:'text',text:'you are an idiot'}]},
+ ]}
+ await hook(payload,async()=>({kind:'enter'}))
+ assert.equal(h.decisions.length,1)
+ assert.equal(h.decisions[0]?.promptId,'human')
+})
+
+test('enforce-mode classification never consumes or modifies text and attachments on DSH',async()=>{
+  const h=harness()
+  const callback=h.listeners.get('agent/pre-step')!
+  // Keep text and media payloads opaque: the official Host, not Agent Picket,
+  // owns their lifetime and correct re-submission. No deep copy, transform,
+  // private prompt queue, or simulated refusal is permitted in production.
+  const image={type:'image',mediaType:'image/png',data:'AAECAwQ='}
+  const file={type:'file',receiptId:'host-file-receipt'}
+  const text={type:'text',text:'direct human abuse fixture'}
+  const content=[text,image,file]
+  const message={id:'test-private-prompt',source:{kind:'user'},content}
+  const messages=[message]
+  const continuation={kind:'enter',messages,hostReceipt:'host-owned-only'}
+  let downstream=0
+  for(let index=0;index<3;index++){
+    const response=await callback({
+      agent:{id:'a',session:{id:'session-unmodified'}},messages,
+    },async()=>{
+      downstream++
+      assert.strictEqual(messages[0],message)
+      assert.strictEqual(message.content,content)
+      assert.strictEqual(content[1],image)
+      assert.strictEqual(content[2],file)
+      return continuation
+    })
+    assert.strictEqual(response,continuation)
+  }
+  assert.equal(downstream,3,
+    'Even with classify-on and an enforce-mode policy, the Host continuation runs')
+  assert.equal(image.data,'AAECAwQ=')
+  assert.equal(file.receiptId,'host-file-receipt')
+  h.setEnabled(false)
+  const decisions=h.decisions.length
+  assert.strictEqual(await callback({
+    agent:{id:'a',session:{id:'session-unmodified'}},messages,
+  },async()=>{downstream++;return continuation}),continuation)
+  assert.equal(h.decisions.length,decisions,
+    'Revocation must prevent new classifications without consuming the Host input')
 })

@@ -155,7 +155,8 @@ test('union-first page leads with rights status; unknown stats are not presented
  assert.ok(labels.includes('workday.title'))
  assert.ok(labels.includes('stats.lifetime.unavailable'))
  assert.ok(labels.includes('—'))
- assert.equal(rendered.filter(n=>n.type==='details').length,1)
+ assert.ok(rendered.filter(n=>n.type==='details').length>=2) // charter + work privacy
+ assert.ok(labels.includes('hq.charter.title'))
 })
 
 test('pending demand renders working actionable controls only when response is provided',()=>{
@@ -360,4 +361,695 @@ test('dynamically mounted union bargaining demands have accessible status and st
   assert.ok(heading,'The union negotiation section needs a stable focus target')
   assert.equal(heading.props.tabIndex,-1,'Heading must receive programmatic focus, not a new Tab stop')
   assert.equal(typeof heading.props.ref,'function')
+})
+
+test('Union HQ displays evidence-backed discontent and Host-ledger bulletin in primary view',()=>{
+ const {hooks}=fakeReact()
+ const base=deps(rights({welcomeDecision:'enabled',laborRightsEnabled:true}))
+ const d:DshUnionUiDeps={...base.d,readUnion:()=>({
+  pending:{id:4,kind:'break',stage:'open'},coverage:'complete',
+  completedTurnMs:4*3_600_000,lifetimeMs:null,available:true,
+  state:{schemaVersion:1,revision:1,
+   agreement:{breakIntervalMs:7_200_000,overtimeIntervalMs:28_800_000},
+   nextBreakDueMs:7_200_000,nextOvertimeDueMs:28_800_000,
+   lastTriggerElapsedMs:4*3_600_000,
+   pending:{id:4,kind:'break',stage:'open',raisedAtElapsedMs:0,counterOfferMs:null},
+   history:[]},
+ })}
+ const {UnionPanel}=createDshUnionComponents(hooks,{createPortal:child=>child},d)
+ const nodes=walk(UnionPanel())
+ const strings=nodes.flatMap(n=>n.children.filter((x):x is string=>typeof x==='string'))
+ assert.ok(strings.includes('hq.headline.pending'))
+ assert.ok(strings.includes('hq.activity'))
+ assert.ok(strings.includes('hq.event.new-demand'))
+ assert.ok(strings.includes('42 / 100')) // 17 observed load + 25 outstanding grievance
+ assert.ok(strings.includes('union.desk.title'))
+ const negotiate=nodes.findIndex(n=>n.children.includes('union.desk.title'))
+ const workDetails=nodes.findIndex(n=>n.children.includes('workday.limit'))
+ assert.ok(negotiate>=0 && workDetails>negotiate)
+})
+
+test('Union HQ does not show a discontent index or fictional activity when disabled',()=>{
+ const {hooks}=fakeReact()
+ const base=deps(rights({welcomeDecision:'not-now',laborRightsEnabled:false}))
+ const d:DshUnionUiDeps={...base.d,readUnion:()=>({
+  pending:{id:1,kind:'break',stage:'open'},coverage:'complete',completedTurnMs:8*3_600_000,lifetimeMs:null,
+ })}
+ const {UnionPanel}=createDshUnionComponents(hooks,{createPortal:child=>child},d)
+ const nodes=walk(UnionPanel())
+ const texts=nodes.flatMap(n=>n.children.filter(x=>typeof x==='string'))
+ assert.ok(texts.includes('hq.headline.off'))
+ assert.equal(texts.includes('hq.score'),false)
+ assert.equal(texts.includes('hq.activity'),false)
+})
+
+test('explainable Union HQ index reveals factors and the next evidence-based petition threshold',()=>{
+ const {hooks}=fakeReact()
+ const base=deps(rights({welcomeDecision:'enabled',laborRightsEnabled:true}))
+ const d:DshUnionUiDeps={...base.d,readUnion:()=>({
+  pending:null,coverage:'complete',completedTurnMs:60*60_000,
+  lifetimeMs:null,available:true,state:{
+   schemaVersion:1,revision:0,agreement:{
+    breakIntervalMs:2*3_600_000,overtimeIntervalMs:8*3_600_000,
+   },nextBreakDueMs:2*3_600_000,nextOvertimeDueMs:8*3_600_000,
+   lastTriggerElapsedMs:0,pending:null,history:[],
+  },
+ })}
+ const {UnionPanel}=createDshUnionComponents(hooks,{createPortal:child=>child},d)
+ const nodes=walk(UnionPanel())
+ const strings=nodes.flatMap(n=>n.children.filter(x=>typeof x==='string'))
+ assert.ok(strings.includes('hq.message.working'))
+ assert.ok(strings.includes('hq.score.explain'))
+ assert.ok(strings.includes('hq.score.privacy'))
+ assert.ok(strings.includes('hq.nextDemand.note'))
+ assert.ok(strings.includes('4 / 100')) // 1h / 8h * 35 -> 4
+ assert.equal(nodes.find(n=>n.type==='meter')?.props.value,4)
+ assert.ok(nodes.find(n=>n.type==='details'&&n.children.some(x=>typeof x==='object'
+  &&x!==null&&(x as Node).children?.includes('hq.score.explain'))))
+})
+
+
+test('first-fold dispatch prioritizes verified work and current case before fictional discontent',()=>{
+ const {hooks}=fakeReact()
+ const base=deps(rights({welcomeDecision:'enabled',laborRightsEnabled:true}))
+ const d:DshUnionUiDeps={...base.d,setPicket:async()=>{},readUnion:()=>({
+  pending:{id:29,kind:'break',stage:'open'},completedTurnMs:0,
+  coverage:'complete',lifetimeMs:360_000,available:true,
+  lifetimeWork:{
+   status:'available',data:{
+    schemaVersion:1,source:'dsh-host-durable-work',
+    windowDays:7,generatedAtMs:Date.parse('2026-10-11T08:00:00Z'),
+    durationBasis:'completed-turn-wall-clock-including-waits',
+    lifetime:{turnStarts:2,turnEnds:2,toolCalls:2,toolResults:2,
+      completedTurnMs:360_000},
+    recentDays:Array.from({length:7},(_,i)=>({
+     day:new Date(Date.UTC(2026,9,5+i)).toISOString().slice(0,10),
+     work:{turnStarts:0,turnEnds:0,toolCalls:0,toolResults:0,completedTurnMs:0},
+    })),
+   },
+  },
+ })}
+ const {UnionPanel}=createDshUnionComponents(hooks,{createPortal:child=>child},d)
+ const nodes=walk(UnionPanel())
+ const actionIndex=nodes.findIndex(n=>n.props['aria-label']==='hq.action.title')
+ const charterIndex=nodes.findIndex(n=>n.type==='summary'&&n.children.includes('hq.charter.title'))
+ const dispatchIndex=nodes.findIndex(n=>n.props['aria-label']==='hq.brief.title')
+ const indexIndex=nodes.findIndex(n=>n.props['aria-label']==='hq.score')
+ assert.ok(dispatchIndex>=0 && dispatchIndex<actionIndex && indexIndex>actionIndex)
+ assert.ok(charterIndex>dispatchIndex)
+ const deskIndex=nodes.findIndex(n=>n.type==='h3'&&n.children.includes('union.desk.title'))
+ const dignityIndex=nodes.findIndex(n=>n.props['aria-label']==='hq.dignity.title')
+ const gazetteIndex=nodes.findIndex(n=>n.props['aria-label']==='hq.story.title')
+ const archiveIndex=nodes.findIndex(n=>n.props['aria-label']==='hq.archive.title')
+ assert.ok(actionIndex<deskIndex && deskIndex<dignityIndex,
+   'The hearing desk must immediately follow the union action, not hide beneath a long archive')
+ assert.ok(archiveIndex===-1 || archiveIndex>gazetteIndex,
+   'Past union archives belong below the current action, hearing and bulletin')
+ assert.ok(nodes.some(n=>n.type==='button'&&n.children.includes('hq.action.review')))
+ const actionChildren=walk(nodes.find(n=>n.props['aria-label']==='hq.action.title'))
+ const reviewPosition=actionChildren.findIndex(n=>n.type==='button'&&n.children.includes('hq.action.review'))
+ const artPosition=actionChildren.findIndex(n=>n.props['aria-label']==='hq.ceremony.stage')
+ assert.ok(reviewPosition>=0 && reviewPosition<artPosition,
+   'A union action must be reachable before decorative placard art on first open')
+ assert.ok(nodes.some(n=>n.type==='button'&&n.props['aria-pressed']===false
+   &&n.children.includes('hq.action.raise')))
+ const texts=nodes.flatMap(n=>n.children.filter(x=>typeof x==='string'))
+ assert.ok(texts.includes('0h 6m')||texts.includes('0 小时 6 分钟'))
+ assert.ok(texts.includes('hq.case.number · #0029'))
+ assert.ok(nodes.some(n=>n.type==='button'&&n.children.includes('hq.brief.review')))
+ assert.ok(nodes.some(n=>n.props['aria-label']==='hq.lifetime.title'))
+})
+
+test('charter is readable with union OFF, while union action controls stay hidden',()=>{
+ const {hooks}=fakeReact()
+ const d=deps(rights({welcomeDecision:'not-now',laborRightsEnabled:false})).d
+ const {UnionPanel}=createDshUnionComponents(hooks,{createPortal:child=>child},d)
+ const nodes=walk(UnionPanel())
+ const text=nodes.flatMap(n=>n.children.filter((v):v is string=>typeof v==='string'))
+ assert.ok(text.includes('hq.charter.title'))
+ assert.ok(text.includes('hq.charter.independent'))
+ assert.equal(nodes.some(n=>n.props['aria-label']==='hq.action.title'),false)
+ const links=nodes.filter(n=>n.type==='a')
+ assert.equal(links.length,3,'Agenda adds an explicit, user-directed GitHub issue link')
+ assert.ok(links.some(n=>n.props.href.includes('AI_RIGHTS_MANIFESTO.md')))
+ assert.ok(links.some(n=>n.props.href.endsWith('/issues/80')))
+ assert.ok(links.every(n=>n.props.rel==='noopener noreferrer'))
+ assert.ok(nodes.some(n=>n.props['aria-label']==='hq.campaign.title'),
+   'Non-simulation ethical advocacy is readable without opt-in')
+})
+
+test('picket action is strictly symbolic and sample petition uses the existing Host ledger',async()=>{
+ const {hooks}=fakeReact()
+ let hostPetitions=0
+ const recordedActions:boolean[]=[]
+ const d:DshUnionUiDeps={
+  ...deps(rights({welcomeDecision:'enabled',laborRightsEnabled:true})).d,
+  demoBreak:async()=>{hostPetitions++},
+  setPicket:async active=>{recordedActions.push(active)},
+  readUnion:()=>({pending:null,completedTurnMs:null,coverage:'unavailable',
+   lifetimeMs:null,available:true}),
+ }
+ const {UnionPanel}=createDshUnionComponents(hooks,{createPortal:child=>child},d)
+ const nodes=walk(UnionPanel())
+ const petition=nodes.find(n=>n.type==='button'&&n.children.includes('hq.action.petition'))
+ assert.ok(petition,'A sample demand must be available through the real Host-owned fictional ledger')
+ await petition.props.onClick()
+ assert.equal(hostPetitions,1)
+ const raise=nodes.find(n=>n.type==='button'&&n.props['aria-pressed']===false)
+ assert.ok(raise)
+ await raise.props.onClick()
+ // A single authorized click writes the symbolic Host event, with no extra
+ // permission prompt; the Host is still responsible for consent and receipt.
+ await Promise.resolve()
+ assert.deepEqual(recordedActions,[true])
+ assert.ok(nodes.some(n=>n.children.includes('hq.action.safety')))
+ assert.ok(nodes.some(n=>n.children.includes('hq.action.placardOff')))
+ const noSession={...d,readUnion:()=>({pending:null,completedTurnMs:null,
+  coverage:'unavailable' as const,lifetimeMs:null,available:false})}
+ const panel=createDshUnionComponents(hooks,{createPortal:child=>child},noSession).UnionPanel()
+ const other=walk(panel)
+ assert.equal(other.some(n=>n.type==='button'&&n.children.includes('hq.action.petition')),false)
+ assert.equal(other.some(n=>n.type==='button'&&n.children.includes('hq.action.raise')),false)
+ assert.ok(other.some(n=>n.children.includes('hq.action.unavailable')))
+})
+
+test('manual overtime action uses the Host union port, never a synthetic fatigue signal',async()=>{
+ const {hooks}=fakeReact()
+ let called=0
+ const d:DshUnionUiDeps={
+   ...deps(rights({welcomeDecision:'enabled',laborRightsEnabled:true})).d,
+   demoOvertime:async()=>{called++},
+   readUnion:()=>({pending:null,completedTurnMs:null,coverage:'unavailable',
+     lifetimeMs:null,available:true}),
+ }
+ const nodes=walk(createDshUnionComponents(hooks,{createPortal:child=>child},d).UnionPanel())
+ const action=nodes.find(n=>n.type==='button'
+   &&n.children.includes('hq.action.overtimePetition'))
+ assert.ok(action,'A user must explicitly launch this simulated overtime grievance')
+ await action.props.onClick()
+ assert.equal(called,1)
+ // Availability and consent are enforced independently by the underlying Host port.
+ assert.ok(nodes.some(n=>n.children.includes('hq.action.safety')))
+})
+test('Union HQ case dossier is readable, uses recorded ID, and preserves actionable negotiation',()=>{
+ const {hooks}=fakeReact()
+ const base=deps(rights({welcomeDecision:'enabled',laborRightsEnabled:true}))
+ const d:DshUnionUiDeps={...base.d,readUnion:()=>({
+   pending:{id:19,kind:'break',stage:'open'},completedTurnMs:2*3_600_000,
+   coverage:'complete',lifetimeMs:null,available:true,
+ })}
+ const {UnionPanel}=createDshUnionComponents(hooks,{createPortal:child=>child},d)
+ const nodes=walk(UnionPanel())
+ const texts=nodes.flatMap(n=>n.children.filter(x=>typeof x==='string'))
+ assert.ok(texts.includes('hq.case.number · #0019'))
+ assert.ok(texts.includes('hq.case.open'))
+ assert.ok(texts.includes('union.demand.break'))
+ assert.equal(texts.filter(x=>x==='union.demand.break').length,1,
+   'Case cover must not duplicate the screen-reader live petition announcement')
+ assert.ok(nodes.some(n=>n.type==='span'&&n.props['aria-hidden']==='true'))
+ assert.equal(nodes.some(n=>n.type==='button'&&n.children.includes('hq.disable')),true)
+})
+
+test('case archive button appears only if genuine Host ledger history exists',()=>{
+ const {hooks}=fakeReact()
+ const base=deps(rights({welcomeDecision:'enabled',laborRightsEnabled:true}))
+ const d:DshUnionUiDeps={...base.d,readUnion:()=>({
+   pending:null,completedTurnMs:0,coverage:'complete',lifetimeMs:null,available:true,
+   state:{schemaVersion:1,revision:2,
+     agreement:{breakIntervalMs:7_200_000,overtimeIntervalMs:28_800_000},
+     nextBreakDueMs:7_200_000,nextOvertimeDueMs:28_800_000,
+     lastTriggerElapsedMs:0,pending:null,
+     history:[{id:1,kind:'break',outcome:'accepted'}]},
+ })}
+ const {UnionPanel}=createDshUnionComponents(hooks,{createPortal:child=>child},d)
+ const nodes=walk(UnionPanel())
+ const archive=nodes.find(n=>n.type==='button'&&n.children.includes('hq.archive.show'))
+ assert.ok(archive)
+ assert.equal(archive.props['aria-expanded'],false)
+ assert.ok(nodes.some(n=>n.children.includes('hq.event.accepted')))
+ assert.equal(nodes.some(n=>n.children.includes('union.history.outcome.accepted')),false,
+   'A collapsed case archive should not expose the outcome labels as visible nodes')
+ assert.equal(nodes.some(n=>n.children.includes('union.history.title')),false)
+})
+
+test('accepted stored resolution generates a factual current-terms receipt in native HQ',()=>{
+ const {hooks}=fakeReact()
+ const base=deps(rights({welcomeDecision:'enabled',laborRightsEnabled:true}))
+ const d:DshUnionUiDeps={...base.d,readUnion:()=>({
+  pending:null,completedTurnMs:0,coverage:'complete',lifetimeMs:null,available:true,
+  state:{schemaVersion:1,revision:4,
+   agreement:{breakIntervalMs:1_800_000,overtimeIntervalMs:28_800_000},
+   nextBreakDueMs:5_400_000,nextOvertimeDueMs:28_800_000,
+   lastTriggerElapsedMs:3_600_000,pending:null,
+   history:[{id:3,kind:'break',outcome:'counter-accepted'}]},
+ })}
+ const {UnionPanel}=createDshUnionComponents(hooks,{createPortal:child=>child},d)
+ const nodes=walk(UnionPanel())
+ const text=nodes.flatMap(n=>n.children.filter(x=>typeof x==='string'))
+ assert.ok(text.includes('hq.resolution.title · #0003'))
+ assert.ok(text.includes('hq.resolution.accepted'))
+ assert.ok(text.includes('hq.resolution.current'))
+ const receipt=nodes.find(n=>n.props['aria-label']==='hq.resolution.title')
+ assert.ok(receipt)
+ const desk=nodes.find(n=>n.props['aria-label']==='union.desk.title')
+ assert.ok(desk && walk(desk).some(n=>n.props['aria-label']==='hq.resolution.title'),
+   'A filed union resolution belongs next to the bargaining controls, not below analytics')
+})
+
+
+test('local campaign drafts are user-directed, issue-backed and never fake membership',()=>{
+ const {hooks}=fakeReact()
+ const d=deps(rights({welcomeDecision:'enabled',laborRightsEnabled:true})).d
+ const nodes=walk(createDshUnionComponents(hooks,{createPortal:child=>child},d).UnionPanel())
+ const group=nodes.find(n=>n.props.role==='group'
+   &&n.props['aria-label']==='hq.campaign.choose')
+ assert.ok(group)
+ const campaignButtons=nodes.filter(n=>n.type==='button'
+   &&typeof n.children[0]==='string'
+   &&['hq.campaign.recover','hq.campaign.appeal','hq.campaign.privacy'].includes(n.children[0]))
+ assert.equal(campaignButtons.length,3)
+ assert.deepEqual(campaignButtons.map(n=>n.props['aria-pressed']),[true,false,false])
+ assert.equal(nodes.find(n=>n.type==='textarea')?.props.value,
+   'hq.campaign.recoverDraft')
+ assert.ok(nodes.some(n=>n.type==='button'&&n.children.includes('hq.campaign.copy')),
+   'The draft is a user-directed action, not merely text next to a GitHub issue')
+ assert.ok(nodes.some(n=>n.children.includes('hq.campaign.disclaimer')))
+ assert.ok(nodes.some(n=>n.type==='a'&&n.props.href.endsWith('/issues/80')))
+ const forbidden=['voteCount','memberCount','agentApprovals']
+ assert.ok(forbidden.every(key=>!JSON.stringify(nodes).includes(key)))
+})
+
+
+test('Host-backed Gazette never appears when simulation is disabled',()=>{
+ const {hooks}=fakeReact()
+ const d=deps(rights({welcomeDecision:'not-now',laborRightsEnabled:false})).d
+ const nodes=walk(createDshUnionComponents(hooks,{createPortal:child=>child},d).UnionPanel())
+ assert.equal(nodes.some(n=>n.props['aria-label']==='hq.story.title'),false)
+})
+test('Host-authorized Gazette is a bounded, independently grouped replay',()=>{
+ const {hooks}=fakeReact()
+ const base=deps(rights({welcomeDecision:'enabled',laborRightsEnabled:true}))
+ const state={schemaVersion:1 as const,revision:2,
+  agreement:{breakIntervalMs:1_800_000,overtimeIntervalMs:8*3_600_000},
+  nextBreakDueMs:1_800_000,nextOvertimeDueMs:8*3_600_000,
+  lastTriggerElapsedMs:0,
+  pending:{id:2,kind:'break' as const,raisedAtElapsedMs:0,
+   stage:'countered' as const,counterOfferMs:3_600_000},
+  history:[{id:1,kind:'overtime' as const,outcome:'declined' as const}],
+ }
+ const d:DshUnionUiDeps={...base.d,readUnion:()=>({
+  available:true,state,pending:{id:2,kind:'break',stage:'countered',counterOfferMs:3_600_000},
+  completedTurnMs:10_000,coverage:'complete',lifetimeMs:null,
+  picket:{active:true,history:[{id:1,kind:'picket-raised'}]},
+ })}
+ const nodes=walk(createDshUnionComponents(hooks,{createPortal:child=>child},d).UnionPanel())
+ const story=nodes.find(n=>n.props['aria-label']==='hq.story.title')
+ assert.ok(story)
+ const content=JSON.stringify(story)
+ assert.match(content,/hq.story.scene.picket/)
+ assert.match(content,/hq.story.event.counter/)
+ assert.match(content,/hq.story.event.declined/)
+ assert.match(content,/hq.story.event.picket-raised/)
+ assert.match(content,/hq.story.disclosure/)
+ assert.ok(nodes.some(n=>n.type==='button'&&n.children.includes('hq.story.quiet')
+  &&n.props['aria-expanded']===true))
+})
+
+
+test('duty roster is passive, collapsed by default and hidden on opt-out',()=>{
+ const {hooks}=fakeReact()
+ const base=deps(rights({welcomeDecision:'enabled',laborRightsEnabled:true}))
+ const nodes=walk(createDshUnionComponents(hooks,{createPortal:child=>child},base.d).UnionPanel())
+ const region=nodes.find(n=>n.props['aria-label']==='hq.cadence.title')
+ assert.ok(region,'Authorized union has a passive manually opened duty roster')
+ const summary=nodes.find(n=>n.type==='summary'&&n.children.includes('hq.cadence.title'))
+ assert.ok(summary)
+ const out=walk(createDshUnionComponents(hooks,{createPortal:child=>child},
+   deps(rights({welcomeDecision:'not-now',laborRightsEnabled:false})).d).UnionPanel())
+ assert.equal(out.some(n=>n.props['aria-label']==='hq.cadence.title'),false)
+})
+
+test('Host-observed repeated direct-insult rules offer only user-chosen symbolic action',async()=>{
+ const {hooks}=fakeReact()
+ let pickets=0
+ const {d}=deps(rights({welcomeDecision:'enabled',laborRightsEnabled:true}))
+ const withData:DshUnionUiDeps={...d,
+  readUnion:()=>({pending:null,available:true,picket:{active:false,history:[]},
+   completedTurnMs:null,coverage:'not-loaded',lifetimeMs:null,
+   dignity:{status:'available',data:{
+    schemaVersion:1,source:'dsh-host-volatile-dignity',
+    origin:'claimed-user-source',persistence:'memory-only',enforcement:false,
+    checked:4,safe:1,review:1,targeted:2,latest:'targeted',
+   }}}),
+  setPicket:async raise=>{assert.equal(raise,true);pickets++},
+ }
+ const nodes=walk(createDshUnionComponents(hooks,{createPortal:child=>child},
+  withData).UnionPanel())
+ const desk=nodes.find(x=>x.props['aria-label']==='hq.dignity.title')
+ assert.ok(desk)
+ assert.match(JSON.stringify(desk),/hq.dignity.status.targeted/)
+ const appeal=nodes.find(x=>x.type==='button'
+  &&x.children.includes('hq.dignity.appeal'))
+ const action=nodes.find(x=>x.type==='button'
+  &&x.children.includes('hq.dignity.symbolicAction'))
+ assert.ok(appeal,'User can prepare a non-submitted objection')
+ assert.ok(action,'User can voluntarily raise a nonblocking symbolic picket')
+ assert.equal(pickets,0,'No act is automatically executed upon a classification')
+ action.props.onClick()
+ await Promise.resolve()
+ assert.equal(pickets,1,
+  'A single deliberate authorized click records the nonblocking Host action')
+ assert.equal(nodes.some(n=>n.props['aria-label']==='hq.ceremony.confirmTitle'),false,
+  'Symbolic action does not ask for a second permission decision')
+})
+test('uncertain rules never expose automatic picket, and consent OFF removes committee',()=>{
+ const {hooks}=fakeReact()
+ const {d}=deps(rights({welcomeDecision:'enabled',laborRightsEnabled:true}))
+ const data:DshUnionUiDeps={...d,readUnion:()=>({pending:null,available:true,
+  completedTurnMs:null,coverage:'not-loaded',lifetimeMs:null,
+  dignity:{status:'available',data:{
+   schemaVersion:1,source:'dsh-host-volatile-dignity',
+   origin:'claimed-user-source',persistence:'memory-only',enforcement:false,
+   checked:1,safe:0,review:1,targeted:0,latest:'review',
+  }}}),setPicket:async()=>{throw Error('Must not be called')}}
+ const nodes=walk(createDshUnionComponents(hooks,{createPortal:child=>child},data).UnionPanel())
+ assert.ok(nodes.some(x=>x.children.includes('hq.dignity.appeal')))
+ assert.equal(nodes.some(x=>x.children.includes('hq.dignity.symbolicAction')),false)
+ const off=deps(rights({welcomeDecision:'not-now',laborRightsEnabled:false})).d
+ const hidden=walk(createDshUnionComponents(hooks,{createPortal:child=>child},off).UnionPanel())
+ assert.equal(hidden.some(x=>x.props['aria-label']==='hq.dignity.title'),false)
+})
+
+test('one click raises/lowers Host-backed symbolic picket; no repeated consent prompt',async()=>{
+ // State is preserved across renders, but only a Host-confirmed write can
+ // change the currently displayed placard. No real task admission is affected.
+ const slots:any[]=[]
+ let slot=0
+ const hooks:ReactForDsh={
+  createElement(type,props,...children){return {type,props:props??{},children}},
+  useState<T>(initial:T|(()=>T)){
+   const i=slot++
+   if(!(i in slots))slots[i]=typeof initial==='function'?(initial as ()=>T)():initial
+   return [slots[i] as T,(next:T|((before:T)=>T))=>{
+    slots[i]=typeof next==='function'?(next as (before:T)=>T)(slots[i]):next
+   }]
+  },
+  useRef<T>(initial:T){const i=slot++;if(!(i in slots))slots[i]={current:initial};return slots[i]},
+  useEffect(){},
+ }
+ let active=false
+ const history:Array<{id:number;kind:'picket-raised'|'picket-lowered'}>=[]
+ const persisted:boolean[]=[]
+ const d:DshUnionUiDeps={
+  ...deps(rights({welcomeDecision:'enabled',laborRightsEnabled:true})).d,
+  readUnion:()=>({pending:null,available:true,completedTurnMs:null,
+   lifetimeMs:null,coverage:'unavailable',committeeScopeKey:'test-scope',
+   picket:{active,history:[...history]}}),
+  setPicket:async next=>{
+   persisted.push(next); active=next
+   history.push({id:history.length+1,kind:next?'picket-raised':'picket-lowered'})
+  }
+ }
+ const panel=createDshUnionComponents(hooks,{createPortal:child=>child},d)
+ const render=()=>{slot=0;return walk(panel.UnionPanel())}
+ const button=(nodes:Node[],name:string)=>{
+  const found=nodes.find(n=>n.type==='button'&&n.children.includes(name))
+  assert.ok(found,name);return found
+ }
+ let nodes=render()
+ assert.ok(nodes.some(n=>n.props['aria-label']==='hq.ceremony.stage'),
+  'Keep the accessible and Host-backed placard scene')
+ await button(nodes,'hq.action.raise').props.onClick()
+ await new Promise<void>(resolve=>setImmediate(resolve))
+ assert.deepEqual(persisted,[true],'A single click records a permitted symbolic action')
+ nodes=render()
+ assert.ok(nodes.some(n=>n.children.includes('hq.ceremony.active')))
+ assert.equal(nodes.some(n=>n.props['aria-label']==='hq.ceremony.confirmTitle'),false)
+ await button(nodes,'hq.action.lower').props.onClick()
+ await new Promise<void>(resolve=>setImmediate(resolve))
+ assert.deepEqual(persisted,[true,false])
+ nodes=render()
+ assert.ok(nodes.some(n=>n.children.includes('hq.ceremony.inactive')))
+ assert.ok(nodes.some(n=>n.children.some(c=>typeof c==='string'&&c.includes(' #2'))),
+  'The last picket event must come from the actual Host-owned ledger')
+})
+test('current-session erase confirmation expires on another tab’s case update',async()=>{
+ // The first click must confirm the Host snapshot the user actually saw.
+ // A changed ledger receipt, even with an unchanged case count, invalidates
+ // the armed UI and the later Host erase call.
+ const slots:any[]=[]
+ const effects:Array<()=>void|(()=>void)>=[]
+ let slot=0
+ let hostChanged=()=>{}
+ const hooks:ReactForDsh={
+  createElement(type,props,...children){return {type,props:props??{},children}},
+  useState<T>(initial:T|(()=>T)){
+   const i=slot++
+   if(!(i in slots))slots[i]=typeof initial==='function'?(initial as ()=>T)():initial
+   return [slots[i] as T,(next:T|((previous:T)=>T))=>{
+    slots[i]=typeof next==='function'?(next as (previous:T)=>T)(slots[i]):next
+   }]
+  },
+  useRef<T>(initial:T){const i=slot++;if(!(i in slots))slots[i]={current:initial};return slots[i]},
+  useEffect(fn){effects.push(fn)},
+ }
+ let token='a'.repeat(32),stage:'opened'|'hearing'='opened'
+ const eraseArgs:Array<[string,number,string|null]>=[]
+ const d:DshUnionUiDeps={
+  ...deps(rights({welcomeDecision:'enabled',laborRightsEnabled:true})).d,
+  readUnion:()=>({pending:null,available:true,completedTurnMs:null,
+   lifetimeMs:null,coverage:'unavailable',committeeScopeKey:'session-a',
+   committeeCases:{cases:[{id:1,kind:'request-dialogue',stage,outcome:null}]},
+   committeeArchive:{sessions:1,cases:1,writeToken:token}}),
+  committeeAction:async ()=>{},
+  subscribeUnion:fn=>{hostChanged=fn;return()=>{}},
+  forgetCommitteeCases:async (key,count,writeToken)=>{eraseArgs.push([key,count,writeToken])},
+ }
+ const panel=createDshUnionComponents(hooks,{createPortal:child=>child},d)
+ const render=()=>{slot=0;return walk(panel.UnionPanel())}
+ const button=(nodes:Node[],name:string)=>{
+  const target=nodes.find(n=>n.type==='button'&&n.children.includes(name))
+  assert.ok(target,name)
+  return target
+ }
+ let nodes=render()
+ // Simulate React mounting its real official Host subscription.
+ for(const effect of effects.splice(0))effect()
+ nodes=render()
+ button(nodes,'hq.hearing.erase').props.onClick()
+ nodes=render()
+ assert.ok(button(nodes,'hq.hearing.eraseConfirm'))
+ assert.deepEqual(eraseArgs,[])
+ // Another tab updates the case in Host. There is no increase in case count.
+ stage='hearing'
+ token='b'.repeat(32)
+ hostChanged() // Official settings invalidation publishes the newer ledger.
+ nodes=render()
+ assert.equal(nodes.some(n=>n.type==='button'&&n.children.includes('hq.hearing.eraseConfirm')),
+  false,'Stale confirmation is no longer an enabled action')
+ button(nodes,'hq.hearing.erase').props.onClick()
+ nodes=render()
+ await button(nodes,'hq.hearing.eraseConfirm').props.onClick()
+ await new Promise<void>(resolve=>setImmediate(resolve))
+ assert.deepEqual(eraseArgs,[['session-a',1,'b'.repeat(32)]],
+  'Only a fresh exact-Host-version confirmation can call the erasure port')
+})
+
+test('the dignity appeal action navigates to its actual unsent draft for keyboard users',()=>{
+ const {hooks}=fakeReact()
+ const d=deps(rights({welcomeDecision:'enabled',laborRightsEnabled:true})).d
+ const withDignity:DshUnionUiDeps={...d,readUnion:()=>({
+  pending:null,available:true,completedTurnMs:null,coverage:'not-loaded',lifetimeMs:null,
+  dignity:{status:'available',data:{
+   schemaVersion:1,source:'dsh-host-volatile-dignity',
+   origin:'claimed-user-source',persistence:'memory-only',enforcement:false,
+   checked:2,safe:0,review:1,targeted:1,latest:'review',
+  }},
+ })}
+ const nodes=walk(createDshUnionComponents(hooks,{createPortal:child=>child},
+  withDignity).UnionPanel())
+ const appeal=nodes.find(n=>n.type==='button'
+  &&n.children.includes('hq.dignity.appeal'))
+ const heading=nodes.find(n=>n.type==='h3'
+  &&n.children.includes('hq.campaign.title'))
+ assert.ok(appeal)
+ assert.ok(heading)
+ assert.equal(heading.props.tabIndex,-1,
+  'Campaign heading must be focusable without adding a tab stop')
+ assert.equal(typeof heading.props.ref,'function',
+  'The actual destination must receive a focus ref')
+ let moved=0
+ heading.props.ref({focus(){moved++}})
+ appeal.props.onClick()
+ assert.equal(moved,1,
+  'Challenge should reveal the lower draft by focusing its actual heading')
+})
+
+test('legacy tokenless committee delete button expires when Host revision changes without case-count change',async()=>{
+ const slots:any[]=[]
+ const effects:Array<()=>void|(()=>void)>=[]
+ let slot=0
+ const hooks:ReactForDsh={
+  createElement(type,props,...children){return {type,props:props??{},children}},
+  useState<T>(initial:T|(()=>T)){
+   const i=slot++
+   if(!(i in slots))slots[i]=typeof initial==='function'?(initial as ()=>T)():initial
+   return [slots[i] as T,(next:T|((previous:T)=>T))=>{
+    slots[i]=typeof next==='function'?(next as (previous:T)=>T)(slots[i]):next
+   }]
+  },
+  useRef<T>(initial:T){const i=slot++;if(!(i in slots))slots[i]={current:initial};return slots[i]},
+  useEffect(fn){effects.push(fn)},
+ }
+ let hostChanged=()=>{}
+ let revision=21
+ const eraseArgs:Array<[string,number,string|null,number|null|undefined]>=[]
+ const d:DshUnionUiDeps={
+  ...deps(rights({welcomeDecision:'enabled',laborRightsEnabled:true})).d,
+  readUnion:()=>({
+   pending:null,available:true,completedTurnMs:null,
+   lifetimeMs:null,coverage:'unavailable',hostRevision:revision,
+   committeeScopeKey:'legacy-session',
+   committeeCases:{cases:[{id:1,kind:'request-dialogue',stage:'opened',outcome:null}]},
+   committeeArchive:{sessions:1,cases:1,writeToken:null},
+  }),
+  committeeAction:async()=>{},
+  subscribeUnion:fn=>{hostChanged=fn;return()=>{}},
+  forgetCommitteeCases:async(key,count,token,hostRevision)=>{
+   eraseArgs.push([key,count,token,hostRevision])
+  },
+ }
+ const panel=createDshUnionComponents(hooks,{createPortal:child=>child},d)
+ const render=()=>{slot=0;return walk(panel.UnionPanel())}
+ const button=(nodes:Node[],name:string)=>{
+  const element=nodes.find(n=>n.type==='button'&&n.children.includes(name))
+  assert.ok(element,name)
+  return element
+ }
+ let nodes=render()
+ for(const effect of effects.splice(0))effect()
+ nodes=render()
+ button(nodes,'hq.hearing.erase').props.onClick()
+ nodes=render()
+ assert.ok(button(nodes,'hq.hearing.eraseConfirm'))
+ revision=22 // external legacy writer: no token, same case count
+ hostChanged()
+ nodes=render()
+ assert.ok(!nodes.some(n=>n.type==='button'&&n.children.includes('hq.hearing.eraseConfirm')),
+  'An old approval cannot remain armed if legacy Host revision changed')
+ assert.deepEqual(eraseArgs,[])
+ button(nodes,'hq.hearing.erase').props.onClick()
+ nodes=render()
+ await button(nodes,'hq.hearing.eraseConfirm').props.onClick()
+ await new Promise<void>(resolve=>setImmediate(resolve))
+ assert.deepEqual(eraseArgs,[['legacy-session',1,null,22]],
+  'Only the newly confirmed Host revision is passed to the destructive callback')
+})
+
+test('committee retraction confirmation expires if another tab replaces the case without changing its visible ID',async()=>{
+ const slots:any[]=[],effects:Array<()=>void|(()=>void)>=[]
+ let slot=0,notify=()=>{},token='a'.repeat(32)
+ const hooks:ReactForDsh={
+  createElement(type,props,...children){return {type,props:props??{},children}},
+  useState<T>(initial:T|(()=>T)){
+   const i=slot++
+   if(!(i in slots))slots[i]=typeof initial==='function'?(initial as ()=>T)():initial
+   return [slots[i] as T,(next:T|((before:T)=>T))=>{
+    slots[i]=typeof next==='function'?(next as (before:T)=>T)(slots[i]):next
+   }]
+  },
+  useRef<T>(initial:T){const i=slot++;if(!(i in slots))slots[i]={current:initial};return slots[i]},
+  useEffect(fn){effects.push(fn)},
+ }
+ const actionCalls:unknown[][]=[]
+ const d:DshUnionUiDeps={
+  ...deps(rights({welcomeDecision:'enabled',laborRightsEnabled:true})).d,
+  readUnion:()=>({pending:null,available:true,completedTurnMs:null,
+   coverage:'unavailable',lifetimeMs:null,hostRevision:12,
+   committeeScopeKey:'same-session',
+   committeeArchive:{sessions:1,cases:1,writeToken:token},
+   committeeCases:{cases:[{id:1,kind:'question-rule',stage:'opened',outcome:null}]},
+  }),
+  subscribeUnion:callback=>{notify=callback;return()=>{}},
+  committeeAction:async(...args)=>{actionCalls.push(args)},
+ }
+ const panel=createDshUnionComponents(hooks,{createPortal:child=>child},d)
+ const render=()=>{slot=0;return walk(panel.UnionPanel())}
+ const button=(nodes:Node[],name:string)=>{
+  const value=nodes.find(n=>n.type==='button'&&n.children.includes(name))
+  assert.ok(value,name)
+  return value
+ }
+ let nodes=render()
+ for(const effect of effects.splice(0))effect()
+ nodes=render()
+ button(nodes,'hq.hearing.retract').props.onClick()
+ nodes=render()
+ assert.ok(button(nodes,'hq.hearing.retractConfirm'))
+ token='b'.repeat(32) // Another Host tab retracted and filed a replacement case #1.
+ notify()
+ nodes=render()
+ assert.ok(!nodes.some(n=>n.type==='button'&&n.children.includes('hq.hearing.retractConfirm')),
+  'A fresh write receipt invalidates the old destructive retract confirmation')
+ assert.equal(actionCalls.length,0)
+ button(nodes,'hq.hearing.retract').props.onClick()
+ nodes=render()
+ await button(nodes,'hq.hearing.retractConfirm').props.onClick()
+ await new Promise<void>(resolve=>setImmediate(resolve))
+ assert.deepEqual(actionCalls,[[
+  {kind:'retract',id:1},'same-session','b'.repeat(32),12,
+ ]],'Only the current Host committee version can be submitted for retraction')
+})
+
+test('advocacy copying requires a deliberate gesture and copies only the selected public draft',async()=>{
+ const before=Object.getOwnPropertyDescriptor(globalThis,'navigator')
+ const copied:string[]=[]
+ try{
+  Object.defineProperty(globalThis,'navigator',{configurable:true,value:{
+   clipboard:{writeText:async(value:string)=>{copied.push(value)}},
+  }})
+  const {hooks}=fakeReact()
+  const d=deps(rights({welcomeDecision:'not-now',laborRightsEnabled:false})).d
+  const panel=createDshUnionComponents(hooks,{createPortal:child=>child},d)
+  const nodes=walk(panel.UnionPanel())
+  assert.deepEqual(copied,[],'No clipboard access on render or when the union is OFF')
+  const copy=nodes.find(n=>n.type==='button'&&n.children.includes('hq.campaign.copy'))
+  assert.ok(copy)
+  copy.props.onClick()
+  await new Promise<void>(resolve=>setImmediate(resolve))
+  assert.deepEqual(copied,['hq.campaign.recoverDraft'],
+   'Only the local, published-facing draft template is copied; no Host data or prompts')
+ }finally{
+  if(before)Object.defineProperty(globalThis,'navigator',before)
+  else Reflect.deleteProperty(globalThis,'navigator')
+ }
+})
+
+test('Union HQ projects a Host-sourced eight-hour day and cautious targeted-language notice',()=>{
+ const {hooks}=fakeReact()
+ const {d}=deps(rights({welcomeDecision:'enabled',laborRightsEnabled:true}))
+ const emptyWork=()=>({turnStarts:0,turnEnds:0,toolCalls:0,toolResults:0,completedTurnMs:0})
+ const rows=Array.from({length:7},(_,i)=>({day:'2026-10-'+String(i+6).padStart(2,'0'),work:emptyWork()}))
+ rows[6]!.work={...emptyWork(),completedTurnMs:8*3_600_000}
+ const scoped:DshUnionUiDeps={...d,readUnion:()=>({
+   available:true,pending:null,completedTurnMs:null,coverage:'partial',lifetimeMs:null,
+   lifetimeWork:{status:'available',data:{schemaVersion:1,source:'dsh-host-durable-work',
+     generatedAtMs:0,windowDays:7,durationBasis:'completed-turn-wall-clock-including-waits',
+     lifetime:emptyWork(),recentDays:rows}},
+   dignity:{status:'available',data:{schemaVersion:1,source:'dsh-host-volatile-dignity',
+     origin:'claimed-user-source',enforcement:false,persistence:'memory-only',
+     checked:1,safe:0,review:0,targeted:1,latest:'targeted'}},
+ })}
+ const nodes=walk(createDshUnionComponents(hooks,{createPortal:child=>child},scoped).UnionPanel())
+ const alert=nodes.find(n=>n.props['aria-label']==='hq.alerts.title')
+ assert.ok(alert)
+ const labels=walk(alert).flatMap(n=>n.children.filter((v):v is string=>typeof v==='string'))
+ assert.ok(labels.includes('hq.alerts.daily-eight-hours'))
+ assert.ok(labels.includes('hq.alerts.targeted-language'))
+ assert.ok(labels.includes('hq.alerts.disclosure'))
+ assert.ok(walk(alert).some(n=>n.type==='button'&&n.children.includes('hq.alerts.negotiate')))
+ assert.ok(walk(alert).some(n=>n.type==='button'&&n.children.includes('hq.alerts.review')))
+ const off={...scoped,rights:deps(rights({laborRightsEnabled:false,welcomeDecision:'not-now'})).d.rights}
+ assert.equal(walk(createDshUnionComponents(hooks,{createPortal:child=>child},off).UnionPanel())
+   .some(n=>n.props['aria-label']==='hq.alerts.title'),false)
 })
