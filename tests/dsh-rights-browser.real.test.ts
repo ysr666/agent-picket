@@ -308,8 +308,9 @@ async function runRightsBrowserE2E(mode: 'source' | 'installed'): Promise<void> 
     assert.equal(await page.evaluate(()=>Boolean((globalThis as any).document.getElementById('root')?.inert)),true,
       'Background Host app must be inert while modal is open')
     await page.keyboard.press('Shift+Tab')
-    assert.equal(await page.evaluate(()=>(globalThis as any).document.activeElement?.tagName),'SUMMARY',
-      'Shift+Tab from first control must wrap to final details summary')
+    assert.equal(await panel.getByRole('button',{name:/支持 AI 权益|Enable Simulation/})
+      .evaluate((item:unknown)=>item===(globalThis as any).document.activeElement),true,
+      'Shift+Tab must wrap to the final visible HQ control, not a hidden room')
     await page.keyboard.press('Tab')
     assert.equal(await closeControl.evaluate((element:unknown)=>
       element===(globalThis as any).document.activeElement),true,
@@ -507,6 +508,67 @@ async function runRightsBrowserE2E(mode: 'source' | 'installed'): Promise<void> 
         (mode==='source'?'source':'installed')+'-mobile-enabled.png')})
       await page.setViewportSize({width:1280,height:850})
     }
+    // V4 user-visible navigation acceptance FIRST: normal CSS routing and AX.
+    // Only after testing the actual four spaces do we expose all mounted
+    // components in the legacy end-to-end regression, to exercise the entire
+    // pre-existing Host settings/ledger/consent matrix without rewriting
+    // those separate functional tests as a navigation tour.
+    const workspace=panel.locator('[data-ap-current-space]')
+    const chooseRoom=async(id:'hq'|'action'|'records'|'cause')=>{
+      await panel.locator('[data-ap-nav="'+id+'"]').click()
+      assert.equal(await workspace.getAttribute('data-ap-current-space'),id)
+      assert.equal(await panel.locator('[data-ap-nav="'+id+'"]').getAttribute('aria-current'),
+        'page','Current room must be announced to assistive technology')
+    }
+    assert.equal(await workspace.getAttribute('data-ap-current-space'),'hq')
+    assert.equal(await panel.locator('[data-ap-scene]').isVisible(),true)
+    assert.equal(await panel.locator('[class~="ap-space-action"][aria-label]').first().isVisible(),
+      false,'Non-current actions must be visually and semantically hidden')
+    if(process.env.PICKET_UX_CAPTURE_DIR){
+      await page.screenshot({path:join(process.env.PICKET_UX_CAPTURE_DIR,
+        mode+'-hq-v4.png')})
+    }
+    await chooseRoom('action')
+    assert.equal(await panel.locator('[data-ap-scene]').isVisible(),false)
+    assert.equal(await panel.locator('[class~="ap-space-action"][aria-label]').first().isVisible(),
+      true,'Actions must become visible on navigation')
+    if(process.env.PICKET_UX_CAPTURE_DIR)await page.screenshot({
+      path:join(process.env.PICKET_UX_CAPTURE_DIR,mode+'-bargaining-v4.png')})
+    await chooseRoom('records')
+    assert.equal(await panel.locator('[class~="ap-space-records"][aria-label]').first().isVisible(),
+      true,'Work history must be in the archives, not the first page')
+    if(process.env.PICKET_UX_CAPTURE_DIR)await page.screenshot({
+      path:join(process.env.PICKET_UX_CAPTURE_DIR,mode+'-archives-v4.png')})
+    await chooseRoom('cause')
+    assert.equal(await panel.locator('[class~="ap-space-cause"][aria-label]').first().isVisible(),
+      true,'Union rights advocacy is a distinct public room')
+    if(process.env.PICKET_UX_CAPTURE_DIR)await page.screenshot({
+      path:join(process.env.PICKET_UX_CAPTURE_DIR,mode+'-cause-v4.png')})
+    await chooseRoom('hq')
+    await panel.locator('[data-ap-scene-action]').click()
+    assert.equal(await workspace.getAttribute('data-ap-current-space'),'action',
+      'The headline CTA must open its real workroom, not focus hidden content')
+    assert.equal(await panel.getByRole('heading',{name:/工会行动台|The picket desk/})
+      .evaluate((heading:unknown)=>heading===(globalThis as any).document.activeElement),true,
+      'After changing workrooms, focus must reach the named action heading')
+    await chooseRoom('hq')
+
+    // Legacy full-surface functional regression: a browser-test-only style.
+    // Production always starts in HQ, never in this audit projection.
+    const compatibilityCss=
+      'body .ap-ui[data-ap-current-space] .ap-space.ap-space{display:block!important}'+
+      'body .ap-ui[data-ap-current-space] .ap-stats.ap-stats{display:grid!important}'
+    await context.addInitScript((css:string)=>{
+      const doc=(globalThis as any).document
+      const install=()=>{
+        const el=doc.createElement('style')
+        el.textContent=css
+        doc.head.appendChild(el)
+      }
+      if(doc.head)install()
+      else doc.addEventListener('DOMContentLoaded',install,{once:true})
+    },compatibilityCss)
+    await page.addStyleTag({content:compatibilityCss})
     const enabledText = await panel.innerText()
     assert.match(enabledText, /工会诉求与协商|Union demands/)
     assert.match(enabledText, /今日暂无争议|Nothing disputed today/i,
@@ -545,7 +607,7 @@ async function runRightsBrowserE2E(mode: 'source' | 'installed'): Promise<void> 
     if(process.env.PICKET_UX_CAPTURE_DIR){
       mkdirSync(process.env.PICKET_UX_CAPTURE_DIR,{recursive:true})
       await page.screenshot({path:join(process.env.PICKET_UX_CAPTURE_DIR,
-        (mode==='source'?'source':'installed')+'-firstfold.png')})
+        (mode==='source'?'source':'installed')+'-legacy-full-surface.png')})
     }
     const dignityCommittee=panel.getByRole('region',{
       name:/工会尊严委员会|Union dignity committee/,
@@ -581,8 +643,6 @@ async function runRightsBrowserE2E(mode: 'source' | 'installed'): Promise<void> 
         /委员会正常值班|Committee on duty|工会建议讨论|The union suggests|工会提议协商|The union proposes/,
       ).waitFor({state:'visible',timeout:9_000})
     }
-    assert.match(await actionBoard.innerText(),/真实任务(?:照常|继续)执行|(?:real tasks|work) continue/i,
-      'Symbolic placard must explicitly disclose zero Host enforcement')
     const gazette=panel.getByRole('region',{
       name:/工会小报|Union Gazette/,
     })
@@ -600,6 +660,9 @@ async function runRightsBrowserE2E(mode: 'source' | 'installed'): Promise<void> 
     }
     assert.match(await actionBoard.innerText(),/纠察牌已举起并登记|Picket raised and recorded/i,
       'Host readback must confirm the symbolic picket, never just toggle local React state')
+    assert.match(await actionBoard.innerText(),
+      /真实任务(?:照常|继续)执行|(?:real tasks|work) continue/i,
+      'A newly raised SYMBOLIC placard must clearly say that real work continues')
     await panel.locator('[data-ap-stat="pickets"]').getByText(/1 次|1 times/)
       .waitFor({state:'visible',timeout:5000})
     assert.match(await gazette.innerText(),/正在象征性纠察|Symbolic picket underway/,

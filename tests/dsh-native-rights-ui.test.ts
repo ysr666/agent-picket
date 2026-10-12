@@ -1219,7 +1219,9 @@ test('Picketverse v3: verified picket scene offers one accessible path to real a
  const heading=nodes.find(n=>n.type==='h3'&&n.children.includes('hq.action.title'))!
  heading.props.ref({focus(){focusCalls++}})
  action.props.onClick()
- assert.equal(focusCalls,1)
+ assert.equal(focusCalls,0,
+  'Focus must wait for the action page to become visible after React commit')
+ assert.ok(nodes.some(n=>n.props['data-ap-nav']==='action'))
  assert.ok(nodes.some(n=>n.children.includes('hq.action.lower')))
  assert.equal(nodes.some(n=>n.props['aria-label']==='settings.realBlockingControl'),false)
 })
