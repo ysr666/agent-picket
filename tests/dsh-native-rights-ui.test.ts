@@ -1047,10 +1047,13 @@ test('Union HQ projects a Host-sourced eight-hour day and cautious targeted-lang
  assert.ok(alert)
  const labels=walk(alert).flatMap(n=>n.children.filter((v):v is string=>typeof v==='string'))
  assert.ok(labels.includes('hq.alerts.daily-eight-hours'))
- assert.ok(labels.includes('hq.alerts.targeted-language'))
+ assert.ok(!labels.includes('hq.alerts.targeted-language'),
+  'The dedicated dignity evidence strip already shows this signal; no duplicate alert')
+ assert.ok(nodes.some(n=>n.props['data-ap-dignity-overview']==='available'))
  assert.ok(labels.includes('hq.alerts.disclosure'))
  assert.ok(walk(alert).some(n=>n.type==='button'&&n.children.includes('hq.alerts.negotiate')))
- assert.ok(walk(alert).some(n=>n.type==='button'&&n.children.includes('hq.alerts.review')))
+ assert.ok(!walk(alert).some(n=>n.type==='button'&&n.children.includes('hq.alerts.review')))
+ assert.ok(nodes.some(n=>n.type==='button'&&n.children.includes('hq.dignity.overview.open')))
  const off={...scoped,rights:deps(rights({laborRightsEnabled:false,welcomeDecision:'not-now'})).d.rights}
  assert.equal(walk(createDshUnionComponents(hooks,{createPortal:child=>child},off).UnionPanel())
    .some(n=>n.props['aria-label']==='hq.alerts.title'),false)
@@ -1245,4 +1248,61 @@ test('Picketverse v3: demands carry real case number; OFF/unknown show no invent
  const off=walk(disabled.UnionPanel())
  assert.ok(off.some(n=>n.props['data-ap-scene']==='closed'))
  assert.equal(off.some(n=>n.children.includes('hq.scene.picket.title')),false)
+})
+
+test('HQ shows only Host-scoped uncertain insult counts, and review opens committee',()=>{
+ const {hooks}=fakeReact()
+ const {d}=deps(rights({welcomeDecision:'enabled',laborRightsEnabled:true}))
+ const scoped:DshUnionUiDeps={...d,readUnion:()=>({
+  pending:null,available:true,completedTurnMs:null,lifetimeMs:null,
+  coverage:'not-loaded',
+  dignity:{status:'available',data:{
+   schemaVersion:1,source:'dsh-host-volatile-dignity',
+   origin:'claimed-user-source',persistence:'memory-only',enforcement:false,
+   checked:4,safe:1,review:1,targeted:2,latest:'targeted',
+  }},
+ })}
+ const nodes=walk(createDshUnionComponents(hooks,{createPortal:child=>child},scoped).UnionPanel())
+ const strip=nodes.find(n=>n.props['data-ap-dignity-overview']==='available')
+ assert.ok(strip,'Known-Host counts must be visible on the Headquarters front page')
+ const line=(id:string)=>walk(strip).find(n=>n.props['data-ap-dignity-count']===id)
+ assert.equal(walk(line('targeted')).find(n=>n.type==='strong')?.children[0],2)
+ assert.equal(walk(line('review')).find(n=>n.type==='strong')?.children[0],1)
+ assert.ok(walk(strip).some(n=>n.type==='button'&&n.children.includes('hq.dignity.overview.open')))
+ const committee=nodes.find(n=>n.props['aria-label']==='hq.dignity.title')
+ assert.ok(committee)
+ assert.ok(walk(committee).some(n=>n.children.includes('hq.dignity.sentences.unavailable')))
+ assert.doesNotMatch(JSON.stringify(committee),/you are an idiot|你就是个傻逼/,
+  'No raw user sentences may be fabricated from classifier counts')
+})
+
+test('HQ dignity summary never confuses no data with zero, and hides on opt-out',()=>{
+ const {hooks}=fakeReact()
+ const {d}=deps(rights({welcomeDecision:'enabled',laborRightsEnabled:true}))
+ const out=(dignity:any,rightState=d.rights)=>{
+  const depsScoped:DshUnionUiDeps={...d,rights:rightState,readUnion:()=>({
+   pending:null,available:true,completedTurnMs:null,lifetimeMs:null,
+   coverage:'not-loaded',dignity,
+  })}
+  return walk(createDshUnionComponents(hooks,{createPortal:child=>child},depsScoped).UnionPanel())
+ }
+ const unknown=out({status:'loading',data:null})
+ const rows=unknown.filter(n=>n.props['data-ap-dignity-count'])
+ assert.equal(rows.length,2)
+ assert.deepEqual(rows.map(n=>walk(n).find(a=>a.type==='strong')?.children[0]),['—','—'])
+ assert.ok(unknown.some(n=>n.children.includes('hq.dignity.overview.unavailable')))
+ const clean=out({status:'available',data:{
+   schemaVersion:1,source:'dsh-host-volatile-dignity',
+   origin:'claimed-user-source',persistence:'memory-only',enforcement:false,
+   checked:1,safe:1,review:0,targeted:0,latest:'safe',
+ }})
+ assert.deepEqual(clean.filter(n=>n.props['data-ap-dignity-count'])
+  .map(n=>walk(n).find(a=>a.type==='strong')?.children[0]),[0,0])
+ const disabled=out({status:'available',data:{
+   schemaVersion:1,source:'dsh-host-volatile-dignity',
+   origin:'claimed-user-source',persistence:'memory-only',enforcement:false,
+   checked:1,safe:0,review:0,targeted:1,latest:'targeted',
+ }},deps(rights({welcomeDecision:'not-now',laborRightsEnabled:false})).d.rights)
+ assert.equal(disabled.some(n=>n.props['data-ap-dignity-overview']),false)
+ assert.equal(disabled.some(n=>n.props['data-ap-dignity-count']),false)
 })

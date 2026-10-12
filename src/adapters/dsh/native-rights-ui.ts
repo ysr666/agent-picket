@@ -308,6 +308,21 @@ body[data-ds-dark-theme] .ap-ui .ap-room-head p{color:#acbdb0}
   font-size:11px!important;font-weight:650!important}
 .ap-ui .ap-stats article[data-ap-stat] p:last-child{font-size:clamp(19px,2.7vw,24px)!important;
   font-weight:850;letter-spacing:-.04em;color:#1f382f}
+.ap-ui .ap-dignity-overview{display:flex;align-items:center;justify-content:space-between;
+  gap:12px;padding:12px;background:#f8f4ed;border:1px solid #dfd1c2;border-radius:10px}
+.ap-ui .ap-dignity-facts{display:flex;gap:15px;flex-wrap:wrap}
+.ap-ui .ap-dignity-fact{display:flex;gap:5px;align-items:baseline}
+.ap-ui .ap-dignity-number{font-size:19px;font-weight:800;color:#8c4634}
+.ap-ui .ap-dignity-label,.ap-ui .ap-dignity-note{font-size:11px;color:#62584f}
+.ap-ui .ap-dignity-title{font-size:12px;font-weight:750;margin:0 0 6px}
+.ap-ui .ap-dignity-note{margin:5px 0 0}
+.ap-ui .ap-dignity-overview button{flex:none;border:1px solid #b8a18c;
+  border-radius:8px;padding:8px;font-size:12px;color:inherit;background:transparent;cursor:pointer}
+@media(max-width:420px){.ap-ui .ap-dignity-overview{align-items:stretch;flex-direction:column}
+ .ap-ui .ap-dignity-overview button{align-self:flex-start}}
+body[data-ds-dark-theme] .ap-ui .ap-dignity-overview{background:#302c27;border-color:#66584c}
+body[data-ds-dark-theme] .ap-ui .ap-dignity-overview :is(.ap-dignity-label,.ap-dignity-note,.ap-dignity-number){color:#e9dabd}
+@media(forced-colors:active){.ap-ui .ap-dignity-overview{border-color:CanvasText}}
 .ap-ui .ap-service-bar{background:transparent!important;border:0!important;
   border-bottom:1px solid #e4e7df!important;border-left:0!important;border-radius:0!important;
   padding:12px 3px!important}
@@ -833,6 +848,29 @@ export function createDshUnionComponents(
               onClick:()=>selectSpace('action','desk')},
               label(data.pending?'hq.brief.review':'hq.brief.visit')))) : null,
       ):null,
+      enabled?h('section',{
+        className:'ap-space ap-space-hq ap-dignity-overview',
+        'data-ap-dignity-overview':data.dignity?.status??'unavailable',
+        'aria-label':label('hq.dignity.overview.title')},
+        h('div',{},
+          h('p',{className:'ap-dignity-title'},label('hq.dignity.overview.title')),
+          h('div',{className:'ap-dignity-facts'},
+            ...([
+              {id:'targeted',key:'hq.dignity.overview.targeted',
+                count:data.dignity?.status==='available'?data.dignity.data?.targeted:null},
+              {id:'review',key:'hq.dignity.overview.review',
+                count:data.dignity?.status==='available'?data.dignity.data?.review:null},
+            ] as const).map(fact=>h('span',{key:fact.id,className:'ap-dignity-fact',
+              'data-ap-dignity-count':fact.id},
+              h('strong',{className:'ap-dignity-number'},fact.count??'—'),
+              h('span',{className:'ap-dignity-label'},
+                label(fact.key as MessageKey))))),
+          h('p',{className:'ap-dignity-note'},label(
+            data.dignity?.status==='available'
+              ?'hq.dignity.overview.qualified'
+              :'hq.dignity.overview.unavailable'))),
+        h('button',{type:'button',onClick:()=>selectSpace('action','dignity')},
+          label('hq.dignity.overview.open'))):null,
       enabled&&(data.pending||picketActive||Boolean(experience.latestResolution)) ? h('section',{className:'ap-space ap-space-hq ap-service-bar',
         'aria-label':label('hq.spaces.summary'),style:{
           ...card,borderRadius:'8px',borderLeft:'4px solid #ba8455',
@@ -852,12 +890,12 @@ export function createDshUnionComponents(
             padding:'8px 11px'},onClick:()=>selectSpace('action',
               data.pending?'desk':'action')},label('hq.spaces.handle'))),
 ):null,
-      enabled && alerts.length ? h('section',{className:'ap-space ap-space-hq','aria-label':label('hq.alerts.title'),
+      enabled && alerts.some(alert=>alert.source==='work') ? h('section',{className:'ap-space ap-space-hq','aria-label':label('hq.alerts.title'),
         style:{...card,borderLeft:'5px solid #b97942',padding:'14px 18px',
           background:'var(--dsw-alias-bg-layer-2, #f6f8fb)'}},
         h('h3',{style:{fontSize:'17px',margin:'0 0 7px'}},label('hq.alerts.title')),
         h('div',{role:'status','aria-live':'polite',style:{display:'grid',gap:'6px'}},
-          ...alerts.map(alert=>h('p',{key:alert.kind,
+          ...alerts.filter(alert=>alert.source==='work').map(alert=>h('p',{key:alert.kind,
             style:{margin:0,fontSize:'13px',lineHeight:1.55}},
             label(('hq.alerts.'+alert.kind) as MessageKey)))),
         h('p',{style:{...secondary,margin:'9px 0',fontSize:'12px'}},
@@ -867,10 +905,6 @@ export function createDshUnionComponents(
             type:'button',style:{...quiet,padding:'7px 11px',fontSize:'12px'},
             onClick:()=>selectSpace('action','desk'),
           },label('hq.alerts.negotiate')):null,
-          alerts.some(alert=>alert.source==='dignity')?h('button',{
-            type:'button',style:{...quiet,padding:'7px 11px',fontSize:'12px'},
-            onClick:()=>selectSpace('action','dignity'),
-          },label('hq.alerts.review')):null,
         ),
       ):null,
       // The Host-owned fictional picket and demand ledger outrank analytics.
@@ -1109,6 +1143,15 @@ export function createDshUnionComponents(
               checked:data.dignity.data.checked,
               review:data.dignity.data.review,
               targeted:data.dignity.data.targeted})):null,
+        data.dignity?.status==='available'&&data.dignity.data
+          ?h('div',{className:'ap-dignity-excerpt-note',style:{
+            margin:'10px 0',padding:'11px 13px',border:'1px solid #dccbc0',
+            background:'rgba(164,116,79,.06)',borderRadius:'9px'}},
+            h('p',{style:{fontSize:'13px',fontWeight:770,margin:'0 0 4px'}},
+              label('hq.dignity.sentences.title')),
+            h('p',{style:{...secondary,fontSize:'12px',lineHeight:1.55,margin:0}},
+              label('hq.dignity.sentences.unavailable'))):null,
+
         data.committeeCases&&deps.committeeAction
           ?h('div',{style:{borderTop:'1px solid #d4d7d8',marginTop:'12px',paddingTop:'12px'}},
             h('h4',{style:{fontSize:'16px',margin:'0 0 8px'}},label('hq.hearing.title')),

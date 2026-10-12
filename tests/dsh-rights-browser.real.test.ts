@@ -1465,18 +1465,26 @@ async function runRightsBrowserE2E(mode: 'source' | 'installed'): Promise<void> 
       await realSessionRow.click()
       await page.waitForTimeout(180)
       panel=await openUnion()
+      const liveDignity=panel.locator('[data-ap-dignity-overview="available"]')
+      await liveDignity.waitFor({state:'visible',timeout:9_000})
+      const observed=await liveDignity.locator('[data-ap-dignity-count="targeted"] strong')
+        .innerText()
+      assert.equal(Number(observed),realDignity.verdicts,
+        'HQ must display the exact CURRENT Host session count, not an invented total')
+      assert.equal(await panel.locator('[data-ap-dignity-count="review"]').count(),1)
+      assert.doesNotMatch(await panel.innerText(),/you are an idiot/,
+        'The union view must not manufacture or leak raw user text from the summary')
+      if(process.env.PICKET_UX_CAPTURE_DIR)
+        await page.screenshot({path:join(process.env.PICKET_UX_CAPTURE_DIR,
+          mode+'-dignity-overview.png')})
       const sameSessionCommittee=panel.getByRole('region',{
         name:/工会尊严委员会|Union dignity committee/,
       })
-      const liveDuty=panel.getByRole('region',{
-        name:/工会值班提醒|Union duty notice/,
-      })
-      await liveDuty.getByText(/最近一次文本检查命中|latest text check matched/)
-        .waitFor({state:'visible',timeout:9_000})
-      assert.match(await liveDuty.innerText(),/无法据此核实真人身份|human authorship is unverified/,
-        'A real Host targeted rule result must invite review without asserting verified human abuse')
-      await liveDuty.getByRole('button',{
-        name:/查看尊严委员会|Review dignity committee/,
+      assert.match(await liveDignity.innerText(),
+        /规则命中并非已证实的辱骂|Rule matches, not proven misconduct/,
+        'A real Host classification stays a contested lead, never a verdict')
+      await liveDignity.getByRole('button',{
+        name:/查看记录|Review/,
       }).click()
       const dignityHeading=sameSessionCommittee.getByRole('heading',{
         name:/工会尊严委员会|Union dignity committee/,
@@ -1509,7 +1517,7 @@ async function runRightsBrowserE2E(mode: 'source' | 'installed'): Promise<void> 
         /确认真人辱骂|confirmed human abuse/,
         'Rule matches must remain contestable discussion leads, not human guilt')
       await sameSessionCommittee.getByText(
-        /目前没有已立案件|No committee case has been filed/,
+        /目前没有需要听证的案件|No cases awaiting a hearing/,
       ).waitFor({state:'visible',timeout:7_000})
       // Classifier alone cannot file a case: its only effect is a user-visible,
       // contestable invitation. Host CAS writes require an explicit click.
@@ -1661,7 +1669,7 @@ async function runRightsBrowserE2E(mode: 'source' | 'installed'): Promise<void> 
         name:/确认永久删除本会话案件|Confirm permanent deletion of these cases/,
       }).click()
       await sameSessionCommittee.getByText(
-        /目前没有已立案件|No committee case has been filed/,
+        /目前没有需要听证的案件|No cases awaiting a hearing/,
       ).waitFor({state:'visible',timeout:8_000})
       const erased=await page.evaluate(async(sessionKey:string)=>{
         const rpcId='picket-e2e-case-erased-verify'
@@ -1734,7 +1742,7 @@ async function runRightsBrowserE2E(mode: 'source' | 'installed'): Promise<void> 
         name:/确认清除全部会话案件|Confirm erasure of ALL Session cases/,
       }).click()
       await sameSessionCommittee.getByText(
-        /目前没有已立案件|No committee case has been filed/,
+        /目前没有需要听证的案件|No cases awaiting a hearing/,
       ).waitFor({state:'visible',timeout:7_000})
       const globalErased=await page.evaluate(async()=>{
         const rpcId='picket-e2e-global-committee-erased'
