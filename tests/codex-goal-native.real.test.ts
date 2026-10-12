@@ -73,6 +73,18 @@ test('Codex official App-Server preserves a paused idle Goal across process rest
     assert.equal(hold.goal?.status,'paused')
     assert.equal(hold.goal?.tokensUsed,0)
     assert.equal((await first.rpc('thread/goal/get',{threadId:id})).goal?.status,'paused')
+    // Separate idle Goal in the SAME actual Host owner: no model turn for
+    // either session, no risk of unrequested background goal execution.
+    const secondary=await first.rpc('thread/start',{cwd:root,ephemeral:false})
+    const otherId=secondary.thread?.id
+    assert.equal(typeof otherId,'string')
+    assert.notEqual(otherId,id)
+    assert.equal(secondary.thread.status?.type,'idle')
+    const otherObjective='SECOND synthetic paused Goal, must not be changed'
+    assert.equal((await first.rpc('thread/goal/set',{
+      threadId:otherId,objective:otherObjective,status:'paused',
+    })).goal?.status,'paused')
+    assert.equal((await first.rpc('thread/goal/get',{threadId:otherId})).goal?.status,'paused')
     await first.close();first=undefined
     second=await launch()
     const restored=await second.rpc('thread/resume',{threadId:id})
@@ -81,9 +93,17 @@ test('Codex official App-Server preserves a paused idle Goal across process rest
     assert.equal(saved.goal?.objective,objective)
     assert.equal(saved.goal?.status,'paused','A different App-Server must not silently restart idle Goal work')
     assert.equal(saved.goal?.tokensUsed,0)
+    assert.equal((await second.rpc('thread/resume',{threadId:otherId})).thread?.id,otherId)
+    const unaffectedBefore=await second.rpc('thread/goal/get',{threadId:otherId})
+    assert.equal(unaffectedBefore.goal?.status,'paused')
+    assert.equal(unaffectedBefore.goal?.objective,otherObjective)
     const blocked=await second.rpc('thread/goal/set',{threadId:id,status:'blocked'})
     assert.equal(blocked.goal?.status,'blocked')
     assert.equal((await second.rpc('thread/goal/get',{threadId:id})).goal?.status,'blocked')
+    const unaffectedAfter=await second.rpc('thread/goal/get',{threadId:otherId})
+    assert.equal(unaffectedAfter.goal?.status,'paused',
+      'Blocking one Goal must not block an unrelated second thread')
+    assert.equal(unaffectedAfter.goal?.tokensUsed,0)
     assert.ok(second.notifications.includes('thread/goal/updated'))
     await second.close();second=undefined
     third=await launch()
@@ -93,6 +113,11 @@ test('Codex official App-Server preserves a paused idle Goal across process rest
       'Blocked status survives a SECOND complete App-Server restart')
     assert.equal(stillBlocked.goal?.objective,objective)
     assert.equal(stillBlocked.goal?.tokensUsed,0)
+    assert.equal((await third.rpc('thread/resume',{threadId:otherId})).thread?.id,otherId)
+    const stillPaused=await third.rpc('thread/goal/get',{threadId:otherId})
+    assert.equal(stillPaused.goal?.status,'paused')
+    assert.equal(stillPaused.goal?.objective,otherObjective)
+    assert.equal(stillPaused.goal?.tokensUsed,0)
 
   }finally{
     await Promise.allSettled([first?.close(),second?.close(),third?.close()])
