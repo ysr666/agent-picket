@@ -54,6 +54,7 @@
     "!dist/adapters/codex/**",
     "!dist/adapters/node/windows-private-acl.*",
     "!dist/adapters/node/windows-ledger-layout.*",
+    "!dist/adapters/node/windows-ledger-lock.*",
     "README.md",
     "LICENSE",
     "cordis.patch.yml",

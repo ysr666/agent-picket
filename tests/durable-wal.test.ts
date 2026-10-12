@@ -107,6 +107,10 @@ test('256-record checkpoint + subsequent WAL replay preserves exactly-once total
   a.close()
   const snapshot=JSON.parse(readFileSync(join(dir,'aggregate.v1.json'),'utf8'))
   assert.equal(snapshot.sequence,256)
+  // A checkpoint closes the original WAL fd before replacing its path;
+  // this also preserves the original data through a failed replacement.
+  // This Linux/macOS test checks exact replay semantics; a separate native
+  // Windows synthetic fixture checks overwrite/ACL behavior.
   assert.equal(snapshot.totals.toolCalls,256)
   const journal=readFileSync(join(dir,'aggregate.v1.journal'),'utf8')
   assert.equal(journal.split('\n').filter(Boolean).length,14)

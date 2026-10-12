@@ -329,8 +329,16 @@ export class DurableStats {
       fsyncSync(fd)
       closeSync(fd)
       fd = undefined
+      // Windows NTFS cannot reliably replace a journal still open by THIS
+      // writer. Close only after the checkpoint snapshot is durable, but
+      // BEFORE replacing the old WAL. If rename fails we fault the ledger;
+      // the old journal remains replayable on a later safe restart.
+      if (this.#journalFd !== undefined) {
+        const old = this.#journalFd
+        this.#journalFd = undefined
+        closeSync(old)
+      }
       renameSync(tmp, journal)
-      if (this.#journalFd !== undefined) closeSync(this.#journalFd)
       this.#journalFd = openSync(journal, 'a', 0o600)
       this.#sinceCheckpoint = 0
     } finally {
