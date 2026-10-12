@@ -24,3 +24,7 @@ This deliberately does **not** activate a Windows `DurableStats` instance or imp
 Future prerequisites remain handle-based identity verification, ancestor reparse checks during actual open, race-resistant file replacement, dead-process lock recovery and power-failure WAL replay before real Windows storage can be enabled. Release remains NO-GO.
 
 The native lifecycle suite also verifies a **second atomic replacement**: checkpoint compaction creates a new private temp and renames it onto an already-existing WAL journal, then rechecks the resulting ACL. This targets Windows rename/replace semantics, which differ from POSIX in some open-handle cases; the fixture closes the old journal first, so active concurrent handles still need separate testing.
+
+## Production fail-closed: no speculative Windows directory creation
+
+`DurableStats` itself now refuses unsupported Windows persistent storage *before* calling `mkdirSync` or touching snapshot/WAL/lock paths. This closes a side effect in the previous implementation where Windows could create an inherited-ACL directory and only afterward reject its POSIX mode. The native `tests/windows-durable-fail-closed.test.ts` verifies a rejected constructor creates **neither the intended ledger path nor its parent**. This guard is intentionally distinct from the experimental, excluded NTFS layout probes; Windows production stats remain NO-GO until all file-handle/locking/recovery requirements are fulfilled.

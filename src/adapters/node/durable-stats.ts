@@ -129,6 +129,12 @@ export class DurableStats {
   constructor(directory: string, options: { classificationEnabled?: boolean } = {}) {
     this.#classificationEnabled = options.classificationEnabled === true
     if (typeof directory !== 'string' || !directory.trim()) throw new Error('Stats directory required')
+    // On NTFS, POSIX mode bits do not prove private access. Until we have a
+    // handle-bound DACL + WAL/lock backend, fail BEFORE mkdir or file I/O;
+    // never leave behind a potentially world-readable statistics folder.
+    if (process.platform === 'win32') {
+      throw new Error('Windows DurableStats disabled: verified private NTFS ledger backend required')
+    }
     this.#dir = directory
     mkdirSync(directory, { recursive: true, mode: 0o700 })
     const info = lstatSync(directory)
