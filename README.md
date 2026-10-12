@@ -55,6 +55,8 @@ See [official DSH 0.2 Web installation and real Chrome rights/AX acceptance](doc
 
 ## Developer quickstart (experimental branch)
 
+[Developer Web HMR guide](docs/DEV_HMR_SPIKE.md) covers source watch, private Chrome full-page fallback, upstream native HMR, and fail-closed staged builds.
+
 Requires Node.js 22.19+.
 
 ```sh
