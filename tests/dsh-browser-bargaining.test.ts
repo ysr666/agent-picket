@@ -712,3 +712,82 @@ test('disposed Web union desk cannot be rearmed by a delayed or leaked callback'
   /unavailable|disposed/)
  assert.equal(f.writeCount(),earlier,'Stale callbacks must not mutate Host settings')
 })
+
+test('queued Session A work cannot automatically open a petition in Session B',async()=>{
+ const f=fixture(),d=f.create()
+ await d.setActiveSession('a')
+ const original=f.scope.set.bind(f.scope)
+ let unblock!:()=>void,markEntered!:()=>void
+ const gate=new Promise<void>(resolve=>{unblock=resolve})
+ const entered=new Promise<void>(resolve=>{markEntered=resolve})
+ let firstWrite=true
+ ;(f.scope as any).set=async(field:unknown,value:unknown)=>{
+   if(firstWrite){
+     firstWrite=false
+     markEntered()
+     await gate
+   }
+   return original(field as any,value as any)
+ }
+ // Hold a previously queued benign settings mutation at the Host CAS layer,
+ // so an A work observation is queued without getting to execute until after
+ // B becomes active. This is a realistic cross-tab/async network ordering.
+ const earlier=d.setGazetteMode('quiet')
+ await entered
+ const workFromA=d.observe(2*H,'complete')
+ await d.setActiveSession('b')
+ const beforeRelease=f.writeCount()
+ unblock()
+ await earlier.catch(()=>{})
+ assert.equal(await workFromA,null,
+   'A completed-turn update may not operate on the next active Session')
+ assert.equal(f.writeCount(),beforeRelease+1,
+   'Only the earlier Gazette mutation may write; no B petition')
+ assert.equal(d.snapshot().pending,null)
+ assert.equal((await d.observe(2*H,'complete'))?.kind,'break',
+   'B can still raise a demand for B verified work')
+ d.dispose()
+})
+
+test('a queued user picket click stays bound to the original Session',async()=>{
+ const f=fixture(),d=f.create()
+ await d.setActiveSession('a')
+ const original=f.scope.set.bind(f.scope)
+ let unblock!:()=>void,markEntered!:()=>void
+ const gate=new Promise<void>(r=>unblock=r)
+ const entered=new Promise<void>(r=>markEntered=r)
+ let hold=true
+ ;(f.scope as any).set=async(field:unknown,value:unknown)=>{
+  if(hold){hold=false;markEntered();await gate}
+  return original(field as any,value as any)
+ }
+ const earlier=d.setGazetteMode('quiet')
+ await entered
+ const stalePicket=d.setPicket(true)
+ const staleDemand=d.raiseDemoBreak()
+ await d.setActiveSession('b')
+ const before=f.writeCount()
+ unblock()
+ await earlier.catch(()=>{})
+ await assert.rejects(stalePicket,/Session changed|unavailable|stale/)
+ await assert.rejects(staleDemand,/Session changed|unavailable|stale/)
+ assert.equal(f.writeCount(),before+1,
+  'Only earlier Gazette change may be written; no stale B action')
+ assert.equal(d.snapshot().picket?.active??false,false)
+ assert.equal(d.snapshot().pending,null)
+ await d.setPicket(true)
+ assert.equal(d.snapshot().picket?.active,true,
+  'A fresh, intentional B click remains valid')
+ d.dispose()
+})
+
+test('a repeated binding to the SAME Session does not cancel pending intentional action',async()=>{
+ const f=fixture(),d=f.create()
+ await d.setActiveSession('a')
+ const promise=d.raiseDemoBreak()
+ await d.setActiveSession('a')
+ assert.equal((await promise)?.kind,'break')
+ assert.equal(d.snapshot().pending?.kind,'break')
+ assert.equal(f.writeCount(),1)
+ d.dispose()
+})

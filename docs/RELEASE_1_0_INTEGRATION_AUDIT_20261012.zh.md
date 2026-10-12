@@ -112,3 +112,15 @@
 - 含糊攻击后面再接明确攻击时判别为更强等级，真实 Agent 任务完成。
 
 以上只是具有受控合成授权的 Host 兼容性测试，不是官方 Host 首次授权 UI 签收，也不意味着拥有任何安全的真实阻断能力。测试里面单独的 BLOCK TEST 故意拒绝 marker 是测试独占破坏性实验，不打进生产包，不属于 Agent Picket 正式策略。
+
+## 2026-10-12 · #91 真实旧版回退矩阵 + 跨会话工会操作队列安全
+
+本轮没有新增产品功能，而是把两个长期影响正式发布的验证缺口转成可复现、可重新运行的证据：
+
+**1. 已完成真实的“新版 → 旧版 → 新版”Host 设置文件兼容试验。** 在一次性 DSH 0.1.2 SettingsFile + CommandRuntime Profile 中，当前 Draft PR #110 版本写入合法工会休息协议与虚构举牌记录，完整卸载，再加载 Git 提交 6133030（此前 main）的真实旧版源码并读取既有协议、写入旧版支持的议题、执行 OFF→ON 授权循环，卸载后再加载新版。旧版实际读取和写入不抹除独立 unionPicketLedger，新版能恢复同一举牌记录并收牌；设置文件无明文 Session ID、Agent ID 或 Prompt。本轮新增可独立执行的 tests/dsh-legacy-downgrade.real.test.ts。需要显式设置 AGENT_PICKET_DSH_HOST、AGENT_PICKET_LEGACY_ROOT；普通 CI 若没有真实旧代码会如实跳过。测试关闭持久工时统计写入且只使用自动销毁的临时 Host Profile，不动用户正式 DSH 配置。
+
+**局限**：这是旧 main@6133030 与当前候选的一套真实 DSH 0.1.2 SettingsFile 组合，不能代表所有历史 build 或 DSH 0.2 ConfigForms。OFF 隐藏模拟行动，但并非自动清除 Host 既有动作记录；再次 ON 旧的“举牌中”可能恢复可见，这是已存在的产品语义。对这项行为的真人理解和维护者取舍仍是 #91 的独立验收事项，没有擅自更改既定授权或擦除数据。
+
+**2. 发现并修复跨会话异步工会误写。** 一次异步 Host CAS 写入能阻塞浏览器端串行队列，旧 Session A 的“已完成 2 小时工作”自动通知或用户在 A 点击举牌、休息诉求，可能在界面切到 B 后才开始执行；此前动作会按**执行时**当前 activeKey 读取 Host，导致将 A 的动作错误写成 B 的诉求/举牌。已先构建带挂起 Host 写入的**修复前真实失败测试**，不是光看结果猜测。现所有 queued union actions 都绑定入队瞬间的 sessionEpoch 和哈希 Session 键：跨 Session 直接报错、后台观察安静作废；每次读回仍受官方 Host CAS 和 writeToken 校验。相同 Session 的重复重绑不产生多余失效，因此不会平白取消正常用户操作。未修改真实 Agent 请求传输，亦没有启用真正任务阻断。
+
+> 真实旧版回退 PASS 只是 #91 已完成的一项；剩余 Host 版本矩阵、重装与 OFF→ON 可理解性、用户对留存的期待仍不能标成 PASS。1.0 仍是 Draft/NO-GO。

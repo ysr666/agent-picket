@@ -50,6 +50,9 @@ export function createDshBrowserUnionDesk(options: {
   } }
   const unsubscribe = scope.subscribe(notify)
   let activeKey: string | null = null
+  // Volatile, never persisted: prevents redundant same-Session rebind events
+  // from spuriously cancelling a pending authorized action.
+  let boundSessionId: string | null = null
   let serial: Promise<unknown> = Promise.resolve()
   let sessionEpoch = 0
   const consent = () => {
@@ -145,7 +148,18 @@ export function createDshBrowserUnionDesk(options: {
   }
 
   function enqueue<T>(action: () => Promise<T>): Promise<T> {
-    const task = serial.then(action)
+    // Bind EVERY user-triggered / Host-triggered queued action to the exact
+    // Session in which it was requested. CAS alone cannot prevent the
+    // browser from reading a NEW Session after awaiting a previous write.
+    const requestedEpoch=sessionEpoch
+    const requestedKey=activeKey
+    const task = serial.then(() => {
+      if(disposed)throw new Error('Disposed Host union desk unavailable')
+      if(!requestedKey||sessionEpoch!==requestedEpoch
+        ||activeKey!==requestedKey)
+        throw new Error('Session changed before queued Host union action')
+      return action()
+    })
     serial = task.catch(() => {})
     return task
   }
@@ -162,11 +176,14 @@ export function createDshBrowserUnionDesk(options: {
       if (disposed) return
       // Invalidate the previous session immediately: async hashing MUST NOT
       // leak a previous session's state to the new session.
+      const scopedId = typeof sessionId === 'string' && sessionId
+        ? sessionId : null
+      if(scopedId&&scopedId===boundSessionId&&activeKey)return
       const epoch = ++sessionEpoch
+      boundSessionId=scopedId
       activeKey = null
       notify()
-      if (typeof sessionId !== 'string' || !sessionId) return
-      const scopedId = sessionId
+      if (!scopedId) return
       let key: string
       try { key = await hashSession(scopedId) } catch { return }
       if (!/^[a-f0-9]{64}$/.test(key) || sessionEpoch !== epoch) return
@@ -177,10 +194,14 @@ export function createDshBrowserUnionDesk(options: {
     async observe(elapsedMs: number | null, coverage: Coverage): Promise<LaborDemand | null> {
       if (coverage !== 'complete' || elapsedMs === null
         || !Number.isSafeInteger(elapsedMs) || elapsedMs < 0) return null
+      // The UI observes a SPECIFIC Session's completed work when scheduling
+      // this task. A prior Host CAS may delay the queue until a different
+      // Session is active. Never use A's elapsed time to mutate B's ledger.
+      if(disposed||!activeKey)return null
       return enqueue(async () => {
         try { return await perform(desk => desk.observe(elapsedMs, coverage)) }
         catch { return null } // failure can never interrupt the real Agent
-      })
+      }).catch(()=>null) // a Session switch cancels obsolete background work
     },
     raiseDemoBreak() {
       return enqueue(() => perform(desk => desk.raiseDemoDemand('break')))
@@ -469,6 +490,7 @@ export function createDshBrowserUnionDesk(options: {
       unsubscribe()
       listeners.clear()
       activeKey = null
+      boundSessionId = null
     },
   }
 }
