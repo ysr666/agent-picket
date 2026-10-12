@@ -34,6 +34,8 @@ automated compatibility does not complete manual accessibility signoff.
 Existing experimental Claude Code/Codex Hook previews are not full host
 compatibility; DSH-independent adapters remain the next planned work.
 
+**Initial release scope:** Fresh DSH 0.2.0-rc.2 installations only. There is no older publicly released Agent Picket data to migrate. Legacy DSH SettingsFile failures and old-layout migration tests do not block this release. Real task blocking remains disabled pending separate safety and scope decisions; Codex and Claude Code full integrations come later. Current compatibility was exercised with check:dsh-current; human UX/accessibility signoff is separate.
+
 ## Developer safety snapshot
 
 - **DSH Host package entry:** `agent-picket` or `agent-picket/dsh`.
@@ -97,6 +99,6 @@ The adapter is **observe-only**: simulation-based strikes never delay, reject or
 
 在已授权的真实 DSH Session 中，使用 /union export negotiations /绝对路径/negotiations.json（或将 negotiations 换成 pickets、cases 并指定对应 .json 文件），分别导出当前保留的模拟协商、举牌和尊严委员会记录。目标必须是尚未存在的新文件；DSH 原生命令执行会记录返回文本，因此工会档案正文不会直接打印到命令结果或会话日志。如需删除某一类别全部保留会话分组，使用 /union purge negotiations|pickets|cases ALL CONFIRM；其他类别及 DSH 对话不受影响。本地累计工时另用 /union forget-lifetime CONFIRM，不是一次覆盖所有存储的原子擦除。详见 docs/STATS_STORAGE.zh.md。
 
-**1.0 safety note / 多 Host 警告：** 单个 DSH Host 的多个网页标签不同于多个独立 DSH Host 设置所有者共用一份配置文件；在受测 DSH 0.1.2 中，后者可能发生已确认写入互相覆盖。解决前不要多个独立 Host 进程共享同一设置文件。具体证据见 Issue #111。The private Host ledger stores stable SHA-256 Session grouping keys; exported JSON omits them. This is pseudonymization, not irreversible anonymization.
+**历史 DSH 0.1.2 限制（不属于首发兼容范围）：** 单个 DSH Host 的多个网页标签不同于多个独立 DSH Host 设置所有者共用一份配置文件；在受测 DSH 0.1.2 中，后者可能发生已确认写入互相覆盖。解决前不要多个独立 Host 进程共享同一设置文件。具体证据见 Issue #111。The private Host ledger stores stable SHA-256 Session grouping keys; exported JSON omits them. This is pseudonymization, not irreversible anonymization.
 
-> **P0 multi-owner integrity (#111):** Verified separate DSH 0.1.2 OS processes sharing one settings file can also **resurrect a previously confirmed-deleted union archive** or **silently reverse an OFF consent decision to ON** via an unrelated stale write. Never share one writable Host profile across independent concurrent DSH settings owners; this is distinct from multiple Web tabs under one Host. See Issue #111; true enforcement remains OFF.
+> **Legacy DSH 0.1.2 issue, NOT a current 1.0 release blocker (#111):** Verified separate DSH 0.1.2 OS processes sharing one settings file can also **resurrect a previously confirmed-deleted union archive** or **silently reverse an OFF consent decision to ON** via an unrelated stale write. Never share one writable Host profile across independent concurrent DSH settings owners; this is distinct from multiple Web tabs under one Host. See Issue #111; true enforcement remains OFF.
