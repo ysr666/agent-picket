@@ -86,3 +86,19 @@ Client factory was rerun twice (initial plus two replacements), one tab
 navigation remained unchanged, an independent page-global marker survived,
 and no browser JavaScript errors were captured. Other DSH versions and the
 complete cross-platform matrix are separate acceptance gates.
+
+## Failed builds must not invalidate a running Client
+
+The normal `npm run build` intentionally deletes `dist/` before TypeScript
+and browser factory packaging. During Web HMR development this is unsafe:
+invalid TypeScript can leave `dist/adapters/dsh/client.js` as an unwrapped
+intermediate file instead of the official `window.__ModuleLoader__.load()`
+factory. DSH independently polls this artifact and can react before the
+watcher's build-failed message. The **developer watcher only** therefore
+compiles into a temporary directory under the checkout, assembles the Client
+there, and publishes all siblings atomically with `client.js` **last**. If
+compilation or factory assembly fails, the existing `dist/` is untouched.
+
+Production `npm run build`, `prepack`, and the official package format remain
+unchanged. Publication is not a disk-failure transaction; on a partial disk
+write error do a clean rebuild. Do not assume Desktop Host code hot reloads.
