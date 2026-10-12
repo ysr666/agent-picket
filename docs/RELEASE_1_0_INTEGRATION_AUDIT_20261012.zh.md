@@ -140,3 +140,21 @@
 额外将已经存在的 /union export negotiations|pickets|cases 与 /union purge CATEGORY ALL CONFIRM 纳入 DSH 0.2 官方 CommandRuntime 的隔离验证，使用 0.2 公开的 Config 做严格字段验证。覆盖三类实际 CLI 读写、跨类别保留、错误确认词、OFF 拒绝，以及无 Session 标识导出。注意测试的 Settings provider 是隔离的严格替身；它不是完整真实浏览器 ConfigForms HTTP 写入，不能把这两者混淆。
 
 真实 Host 的 Worker/Connection 并发和 OEM 定制 Host 仍需独立确认。1.0 继续 NO-GO：#80 无损真实阻断缺失，#86 真人无障碍及完整第三方隐私安全审查未签收。
+
+## 2026-10-12 · #111 双 Host SettingsFile 所有者丢失已成功的工会记录（新增 P0）
+
+已经在真实隔离 DSH 0.1.2-rc.1 SettingsFile + CommandRuntime 中，使用相同的一次性 settings.json、两个同时存活的**独立 Cordis/SettingsFile/插件所有者**（注意：这次是同一 Node 进程中的两个独立 Host 上下文，不是两个已单独启动的 OS 进程）验证发现：
+
+1. A 与 B 都读取同一个已开启权限的 Host Profile，各自拥有独立的本地修订号。
+2. A 执行真实 /union strike，结果成功；B 执行真实 /union petition-demo break，也显示成功。
+3. 注销两个 Host 并重新从磁盘创建全新的真实 SettingsFile，最终仅 B 的 unionLedger 还在，A 已确认成功的 unionPicketLedger 变为空。
+4. 默认 watch:true 与 watch:false 两种隔离配置均重现。故障不等于普通**多浏览器 Tab 共用同一个 Host**：后者共享官方 Host revision CAS，目前已有另一组通过的测试。
+5. DSH SettingsProvider 在持久化之前已根据自己的本地缓存合并整段 namespace；SettingsFile 的文件锁与原子替换能防文件截断，但跨 owner 重读并不重新合并当前 patch，也无法在两个独立所有者之间提供可靠的事务 CAS。务必修复 Host 的原子重读→校验→合并→提交路径，或明确实现/限制单写入所有者。不能通过凭空增加一个 Agent Picket 锁文件宣称已解决它。
+
+**独立 GitHub Issue #111**：https://github.com/ysr666/agent-picket/issues/111 。新增的 tests/dsh-archive-restart.real.test.ts 有一条默认跳过、需显式 AGENT_PICKET_DSH_CROSS_OWNER_CHECK=1 才运行的**预期 FAIL** 发布门禁；其失败不应被主 CI 的绿色吞掉。此限制不意味着这些 DSH 版本绝对不支持多个 Tab，但现有证据不足以宣称多个独立 Host 所有者共用一个磁盘配置是安全的。
+
+**通过的正向对照**：同一真实 SettingsFile，在每一阶段只存活一个 Host owner，对两个不同 Session、模拟协商／举牌／尊严委员会三种类别执行写入；完整销毁和重新创建官方 SettingsFile 后，三类记录均保留。删除协商类别并重启，另两类保持不变；再分开删除后两类，再重启确认三者全空，最后仍能发起新模拟行动。过期的同一个 Host 修订号更新也会被真实 provider 拒绝。以上用真实 Host 文件 IO，不是假装的内存模拟；但不等于断电瞬间故障注入和系统备份擦除已经过关。
+
+**隐私口径校正**：本产品 Host 设置的工会账本中以确定性 SHA-256 的 Session key 分组，这些哈希确实持久化在 Host 私有 settings 文件里；不得把这描述成完全匿名或“Host 设置里没有哈希键”。真正已证明的是：用户 CLI JSON 导出不会带这些原始或哈希 Session key，不带原始提示词/附件，且保留的 Host 文件不包含明文 Session ID。禁止将这些更准确的事实偷换成未验证的匿名性保证。
+
+#80 真实任务阻断仍是独立 NO-GO：现有受测 DSH 0.2 agent/pre-step reject 不带用户可见拒绝理由、原文＋附件恢复载荷或独立真实人源证据。已复核文档/源码与离线真实 SDK 拒绝机制，没有获得符合 1.0 强制阻断安全门禁的新证据。暂不扩大阻断权限。

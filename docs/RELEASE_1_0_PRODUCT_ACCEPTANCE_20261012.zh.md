@@ -51,3 +51,9 @@ CLI /union export negotiations|pickets|cases 从官方、已授权、当前可�
 CLI /union purge negotiations|pickets|cases ALL CONFIRM 显式说明整个选中类别的所有已保留 Session 分组将被删除；Host 版本 CAS + 独立 writeToken 回读必须成功，才报告删除完成。删除 A 类不触碰 B/C 类和 DSH 自己的聊天。命令行不会提供无范围的 /union purge all，以免跨类别多次写入被误以为原子事务。关闭授权后不允许导出或删除；恢复授权也不能自动删除既有记录。
 
 这尚未关闭 #82：现有 /union forget-lifetime CONFIRM 单独处理本地跨重启工作统计；没有把其当作 Host 三类账本的原子删除。内存的计数器可通过 /union reset 清理当前会话；系统备份、DSH 对话文件与外部已下载 JSON 不在本插件擦除范围。完整各类冷启动恢复、真实跨标签冲突、所有 DSH Host 版本，以及真人删除理解与可访问性仍需签收。
+
+## 2026-10-12 新增独立 P0：#111 Host 多所有者真实数据丢失
+
+**独立 DSH Host 所有者共用一个 Host 配置文件不能视为已经支持。** 已在隔离 DSH 0.1.2 中复现：两套独立的 Host SettingsFile 所有者 A、B 先后对同一文件写入举牌和休息诉求，各自报告成功，重新打开后 A 的原举牌丢失；默认 watcher 开启时也会发生。见 #111 和可显式启用的失败测试。它不同于同一个 Host 下面的两个 Web 标签页。正式 1.0 支持声明、帮助文档与多实例安装行为必须据此受限，直到 Host 所有者唯一性/真正跨所有者原子 CAS 被证实。
+
+**已实际通过的部分**：一个真实 Host owner 在一轮使用和多次完全卸载/重启期间，两个 Session、三种用户工会档案类型的分离写入、独立类别删除与再次加载全部通过；不代表突然断电后的物理持久性、系统备份或跨独立 Host owner 的原子写入。项目还需真人同意已存储工会记录中的匿名分组是 Session ID 的 SHA-256 哈希，而不是不可关联的匿名标识。
