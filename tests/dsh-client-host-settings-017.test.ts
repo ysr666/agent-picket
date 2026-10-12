@@ -6,7 +6,7 @@ import { createDshClientRightsScope } from '../src/adapters/dsh/client-rights-sc
 
 type Choice = 'unseen'|'enabled'|'not-now'
 function fixture(initial: Choice = 'unseen', loopback = true) {
-  let saved = {welcomeDecision:initial, unionLedger:'',unionPicketLedger:''}
+  let saved = {welcomeDecision:initial, realGoalStrikeConsent:'off' as 'off'|'authorized-v1',unionLedger:'',unionPicketLedger:''}
   let revision = 1
   let row: HostNamespaceView = {ns:'agent-picket',revision,value:{...saved}}
   const listeners = new Set<()=>void>()
@@ -25,13 +25,15 @@ function fixture(initial: Choice = 'unseen', loopback = true) {
         writes++
         assert.equal(ns,'agent-picket')
         if(rejected || expected!==revision)return {ok:false}
-        const op=ops[0]!
-        assert.equal(op.op,'set')
-        assert.equal(op.path.length,1)
-        if(op.path[0]==='welcomeDecision')saved={...saved,welcomeDecision:op.value as Choice}
-        else if(op.path[0]==='unionLedger')saved={...saved,unionLedger:op.value as string}
-        else if(op.path[0]==='unionPicketLedger')saved={...saved,unionPicketLedger:op.value as string}
-        else throw Error('Invalid Host field')
+        for(const op of ops){
+          assert.equal(op.op,'set')
+          assert.equal(op.path.length,1)
+          if(op.path[0]==='welcomeDecision')saved={...saved,welcomeDecision:op.value as Choice}
+          else if(op.path[0]==='realGoalStrikeConsent')saved={...saved,realGoalStrikeConsent:op.value as 'off'|'authorized-v1'}
+          else if(op.path[0]==='unionLedger')saved={...saved,unionLedger:op.value as string}
+          else if(op.path[0]==='unionPicketLedger')saved={...saved,unionPicketLedger:op.value as string}
+          else throw Error('Invalid Host field')
+        }
         revision++
         return {ok:true,value:{ns,revision,value:{...saved}}}
       },
@@ -126,4 +128,62 @@ test('corrupted Host revision and duplicate namespace never present fake opt-in'
   const scope=createOfficialDsh017Scope(duplicate,{$host:{isLoopback:true}})
   assert.equal(createDshClientRightsScope(scope).snapshot().laborRightsEnabled,false)
   assert.equal(scope.getSnapshot().status,'unavailable')
+})
+
+test('DSH 0.2 Host commits first-run union + real Goal permission in one CAS revision',async()=>{
+  const x=fixture()
+  const rights=createDshClientRightsScope(x.scope)
+  assert.equal(rights.snapshot().goalStrikeAuthorized,false)
+  const initial=x.revision()
+  const enabled=await rights.chooseFirstRun('goal-safe-boundary-v1')
+  assert.equal(enabled.goalStrikeAuthorized,true)
+  assert.equal(x.revision(),initial+1,
+    'One click must commit one Host mutation, not two separate settings writes')
+  assert.equal(x.writes(),1)
+  assert.equal(x.scope.getSnapshot().value?.realGoalStrikeConsent,'authorized-v1')
+  assert.equal(x.scope.getSnapshot().value?.welcomeDecision,'enabled')
+  await rights.choose('not-now')
+  assert.equal(x.scope.getSnapshot().value?.realGoalStrikeConsent,'off')
+  await rights.choose('enabled')
+  assert.equal(rights.snapshot().goalStrikeAuthorized,false,
+    'Rejoining the simulation cannot resurrect the prior strike authorization')
+})
+test('first-run Host rejection or stale success receipt never authorizes a strike',async()=>{
+  const x=fixture()
+  x.reject()
+  await assert.rejects(createDshClientRightsScope(x.scope).chooseFirstRun('goal-safe-boundary-v1'),
+    /rejected|confirm/)
+  assert.equal(x.scope.getSnapshot().value?.realGoalStrikeConsent,'off')
+  assert.equal(createDshClientRightsScope(x.scope).snapshot().goalStrikeAuthorized,false)
+})
+
+test('DSH Host refuses a forged partial success receipt for combined first-run consent',async()=>{
+  const state={welcomeDecision:'unseen',realGoalStrikeConsent:'off',unionLedger:''}
+  let view:HostNamespaceView={ns:'agent-picket',revision:3,value:state}
+  const mirror={
+    getSnapshot:()=>({status:'ready' as const,view:{writable:true,namespaces:[view]}}),
+    subscribe:()=>()=>{},async ensure(){},acceptView(v:HostNamespaceView){view=v},
+  }
+  const scope=createOfficialDsh017Scope(mirror,{
+    $host:{isLoopback:true},settings:{async mutate(_ns,_ops,_revision){
+      return {ok:true,value:{ns:'agent-picket',revision:4,
+        // An untruthful receipt claims success but only nonblocking consent.
+        value:{...state,welcomeDecision:'enabled'}}}
+    }},
+  })
+  const rights=createDshClientRightsScope(scope)
+  await assert.rejects(rights.chooseFirstRun('goal-safe-boundary-v1'),/confirm/)
+  assert.equal(rights.snapshot().goalStrikeAuthorized,false)
+  assert.equal(view.revision,3,'Unverified partial Host receipt must never be published')
+})
+
+test('combined Host mutation rejects unknown keys, unsafe private text, and bogus strike values',async()=>{
+  const x=fixture()
+  for(const patch of [
+    {welcomeDecision:'enabled',realGoalStrikeConsent:'yes'},
+    {welcomeDecision:'enabled',prompt:'USER PRIVATE TEXT'},
+    {welcomeDecision:'enabled',realGoalStrikeConsent:'authorized-v1',other:true},
+    {unionLedger:'{"prompt":"PRIVATE"}',welcomeDecision:'enabled'},
+  ]) await assert.rejects(x.scope.setMany!(patch),/Invalid|Unrecognized|Unsafe/)
+  assert.equal(x.writes(),0)
 })

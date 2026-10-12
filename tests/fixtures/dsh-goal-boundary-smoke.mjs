@@ -1,7 +1,7 @@
 import { appendFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
-import { registerDshGoalWorkEnforcement } from '../../src/adapters/dsh/goal-work-enforcement.ts'
+import {registerDshGoalWorkEnforcement,alreadyBlockedGoalToday} from '../../src/adapters/dsh/goal-work-enforcement.ts'
 
 export const name='picket-goal-boundary-isolated-smoke'
 export const inject=['llm','goals','agents']
@@ -31,6 +31,16 @@ export function apply(ctx){
   }
   if(text.includes('RESUME_GOAL_PROBE')){
    const goal=ctx.goals.get(agent)
+   const history=agent.session.snapshotEvents()
+   const verified=goal?.id?alreadyBlockedGoalToday(history,goal.id,Date.now()):false
+   record('host-persisted-union-block:'+verified)
+   const matching=history.filter(row=>row.type==='goal/change'
+     &&row.data?.operation==='block'&&row.data?.goal?.id===goal?.id)
+   record('goal-block-event-count:'+matching.length)
+   record('goal-block-meta-valid:'+matching.some(row=>
+     row.data.kind==='goal/change'&&Number.isSafeInteger(row.data.updatedAt)
+     &&row.data.goal.blockedReason?.code==='picket-work-limit'))
+
    if(goal?.phase==='blocked'){
     const updated=ctx.goals.resume(agent,{id:goal.id,revision:goal.revision})
     record('goal-resumed:'+updated.phase)

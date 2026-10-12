@@ -27,6 +27,36 @@ test('real Goal consent is separately versioned, Host-owned, default OFF',()=>{
  assert.equal(readHostGoalStrikeConsent(s.provider),null)
  assert.equal(readHostGoalStrikeConsent(undefined),null)
 })
+test('Host revoke between consent reads never grants a Goal strike',()=>{
+ let revision=3
+ let data={welcomeDecision:'enabled',realGoalStrikeConsent:'authorized-v1'}
+ let views=0
+ const provider:NativeSettingsProvider={
+   get:()=>data,
+   describe:()=>{
+     views++
+     if(views===2){revision++;data={...data,realGoalStrikeConsent:'off'}}
+     return [{ns:'agent-picket',revision,value:data}]
+   },
+   update:async()=>{},
+ }
+ assert.equal(readHostGoalStrikeConsent(provider),null)
+ assert.equal(views,2)
+})
+test('Host descriptor ambiguity, stale get and malformed permission fail closed',()=>{
+ const stale={welcomeDecision:'enabled',realGoalStrikeConsent:'authorized-v1'}
+ const provider:NativeSettingsProvider={
+   get:()=>stale,
+   describe:()=>[{ns:'agent-picket',revision:3,value:{...stale,realGoalStrikeConsent:'off'}}],
+   update:async()=>{},
+ }
+ assert.equal(readHostGoalStrikeConsent(provider),null)
+ const duplicate={...provider,describe:()=>[
+   {ns:'agent-picket',revision:3,value:stale},
+   {ns:'agent-picket',revision:4,value:stale},
+ ]}
+ assert.equal(readHostGoalStrikeConsent(duplicate),null)
+})
 test('only exact validated UTC day completed-turn work is eligible',()=>{
  const day='2026-10-12'
  assert.equal(completedUtcDayWork([{day,totals:{completedTurnMs:eight}}],today),eight)

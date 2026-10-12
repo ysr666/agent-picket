@@ -35,6 +35,7 @@ export interface NativeSettingsProvider {
   describe(options?: { readonly redactSecrets?: boolean }): readonly {
     readonly ns: string
     readonly revision: number
+    readonly value?: unknown
   }[]
   update(namespace: string, patch: object, expectedRevision?: number): Promise<void>
 }

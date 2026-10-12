@@ -14,6 +14,7 @@ import { advanceDignityCase, parseDignityCaseLedger, MAX_DIGNITY_CASE_BYTES, MAX
 
 export interface UnionSettingsSection {
   readonly welcomeDecision: 'unseen' | 'enabled' | 'not-now'
+  readonly realGoalStrikeConsent?: 'off'|'authorized-v1'
   readonly unionLedger: string
   readonly unionPicketLedger?: string
   readonly unionGazetteMode?: 'visible'|'quiet'

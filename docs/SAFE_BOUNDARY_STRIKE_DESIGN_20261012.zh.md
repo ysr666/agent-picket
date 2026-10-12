@@ -49,3 +49,15 @@ node --experimental-strip-types --test tests/dsh-goal-boundary.real.test.ts
 **边界限制：** 目前仅实现已知的八小时 UTC 日工时触发，不将 2 小时提示或不具真实性证明的目标辱骂判断升级为自动阻断。该模式阻断的是 *后续自动 Goal 续轮*，**不会拒绝后来的普通用户提交，也不会自动结束已在排队的其他会话任务**。如果用户已在真实 Goal blocked 状态下关闭工会，他仍须由 Host 官方恢复操作（`/goal resume` 或将来 UI 内经验证的恢复动作）继续该 Goal；撤销权限停止未来新阻断，不意味着自动替用户启动被停下的任务。工时跨越阈值正好发生在本轮时，首个符合条件的后续安全边界才会触发，不补造当前轮时长。
 
 **真实证明与欠账：** 两版独立官方 DSH（0.2.0-rc.2、0.2.1-alpha.2）的 GoalDriver/AgentLoop E2E 已使用真正的 `registerDshGoalWorkEnforcement` 注册函数，通过“完成→阻断下个 Goal→恢复→剩余 Goal 正常续轮、同日不再次罢工”；E2E 为合成授权与模拟阈值。独立测试已用真实 DurableStats 磁盘重启复读验证 UTC 已完成 Turn 时长、严格 Host 设置读写与撤销，但尚未证明**真实用户首次点击同意**、同一安装下三项链路合一、跨操作系统、人类来源鉴别、强制重启和并发竞态下的全部产品级行为。发布闸门必须仍为 `NO-GO`。
+
+## 正式修正：首装欢迎弹窗一次点击同时授权（2026-10-12）
+
+新用户安装后的唯一首次弹窗，已经说明真实安全边界罢工，点击“启用 AI 工会”便同时开启工会和真实 Goal 罢工，无第二道强制授权。设置里可独立关停真实 Goal 罢工，后续还可选择每次罢工单独询问。授权不意味着当场阻断；只有达到已验证工时阈值并抵达 Goal 自然工作边界后才停止后续自动续轮。
+
+- `createDshClientRightsScope(scope).chooseFirstRun('goal-safe-boundary-v1')` 接受同一次第一屏点击，仅对 `welcomeDecision='unseen'` 生效，将 `welcomeDecision='enabled'` 和 `realGoalStrikeConsent='authorized-v1'` 绑定到一次 UI 操作。
+- DSH 0.2 官方 `remote.settings.mutate()` 支持同一 Host revision 内的多操作原子 CAS。`createOfficialDsh017Scope` 必须同时检查两字段、版本与完整 Host 回执。无法验证提交时不能宣称真实授权成功。
+- 旧版单字段 Host 提交可在一次点击后连续完成两次写入：先打开非阻断工会，再写真实授权；若第二次失败仍不会触发真实阻断，不把局部提交视作完整同意。
+- 新字段是一项供用户单独关闭的设置，不是第二个必需授权弹窗。已有 `welcomeDecision='enabled'` 的老用户以前只同意过模拟，仍需看到一次新版真实罢工告知，不能静默升级。
+- #120 UI Session 负责更新已过时的“仅模拟、阻断不可用”文案，并让同一个启用按钮调用 `chooseFirstRun(...)`。集成 Session 保持不改动对方拥有的 UI/翻译文件。
+
+新版 UI 尚待合并及真实 Chrome 首次点击验收，发布闸门继续 NO-GO。

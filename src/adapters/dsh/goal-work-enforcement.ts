@@ -10,14 +10,30 @@ export function readHostGoalStrikeConsent(
   settings:NativeSettingsProvider | undefined,
 ):GoalStrikeConsentV1|null {
   try {
-    const section=settings?.get('agent-picket') as {
+    if(!settings)return null
+    // Prefer ONE redacted Host descriptor for both permission and revision.
+    // Old provider versions may expose value only through get(); then fence
+    // that read between two equal Host revisions to reject torn snapshots.
+    const before=settings.describe({redactSecrets:true})
+      .filter(x=>x.ns==='agent-picket')
+    if(before.length!==1||!Number.isSafeInteger(before[0]?.revision)
+      ||before[0]!.revision<0)return null
+    const row=before[0]!
+    const section=(row.value===undefined?settings.get('agent-picket'):row.value) as {
       welcomeDecision?:unknown;realGoalStrikeConsent?:unknown
     }|null|undefined
-    const entry=settings?.describe({redactSecrets:true})
-      .find(x=>x.ns==='agent-picket')
-    if(!entry||!Number.isSafeInteger(entry.revision)||entry.revision<0
-      ||section?.welcomeDecision!=='enabled'
+    if(!section||section.welcomeDecision!=='enabled'
       ||section.realGoalStrikeConsent!=='authorized-v1')return null
+    const after=settings.describe({redactSecrets:true})
+      .filter(x=>x.ns==='agent-picket')
+    if(after.length!==1||after[0]!.revision!==row.revision)return null
+    const newest=after[0]!.value as {
+      welcomeDecision?:unknown;realGoalStrikeConsent?:unknown
+    }|undefined
+    // A revision-neutral Host descriptor mutation is inconsistent and cannot
+    // be used to grant authority even if a stale prior view says enabled.
+    if(newest&&(newest.welcomeDecision!=='enabled'
+      ||newest.realGoalStrikeConsent!=='authorized-v1'))return null
     return {kind:'agent-picket-real-goal-strike-v1',hostAuthenticated:true,enabled:true}
   }catch{return null}
 }
