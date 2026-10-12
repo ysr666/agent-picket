@@ -1,21 +1,51 @@
-# DSH developer reload spike (not a production HMR implementation)
+# DSH Web Client development loop (build watch, Live Reload and HMR)
 
-`npm run dev:watch` watches Agent Picket source files, its two build scripts, and compiler/package configuration. It performs an initial production-equivalent build, then debounces edits and **serializes** subsequent builds, continuing after build errors. Unlike a bare `tsc --watch`, each successful cycle also rebuilds the DSH-compatible browser client factory and runs its import-graph checks. It requires no new dependency.
+> **Status: implemented in `main` as of 2026-10-12; developer-only.**
+> This is **native DSH Web plugin HMR**, not React Fast Refresh and not
+> a change to the published plugin protocol.
 
-**This command does not hot-swap the browser UI.** A successful rebuild updates `dist/`; it does not establish that a running DSH Host re-reads a Client bundle or that an existing page re-runs a Client factory. Reload/restart the DSH development instance as required by that Host version. A browser refresh may still serve a cached Host client bundle; check that the new code is actually loaded rather than assuming success.
+`npm run dev:watch` watches Agent Picket source, relevant build scripts and
+compiler settings. It serializes and debounces builds, keeps watching after
+failures, and produces the existing DSH-compatible
+`window.__ModuleLoader__.load({ id, factory })` Client entry. The watcher
+compiles into a temporary staging directory and atomically publishes its
+verified Client **last**; invalid TypeScript or an invalid browser factory
+leaves the last-good `dist/` intact.
 
-## Why we do not flip the Client to ESM
+## Choose the development mode
 
-The current DSH Client expects `window.__ModuleLoader__.load({ id, factory })`; the React singleton and injected services are resolved through that module table. A plain `import`-based ESM build is **not** a drop-in replacement. Switching the package's published `./client` entry would break its documented runtime contract. The Host implementation and its ability to invalidate/reload client bundles must be verified separately.
+| Mode | How to select | What changes |
+| --- | --- | --- |
+| Build only | `npm run dev:watch` | Rebuild artifacts; no browser is launched |
+| Web full-page reload | Set the three `AGENT_PICKET_DEV_BROWSER_*` variables below (default `page` mode) | Refresh the private Chrome page after successful builds |
+| Native DSH Web HMR | Additionally set `AGENT_PICKET_DEV_RELOAD_MODE=native-hmr` | DSH observes `client.js` and replaces the Client Cordis fiber without page navigation |
 
-## Next experiment (separate PR)
+The optional browser controller first verifies that the isolated DSH Web
+Host exposes both `@deepseek-ai/dsh-client-hmr` and the
+`/plugins/events` SSE endpoint. Without this support, native mode **fails
+explicitly**; use `AGENT_PICKET_DEV_RELOAD_MODE=page` to fall back.
 
-1. Establish a real DSH stable/preview Host matrix. Test whether a changed, rebuilt local Client is observed on fresh browser navigation and when its Host plugin fiber reloads; keep the existing packaged-client acceptance gate.
-2. Prototype a **loopback-only, explicit opt-in** development notification transport with versioned build events, and a browser-only full-reload fallback. No remote-origin exposure, authentication bypass, production code path, or shell-controlled endpoint. This is *live reload*, not module-level HMR.
-3. Only after Host behavior is verified, experiment with targeted Client module disposal/re-registration and React slot cleanup. Validate listener teardown, stores, duplicate registrations, in-flight writes, and multiple tabs. Do not assume a client factory can be re-executed safely.
-4. If the upstream DSH team exposes a supported ESM/HMR seam, test it behind a development flag; preserve the current CJS factory packaging until all supported Host versions pass and a migration is planned.
+**No replacement ESM loader is necessary.** Bare ESM imports are not a
+drop-in replacement for DSH's existing Client factory and injected React
+singletons. Native HMR reactivates the owning plugin fiber and **may reset its
+React-local state**. Host-owned state and unrelated page state need not reset,
+but Agent Picket Host changes still require a Host restart. Desktop HMR is
+not supported by this workflow.
 
-The approach can later be shared with `dsh-computer-history` (tsdown-built React Client) and `dsh-vision-router` (additional HTML/script carrier deduplication), but they have different client ownership rules and must not receive automatic code rewrites.
+## Verified scope and remaining limits
+
+- Isolated DSH 0.2.0-rc.2 Web, macOS, Chrome: actual Client factory A→B→C
+  without page navigation; later 30 consecutive swaps with stable observed
+  CSS node count and no JavaScript exceptions during valid updates.
+- Isolated watcher-to-Web experiment: normal source edit hot-swapped, a
+  deliberate invalid TypeScript edit did not change the running Client,
+  and repairing the source allowed HMR again without page navigation.
+- Build and regression gates: `npm run check`, plus GitHub Node 22.19 /
+  Node 24 and macOS checks. These are **not** exhaustive proof of long-lived
+  memory safety or every DSH stable/preview version.
+- Separate Electron/Desktop support, plugin-local React state preservation,
+  and full accessibility/UX sign-off remain out of scope. No release is
+  implied by merging this developer tooling.
 
 ## Optional local Web live reload (stacked development experiment)
 
@@ -81,11 +111,11 @@ that native HMR is unavailable; use `AGENT_PICKET_DEV_RELOAD_MODE=page` as
 the full-page fallback. Build-only mode can also work with any existing DSH
 Web tab when native HMR is already present, without launching helper Chrome.
 
-An isolated real Chrome + DSH 0.2.0-rc.2 A→B→C experiment confirmed that the
-Client factory was rerun twice (initial plus two replacements), one tab
-navigation remained unchanged, an independent page-global marker survived,
-and no browser JavaScript errors were captured. Other DSH versions and the
-complete cross-platform matrix are separate acceptance gates.
+An isolated real Chrome + DSH 0.2.0-rc.2 A→B→C experiment confirmed
+three factory invocations (initial plus two replacements), one initial page
+navigation, surviving independent page state, and no unexpected browser
+JavaScript errors. The follow-up 30-cycle and failed-compile tests are
+summarized above; other Host versions and Desktop HMR are not certified.
 
 ## Failed builds must not invalidate a running Client
 
