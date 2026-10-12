@@ -2,6 +2,7 @@ import { spawn } from 'node:child_process'
 import { watch } from 'node:fs'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { openDevBrowser, validateDevBrowserOptions } from './dev-browser.mjs'
 
 /**
  * Serialize rebuilds: a change during an active build gets exactly one later
@@ -78,6 +79,14 @@ function main() {
   let child
   let exiting = false
   let sequence = 0
+  let browser
+  const useBrowser = !!process.env.AGENT_PICKET_DEV_BROWSER_URL
+  const browserOptions = useBrowser ? validateDevBrowserOptions({
+    url: process.env.AGENT_PICKET_DEV_BROWSER_URL,
+    chromeBin: process.env.AGENT_PICKET_DEV_CHROME_BIN,
+    puppeteerEntry: process.env.AGENT_PICKET_DEV_PUPPETEER_ENTRY,
+    headless: process.env.AGENT_PICKET_DEV_HEADLESS === '1',
+  }) : null
   const scheduler = createRebuildScheduler({
     async run() {
       const n = ++sequence
@@ -85,7 +94,32 @@ function main() {
       console.log(`[dev:watch] build #${n} started`)
       await buildOnce(value => { child = value })
       console.log(`[dev:watch] build #${n} ready in ${Math.round(performance.now() - begin)}ms`)
-      console.log('[dev:watch] Browser reload is NOT automatic; DSH client HMR is not enabled.')
+      if (exiting) return
+      if (!browserOptions) {
+        console.log('[dev:watch] No browser configured; DSH client reload is manual.')
+      } else {
+        try {
+          if (!browser) {
+            const launched = await openDevBrowser(browserOptions)
+            if (exiting) {
+              await launched.close()
+              return
+            }
+            browser = launched
+            console.log('[dev:watch] Isolated browser opened (full-page reload mode).')
+          } else {
+            await browser.reload()
+            console.log('[dev:watch] Browser page reloaded after successful build.')
+          }
+        } catch (error) {
+          console.error('[dev:watch] browser refresh failed (build succeeded):', error)
+          if (browser) {
+            const stale = browser
+            browser = undefined
+            await stale.close().catch(() => {})
+          }
+        }
+      }
     },
     onError(error) {
       console.error('[dev:watch] build failed (watching for next change):', error)
@@ -112,12 +146,14 @@ function main() {
     scheduler.close()
     for (const watcher of watches) watcher.close()
     child?.kill('SIGTERM')
+    void browser?.close().catch(error => console.error('[dev:watch] browser close failed:', error))
     process.exitCode = 0
   }
   process.once('SIGINT', stop)
   process.once('SIGTERM', stop)
   scheduler.request() // Initial build, including the browser factory contract check.
   console.log('[dev:watch] Watching src/, build scripts and compiler config. Ctrl+C to stop.')
+  if (browserOptions) console.log('[dev:watch] Browser mode enabled: reload, not HMR.')
 }
 
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
