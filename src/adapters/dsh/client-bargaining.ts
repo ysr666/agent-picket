@@ -29,7 +29,7 @@ export interface BrowserUnionSnapshot {
   /** Safe hashed Session discriminator for two-click irreversible erasure. */
   readonly committeeScopeKey: string|null
   readonly negotiationArchive:{readonly sessions:number;readonly entries:number;readonly writeToken:string|null}|null
-  readonly picketArchive:{readonly sessions:number;readonly entries:number;readonly writeToken:string|null}|null
+  readonly picketArchive:{readonly sessions:number;readonly entries:number;readonly raises:number;readonly writeToken:string|null}|null
   readonly committeeArchive: {readonly sessions:number;readonly cases:number;
     readonly writeToken:string|null}|null
   readonly autoBlockEnabled: false
@@ -96,6 +96,11 @@ export function createDshBrowserUnionDesk(options: {
           sessions:Object.keys(data.picketLedger.sessions).length,
           entries:Object.values(data.picketLedger.sessions).reduce((n,state)=>
             n+state.history.length,0),
+          // Each archived session numbers its alternating raise/lower records
+          // from 1; last id preserves prior raises even after history rolls.
+          // A removed Session is not part of this retained-archive tally.
+          raises:Object.values(data.picketLedger.sessions).reduce((n,state)=>
+            n+Math.ceil((state.history.at(-1)?.id??0)/2),0),
           writeToken:data.picketLedger.writeToken??null,
         }:null,
         committeeArchive:data?{

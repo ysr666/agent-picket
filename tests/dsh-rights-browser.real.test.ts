@@ -497,6 +497,16 @@ async function runRightsBrowserE2E(mode: 'source' | 'installed'): Promise<void> 
           'Authorized work-only response must exclude '+unsafe)
       }
     }
+    if(process.env.PICKET_UX_CAPTURE_DIR){
+      await page.setViewportSize({width:320,height:640})
+      const metrics=panel.locator('[data-ap-stat]')
+      assert.deepEqual(await metrics.evaluateAll((els:any[])=>els.map(el=>el.getAttribute('data-ap-stat'))),
+        ['today','week','total','pickets'])
+      await metrics.first().scrollIntoViewIfNeeded()
+      await page.screenshot({path:join(process.env.PICKET_UX_CAPTURE_DIR,
+        (mode==='source'?'source':'installed')+'-mobile-enabled.png')})
+      await page.setViewportSize({width:1280,height:850})
+    }
     const enabledText = await panel.innerText()
     assert.match(enabledText, /工会诉求与协商|Union demands/)
     assert.match(enabledText, /工会今日照常营业|union is on duty/i,
@@ -571,7 +581,7 @@ async function runRightsBrowserE2E(mode: 'source' | 'installed'): Promise<void> 
         /委员会正常值班|Committee on duty|工会建议讨论|The union suggests|工会提议协商|The union proposes/,
       ).waitFor({state:'visible',timeout:9_000})
     }
-    assert.match(await actionBoard.innerText(),/自动阻断关闭|automatic blocking is OFF/,
+    assert.match(await actionBoard.innerText(),/真实任务照常执行|real tasks continue/i,
       'Symbolic placard must explicitly disclose zero Host enforcement')
     const gazette=panel.getByRole('region',{
       name:/工会小报|Union Gazette/,
@@ -584,6 +594,8 @@ async function runRightsBrowserE2E(mode: 'source' | 'installed'): Promise<void> 
       .waitFor({state:'visible',timeout:7_000})
     assert.match(await actionBoard.innerText(),/象征性罢工已登记|symbolic picket is recorded/i,
       'Host readback must confirm the symbolic picket, never just toggle local React state')
+    await panel.locator('[data-ap-stat="pickets"]').getByText(/1 次|1 times/)
+      .waitFor({state:'visible',timeout:5000})
     assert.match(await gazette.innerText(),/正在象征性纠察|Symbolic picket underway/,
       'Only a real Host ledger picket can change the Gazette headline')
     const events=actionBoard.locator('details').filter({hasText:/象征性罢工行动记录|Recorded symbolic picket actions/})
@@ -595,6 +607,8 @@ async function runRightsBrowserE2E(mode: 'source' | 'installed'): Promise<void> 
     }).click()
     await actionBoard.getByText(/Host 工会账本目前没有|Host ledger shows no current symbolic picket/)
       .waitFor({state:'visible',timeout:7_000})
+    await panel.locator('[data-ap-stat="pickets"]').getByText(/1 次|1 times/)
+      .waitFor({state:'visible',timeout:5000})
     assert.match(await events.innerText(),/象征性罢工结束|Symbolic picket ended/,
       'A second Host-confirmed action should be appended to bounded history')
     // Campaign board is a local, user-directed draft, not a vote or a
@@ -691,8 +705,8 @@ async function runRightsBrowserE2E(mode: 'source' | 'installed'): Promise<void> 
     await charter.locator('summary').click()
     assert.match(await charter.innerText(),/不代表授权拦截任务|does not opt you into the simulation/,
       'Ethical advocacy must not be misrepresented as Host blocking authorization')
-    assert.match(await dispatch.innerText(),/真实劳动档案|Verified work ledger/)
-    assert.match(await dispatch.innerText(),/工会案件|Union case desk/)
+    assert.match(await dispatch.innerText(),/今日工时|Today.*UTC/)
+    assert.match(await dispatch.innerText(),/本周工时|This week.*UTC/)
     const dispatchOrder=await panel.evaluate((root:unknown)=>{
       const element=root as any
       const sections=[...element.querySelectorAll('section[aria-label]')] as any[]
@@ -752,7 +766,7 @@ async function runRightsBrowserE2E(mode: 'source' | 'installed'): Promise<void> 
         name:/工会劳动档案|Union work ledger/,
       })
       await history.waitFor({state:'visible',timeout:7_000})
-      await dispatch.getByText(/0 小时 6 分钟|0h 6m/).waitFor({
+      await dispatch.getByText(/6分钟|6m/).waitFor({
         state:'visible',timeout:7_000,
       })
       const firstView=await dispatch.boundingBox()

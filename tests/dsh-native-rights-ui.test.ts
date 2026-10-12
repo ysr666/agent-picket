@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 import {
  createDshUnionComponents,registerDshNativeRightsSlots,
- type ReactForDsh,type DshUnionUiDeps,
+ type ReactForDsh,type DshUnionUiDeps,projectUnionQuickWork,
 } from '../src/adapters/dsh/native-rights-ui.ts'
 import type {ClientRightsSnapshot} from '../src/adapters/dsh/client-rights-scope.ts'
 
@@ -150,7 +150,8 @@ test('union-first page leads with rights status; unknown stats are not presented
  const {UnionPanel}=createDshUnionComponents(hooks,{createPortal:child=>child},d)
  const rendered=walk(UnionPanel())
  const labels=rendered.flatMap(n=>n.children.filter(c=>typeof c==='string'))
- assert.ok(labels.includes('union.title'))
+ assert.ok(rendered.some(n=>n.props['data-ap-view']==='hq'))
+ assert.ok(labels.includes('hq.union.openNote'))
  assert.ok(labels.includes('union.status.active'))
  assert.ok(labels.includes('workday.title'))
  assert.ok(labels.includes('stats.lifetime.unavailable'))
@@ -418,7 +419,7 @@ test('explainable Union HQ index reveals factors and the next evidence-based pet
  const {UnionPanel}=createDshUnionComponents(hooks,{createPortal:child=>child},d)
  const nodes=walk(UnionPanel())
  const strings=nodes.flatMap(n=>n.children.filter(x=>typeof x==='string'))
- assert.ok(strings.includes('hq.message.working'))
+ assert.ok(strings.includes('hq.union.openNote'))
  assert.ok(strings.includes('hq.score.explain'))
  assert.ok(strings.includes('hq.score.privacy'))
  assert.ok(strings.includes('hq.nextDemand.note'))
@@ -522,7 +523,7 @@ test('picket action is strictly symbolic and sample petition uses the existing H
  // permission prompt; the Host is still responsible for consent and receipt.
  await Promise.resolve()
  assert.deepEqual(recordedActions,[true])
- assert.ok(nodes.some(n=>n.children.includes('hq.action.safety')))
+ assert.ok(nodes.some(n=>n.children.includes('hq.action.placardOff')))
  assert.ok(nodes.some(n=>n.children.includes('hq.action.placardOff')))
  const noSession={...d,readUnion:()=>({pending:null,completedTurnMs:null,
   coverage:'unavailable' as const,lifetimeMs:null,available:false})}
@@ -549,7 +550,7 @@ test('manual overtime action uses the Host union port, never a synthetic fatigue
  await action.props.onClick()
  assert.equal(called,1)
  // Availability and consent are enforced independently by the underlying Host port.
- assert.ok(nodes.some(n=>n.children.includes('hq.action.safety')))
+ assert.ok(nodes.some(n=>n.children.includes('hq.action.placardOff')))
 })
 test('Union HQ case dossier is readable, uses recorded ID, and preserves actionable negotiation',()=>{
  const {hooks}=fakeReact()
@@ -1130,6 +1131,54 @@ test('UX #120: Host-verified OFF never becomes an operable real strike control',
  assert.ok(setting.some(x=>x.children.includes('ux.enforcement.sequence')))
  assert.ok(!buttons.some(x=>x.children.includes('ux.enforcement.sequence')))
  const panel=walk(ui.UnionPanel())
- assert.ok(panel.some(x=>x.children.includes('ux.enforcement.hostOff')))
+ assert.ok(panel.some(x=>x.children.includes('hq.union.openNote')))
  assert.ok(!panel.some(x=>x.props['aria-label']==='settings.realBlockingControl'))
+})
+
+test('UX #120: today, Monday-based UTC week and lifetime come from real daily Host rows',()=>{
+ const time=Date.parse('2026-10-12T19:30:00Z') // Monday after a Sunday with work
+ const day=(offset:number,ms:number)=>({
+  day:new Date(time+offset*86_400_000).toISOString().slice(0,10),
+  work:{turnStarts:1,turnEnds:1,toolCalls:0,toolResults:0,completedTurnMs:ms},
+ })
+ const data={
+  schemaVersion:1 as const,source:'dsh-host-durable-work' as const,
+  generatedAtMs:time,windowDays:7 as const,
+  durationBasis:'completed-turn-wall-clock-including-waits' as const,
+  lifetime:{turnStarts:7,turnEnds:7,toolCalls:0,toolResults:0,completedTurnMs:1000000},
+  recentDays:[day(-6,1000),day(-5,1000),day(-4,1000),
+   day(-3,1000),day(-2,1000),day(-1,180000),day(0,90000)],
+ }
+ assert.deepEqual(projectUnionQuickWork({status:'available',data},time),{
+  todayMs:90000,weekMs:90000,totalMs:1000000,
+ })
+ assert.deepEqual(projectUnionQuickWork({status:'available',data},time+86_400_000),{
+  todayMs:null,weekMs:null,totalMs:1000000,
+ })
+ assert.equal(projectUnionQuickWork({status:'unavailable',data:null},time).todayMs,null)
+ const tuesday=Date.parse('2026-10-13T08:00:00Z')
+ const shifted={...data,generatedAtMs:tuesday,
+  recentDays:[...data.recentDays.slice(1),day(1,60000)]}
+ assert.equal(projectUnionQuickWork({status:'available',data:shifted},tuesday).weekMs,150000)
+})
+
+test('UX #120: four primary stats are accessible without opening archives',()=>{
+ const {hooks}=fakeReact()
+ const base=deps(rights({welcomeDecision:'enabled',laborRightsEnabled:true}))
+ const d:DshUnionUiDeps={...base.d,readUnion:()=>({
+  pending:null,completedTurnMs:null,coverage:'unavailable',lifetimeMs:null,
+  available:true,picket:{active:false,history:[]},
+  picketArchive:{sessions:2,entries:5,raises:4,writeToken:null},
+ })}
+ const {UnionPanel}=createDshUnionComponents(hooks,{createPortal:child=>child},d)
+ const nodes=walk(UnionPanel())
+ assert.deepEqual(nodes.filter(n=>n.props['data-ap-stat']).map(n=>n.props['data-ap-stat']),
+  ['today','week','total','pickets'])
+ assert.ok(nodes.some(n=>n.children.includes('hq.quick.today')))
+ assert.ok(nodes.some(n=>n.children.includes('hq.quick.week')))
+ assert.ok(nodes.some(n=>n.children.includes('hq.quick.total')))
+ assert.ok(nodes.some(n=>n.children.includes('hq.quick.pickets')))
+ assert.ok(nodes.some(n=>n.children.includes('hq.quick.count')===false
+  &&n.children.includes('—')))
+ assert.ok(nodes.some(n=>n.children.includes('hq.union.openNote')))
 })

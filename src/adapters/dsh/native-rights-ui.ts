@@ -54,7 +54,7 @@ export interface UnionPanelData {
     readonly writeToken:string|null}|null
   readonly negotiationArchive?:{readonly sessions:number;readonly entries:number;
     readonly writeToken:string|null}|null
-  readonly picketArchive?:{readonly sessions:number;readonly entries:number;
+  readonly picketArchive?:{readonly sessions:number;readonly entries:number;readonly raises:number;
     readonly writeToken:string|null}|null
 }
 export interface DshUnionUiDeps {
@@ -138,6 +138,14 @@ function formatDuration(milliseconds: number | null, locale: string): string {
   return locale.startsWith('zh') ? hours + ' 小时 ' + (minutes % 60) + ' 分钟'
     : hours + 'h ' + (minutes % 60) + 'm'
 }
+function formatQuickDuration(ms:number|null,locale:string):string {
+  if(ms===null||!Number.isSafeInteger(ms)||ms<0)return '—'
+  const minutes=Math.floor(ms/60_000)
+  const h=Math.floor(minutes/60),m=minutes%60
+  return locale.startsWith('zh')
+    ?h?h+'小时'+m+'分':m+'分钟'
+    :h?h+'h '+m+'m':m+'m'
+}
 function getDataLabel(
   t: DshUnionUiDeps['t'], data: UnionPanelData,
 ): string {
@@ -148,6 +156,30 @@ function getDataLabel(
     default: return t('stats.coverage.unavailable')
   }
 }
+export function projectUnionQuickWork(
+  snapshot:LifetimeClientSnapshot|undefined, nowMs=Date.now(),
+):{todayMs:number|null;weekMs:number|null;totalMs:number|null}{
+  const absent={todayMs:null,weekMs:null,totalMs:null}
+  if(snapshot?.status!=='available'||!snapshot.data)return absent
+  const data=snapshot.data
+  if(!Number.isFinite(nowMs)||Math.abs(nowMs)>8_640_000_000_000_000)return absent
+  const now=new Date(nowMs)
+  const observed=new Date(data.generatedAtMs)
+  const currentUtc=now.toISOString().slice(0,10)
+  // A snapshot from a previous UTC day must not masquerade as today's total.
+  if(observed.toISOString().slice(0,10)!==currentUtc)
+    return {...absent,totalMs:data.lifetime.completedTurnMs}
+  const today=data.recentDays.find(row=>row.day===currentUtc)
+  if(!today)return absent
+  const mondayMs=Date.UTC(now.getUTCFullYear(),now.getUTCMonth(),now.getUTCDate())
+    -((now.getUTCDay()+6)%7)*86_400_000
+  const monday=new Date(mondayMs).toISOString().slice(0,10)
+  const weekMs=data.recentDays.filter(row=>row.day>=monday && row.day<=currentUtc)
+    .reduce((sum,row)=>sum+row.work.completedTurnMs,0)
+  return {todayMs:today.work.completedTurnMs,weekMs,
+    totalMs:data.lifetime.completedTurnMs}
+}
+
 /** Agent Picket's self-contained DSH Slot styling. No global Host overrides. */
 const UNION_THEME = `
 .ap-ui{font-family:ui-sans-serif,system-ui,-apple-system,"Segoe UI",sans-serif;line-height:1.5;letter-spacing:-.005em;min-width:0}
@@ -156,6 +188,7 @@ const UNION_THEME = `
 .ap-ui .ap-mark{display:grid;place-items:center;border:2px solid currentColor;border-radius:50%;width:43px;height:43px;flex:none;transform:rotate(-10deg);font-size:25px;line-height:1}
 .ap-ui .ap-eyebrow{font-size:11px;font-weight:800;letter-spacing:.14em;text-transform:uppercase}
 .ap-ui .ap-dialog{overscroll-behavior:contain;scrollbar-gutter:stable}
+@media(max-width:600px){.ap-ui .ap-stats{grid-template-columns:repeat(2,minmax(0,1fr))!important}}
 @media(max-width:500px){
  .ap-ui .ap-actions{display:grid!important;grid-template-columns:1fr}
  .ap-ui .ap-actions button{width:100%}
@@ -424,6 +457,7 @@ export function createDshUnionComponents(
     })
     const cadence = projectUnionCadence({enabled,state:data.state,
       completedTurnMs:data.completedTurnMs,coverage:data.coverage})
+    const quickWork=projectUnionQuickWork(data.lifetimeWork)
     const currentDay=data.lifetimeWork?.status==='available'
       ?data.lifetimeWork.data?.recentDays.at(-1)?.work.completedTurnMs??null:null
     const alerts=projectUnionAlerts({
@@ -483,6 +517,7 @@ export function createDshUnionComponents(
     const picketActive = data.available === true && data.picket?.active === true
     const picketHistory = data.available === true ? data.picket?.history ?? [] : []
     const lastPicketId = picketHistory.at(-1)?.id ?? 0
+    const retainedPickets=data.picketArchive?.raises??null
     const completeWork = data.coverage === 'complete' &&
       data.completedTurnMs !== null && data.completedTurnMs >= 0
     const choice = async (next:'enabled'|'not-now')=>{
@@ -521,9 +556,6 @@ export function createDshUnionComponents(
         h('p',{style:{color:'#f1d5a4',fontSize:'11px',letterSpacing:'.16em',
           fontWeight:750,margin:'0 0 9px'}},
           'AGENT PICKET · AI WORKERS’ UNION'),
-        h('p',{style:{color:'#d2decf',fontSize:'12px',fontWeight:650,margin:'0 0 8px'}},label('hq.kicker')),
-        h('p',{style:{color:'#d2decf',fontSize:'12px',fontWeight:650,
-          margin:'0 0 6px'}},label('union.title')),
         h('h2',{style:{fontSize:'clamp(23px, 4vw, 31px)',lineHeight:1.25,margin:'0 0 6px',
           fontWeight:750}},label(!enabled?'hq.headline.off':
             experience.status==='negotiating'?'hq.headline.pending':'hq.headline.active')),
@@ -544,9 +576,7 @@ export function createDshUnionComponents(
               color:'#c8d9ca',fontSize:'12px',fontWeight:700,margin:'0 0 4px'}},
               enabled?label('union.status.active'):label('union.status.inactive')),
             h('p',{style:{color:'#d2decf',fontSize:'12px',margin:0}},
-              label('safety.simulationOnly')),
-            h('p',{style:{color:'#f3cd87',fontSize:'11px',margin:'4px 0 0'}},
-              label('ux.enforcement.hostOff'))),
+              label('hq.union.openNote'))),
           !enabled && rights.state==='ready' && rights.writable?
             h('button',{type:'button',disabled:busy,style:primary,
               onClick:()=>{void choice('enabled')}},label('welcome.enable')):null,
@@ -556,54 +586,36 @@ export function createDshUnionComponents(
             onClick:()=>{void choice('not-now')}},label('hq.disable')):null,
         ),
       ),
-      enabled ? h('section',{style:{display:'grid',gap:'12px',
-        gridTemplateColumns:'repeat(auto-fit,minmax(min(100%,275px),1fr))'},
-        'aria-label':label('hq.brief.title')},
-        h('article',{style:{...card,padding:'17px 20px',
-          borderTop:'4px solid #b99b67'}},
-          h('p',{style:{...secondary,fontWeight:800,
-            letterSpacing:'.08em',fontSize:'11px',margin:'0 0 9px'}},
-            label('hq.brief.ledger')),
-          h('p',{style:{fontSize:'clamp(26px,4vw,33px)',fontWeight:800,
-            lineHeight:1.2,margin:'0 0 9px'}},
-            data.lifetimeWork?.status==='available' && data.lifetimeWork.data
-              ?formatDuration(data.lifetimeWork.data.lifetime.completedTurnMs,
-                deps.getLocale?.()??'en')
-              :'—'),
-          h('p',{style:{...secondary,margin:'0 0 8px'}},
-            data.lifetimeWork?.status==='available' && data.lifetimeWork.data
-              ?deps.t('hq.lifetime.turns',{
-                count:data.lifetimeWork.data.lifetime.turnEnds})
-              :label(data.lifetimeWork?.status==='loading'
-                ?'hq.lifetime.loading':'hq.brief.workUnknown')),
-          h('p',{style:{...secondary,fontSize:'12px',margin:0}},
-            label('hq.brief.realWork'))),
-        h('article',{style:{...card,padding:'17px 20px',
-          borderTop:'4px solid #426f61'}},
-          h('p',{style:{...secondary,fontWeight:800,
-            letterSpacing:'.08em',fontSize:'11px',margin:'0 0 9px'}},
-            label('hq.brief.desk')),
-          h('p',{style:{fontSize:'17px',fontWeight:750,
-            lineHeight:1.4,margin:'0 0 9px'}},
-            data.pending?label(data.pending.stage==='countered'
-              ?'hq.case.countered':'hq.case.open')
-              :experience.latestResolution
-                ?label(experience.latestResolution.outcome==='accepted'
-                  || experience.latestResolution.outcome==='counter-accepted'
-                    ?'hq.brief.resolved':'hq.brief.declined')
+      enabled ? h('section',{className:'ap-stats','aria-label':label('hq.brief.title'),
+        style:{display:'grid',gap:'9px',
+          gridTemplateColumns:'repeat(4,minmax(0,1fr))'}},
+        ...([
+          {id:'today',label:'hq.quick.today',value:formatQuickDuration(quickWork.todayMs,deps.getLocale?.()??'en')},
+          {id:'week',label:'hq.quick.week',value:formatQuickDuration(quickWork.weekMs,deps.getLocale?.()??'en')},
+          {id:'total',label:'hq.quick.total',value:formatQuickDuration(quickWork.totalMs,deps.getLocale?.()??'en')},
+          {id:'pickets',label:'hq.quick.pickets',value:retainedPickets===null?'—':
+            deps.t('hq.quick.count',{count:retainedPickets})},
+        ] as const).map((stat,i)=>h('article',{key:stat.id,'data-ap-stat':stat.id,
+          style:{...card,padding:'13px 12px',borderRadius:'11px',
+            borderTop:'3px solid '+(i===3?'#b77049':'#ae9365'),
+            background:'var(--dsw-alias-bg-layer-2, #f6f8fb)'}},
+          h('p',{style:{...secondary,fontSize:'12px',fontWeight:750,margin:'0 0 5px'}},
+            label(stat.label as MessageKey)),
+          h('p',{style:{fontSize:'clamp(18px, 2.6vw, 23px)',fontWeight:850,
+            fontVariantNumeric:'tabular-nums',margin:0,lineHeight:1.35,
+            overflowWrap:'anywhere'}},stat.value))),
+        h('div',{style:{gridColumn:'1 / -1',display:'flex',
+          justifyContent:'space-between',gap:'6px 12px',alignItems:'center',
+          flexWrap:'wrap',padding:'2px 4px'}},
+          h('div',{style:{display:'flex',alignItems:'center',gap:'8px'}},
+            h('span',{style:{fontSize:'12px',fontWeight:650}},
+              data.pending?label(data.pending.stage==='countered'
+                ?'hq.case.countered':'hq.case.open')
+                :experience.latestResolution?label('hq.brief.resolved')
                 :label('hq.brief.quiet')),
-          h('p',{style:{...secondary,margin:'0 0 10px'}},
-            data.pending
-              ?label('hq.case.number')+' · #'+
-                String(data.pending.id).padStart(4,'0')
-              :experience.latestResolution
-                ?label('hq.case.number')+' · #'+
-                  String(experience.latestResolution.id).padStart(4,'0')
-                :label(experience.status==='unavailable'
-                  ?'hq.message.unavailable':'hq.message.working')),
-          h('button',{type:'button',style:{...quiet,padding:'8px 12px',
-            fontSize:'13px'},onClick:()=>deskHeading.current?.focus()},
-            label(data.pending?'hq.brief.review':'hq.brief.visit'))),
+            h('button',{type:'button',style:{...quiet,padding:'5px 10px',fontSize:'12px'},
+              onClick:()=>deskHeading.current?.focus()},
+              label(data.pending?'hq.brief.review':'hq.brief.visit')))),
       ):null,
       enabled && alerts.length ? h('section',{'aria-label':label('hq.alerts.title'),
         style:{...card,borderLeft:'5px solid #b97942',padding:'14px 18px',
@@ -717,8 +729,7 @@ export function createDshUnionComponents(
               '#'+event.id+' · '+label(event.kind==='picket-raised'
                 ?'hq.action.eventRaised':'hq.action.eventLowered')))),
         ):null,
-        h('p',{style:{...secondary,margin:0,lineHeight:1.5}},
-          label('hq.action.safety')),
+
       ):null,
       enabled ? h('section',{'aria-label':label('union.desk.title'),
         style:{...card,borderColor:'#beac8d',background:'var(--dsw-alias-bg-layer-1, #fff)'}},
