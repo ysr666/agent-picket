@@ -1,5 +1,10 @@
+/** Keep exact translation keys and placeholder-bearing templates in .d.ts,
+ * but widen plain prose to string so npm does not ship it twice as types. */
+function defineEnglish<const T extends Record<string,string>>(messages:T):{
+  readonly [K in keyof T]:T[K] extends `${string}{${string}}${string}`?T[K]:string
+}{return messages}
 /** Source locale. Keys describe semantics, never control Host policy. */
-export const en = {
+export const en = defineEnglish({
   'command.legacy.trendTitle': 'Local work trend (UTC calendar; {days} days, current day incomplete)',
   'command.legacy.trendSummary': 'Active days: {active}/{days}; completed turns: {turns}; tool calls: {tools}; completed-turn spans: {duration} ms.',
   'command.legacy.trendBars': 'Tool calls per day (relative scale): {plot}',
@@ -502,4 +507,4 @@ export const en = {
   'time.hoursMinutes': '{hours}h {minutes}m',
   'time.minutes': '{minutes}m',
   'time.seconds': '{seconds}s',
-} as const
+})

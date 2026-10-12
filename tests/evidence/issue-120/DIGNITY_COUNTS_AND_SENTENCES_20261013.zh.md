@@ -38,6 +38,10 @@
 ## 本轮真实验收（2026-10-13）
 
 - 真实 DSH 0.2.0-rc.2 Chrome 源码版 + 独立离线 npm 安装版：2/2 PASS。每版最后在官方 DSH 会话下用仅用于隔离测试的文字触发实际 Host 内存检测，然后经同一 Session 只读 API 返回 targeted=1，首页准确展示「疑似辱骂 1、待复核 0」，点击进入尊严委员会；异议、听证、撤回、删除及官方设置持久化不受影响。
-- 自动化 420 项、376 pass、0 fail、44 条条件 skip；npm pack dry-run 249723 bytes（不放宽 250000 bytes 限额）。
+- 自动化 420 项、376 pass、0 fail、44 条条件 skip；npm pack dry-run 242309 bytes（不放宽 250000 bytes 限额）。
 - `dignity-current-session.png` 是真实 Chrome 的工会视图局部裁切，不是生成图或虚构数据；背景原 DSH 聊天包含纯测试词，因此裁切仅保留插件界面，文稿无任何实际用户敏感原句。
 - 后续仅原句审阅功能由 [Issue #123](https://github.com/ysr666/agent-picket/issues/123) 跟踪，关联 #79/#83/#120；本轮不能宣传已可逐条展示原句。
+
+## 修复跨平台发行包体积差异
+
+原 PR 在 Linux/Windows GitHub Actions 上因为 npm 压缩包接近 250 KB 上限而失败。保留严禁扩容的限制，将英文翻译表的导出声明改为**仅对含占位符的句子保留精确字面量类型**、其他普通翻译文案在声明文件中宽化为 `string`。精确翻译键、`MessageParameters` 的占位符自动推断与中英文键完整性检查仍通过 TypeScript。翻译运行值不变；导出的 `en.d.ts` 由 48 KB 降为约 27 KB，Mac npm 压缩包从 249723 bytes 降到约 242309 bytes。
