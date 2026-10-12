@@ -12,26 +12,29 @@ export function checkFirstRelease(value){
   const invalid=(message)=>reasons.push(message)
   if(!value || typeof value!=='object' || Array.isArray(value))
     return ['Release attestation missing or invalid']
-  if(value.schemaVersion!==1 || value.release!=='1.0.0')
+  if(value.schemaVersion!==2 || value.release!=='1.0.0')
     invalid('Unexpected release acceptance schema/version')
-  const proof=(section,name)=>{
+  const proof=(section,name,display=name)=>{
     const evidence=section?.[name]
     if(evidence?.status!=='verified'
       ||!Array.isArray(evidence?.evidence)
       ||evidence.evidence.length===0
       ||!evidence.evidence.every(v=>typeof v==='string' && v.length>12
         &&!v.includes('TODO') &&!v.includes('PLACEHOLDER'))){
-      invalid(name+': requires verified results and concrete review evidence')
+      invalid(display+': requires verified results and concrete review evidence')
     }
   }
-  for(const name of ['web','cli','acp'])proof(value.surfaces,name)
-  for(const name of ['macos','windows','linux'])proof(value.operatingSystems,name)
-  for(const name of ['dsh','codex','claude-code']){
-    const host=value.hosts?.[name]
-    proof(value.hosts,name)
+  // Agent platforms: DSH, Claude Code, Codex. DSH has TWO real clients.
+  // A single macOS smoke test cannot count as Windows/Linux acceptance.
+  for(const name of ['dsh-web','dsh-desktop','claude-code','codex']){
+    const target=value.targets?.[name]
+    proof(value.targets,name)
     for(const key of ['realEnforcement','losslessRecovery',
       'verifiedHumanProvenance','visibleRefusalAndResume']){
-      if(host?.[key]!=='verified')invalid(name+'.'+key+': not proven')
+      if(target?.[key]!=='verified')invalid(name+'.'+key+': not proven')
+    }
+    for(const os of ['windows','macos','linux']){
+      proof(target?.operatingSystems, os, name+'/'+os)
     }
   }
   for(const name of ['unionHeadquarters','settings','firstRunWarning',

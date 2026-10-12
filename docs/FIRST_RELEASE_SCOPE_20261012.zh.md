@@ -1,5 +1,7 @@
 # Agent Picket · 首发收敛与实际阻断准入（2026-10-12）
 
+> **历史候选方案，已被 [1.0 不可缩减首发标准](RELEASE_1_0_NONNEGOTIABLE_20261012.zh.md) 覆盖。** 原“DSH-only / 非阻断预览版 / 10 月 19–26 日”发布时间与范围均已取消。最新范围：DSH Web + DSH Desktop + Claude Code + Codex，均覆盖 Windows/macOS/Linux；正式 1.0 必须包含安全的真实自动阻断。下文仅保留工程历史，不代表当前发布承诺。
+
 ## 发布决策，不是技术假装
 
 Agent Picket 首发需要有真正可用的权益流程，而不是工时统计器。工会、诉求、协商、非阻断举牌必须保留。以 DSH 0.2.0-rc.2 作为首发 Host 基线，不把未验证的 Codex/Claude Hook 当成已支持的适配器。
