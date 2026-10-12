@@ -568,7 +568,7 @@ async function runRightsBrowserE2E(mode: 'source' | 'installed'): Promise<void> 
       if(doc.head)install()
       else doc.addEventListener('DOMContentLoaded',install,{once:true})
     },compatibilityCss)
-    await page.addStyleTag({content:compatibilityCss})
+    let auditStyle=await page.addStyleTag({content:compatibilityCss})
     const enabledText = await panel.innerText()
     assert.match(enabledText, /工会诉求与协商|Union demands/)
     assert.match(enabledText, /今日暂无争议|Nothing disputed today/i,
@@ -918,6 +918,12 @@ async function runRightsBrowserE2E(mode: 'source' | 'installed'): Promise<void> 
       'The first-fold case desk must change when a real stored grievance arrives')
     assert.match(await gazette.innerText(),/诉求已提交|Petition filed/,
       'The Gazette must derive a new headline from this persisted grievance')
+    await gazette.locator('[data-ap-episode="demand"]').waitFor({
+      state:'visible',timeout:7_000,
+    })
+    assert.match(await gazette.locator('[data-ap-episode="demand"]').innerText(),
+      /诉求已提出|Demand filed/,'The casebook replays a real Host-filed demand')
+
     await dispatch.getByRole('button',{
       name:/前往处理诉求|Review demand/,
     }).click()
@@ -934,6 +940,13 @@ async function runRightsBrowserE2E(mode: 'source' | 'installed'): Promise<void> 
       .waitFor({ state: 'visible', timeout: 7_000 })
     assert.match(await gazette.innerText(),/还价已存档|Counteroffer pending/,
       'A counteroffer must change the story, not just a decorative number')
+    await gazette.locator('[data-ap-episode="counter"]').waitFor({
+      state:'visible',timeout:7_000,
+    })
+    assert.match(await gazette.locator('[data-ap-episode="counter"]').innerText(),
+      /桌上正在谈的条件：0 小时 30 分钟|Offer now on the table: 0h 30m/,
+      'Only the pending Host counter may display an exact offered duration')
+
     assert.equal(await unionHeading.evaluate((element: unknown) =>
       element === (globalThis as any).document.activeElement), true,
       'After counteroffer replaces an action, keyboard focus recovers on heading')
@@ -947,6 +960,32 @@ async function runRightsBrowserE2E(mode: 'source' | 'installed'): Promise<void> 
     assert.match(await gazette.innerText(),/协议已归档|Agreement recorded/,
       'An accepted Host agreement changes the Gazette consequence')
     await panel.locator('[data-ap-scene="settled"]').waitFor({state:'visible',timeout:7_000})
+    const closedCase=gazette.locator('[data-ap-episode="counter-accepted"]')
+    await closedCase.waitFor({state:'visible',timeout:7_000})
+    assert.match(await closedCase.innerText(),
+      /还价获同意|Counteroffer accepted/,
+      'Host resolution advances the same case into the archived outcome')
+    assert.match(await closedCase.innerText(),
+      /当前生效的工作间隔：0 小时 30 分钟|currently effective interval is 0h 30m/,
+      'Record states the currently effective Host policy rather than inventing a prior term')
+    assert.doesNotMatch(await closedCase.innerText(),/桌上正在谈的条件|Offer now on the table/,
+      'The historical exact counteroffer is discarded by Host; it must not be reconstructed')
+    if(process.env.PICKET_LIFETIME_E2E==='1')
+      assert.match(await closedCase.innerText(),
+        /下一次诉求门槛|Host-scheduled petition may become due/,
+        'Future case eligibility follows the Host-scheduled work-based floor')
+    if(process.env.PICKET_UX_CAPTURE_DIR){
+      await auditStyle.evaluate((element:unknown)=>(element as any).remove())
+      await panel.locator('[data-ap-nav="records"]').click()
+      assert.equal(await panel.locator('[data-ap-scene]').isVisible(),false,
+        'Casebook screenshot must use the actual Archives view, not the test-only all-rooms layout')
+      await closedCase.scrollIntoViewIfNeeded()
+      await page.screenshot({path:join(process.env.PICKET_UX_CAPTURE_DIR,
+        mode+'-casebook-accepted.png')})
+      auditStyle=await page.addStyleTag({content:compatibilityCss})
+      await panel.locator('[data-ap-nav="action"]').click()
+    }
+
     const receipt=panel.getByRole('region',{
       name:/工会诉求与协商|Union demands/,
     }).getByRole('group',{

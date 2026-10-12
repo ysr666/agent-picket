@@ -1181,16 +1181,52 @@ export function createDshUnionComponents(
           story.nextDueInWorkMs!==null ? h('p',{style:secondary},
             deps.t('hq.story.next',{duration:formatDuration(
               story.nextDueInWorkMs,deps.getLocale?.()??'en')})):null,
-          ...([['cases',story.cases,'hq.story.cases'],
-            ['actions',story.actions,'hq.story.actions']] as const).map(
-            ([key,records,heading])=>records.length ? h('div',{key,
-              style:{marginTop:'12px'}},
-              h('p',{style:{...secondary,fontWeight:700,margin:'0 0 5px'}},label(heading)),
-              h('ol',{style:{paddingLeft:'22px',margin:0,fontSize:'13px'}},
-                ...records.map(event=>h('li',{key:event.key,
-                  style:{padding:'3px 0'}},
-                  '#'+event.id+' · '+label(('hq.story.event.'+event.kind) as MessageKey))))
-            ):null),
+          story.episodes.length?h('div',{className:'ap-casebook',
+            'aria-label':label('hq.episode.title'),style:{marginTop:'14px'}},
+            h('h4',{style:{fontSize:'15px',margin:'0 0 7px'}},
+              label('hq.episode.title')),
+            h('p',{style:{...secondary,fontSize:'12px',margin:'0 0 9px'}},
+              label('hq.episode.provenance')),
+            ...story.episodes.map((episode,index)=>h('article',{
+              key:episode.key,'data-ap-episode':episode.stage,
+              style:{padding:'12px 14px',margin:'8px 0',
+                border:'1px solid #d5c7ae',borderLeft:'4px solid '+
+                  (index===0?'#ad5e3c':'#9c9278'),borderRadius:'7px',
+                background:index===0?'#f7f0e3':'transparent'}},
+              h('p',{style:{...secondary,fontSize:'11px',fontWeight:750,
+                margin:'0 0 5px',letterSpacing:'.06em'}},
+                label('hq.case.number')+'  #'+
+                  String(episode.id).padStart(4,'0')+'  ·  '+
+                  label(episode.kind==='break'?'union.kind.break':
+                    'union.kind.overtime')),
+              h('p',{style:{fontWeight:750,margin:'0 0 7px',fontSize:'14px'}},
+                label(('hq.episode.stage.'+episode.stage) as MessageKey)),
+              episode.counterOfferMs!==null?h('p',{style:{
+                fontSize:'13px',margin:'0 0 5px'}},
+                deps.t('hq.episode.counterValue',{duration:formatDuration(
+                  episode.counterOfferMs,deps.getLocale?.()??'en')})):null,
+              episode.currentTermMs!==null?h('p',{style:{
+                fontSize:'13px',margin:'0 0 5px'}},
+                deps.t('hq.episode.currentRule',{duration:formatDuration(
+                  episode.currentTermMs,deps.getLocale?.()??'en')})):null,
+              episode.remainingVerifiedWorkMs!==null?h('p',{style:{
+                fontSize:'13px',margin:'0 0 5px'}},
+                deps.t('hq.episode.nextReview',{duration:formatDuration(
+                  episode.remainingVerifiedWorkMs,deps.getLocale?.()??'en')})):null,
+              episode.stage==='demand'||episode.stage==='counter'
+                ?h('button',{type:'button',style:{
+                  ...quiet,padding:'7px 10px',fontSize:'12px',marginTop:'7px'},
+                  onClick:()=>selectSpace('action','desk')},
+                  label('hq.episode.reply')):null,
+            ))):null,
+          story.actions.length?h('div',{style:{marginTop:'16px'}},
+            h('h4',{style:{fontSize:'14px',margin:'0 0 6px'}},
+              label('hq.story.actions')),
+            h('ol',{style:{paddingLeft:'22px',margin:0,fontSize:'13px'}},
+              ...story.actions.map(event=>h('li',{key:event.key,
+                style:{padding:'3px 0'}},
+                '#'+event.id+' · '+label(('hq.story.event.'+
+                  event.kind) as MessageKey))))):null,
           h('p',{style:{...secondary,fontSize:'12px',margin:'12px 0 0'}},
             label('hq.story.disclosure')),
         ):h('p',{style:secondary},label('hq.story.muted')),
