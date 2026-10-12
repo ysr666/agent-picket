@@ -1,4 +1,7 @@
 import assert from 'node:assert/strict'
+import {mkdtempSync,readFileSync,rmSync} from 'node:fs'
+import {tmpdir} from 'node:os'
+import {join} from 'node:path'
 import test from 'node:test'
 import { apply } from '../src/adapters/dsh/plugin.ts'
 import type { DshIntegrationContext } from '../src/adapters/dsh/integration.ts'
@@ -314,6 +317,9 @@ test('Native Host refusal never falls back to a fabricated shared strike success
 
 test('CLI export and per-category purge require real consent, explicit CONFIRM and Host readback',async()=>{
  const h=hostHarness()
+ const root=mkdtempSync(join(tmpdir(),'picket-archive-cli-unittest-'))
+ const to=(kind:string)=>join(root,kind+'.json')
+ try{
  assert.equal((await h.call('export negotiations')).kind,'error')
  assert.equal((await h.call('purge negotiations ALL CONFIRM')).kind,'error')
  assert.equal(h.revision(),0)
@@ -324,11 +330,14 @@ test('CLI export and per-category purge require real consent, explicit CONFIRM a
  await h.call('strike')
  const priorPicket=h.read().unionPicketLedger!
  assert.match(priorPicket,/picket-raised/)
- const negotiation=await h.call('export negotiations')
- const picket=await h.call('export pickets')
+ const negotiation=await h.call('export negotiations '+to('negotiations'))
+ const picket=await h.call('export pickets '+to('pickets'))
  assert.equal(negotiation.kind,'success')
  assert.equal(picket.kind,'success')
- for(const payload of [negotiation.text,picket.text]){
+ for(const [kind,result] of [['negotiations',negotiation],['pickets',picket]] as const){
+  assert.ok(!result.text.includes('sessions')&&!result.text.includes('schemaVersion'),
+   'DSH session command/done receives only a generic confirmation')
+  const payload=readFileSync(to(kind),'utf8')
   const body=JSON.parse(payload)
   assert.equal(body.groups.length,1)
   assert.equal(body.groups[0].current,true)
@@ -336,6 +345,10 @@ test('CLI export and per-category purge require real consent, explicit CONFIRM a
     nativeSessionKey(h.agent.session.id),'writeToken','welcomeDecision'])
    assert.ok(!payload.includes(sensitive),'Export leaked '+sensitive)
  }
+ assert.equal((await h.call('export negotiations '+to('negotiations'))).kind,'error',
+  'A second export must not replace a user-owned JSON file')
+ assert.equal((await h.call('export negotiations '+join(root,'missing','file.json'))).kind,'error',
+  'Host must reject an unavailable user-chosen destination without logging archive content')
  const prev=h.revision()
  for(const input of [
   'purge','purge negotiations','purge negotiations confirm',
@@ -355,7 +368,7 @@ test('CLI export and per-category purge require real consent, explicit CONFIRM a
  assert.equal(h.read().unionPicketLedger,priorPicket,
   'Independent simulated picket cannot be erased accidentally')
  assert.equal((await h.call('export negotiations')).kind,'error')
- assert.equal((await h.call('export pickets')).kind,'success')
+ assert.equal((await h.call('export pickets '+to('pickets2'))).kind,'success')
  const after=h.revision()
  assert.equal((await h.call('purge negotiations ALL CONFIRM')).kind,'success')
  assert.equal(h.revision(),after,'Empty ledger deletion is revision-preserving')
@@ -365,4 +378,5 @@ test('CLI export and per-category purge require real consent, explicit CONFIRM a
  assert.equal((await h.call('purge pickets CONFIRM')).kind,'error')
  assert.equal(h.revision(),disabled)
  assert.equal(h.read().unionPicketLedger,priorPicket)
+ } finally {rmSync(root,{recursive:true,force:true})}
 })

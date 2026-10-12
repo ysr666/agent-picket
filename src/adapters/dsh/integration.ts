@@ -1,4 +1,5 @@
 import type { NativeUnionCommandPort, NativeUnionAction, UnionArchiveKind } from './native-rights-command.ts'
+import { writeExplicitUnionArchive } from './secure-archive-export.ts'
 import { en, formatMessage } from '../../i18n/index.ts'
 import { inspectBlockingReadiness } from '../../core/block-readiness.ts'
 import { resolveHostAction, type UnionEngine } from '../../core/engine.ts'
@@ -45,6 +46,7 @@ export interface DshCommandResult {
 }
 export interface DshCommandInvocation {
   readonly rawInput?: string
+  readonly signal?: AbortSignal
   readonly agent?: DshAgent
 }
 export interface DshCommands {
@@ -259,7 +261,7 @@ export function registerDshIntegration(
       // Union commands do not need the raw command suffix in Session history.
       // Command result and lifecycle still remain auditable in DSH.
       recordInput: false,
-      input: { hint: '[status|export CATEGORY|purge CATEGORY ALL CONFIRM|rights [on|off]|language [auto|en|zh-CN]|grievances|petition-demo [break|overtime]|strike|resume|accept ID|decline ID|counter ID MINUTES|resolve ID accept|decline|stats|report|help]' },
+      input: { hint: '[status|export CATEGORY ABSOLUTE_FILE.json|purge CATEGORY ALL CONFIRM|rights [on|off]|language [auto|en|zh-CN]|grievances|petition-demo [break|overtime]|strike|resume|accept ID|decline ID|counter ID MINUTES|resolve ID accept|decline|stats|report|help]' },
       handler: invocation => {
         const raw = (invocation?.rawInput ?? '').trim()
         const verb = raw.split(/\s+/, 1)[0]?.toLowerCase() || 'status'
@@ -289,16 +291,30 @@ export function registerDshIntegration(
           const id = typeof sessionId === 'string' && sessionId ? sessionId : undefined
           if(verb==='export'||verb==='purge'){
             const category=arg[0]
+            const exportMatch=raw.match(/^export\s+(negotiations|pickets|cases)\s+(.+)$/u)
+            const path=exportMatch?.[2]?.trim() ?? ''
+            const filePath=path.startsWith('"')&&path.endsWith('"')
+              ?path.slice(1,-1):path
             if(!['negotiations','pickets','cases'].includes(category??'')
-              ||(verb==='export'&&arg.length!==1)
+              ||(verb==='export'&&(!exportMatch||!filePath))
               ||(verb==='purge'&&(arg.length!==3||arg[1]!=='ALL'||arg[2]!=='CONFIRM')))
               return fail(native.text(verb==='export'
                 ?'command.native.exportUsage':'command.native.purgeUsage'))
             if(!id)return fail(native.text('command.native.sessionRequired'))
             const kind=category as UnionArchiveKind
             if(verb==='export'){
-              try{return ok(native.exportArchive(id,kind))}
-              catch{return fail(native.text('command.native.archiveUnavailable'))}
+              // DSH writes command/done.text to Session history. Never let
+              // an archive JSON appear there, even with recordInput:false.
+              // The user must supply a destination and no existing file
+              // may be silently overwritten.
+              try {
+                const json=native.exportArchive(id,kind)
+                return writeExplicitUnionArchive(filePath,json,invocation?.signal,()=>native.enabled())
+                  .then(()=>ok(native.text('command.native.exportSaved')),
+                    ()=>fail(native.text('command.native.exportFailed')))
+              } catch {
+                return fail(native.text('command.native.archiveUnavailable'))
+              }
             }
             return native.purgeArchive(id,kind).then(
               ()=>ok(native.text('command.native.purgeDone')),

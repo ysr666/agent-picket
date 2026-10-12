@@ -2,6 +2,8 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 import { pathToFileURL } from 'node:url'
 import { join } from 'node:path'
+import {mkdtempSync,readFileSync,rmSync} from 'node:fs'
+import {tmpdir} from 'node:os'
 import { apply as applyPlugin, Config } from '../src/adapters/dsh/plugin.ts'
 import { createDshBrowserUnionDesk } from '../src/adapters/dsh/client-bargaining.ts'
 import { nativeSessionKey } from '../src/adapters/dsh/native-rights-command.ts'
@@ -17,6 +19,7 @@ test('real DSH 0.2 CommandRuntime routes shared symbolic pickets without model c
   skip: !is02 && 'Set DSH 0.2 node_modules and AGENT_PICKET_TEST_DSH_VERSION for actual command runtime',
   timeout: 15_000,
 }, async () => {
+  const exportRoot=mkdtempSync(join(tmpdir(),'picket-real-02-export-'))
   const { Context } = await import(pathToFileURL(join(modules!, '@deepseek-ai/cordis/lib/index.js')).href)
   const commands = await import(pathToFileURL(join(modules!, '@deepseek-ai/dsh-commands/lib/index.js')).href)
   const ctx = new Context()
@@ -166,13 +169,14 @@ test('real DSH 0.2 CommandRuntime routes shared symbolic pickets without model c
     }}})
     await hostSettings.update('agent-picket',{unionDignityCases:exampleCases},revision)
     for(const kind of ['negotiations','pickets','cases']){
-      const exported=await call('/union export '+kind)
+      const exported=await call('/union export '+kind+' '+join(exportRoot,kind+'.json'))
       assert.equal(exported.kind,'success','DSH 0.2 export '+kind)
-      const parsed=JSON.parse(exported.text)
+      const contents=readFileSync(join(exportRoot,kind+'.json'),'utf8')
+      const parsed=JSON.parse(contents)
       assert.equal(parsed.format,'agent-picket-union-'+kind)
       assert.equal(parsed.groups[0]?.current,true)
       for(const secret of [session.id,agent.id,key,'writeToken','PRIVATE_OFF']){
-        assert.ok(!exported.text.includes(secret),'Unexpected private field in '+kind)
+        assert.ok(!contents.includes(secret),'Unexpected private field in '+kind)
       }
     }
     const beforeArchiveDelete=revision
@@ -196,6 +200,9 @@ test('real DSH 0.2 CommandRuntime routes shared symbolic pickets without model c
     assert.equal((await call('/union purge negotiations ALL CONFIRM')).kind,'error')
     assert.equal((await call('/union export pickets')).kind,'error')
 
+    const log=JSON.stringify(events)
+    for(const sensitive of ['"format":"agent-picket-union', '"schemaVersion"', '"cases":[', key])
+      assert.ok(!log.includes(sensitive),'Real DSH 0.2 session history leaked archive JSON')
     assert.ok(events.some(e=>e.type==='command/run'))
     assert.ok(events.some(e=>e.type==='command/done'))
     assert.equal(events.length%2,0)
@@ -205,5 +212,6 @@ test('real DSH 0.2 CommandRuntime routes shared symbolic pickets without model c
     browser.dispose()
     await pluginFiber.dispose()
     await commandFiber.dispose()
+    rmSync(exportRoot,{recursive:true,force:true})
   }
 })

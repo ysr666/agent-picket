@@ -87,14 +87,15 @@ $DSH_HOME/agent-picket/stats/aggregate.v1.json
 
 在开启工会且当前 Host Session 有效时，DSH CLI 增加以下独立于工时统计文件的指令：
 
-    /union export negotiations
-    /union export pickets
-    /union export cases
+    /union export negotiations /绝对路径/negotiations.json
+    /union export pickets /绝对路径/pickets.json
+    /union export cases /绝对路径/cases.json
     /union purge negotiations ALL CONFIRM
     /union purge pickets ALL CONFIRM
     /union purge cases ALL CONFIRM
 
-- export 返回适合用户主动复制保存的结构化 JSON，不自动上传，也不包含原始或哈希会话身份及对话原文；仅导出目前 Host 保留的记录，非永久完整历史。无记录、授权关闭、Host 不可用会报错而不会伪称导出成功。
+- **export 必须明确指定 DSH Host 所在机器文件系统上的绝对路径**（包括 .json 文件名，远程浏览器访问时不是浏览器本机路径）。文件必须不存在，否则拒绝覆盖或覆盖软链接；不会默默选目录，也不会自动上传。新文件在 macOS/Linux 采用仅文件所有者可读写的 0600 权限；Windows 访问权限取决于所在文件夹 ACL。若路径含空格，可将完整路径用双引号包围。JSON 不含原始或哈希会话身份及对话原文；仅导出目前 Host 保留的记录，不是永久完整历史。无记录、授权关闭、Host 不可用或写文件失败均会明确报错。
+- **为什么不直接在 CLI 打印 JSON：** 真实 DSH 0.1.2 与 0.2.0 CommandRuntime 均会把命令返回的完整 text 存入 Session 的 command/done 事件，即使 recordInput=false。直接打印档案会形成不属于工会账本删除范围的 DSH 会话日志副本。因此 CLI 现在只记录简短的成功／失败状态，用户明确指定的 JSON 文件才包含数据。导出的文件不会被 /union purge 自动删除，必须由用户自行保存或清理；系统备份亦不受此操作控制。部分其他 /union 状态命令仍有常规摘要会话日志，不能宣称所有工会相关事件在 DSH 对话中完全不可见。
 - purge 类别 ALL CONFIRM 清空该类别所有已保留会话分组，不是仅当前会话。每次只写一个 Host 字段，依赖 Host 修订号冲突拒绝、随机写入回执及再次读取的空账本确认；失败不能声称删除完成。不会触碰其他类别、DSH 对话文件或本地长期工时 WAL。
 - 本地工时 WAL 仍使用 /union forget-lifetime CONFIRM 独立清理；当前会话内存数据仍用 /union reset。不存在一条可保证多个 Host 字段与文件系统同时原子删除的 /union purge all。
 - 仅是逻辑层删除；Host 备份、系统快照、此前导出的副本不能由插件清除。若用户关闭工会授权，已有 Host 记录不会被暗中删除，需重新明确授权后主动清理。

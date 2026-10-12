@@ -46,7 +46,7 @@
 
 ## 2026-10-12 · #82 命令行账本可携带性（仍需真人验收）
 
-CLI /union export negotiations|pickets|cases 从官方、已授权、当前可用的 Host 账本按类生成版本化 JSON 文本，仅包含带序号的分组、是否当前分组和明确验证过的协议／象征性行动／委员会案件字段；没有原始或哈希 Session ID、Agent ID、写入令牌、原文或附件。空／关闭／不可用状态只返回错误，不伪造空历史为成功导出。
+CLI /union export negotiations|pickets|cases 后须明确提供一个不存在的绝对 .json 目标路径；从官方、已授权、当前可用的 Host 账本按类生成版本化 JSON 文件，仅包含带序号的分组、是否当前分组和明确验证过的协议／象征性行动／委员会案件字段；没有原始或哈希 Session ID、Agent ID、写入令牌、原文或附件。空／关闭／不可用状态只返回错误，不伪造空历史为成功导出。
 
 CLI /union purge negotiations|pickets|cases ALL CONFIRM 显式说明整个选中类别的所有已保留 Session 分组将被删除；Host 版本 CAS + 独立 writeToken 回读必须成功，才报告删除完成。删除 A 类不触碰 B/C 类和 DSH 自己的聊天。命令行不会提供无范围的 /union purge all，以免跨类别多次写入被误以为原子事务。关闭授权后不允许导出或删除；恢复授权也不能自动删除既有记录。
 
@@ -61,3 +61,11 @@ CLI /union purge negotiations|pickets|cases ALL CONFIRM 显式说明整个选中
 ### #111 的进一步验证：撤销和删除可复活（真正跨 OS 进程）
 
 真实独立 OS 进程测试不只复现举牌丢失，还复现两项 P0：已确认分类删除的 Host 举牌档案因另一进程旧缓存写入而再次出现，已确认 OFF 的 welcomeDecision 也因另一进程旧缓存写入而恢复 enabled。本地固定环境 watch:true，三个显式失败门禁和顺序进程重启成功对照已记录于 #111。直到 Host 根因修复或发行明确保证独立 Host 配置所有者唯一性，不能对跨独立所有者的删除/授权撤销提供安全承诺。正常 CI 的跳过测试并不是验收成功。
+
+### 2026-10-12 · #82 CLI 导出的 DSH Session 日志副本风险与解决
+
+审查真实 DSH 0.1.2 / 0.2.0 CommandRuntime 后确认：命令定义的 recordInput:false 仅阻止保存输入参数，不能阻止 command/done.text 被记入普通 DSH 会话。先前将完整档案 JSON 当作 /union export 命令返回文本，实际上会在 Host 原生会话日志产生一份**不由工会分类删除管理的档案副本**，与“删除后不保留其他副本”的直觉相冲突。
+
+现 CLI 导出要求用户**明确给出目标文件的绝对路径**，使用独占创建模式（不覆盖已存在文件或软链接），POSIX 权限 0600。命令结果及 DSH Session 日志只显示脱敏的普通成功或失败提示，不含完整档案正文或目标路径。文件由用户主动管理；/union purge 不会替用户擦掉已经导出的文件或任何 Host 原生日志。网页版原有 Blob 下载模式不受影响。
+
+真人需再次验收“绝对路径”“已存在文件拒绝覆盖”“删除工会账本不删除用户下载副本”的认知和多语言指引。受测 macOS 上实际 DSH 0.1.2/0.2.0 CommandRuntime 的 command/done 事件已新增不含正文的自动化断言；不代表所有未知 DSH 变体、系统备份或第三方插件均有相同日志策略。

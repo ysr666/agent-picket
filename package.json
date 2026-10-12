@@ -103,7 +103,9 @@
     "!docs/RELEASE_1_0_INTEGRATION_AUDIT_20261012.zh.md",
     "!docs/RELEASE_1_0_PRODUCT_ACCEPTANCE_20261012.zh.md",
     "!docs/ROADMAP.zh.md",
-    "!docs/ARCHITECTURE.md"
+    "!docs/ARCHITECTURE.md",
+    "!docs/DSH_NATIVE_UNION_I18N.md",
+    "!docs/DSH_LEGACY_CLI_I18N.md"
   ],
   "dsh": {
     "bundle": {

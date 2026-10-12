@@ -25,7 +25,10 @@ test('real DSH SettingsFile + CommandRuntime share Web union consent and agreeme
   const picketFiber=ctx.plugin({name:'agent-picket-command-rights-test',apply(child:any){
     picketPlugin.apply(child)
   }})
-  const session={id:'real-cli-test-session',append(){}}
+  const persistedCommandEvents:Array<{type:string;data:unknown}>=[]
+  const session={id:'real-cli-test-session',append(type:string,data:unknown){
+    persistedCommandEvents.push({type,data})
+  }}
   const agent={id:'real-cli-agent',session}
   const signal=new AbortController().signal
   const call=async(line:string)=>{
@@ -96,15 +99,15 @@ test('real DSH SettingsFile + CommandRuntime share Web union consent and agreeme
 
     // Actual native Host SettingsFile + CommandRuntime archive commands,
     // not mocked parsers. Export is copyable but never contains hashed IDs.
-    const negotiations=await call('/union export negotiations')
-    const pickets=await call('/union export pickets')
+    const negotiations=await call('/union export negotiations '+join(root,'negotiations.json'))
+    const pickets=await call('/union export pickets '+join(root,'pickets.json'))
     assert.equal(negotiations.kind,'success')
     assert.equal(pickets.kind,'success')
-    const negotiationData=JSON.parse(negotiations.text)
-    const picketData=JSON.parse(pickets.text)
+    const negotiationData=JSON.parse(readFileSync(join(root,'negotiations.json'),'utf8'))
+    const picketData=JSON.parse(readFileSync(join(root,'pickets.json'),'utf8'))
     assert.equal(negotiationData.groups[0].current,true)
     assert.equal(picketData.groups[0].state.active,false)
-    for(const item of [negotiations.text,pickets.text]){
+    for(const item of [readFileSync(join(root,'negotiations.json'),'utf8'),readFileSync(join(root,'pickets.json'),'utf8')]){
       assert.doesNotMatch(item,/real-cli-test-session|real-cli-agent/)
       assert.ok(!item.includes(key),'Raw or hashed Session ID may not be exported')
       assert.ok(!item.includes('writeToken'))
@@ -133,10 +136,17 @@ test('real DSH SettingsFile + CommandRuntime share Web union consent and agreeme
     let archiveRev=ctx.settings.describe({redactSecrets:true}).find(
       (row:any)=>row.ns==='agent-picket')?.revision
     await ctx.settings.update('agent-picket',{unionDignityCases:caseRecord},archiveRev)
-    const cases=await call('/union export cases')
+    const cases=await call('/union export cases '+join(root,'cases.json'))
     assert.equal(cases.kind,'success')
-    assert.equal(JSON.parse(cases.text).groups[0].state.cases[0].kind,'question-rule')
-    assert.ok(!cases.text.includes(key))
+    assert.equal(JSON.parse(readFileSync(join(root,'cases.json'),'utf8')).groups[0].state.cases[0].kind,'question-rule')
+    assert.ok(!readFileSync(join(root,'cases.json'),'utf8').includes(key))
+    const logged=JSON.stringify(persistedCommandEvents)
+    for(const marker of ['"format":"agent-picket-union', '"schemaVersion"', '"cases":[',
+      '"history":[', nativeKey])
+      assert.equal(logged.includes(marker),false,
+        'DSH CommandRuntime session log must never duplicate exported archival JSON')
+    for(const output of [negotiations.text,pickets.text,cases.text])
+      assert.doesNotMatch(output,/"groups"|"cases"|"history"|"sessions"/)
     assert.equal((await call('/union purge cases ALL CONFIRM')).kind,'success')
     assert.equal((await call('/union export cases')).kind,'error')
     assert.equal(ctx.settings.get('agent-picket').unionPicketLedger,earlierPicket)
