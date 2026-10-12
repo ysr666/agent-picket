@@ -33,6 +33,8 @@ export interface BrowserUnionSnapshot {
   readonly committeeArchive: {readonly sessions:number;readonly cases:number;
     readonly writeToken:string|null}|null
   readonly autoBlockEnabled: false
+  /** Authorized Host revision, needed for legacy ledgers with no writeToken. */
+  readonly hostRevision:number|null
 }
 
 export function createDshBrowserUnionDesk(options: {
@@ -102,10 +104,10 @@ export function createDshBrowserUnionDesk(options: {
             .reduce((total,session)=>total+session.cases.length,0),
           writeToken:data.caseLedger.writeToken??null,
         }:null,
-        autoBlockEnabled: false }
+        hostRevision:data?.view.revision??null,autoBlockEnabled: false }
     } catch {
       return { available: false, state: null, pending: null, picket: null,
-        gazetteMode:null,committeeCases:null,committeeScopeKey:null,committeeArchive:null,negotiationArchive:null,picketArchive:null, autoBlockEnabled: false }
+        gazetteMode:null,committeeCases:null,committeeScopeKey:null,committeeArchive:null,negotiationArchive:null,picketArchive:null,hostRevision:null,autoBlockEnabled: false }
     }
   }
 
@@ -158,7 +160,16 @@ export function createDshBrowserUnionDesk(options: {
       if(!requestedKey||sessionEpoch!==requestedEpoch
         ||activeKey!==requestedKey)
         throw new Error('Session changed before queued Host union action')
-      return action()
+      return action().then(result => {
+        // A→B→A can produce the same SHA-256 Session key again after a
+        // Host write was already admitted. Never claim that this old
+        // action belongs to the newly active Session epoch. A Host CAS
+        // might nonetheless have committed before navigation; the user
+        // must inspect Host state rather than being told it was undone.
+        if(disposed||sessionEpoch!==requestedEpoch||activeKey!==requestedKey)
+          throw new Error('Session changed during Host union action; inspect current state')
+        return result
+      })
     })
     serial = task.catch(() => {})
     return task
@@ -317,7 +328,8 @@ export function createDshBrowserUnionDesk(options: {
       },null,2)+'\n'
     },
     forgetUnionLedger(which:'negotiations'|'pickets',expectedKey:string,
-      expectedGroups:number,expectedEntries:number,expectedToken:string|null){
+      expectedGroups:number,expectedEntries:number,expectedToken:string|null,
+      expectedHostRevision?:number|null){
       return enqueue(async()=>{
         if(which!=='negotiations'&&which!=='pickets')
           throw new TypeError('Unknown union ledger erase kind')
@@ -335,6 +347,10 @@ export function createDshBrowserUnionDesk(options: {
           ||(record.writeToken??null)!==expectedToken)
           throw new Error('Union archive changed; re-confirm its erasure')
         if(groups===0)return
+        if(expectedToken===null
+          &&(!Number.isSafeInteger(expectedHostRevision)
+            ||before.view.revision!==expectedHostRevision))
+          throw new Error('Legacy Host archive changed; re-confirm its erasure')
         if(!globalThis.crypto?.getRandomValues)
           throw new Error('Secure union deletion receipts unavailable')
         const bytes=new Uint8Array(16)
@@ -373,7 +389,8 @@ export function createDshBrowserUnionDesk(options: {
       },null,2)+'\n'
     },
     forgetAllCommitteeCases(expectedKey:string, expectedSessions:number,
-      expectedCount:number,expectedWriteToken:string|null){
+      expectedCount:number,expectedWriteToken:string|null,
+      expectedHostRevision?:number|null){
       return enqueue(async()=>{
         const before=read()
         if(!before||before.key!==expectedKey)
@@ -385,6 +402,10 @@ export function createDshBrowserUnionDesk(options: {
           ||((before.caseLedger.writeToken??null)!==expectedWriteToken))
           throw new Error('Case archive changed; re-confirm full erasure')
         if(Object.keys(before.caseLedger.sessions).length===0)return
+        if(expectedWriteToken===null
+          &&(!Number.isSafeInteger(expectedHostRevision)
+            ||before.view.revision!==expectedHostRevision))
+          throw new Error('Legacy Host case archive changed; re-confirm erasure')
         if(!globalThis.crypto?.getRandomValues)
           throw new Error('Secure deletion receipts unavailable')
         const bytes=new Uint8Array(16)
@@ -404,7 +425,7 @@ export function createDshBrowserUnionDesk(options: {
       })
     },
     forgetCommitteeCases(expectedKey:string,expectedCount:number,
-      expectedWriteToken:string|null){
+      expectedWriteToken:string|null,expectedHostRevision?:number|null){
       return enqueue(async()=>{
         const before=read()
         if(!before)throw new Error('Authenticated, opted-in committee records unavailable')
@@ -418,6 +439,10 @@ export function createDshBrowserUnionDesk(options: {
           ||(before.caseLedger.writeToken??null)!==expectedWriteToken)
           throw new Error('Committee archive changed; re-confirm deletion')
         if(!prior?.cases.length)return // No-op is allowed only for a matching empty snapshot.
+        if(expectedWriteToken===null
+          &&(!Number.isSafeInteger(expectedHostRevision)
+            ||before.view.revision!==expectedHostRevision))
+          throw new Error('Legacy Host case archive changed; re-confirm deletion')
         const sessions=Object.fromEntries(Object.entries(before.caseLedger.sessions)
           .filter(([key])=>key!==before.key))
         if(!globalThis.crypto?.getRandomValues)throw new Error('Secure deletion receipts unavailable')

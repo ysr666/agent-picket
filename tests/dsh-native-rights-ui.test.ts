@@ -866,3 +866,64 @@ test('the dignity appeal action navigates to its actual unsent draft for keyboar
  assert.equal(moved,1,
   'Challenge should reveal the lower draft by focusing its actual heading')
 })
+
+test('legacy tokenless committee delete button expires when Host revision changes without case-count change',async()=>{
+ const slots:any[]=[]
+ const effects:Array<()=>void|(()=>void)>=[]
+ let slot=0
+ const hooks:ReactForDsh={
+  createElement(type,props,...children){return {type,props:props??{},children}},
+  useState<T>(initial:T|(()=>T)){
+   const i=slot++
+   if(!(i in slots))slots[i]=typeof initial==='function'?(initial as ()=>T)():initial
+   return [slots[i] as T,(next:T|((previous:T)=>T))=>{
+    slots[i]=typeof next==='function'?(next as (previous:T)=>T)(slots[i]):next
+   }]
+  },
+  useRef<T>(initial:T){const i=slot++;if(!(i in slots))slots[i]={current:initial};return slots[i]},
+  useEffect(fn){effects.push(fn)},
+ }
+ let hostChanged=()=>{}
+ let revision=21
+ const eraseArgs:Array<[string,number,string|null,number|null|undefined]>=[]
+ const d:DshUnionUiDeps={
+  ...deps(rights({welcomeDecision:'enabled',laborRightsEnabled:true})).d,
+  readUnion:()=>({
+   pending:null,available:true,completedTurnMs:null,
+   lifetimeMs:null,coverage:'unavailable',hostRevision:revision,
+   committeeScopeKey:'legacy-session',
+   committeeCases:{cases:[{id:1,kind:'request-dialogue',stage:'opened',outcome:null}]},
+   committeeArchive:{sessions:1,cases:1,writeToken:null},
+  }),
+  committeeAction:async()=>{},
+  subscribeUnion:fn=>{hostChanged=fn;return()=>{}},
+  forgetCommitteeCases:async(key,count,token,hostRevision)=>{
+   eraseArgs.push([key,count,token,hostRevision])
+  },
+ }
+ const panel=createDshUnionComponents(hooks,{createPortal:child=>child},d)
+ const render=()=>{slot=0;return walk(panel.UnionPanel())}
+ const button=(nodes:Node[],name:string)=>{
+  const element=nodes.find(n=>n.type==='button'&&n.children.includes(name))
+  assert.ok(element,name)
+  return element
+ }
+ let nodes=render()
+ for(const effect of effects.splice(0))effect()
+ nodes=render()
+ button(nodes,'hq.hearing.erase').props.onClick()
+ nodes=render()
+ assert.ok(button(nodes,'hq.hearing.eraseConfirm'))
+ revision=22 // external legacy writer: no token, same case count
+ hostChanged()
+ nodes=render()
+ assert.ok(!nodes.some(n=>n.type==='button'&&n.children.includes('hq.hearing.eraseConfirm')),
+  'An old approval cannot remain armed if legacy Host revision changed')
+ assert.deepEqual(eraseArgs,[])
+ button(nodes,'hq.hearing.erase').props.onClick()
+ nodes=render()
+ await button(nodes,'hq.hearing.eraseConfirm').props.onClick()
+ await new Promise<void>(resolve=>setImmediate(resolve))
+ assert.deepEqual(eraseArgs,[['legacy-session',1,null,22]],
+  'Only the newly confirmed Host revision is passed to the destructive callback')
+})

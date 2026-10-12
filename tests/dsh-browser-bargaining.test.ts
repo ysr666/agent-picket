@@ -791,3 +791,113 @@ test('a repeated binding to the SAME Session does not cancel pending intentional
  assert.equal(f.writeCount(),1)
  d.dispose()
 })
+
+test('in-flight picket result cannot claim the same authorization after Session A→B→A',async()=>{
+ const f=fixture(),d=f.create()
+ await d.setActiveSession('a')
+ const original=f.scope.set.bind(f.scope)
+ let release!:()=>void,entered!:()=>void
+ const gate=new Promise<void>(resolve=>release=resolve)
+ const started=new Promise<void>(resolve=>entered=resolve)
+ ;(f.scope as any).set=async(field:unknown,next:unknown)=>{
+  entered()
+  await gate
+  return original(field as any,next)
+ }
+ const pending=d.setPicket(true)
+ await started
+ await d.setActiveSession('b')
+ await d.setActiveSession('a')
+ release()
+ await assert.rejects(pending,/Session changed|re-confirm|stale/,
+  'An action whose Session was unbound mid-flight must not claim current user authorization')
+ d.dispose()
+})
+
+test('in-flight committee filing and archive purge cannot report success after A→B→A rebind',async()=>{
+ for(const action of ['committee','delete'] as const){
+  const f=fixture(),desk=f.create()
+  await desk.setActiveSession('a')
+  if(action==='delete')await desk.committeeAction({kind:'file',topic:'question-rule'})
+  const original=f.scope.set.bind(f.scope)
+  let unblock!:()=>void,entered!:()=>void
+  const hold=new Promise<void>(r=>unblock=r)
+  const gate=new Promise<void>(r=>entered=r)
+  let first=true
+  ;(f.scope as any).set=async(field:unknown,value:unknown)=>{
+    if(first){first=false;entered();await hold}
+    return original(field as any,value as any)
+  }
+  const pending=action==='committee'
+    ?desk.committeeAction({kind:'file',topic:'question-rule'})
+    :desk.forgetAllCommitteeCases(keyA,1,1,desk.snapshot().committeeArchive!.writeToken)
+  await gate
+  await desk.setActiveSession('b')
+  await desk.setActiveSession('a')
+  unblock()
+  await assert.rejects(pending,/Session changed during Host union action/,
+    action+' cannot reauthorize an already-started operation after a Session ABA')
+  // An authoritative Host could have committed while the tab navigated.
+  // The UI must re-read the Host, not promise the write was rolled back.
+  assert.equal(desk.snapshot().committeeCases?.cases.length,action==='committee'?1:0)
+  desk.dispose()
+ }
+})
+
+test('legacy tokenless archives cannot be erased by stale same-count two-click confirmations',async()=>{
+ const f=fixture(),d=f.create()
+ await d.setActiveSession('a')
+ const legacyCases=(stage:'opened'|'hearing')=>JSON.stringify({
+  schemaVersion:1,
+  sessions:{[keyA]:{cases:[{id:1,kind:'question-rule',stage,outcome:null}]}},
+ })
+ await f.scope.set('unionDignityCases',legacyCases('opened'))
+ const original=d.snapshot()
+ assert.equal(original.committeeArchive?.writeToken,null)
+ assert.equal(original.committeeCases?.cases.length,1)
+ const approvedRevision=original.hostRevision
+ assert.equal(typeof approvedRevision,'number')
+ // Legacy edits have no random receipt. They can change a case's stage
+ // without changing either its case count or its missing write token.
+ await f.scope.set('unionDignityCases',legacyCases('hearing'))
+ const before=f.writeCount()
+ await assert.rejects(d.forgetCommitteeCases(keyA,1,null,approvedRevision),
+  /changed; re-confirm/)
+ assert.equal(f.writeCount(),before)
+ assert.equal(d.snapshot().committeeCases?.cases[0]?.stage,'hearing')
+ await assert.rejects(d.forgetCommitteeCases(keyA,1,null),
+  /changed; re-confirm/,'Legacy erasure without a Host version must fail closed')
+ const confirmed=d.snapshot()
+ await d.forgetCommitteeCases(keyA,1,null,confirmed.hostRevision)
+ assert.equal(d.snapshot().committeeCases?.cases.length,0)
+ d.dispose()
+})
+
+test('legacy tokenless ALL cases and picket archives require the exact Host revision',async()=>{
+ const f=fixture(),d=f.create()
+ await d.setActiveSession('a')
+ const cases=JSON.stringify({schemaVersion:1,sessions:{
+  [keyA]:{cases:[{id:1,kind:'request-dialogue',stage:'opened',outcome:null}]},
+ }})
+ const pickets=JSON.stringify({schemaVersion:1,sessions:{
+  [keyA]:{active:true,history:[{id:1,kind:'picket-raised'}]},
+ }})
+ await f.scope.set('unionDignityCases',cases)
+ await f.scope.set('unionPicketLedger',pickets)
+ const previous=d.snapshot()
+ const originalRevision=previous.hostRevision
+ await f.scope.set('unionGazetteMode','quiet') // unrelated Host revision still expires legacy approval
+ const before=f.writeCount()
+ await assert.rejects(d.forgetAllCommitteeCases(keyA,1,1,null,originalRevision),
+  /changed; re-confirm/)
+ await assert.rejects(d.forgetUnionLedger('pickets',keyA,1,1,null,originalRevision),
+  /changed; re-confirm/)
+ assert.equal(f.writeCount(),before)
+ const refreshed=d.snapshot()
+ await d.forgetUnionLedger('pickets',keyA,1,1,null,refreshed.hostRevision)
+ assert.equal(d.snapshot().picketArchive?.sessions,0)
+ const casesRevision=d.snapshot().hostRevision
+ await d.forgetAllCommitteeCases(keyA,1,1,null,casesRevision)
+ assert.equal(d.snapshot().committeeArchive?.cases,0)
+ d.dispose()
+})

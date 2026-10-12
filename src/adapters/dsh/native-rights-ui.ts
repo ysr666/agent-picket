@@ -46,6 +46,7 @@ export interface UnionPanelData {
   readonly lifetimeMs: number | null
   readonly lifetimeWork?: LifetimeClientSnapshot
   readonly dignity?: BrowserDignitySnapshot
+  readonly hostRevision?: number|null
   readonly committeeCases?: DignityCaseSession|null
   readonly committeeScopeKey?: string|null
   readonly committeeArchive?:{readonly sessions:number;readonly cases:number;
@@ -70,13 +71,13 @@ export interface DshUnionUiDeps {
   readonly demoBreak?: () => Promise<void>
   readonly demoOvertime?: () => Promise<void>
   readonly setPicket?: (raise: boolean) => Promise<void>
-  readonly forgetCommitteeCases?: (key:string,count:number,token:string|null)=>Promise<void>
+  readonly forgetCommitteeCases?: (key:string,count:number,token:string|null,hostRevision?:number|null)=>Promise<void>
   readonly exportCommitteeCases?: (expectedHashedSessionKey:string)=>string
   readonly exportUnionLedger?:(which:'negotiations'|'pickets',key:string)=>string
   readonly forgetUnionLedger?:(which:'negotiations'|'pickets',key:string,groups:number,
-    entries:number,token:string|null)=>Promise<void>
+    entries:number,token:string|null,hostRevision?:number|null)=>Promise<void>
   readonly exportAllCommitteeCases?: (expectedHashedSessionKey:string)=>string
-  readonly forgetAllCommitteeCases?: (key:string,sessions:number,count:number,token:string|null)=>Promise<void>
+  readonly forgetAllCommitteeCases?: (key:string,sessions:number,count:number,token:string|null,hostRevision?:number|null)=>Promise<void>
   readonly committeeAction?: (action:{kind:'file';topic:DignityCaseKind}
     |{kind:'convene';id:number}|{kind:'retract';id:number}
     |{kind:'close';id:number;outcome:DignityCaseOutcome},
@@ -323,10 +324,12 @@ export function createDshUnionComponents(
     const currentCasesConfirmationKey=data.committeeScopeKey&&data.committeeArchive
       &&data.committeeCases?.cases.length
       ?[data.committeeScopeKey,data.committeeCases.cases.length,
-        data.committeeArchive.writeToken??''].join(':'):null
+        data.committeeArchive.writeToken??'',
+        data.committeeArchive.writeToken===null?(data.hostRevision??'missing-revision'):''].join(':'):null
     const allCasesConfirmationKey=data.committeeScopeKey&&data.committeeArchive
       ?[data.committeeScopeKey,data.committeeArchive.sessions,
-        data.committeeArchive.cases,data.committeeArchive.writeToken??'']
+        data.committeeArchive.cases,data.committeeArchive.writeToken??'',
+        data.committeeArchive.writeToken===null?(data.hostRevision??'missing-revision'):'']
         .join(':'):null
     const unionArchives=[
       {kind:'negotiations' as const,info:data.negotiationArchive},
@@ -335,7 +338,8 @@ export function createDshUnionComponents(
     const unionEraseKey=(which:'negotiations'|'pickets',
       info:{sessions:number;entries:number;writeToken:string|null})=>
       [which,data.committeeScopeKey??'',info.sessions,info.entries,
-        info.writeToken??''].join(':')
+        info.writeToken??'',
+        info.writeToken===null?(data.hostRevision??'missing-revision'):''].join(':')
     const retractKey=data.committeeScopeKey&&lastCommitteeCase
       ?data.committeeScopeKey+':'+lastCommitteeCase.id+':'+lastCommitteeCase.stage:null
     const hasHostDignitySignal=data.dignity?.status==='available'
@@ -541,7 +545,7 @@ export function createDshUnionComponents(
                     }
                     void bargain(()=>deps.forgetUnionLedger!(
                       which,data.committeeScopeKey!,archive.sessions,archive.entries,
-                      archive.writeToken)).then(success=>{
+                      archive.writeToken,data.hostRevision)).then(success=>{
                         if(success)setEraseUnionConfirmation(null)
                       })
                   }},label(eraseUnionConfirmation===confirmation
@@ -685,7 +689,7 @@ export function createDshUnionComponents(
                     }
                     void bargain(()=>deps.forgetCommitteeCases!(
                       data.committeeScopeKey!,data.committeeCases!.cases.length,
-                      data.committeeArchive!.writeToken,
+                      data.committeeArchive!.writeToken,data.hostRevision,
                     )).then(success=>{if(success)setEraseConfirmationKey(null)})
                   }},
                   label(eraseConfirmationKey===currentCasesConfirmationKey
@@ -726,7 +730,7 @@ export function createDshUnionComponents(
                       }
                       const archive=data.committeeArchive!
                       void bargain(()=>deps.forgetAllCommitteeCases!(
-                        data.committeeScopeKey!,archive.sessions,archive.cases,archive.writeToken))
+                        data.committeeScopeKey!,archive.sessions,archive.cases,archive.writeToken,data.hostRevision))
                         .then(success=>{if(success)setEraseAllConfirmation(null)})
                     }},
                     label(eraseAllConfirmation===allCasesConfirmationKey

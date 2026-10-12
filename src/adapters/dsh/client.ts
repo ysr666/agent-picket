@@ -226,13 +226,13 @@ export function apply(ctx: ClientContext, react?: ReactForDsh, portal?: PortalFo
       committeeAction: (action,key) => desk.committeeAction(action,key).then(()=>{}),
       exportCommitteeCases: key=>desk.exportCommitteeCases(key),
       exportUnionLedger:(which,key)=>desk.exportUnionLedger(which,key),
-      forgetUnionLedger:(which,key,groups,entries,token)=>
-        desk.forgetUnionLedger(which,key,groups,entries,token),
+      forgetUnionLedger:(which,key,groups,entries,token,hostRevision)=>
+        desk.forgetUnionLedger(which,key,groups,entries,token,hostRevision),
       exportAllCommitteeCases: key=>desk.exportAllCommitteeCases(key),
-      forgetAllCommitteeCases: (key,sessions,count,token)=>
-        desk.forgetAllCommitteeCases(key,sessions,count,token),
-      forgetCommitteeCases: (key,count,token)=>
-        desk.forgetCommitteeCases(key,count,token),
+      forgetAllCommitteeCases: (key,sessions,count,token,hostRevision)=>
+        desk.forgetAllCommitteeCases(key,sessions,count,token,hostRevision),
+      forgetCommitteeCases: (key,count,token,hostRevision)=>
+        desk.forgetCommitteeCases(key,count,token,hostRevision),
       setGazetteMode: mode => desk.setGazetteMode(mode),
       respond: (id, choice) => desk.respond(id, choice).then(() => {}),
       counter: (id, intervalMs) => desk.counter(id, intervalMs).then(() => {}),
