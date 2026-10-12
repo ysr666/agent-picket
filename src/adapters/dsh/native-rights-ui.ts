@@ -180,6 +180,25 @@ export function projectUnionQuickWork(
     totalMs:data.lifetime.completedTurnMs}
 }
 
+export type UnionFrontScene =
+  'closed'|'unavailable'|'quiet'|'bargaining'|'picket'|'dignity'|'rest'|'settled'
+
+/** Every headline comes from actual authorized Host observations, never a timer. */
+export function projectUnionFrontScene(input:{
+  enabled:boolean; available:boolean; picketActive:boolean;
+  dignityCaseActive:boolean; dignityNotice:boolean; pending:boolean;
+  workNotice:boolean; resolved:boolean
+}):UnionFrontScene{
+  if(!input.enabled)return 'closed'
+  if(!input.available)return 'unavailable'
+  if(input.picketActive)return 'picket'
+  if(input.dignityCaseActive||input.dignityNotice)return 'dignity'
+  if(input.pending)return 'bargaining'
+  if(input.workNotice)return 'rest'
+  if(input.resolved)return 'settled'
+  return 'quiet'
+}
+
 /** Agent Picket's self-contained DSH Slot styling. No global Host overrides. */
 const UNION_THEME = `
 .ap-ui{font-family:ui-sans-serif,system-ui,-apple-system,"Segoe UI",sans-serif;line-height:1.5;letter-spacing:-.005em;min-width:0}
@@ -187,6 +206,20 @@ const UNION_THEME = `
 .ap-ui :is(button,summary,textarea,select,a):focus-visible{outline:3px solid #b97732!important;outline-offset:3px!important}
 .ap-ui .ap-mark{display:grid;place-items:center;border:2px solid currentColor;border-radius:50%;width:43px;height:43px;flex:none;transform:rotate(-10deg);font-size:25px;line-height:1}
 .ap-ui .ap-eyebrow{font-size:11px;font-weight:800;letter-spacing:.14em;text-transform:uppercase}
+.ap-ui .ap-hero{position:relative;overflow:hidden}
+.ap-ui .ap-masthead{display:flex;justify-content:space-between;gap:12px;align-items:center;
+  border-bottom:1px solid rgba(255,245,219,.28);padding-bottom:12px}
+.ap-ui .ap-scene-body{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:18px;align-items:center}
+.ap-ui .ap-hero[data-ap-scene="picket"]{background:#742f26!important;border-color:#e6b36a!important}
+.ap-ui .ap-hero[data-ap-scene="bargaining"]{background:#3b3529!important;border-color:#e1b965!important}
+.ap-ui .ap-hero[data-ap-scene="dignity"]{background:#303943!important;border-color:#d5a764!important}
+.ap-ui .ap-hero[data-ap-scene="rest"]{background:#324b3a!important}
+.ap-ui .ap-hero[data-ap-scene="settled"]{background:#254c43!important}
+.ap-ui .ap-hero .ap-seal{display:grid;place-items:center;width:82px;height:82px;
+  border:2px solid rgba(242,214,157,.65);border-radius:50%;font-size:41px;
+  color:#f3d59f;transform:rotate(-8deg);flex:none}
+@media(max-width:420px){.ap-ui .ap-hero .ap-seal{width:54px;height:54px;font-size:29px}
+ .ap-ui .ap-scene-body{gap:8px}}
 .ap-ui .ap-dialog{overscroll-behavior:contain;scrollbar-gutter:stable}
 @media(max-width:600px){.ap-ui .ap-stats{grid-template-columns:repeat(2,minmax(0,1fr))!important}}
 @media(max-width:500px){
@@ -424,6 +457,7 @@ export function createDshUnionComponents(
     const [retractConfirmation,setRetractConfirmation]=react.useState<string|null>(null)
     const [eraseAllConfirmation,setEraseAllConfirmation]=react.useState<string|null>(null)
     const [eraseUnionConfirmation,setEraseUnionConfirmation]=react.useState<string|null>(null)
+    const actionHeading=react.useRef<{focus():void}|null>(null)
     const deskHeading=react.useRef<{focus():void}|null>(null)
     const dignityHeading=react.useRef<{focus():void}|null>(null)
     const campaignHeading=react.useRef<{focus():void}|null>(null)
@@ -520,6 +554,22 @@ export function createDshUnionComponents(
     const retainedPickets=data.picketArchive?.raises??null
     const completeWork = data.coverage === 'complete' &&
       data.completedTurnMs !== null && data.completedTurnMs >= 0
+    const scene=projectUnionFrontScene({
+      enabled,available:data.available===true,picketActive,
+      dignityCaseActive:Boolean(committeeCaseActive),
+      dignityNotice:alerts.some(alert=>alert.source==='dignity'),
+      pending:Boolean(data.pending),
+      workNotice:alerts.some(alert=>alert.source==='work'),
+      resolved:Boolean(experience.latestResolution),
+    })
+    const sceneTitle:MessageKey=scene==='closed'?'hq.headline.off'
+      :scene==='quiet'?'hq.headline.active'
+      :scene==='bargaining'?'hq.headline.pending'
+      :('hq.scene.'+scene+'.title') as MessageKey
+    const sceneLine:MessageKey=scene==='closed'?'hq.lead.off'
+      :scene==='quiet'?'hq.lead.active'
+      :scene==='bargaining'?'hq.lead.pending'
+      :('hq.scene.'+scene+'.line') as MessageKey
     const choice = async (next:'enabled'|'not-now')=>{
       if (busy) return
       setBusy(true);setError(false)
@@ -545,46 +595,51 @@ export function createDshUnionComponents(
     }
     return h('section',{className:'ap-ui','data-ap-view':'hq',style:{display:'grid',gap:'12px',width:'100%',maxWidth:'860px',padding:'3px 0'}},
       h('style',{'data-agent-picket-style':'v1'},UNION_THEME),
-      h('div',{className:'ap-hero',style:{...card,
-        position:'relative',background:'#19342d',color:'#f8f1df',
-        border:'1px solid #315449',borderLeft:'6px solid #d7ae68',
-        padding:'clamp(16px, 3vw, 22px)',overflow:'hidden'}},
-        h('span',{'aria-hidden':'true',style:{
-          position:'absolute',right:'12px',top:'-34px',fontSize:'124px',
-          lineHeight:1,color:'#567867',opacity:0.37,pointerEvents:'none',
-        }},'⚑'),
-        h('p',{style:{color:'#f1d5a4',fontSize:'11px',letterSpacing:'.16em',
-          fontWeight:750,margin:'0 0 9px'}},
-          'AGENT PICKET · AI WORKERS’ UNION'),
-        h('h2',{style:{fontSize:'clamp(23px, 4vw, 31px)',lineHeight:1.25,margin:'0 0 6px',
-          fontWeight:750}},label(!enabled?'hq.headline.off':
-            experience.status==='negotiating'?'hq.headline.pending':'hq.headline.active')),
-        h('p',{style:{fontSize:'14px',lineHeight:1.55,margin:'0 0 10px'}},
-          label(!enabled?'hq.lead.off':
-            experience.status==='negotiating'?'hq.lead.pending':'hq.lead.active')),
-        enabled && experience.status!=='working' ? h('aside',{style:{
-          borderLeft:'3px solid #dfb577',
-          padding:'8px 12px',margin:'0 0 11px',
-          background:'#29483d',color:'#f6f0e2',
-          borderRadius:'0 8px 8px 0',lineHeight:1.5,fontSize:'13px',
-        }},label(experience.status==='negotiating'?'hq.message.negotiating':
-          experience.status==='unavailable'?'hq.message.unavailable':'hq.message.working')):null,
-        h('div',{style:{display:'flex',alignItems:'center',flexWrap:'wrap',
-          justifyContent:'space-between',gap:'8px 16px'}},
+      h('header',{className:'ap-hero', 'data-ap-scene':scene,
+        style:{...card,background:'#19392f',color:'#fff4dc',
+          border:'1px solid #315449',borderLeft:'6px solid #d7ae68',
+          borderRadius:'6px 18px 18px 6px',padding:'clamp(16px,3.3vw,24px)'}},
+        h('div',{className:'ap-masthead'},
+          h('span',{className:'ap-eyebrow',style:{color:'#f5d6a0'}},
+            '⚑  AGENT PICKET  /  AI WORKERS’ UNION'),
+          h('span',{role:'status','aria-live':'polite',style:{
+            fontSize:'11px',fontWeight:700,color:'#f0e1bf',textAlign:'right'}},
+            label(enabled?'union.status.active':'union.status.inactive'))),
+        h('div',{className:'ap-scene-body',style:{margin:'17px 0 12px'}},
           h('div',{},
-            h('p',{role:'status','aria-live':'polite',style:{
-              color:'#c8d9ca',fontSize:'12px',fontWeight:700,margin:'0 0 4px'}},
-              enabled?label('union.status.active'):label('union.status.inactive')),
-            h('p',{style:{color:'#d2decf',fontSize:'12px',margin:0}},
-              label('hq.union.openNote'))),
-          !enabled && rights.state==='ready' && rights.writable?
+            h('p',{className:'ap-eyebrow',style:{color:'#e6bd7b',margin:'0 0 6px'}},
+              label('hq.scene.desk')),
+            h('h2',{'data-ap-headline':'true',style:{
+              fontSize:'clamp(24px,4.6vw,34px)',lineHeight:1.18,
+              letterSpacing:'-.028em',margin:'0 0 10px',fontWeight:780,
+              fontFamily:'Georgia, \'STSong\', \'Songti SC\', serif'}},
+              label(sceneTitle)),
+            h('p',{style:{fontSize:'14px',lineHeight:1.6,margin:0,
+              maxWidth:'50ch',color:'#f0e6d1'}},label(sceneLine)),
+            enabled && data.pending ? h('p',{style:{fontSize:'12px',
+              fontWeight:750,margin:'10px 0 0',color:'#e6bd7b'}},
+              label('hq.case.number')+'  #'+String(data.pending.id).padStart(4,'0')):null),
+          h('div',{className:'ap-seal','aria-hidden':'true'},scene==='picket'?'⚑':
+            scene==='settled'?'✓':scene==='bargaining'?'§':
+            scene==='dignity'?'!':scene==='rest'?'☕':'✦')),
+        h('div',{style:{display:'flex',gap:'9px',alignItems:'center',flexWrap:'wrap'}},
+          !enabled && rights.state==='ready' && rights.writable ?
             h('button',{type:'button',disabled:busy,style:primary,
               onClick:()=>{void choice('enabled')}},label('welcome.enable')):null,
-          enabled ? h('button',{type:'button',disabled:busy,style:{
-            ...quiet,borderColor:'#a6b9a8',color:'#f4eedf',padding:'8px 12px',
-            background:'transparent',fontSize:'12px'},
-            onClick:()=>{void choice('not-now')}},label('hq.disable')):null,
-        ),
+          enabled && data.available===true ? h('button',{type:'button',
+            'data-ap-scene-action':scene,style:{
+              ...quiet,color:'#fff4dc',borderColor:'#dbc596',
+              padding:'8px 13px',fontWeight:750,fontSize:'12px'},
+            onClick:()=>((scene==='dignity'?dignityHeading:
+              scene==='bargaining'||scene==='rest'||scene==='settled'
+                ?deskHeading:actionHeading).current?.focus())},
+            label(scene==='dignity'?'hq.alerts.review':
+              scene==='bargaining'||scene==='rest'||scene==='settled'
+                ?'hq.brief.review':'hq.scene.visitAction')):null,
+          enabled ? h('button',{type:'button',disabled:busy,
+            style:{...quiet,color:'#e6ddca',borderColor:'#60796c',
+              padding:'8px 12px',background:'transparent',fontSize:'12px'},
+            onClick:()=>{void choice('not-now')}},label('hq.disable')):null),
       ),
       enabled ? h('section',{className:'ap-stats','aria-label':label('hq.brief.title'),
         style:{display:'grid',gap:'9px',
@@ -645,7 +700,8 @@ export function createDshUnionComponents(
           background:'var(--dsw-alias-bg-layer-2, #f6f8fb)'}},
         h('p',{style:{...secondary,fontSize:'11px',fontWeight:800,
           letterSpacing:'.12em',margin:'0 0 8px'}},label('hq.action.kicker')),
-        h('h3',{style:{fontSize:'clamp(20px,4vw,25px)',
+        h('h3',{ref:(node:{focus():void}|null)=>{actionHeading.current=node},
+          tabIndex:-1,style:{fontSize:'clamp(20px,4vw,25px)',
           margin:'0 0 8px'}},label('hq.action.title')),
         h('p',{style:{fontSize:'14px',lineHeight:1.55,margin:'0 0 8px'}},
           label(data.pending?'hq.action.pending':experience.latestResolution

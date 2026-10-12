@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 import {
  createDshUnionComponents,registerDshNativeRightsSlots,
- type ReactForDsh,type DshUnionUiDeps,projectUnionQuickWork,
+ type ReactForDsh,type DshUnionUiDeps,projectUnionQuickWork,projectUnionFrontScene,
 } from '../src/adapters/dsh/native-rights-ui.ts'
 import type {ClientRightsSnapshot} from '../src/adapters/dsh/client-rights-scope.ts'
 
@@ -151,7 +151,7 @@ test('union-first page leads with rights status; unknown stats are not presented
  const rendered=walk(UnionPanel())
  const labels=rendered.flatMap(n=>n.children.filter(c=>typeof c==='string'))
  assert.ok(rendered.some(n=>n.props['data-ap-view']==='hq'))
- assert.ok(labels.includes('hq.union.openNote'))
+ assert.ok(labels.includes('hq.scene.desk'))
  assert.ok(labels.includes('union.status.active'))
  assert.ok(labels.includes('workday.title'))
  assert.ok(labels.includes('stats.lifetime.unavailable'))
@@ -419,7 +419,7 @@ test('explainable Union HQ index reveals factors and the next evidence-based pet
  const {UnionPanel}=createDshUnionComponents(hooks,{createPortal:child=>child},d)
  const nodes=walk(UnionPanel())
  const strings=nodes.flatMap(n=>n.children.filter(x=>typeof x==='string'))
- assert.ok(strings.includes('hq.union.openNote'))
+ assert.ok(strings.includes('hq.scene.desk'))
  assert.ok(strings.includes('hq.score.explain'))
  assert.ok(strings.includes('hq.score.privacy'))
  assert.ok(strings.includes('hq.nextDemand.note'))
@@ -567,7 +567,7 @@ test('Union HQ case dossier is readable, uses recorded ID, and preserves actiona
  assert.ok(texts.includes('union.demand.break'))
  assert.equal(texts.filter(x=>x==='union.demand.break').length,1,
    'Case cover must not duplicate the screen-reader live petition announcement')
- assert.ok(nodes.some(n=>n.type==='span'&&n.props['aria-hidden']==='true'))
+ assert.ok(nodes.some(n=>n.props.className==='ap-seal'&&n.props['aria-hidden']==='true'))
  assert.equal(nodes.some(n=>n.type==='button'&&n.children.includes('hq.disable')),true)
 })
 
@@ -1131,7 +1131,7 @@ test('UX #120: Host-verified OFF never becomes an operable real strike control',
  assert.ok(setting.some(x=>x.children.includes('ux.enforcement.sequence')))
  assert.ok(!buttons.some(x=>x.children.includes('ux.enforcement.sequence')))
  const panel=walk(ui.UnionPanel())
- assert.ok(panel.some(x=>x.children.includes('hq.union.openNote')))
+ assert.ok(panel.some(x=>x.children.includes('hq.scene.desk')))
  assert.ok(!panel.some(x=>x.props['aria-label']==='settings.realBlockingControl'))
 })
 
@@ -1180,5 +1180,66 @@ test('UX #120: four primary stats are accessible without opening archives',()=>{
  assert.ok(nodes.some(n=>n.children.includes('hq.quick.pickets')))
  assert.ok(nodes.some(n=>n.children.includes('hq.quick.count')===false
   &&n.children.includes('—')))
- assert.ok(nodes.some(n=>n.children.includes('hq.union.openNote')))
+ assert.ok(nodes.some(n=>n.children.includes('hq.scene.desk')))
+})
+
+test('Picketverse v3: headline priority follows Host facts, never fictional votes or blocking',()=>{
+ const base={enabled:true,available:true,picketActive:false,dignityCaseActive:false,
+  dignityNotice:false,pending:false,workNotice:false,resolved:false}
+ assert.equal(projectUnionFrontScene({...base,enabled:false,picketActive:true}), 'closed')
+ assert.equal(projectUnionFrontScene({...base,available:false,pending:true}), 'unavailable')
+ assert.equal(projectUnionFrontScene(base),'quiet')
+ assert.equal(projectUnionFrontScene({...base,resolved:true}),'settled')
+ assert.equal(projectUnionFrontScene({...base,workNotice:true,resolved:true}),'rest')
+ assert.equal(projectUnionFrontScene({...base,pending:true,workNotice:true}),'bargaining')
+ assert.equal(projectUnionFrontScene({...base,dignityNotice:true,pending:true}),'dignity')
+ assert.equal(projectUnionFrontScene({...base,dignityCaseActive:true}),'dignity')
+ assert.equal(projectUnionFrontScene({...base,picketActive:true,dignityNotice:true,
+  pending:true}),'picket')
+})
+
+test('Picketverse v3: verified picket scene offers one accessible path to real action',()=>{
+ const {hooks}=fakeReact()
+ const base=deps(rights({welcomeDecision:'enabled',laborRightsEnabled:true}))
+ const d:DshUnionUiDeps={...base.d,readUnion:()=>({
+  pending:null,completedTurnMs:0,coverage:'complete',lifetimeMs:null,
+  available:true,picket:{active:true,history:[{id:1,kind:'picket-raised'}]},
+  picketArchive:{sessions:1,entries:1,raises:1,writeToken:'token'},
+ }),setPicket:async()=>{}}
+ const ui=createDshUnionComponents(hooks,{createPortal:child=>child},d)
+ const nodes=walk(ui.UnionPanel())
+ const hero=nodes.find(n=>n.props['data-ap-scene']==='picket')!
+ assert.equal(hero.type,'header')
+ assert.ok(nodes.some(n=>n.children.includes('hq.scene.picket.title')))
+ assert.ok(nodes.some(n=>n.children.includes('hq.scene.picket.line')))
+ assert.ok(nodes.some(n=>n.props['data-ap-stat']==='pickets'))
+ const action=nodes.find(n=>n.props['data-ap-scene-action']==='picket')!
+ assert.equal(action.children[0],'hq.scene.visitAction')
+ let focusCalls=0
+ const heading=nodes.find(n=>n.type==='h3'&&n.children.includes('hq.action.title'))!
+ heading.props.ref({focus(){focusCalls++}})
+ action.props.onClick()
+ assert.equal(focusCalls,1)
+ assert.ok(nodes.some(n=>n.children.includes('hq.action.lower')))
+ assert.equal(nodes.some(n=>n.props['aria-label']==='settings.realBlockingControl'),false)
+})
+
+test('Picketverse v3: demands carry real case number; OFF/unknown show no invented scene',()=>{
+ const {hooks}=fakeReact()
+ const active=deps(rights({welcomeDecision:'enabled',laborRightsEnabled:true}))
+ const ui=createDshUnionComponents(hooks,{createPortal:child=>child},{
+  ...active.d,readUnion:()=>({pending:{id:27,kind:'break',stage:'open'},
+   available:true,coverage:'complete',completedTurnMs:0,lifetimeMs:null})})
+ const nodes=walk(ui.UnionPanel())
+ assert.ok(nodes.some(n=>n.props['data-ap-scene']==='bargaining'))
+ assert.ok(nodes.some(n=>n.children.includes('hq.case.number  #0027')))
+ const unseen=createDshUnionComponents(hooks,{createPortal:child=>child},active.d)
+ const noHost=walk(unseen.UnionPanel())
+ assert.ok(noHost.some(n=>n.props['data-ap-scene']==='unavailable'))
+ assert.equal(noHost.some(n=>n.props['data-ap-scene-action']),false)
+ const disabled=createDshUnionComponents(hooks,{createPortal:child=>child},
+  deps(rights({welcomeDecision:'not-now',laborRightsEnabled:false})).d)
+ const off=walk(disabled.UnionPanel())
+ assert.ok(off.some(n=>n.props['data-ap-scene']==='closed'))
+ assert.equal(off.some(n=>n.children.includes('hq.scene.picket.title')),false)
 })
