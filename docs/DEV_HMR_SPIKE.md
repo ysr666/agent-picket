@@ -16,3 +16,41 @@ The current DSH Client expects `window.__ModuleLoader__.load({ id, factory })`; 
 4. If the upstream DSH team exposes a supported ESM/HMR seam, test it behind a development flag; preserve the current CJS factory packaging until all supported Host versions pass and a migration is planned.
 
 The approach can later be shared with `dsh-computer-history` (tsdown-built React Client) and `dsh-vision-router` (additional HTML/script carrier deduplication), but they have different client ownership rules and must not receive automatic code rewrites.
+
+## Optional local Web live reload (stacked development experiment)
+
+A private browser can now be launched after the initial successful build, and
+reloaded after *each subsequent successful build*. This uses `puppeteer-core`
+loaded from an **external developer tooling path**, an isolated Chrome profile,
+and CDP **stdio pipe** instead of exposing a Chrome remote-debugging TCP port.
+No script injection, browser HTTP server, DSH Host patch, or runtime dependency is
+introduced. The browser URL must use HTTP on `localhost`, `127.0.0.1` or `::1`.
+
+For an **isolated DSH Web profile** (never a normal personal DSH profile),
+first load the Agent Picket plugin from this checkout's compiled `dist/`
+entry (not a copied tarball or stale `node_modules/agent-picket` install).
+This is essential: the running Host must serve the same Client file
+that `dev:watch` rebuilds. Then set:
+
+```sh
+# Install puppeteer-core into a separate test/tooling directory if needed;
+# this project deliberately does NOT bundle it.
+export AGENT_PICKET_DEV_BROWSER_URL='http://127.0.0.1:PORT/'
+export AGENT_PICKET_DEV_CHROME_BIN='/path/to/Chrome-or-Chromium'
+export AGENT_PICKET_DEV_PUPPETEER_ENTRY='/absolute/path/to/puppeteer-core/entry.js'
+npm run dev:watch
+```
+
+If your isolated DSH instance requires login, authenticate **inside the private
+Chrome window**. A one-time token may be provided via the URL environment
+variable if needed, but never paste it into a shared log or committed script.
+The helper does not log the URL. An authenticated browser is still subject to
+the Host's real permissions. The helper must not be exposed to public websites,
+shared debugging ports or remote users. On Ctrl+C the private Chrome closes.
+Set `AGENT_PICKET_DEV_HEADLESS=1` for noninteractive tests.
+
+This is browser **full-page live reload**, not HMR. It resets in-memory React
+state and requires a real DSH client reload; it does not promise that navigation
+or login state persists. The DSH 0.2.0-rc.2 isolated Chrome A→B experiment
+confirmed that a Client file change is visible on both same-tab refresh and a
+new browser tab, without restart; other DSH/OS versions remain unverified.
