@@ -75,3 +75,7 @@ node --experimental-strip-types --test tests/dsh-goal-boundary.real.test.ts
 新增 `tests/dsh-modern-settings-multiowner.real.test.ts` 的 `MODERN HOST #1.0` 原生测试：在两份互相独立的 **真实 DSH Web Host 进程**及隔离的 DSH_HOME 中，用官方认证 `settings/mutate` 一次 CAS 同时提交 `welcomeDecision=enabled` 与 `realGoalStrikeConsent=authorized-v1`。0.2.0-rc.2 和 0.2.1-alpha.2 均通过。实测验证同一次提交只增加一次设置修订号、旧窗口不能覆盖、无效第二字段让整批原子回滚、退出时两个字段一起撤销、重启后撤销依然有效。可复现脚本：`AGENT_PICKET_DSH_BIN=/isolated-dsh/bin/dsh bash scripts/verify-dsh-goal-first-run-host.sh`。
 
 **这是官方 Host 授权原子性的验收，不等于用户已经在浏览器弹窗里真实点击并成功授权。** 首次弹窗必须展示真实 Goal 罢工的充分说明，并由 #120 将同一个“启用 AI 工会”按钮接到 `chooseFirstRun('goal-safe-boundary-v1')`；没有这项 UI 证据不得把模拟欢迎页当成正式真实罢工的知情同意。发布闸门继续 NO-GO。
+
+## 2026-10-12 · 一键原生 Goal 回归脚本
+
+`scripts/verify-dsh-goal-safe-boundary.sh` 现在可一次复现三组真正官方 DSH Host 实验：正常停工／冷重启／恢复（2 项），8 小时 UTC 完成工时写入真实 `DurableStats` 并触发停工（1 项），以及仅差 1 毫秒未达到 8 小时的明确不阻断（1 项）。在 0.2.0-rc.2 与 0.2.1-alpha.2 两套隔离安装中均分别通过 4 项原生测试，合计 8 项。所有历史工时及授权均为测试合成数据，不以实际等待八小时充当验收，也不改动用户的真实 DSH 配置。运行前设置 `AGENT_PICKET_DSH_BIN` 与 `AGENT_PICKET_DSH_HOST` 到独立安装目录。
