@@ -321,6 +321,25 @@ async function runRightsBrowserE2E(mode: 'source' | 'installed'): Promise<void> 
     assert.equal(await trigger.evaluate((element:unknown)=>
       element===(globalThis as any).document.activeElement),true,
       'Escape must restore keyboard focus to union launcher')
+    // Settings is a distinct Host-owned panel, not a fake action in HQ.
+    await page.getByText(/^(设置|Settings)$/).first().click()
+    // DSH opens its global Settings modal on General; choose our injected tab.
+    await page.locator('[role="dialog"]').getByText(/^(AI 工会|AI Workers.*Union)$/)
+      .last().click()
+    const nativeSettings=page.locator('[data-ap-view="settings"]')
+    await nativeSettings.waitFor({state:'visible',timeout:6_000})
+    assert.equal(await nativeSettings.getByRole('button',{
+      name:/开启真实阻断|Enable real blocking/,
+    }).isDisabled(),true)
+    assert.equal(await nativeSettings.getByRole('button',{
+      name:/每次阻断单独确认|Confirm every block/,
+    }).isDisabled(),true)
+    if(process.env.PICKET_UX_CAPTURE_DIR){
+      await page.screenshot({path:join(process.env.PICKET_UX_CAPTURE_DIR,
+        (mode==='source'?'source':'installed')+'-settings.png')})
+    }
+    await page.keyboard.press('Escape')
+    await nativeSettings.waitFor({state:'detached',timeout:5_000})
     panel=await openUnion()
     const status=panel.getByRole('status')
       .filter({hasText:/工会模拟未开启|simulation is off/})
@@ -386,6 +405,11 @@ async function runRightsBrowserE2E(mode: 'source' | 'installed'): Promise<void> 
         width+'px reflow: modal close must be reachable')
       if (width === 320) {
         await assertNamedDialogInChromeAx(/AI 工会|AI Workers.*Union/)
+        if(process.env.PICKET_UX_CAPTURE_DIR){
+          mkdirSync(process.env.PICKET_UX_CAPTURE_DIR,{recursive:true})
+          await page.screenshot({path:join(process.env.PICKET_UX_CAPTURE_DIR,
+            (mode==='source'?'source':'installed')+'-mobile-320.png')})
+        }
       }
     }
     // #53's 320x200 short viewport complements #54's width-only 320x640 gate.

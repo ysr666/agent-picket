@@ -1092,3 +1092,44 @@ test('dedicated settings section only toggles Host-owned union permission',async
  assert.ok(panel.some(n=>n.type==='button'&&n.children.includes('settings.turnOn')
    &&n.props.disabled===true))
 })
+
+test('UX #120: informed first run has bounded dialog, warning and both explicit choices',()=>{
+ const {hooks}=fakeReact()
+ const {d}=deps(rights())
+ const old=(globalThis as any).document
+ ;(globalThis as any).document={body:{},getElementById:()=>({inert:false})}
+ try {
+  const {Welcome}=createDshUnionComponents(hooks,{createPortal:child=>child},d)
+  const nodes=walk(Welcome({complete:()=>{}}))
+  const dialog=nodes.find(x=>x.props['data-ap-view']==='welcome')!
+  assert.equal(dialog.props['aria-describedby'],'picket-welcome-explainer')
+  assert.match(dialog.props.style.maxHeight,/100dvh/)
+  assert.equal(dialog.props.className,'ap-ui ap-dialog')
+  assert.ok(nodes.some(x=>x.props.role==='note'
+    &&x.props['aria-label']==='welcome.blockWarningTitle'))
+  const buttons=nodes.filter(x=>x.type==='button')
+  assert.deepEqual(buttons.map(x=>x.children[0]),['welcome.enable','welcome.notNow'])
+  const style=nodes.find(x=>x.type==='style')?.children[0] as string
+  assert.match(style,/prefers-reduced-motion/)
+  assert.match(style,/forced-colors/)
+  assert.match(style,/max-width:500px/)
+ } finally {(globalThis as any).document=old}
+})
+
+test('UX #120: Host-verified OFF never becomes an operable real strike control',()=>{
+ const {hooks}=fakeReact()
+ const {d}=deps(rights({welcomeDecision:'enabled',laborRightsEnabled:true}))
+ const ui=createDshUnionComponents(hooks,{createPortal:child=>child},d)
+ const setting=walk(ui.SettingsPanel())
+ const buttons=setting.filter(x=>x.type==='button')
+ assert.ok(buttons.some(x=>x.children.includes('settings.turnOff')&&!x.props.disabled))
+ assert.ok(buttons.some(x=>x.children.includes('settings.realBlockingControl')
+  &&x.props.disabled===true))
+ assert.ok(buttons.some(x=>x.children.includes('settings.perStrikeConsent')
+  &&x.props.disabled===true))
+ assert.ok(setting.some(x=>x.children.includes('ux.enforcement.sequence')))
+ assert.ok(!buttons.some(x=>x.children.includes('ux.enforcement.sequence')))
+ const panel=walk(ui.UnionPanel())
+ assert.ok(panel.some(x=>x.children.includes('ux.enforcement.hostOff')))
+ assert.ok(!panel.some(x=>x.props['aria-label']==='settings.realBlockingControl'))
+})

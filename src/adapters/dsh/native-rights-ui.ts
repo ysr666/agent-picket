@@ -148,13 +148,34 @@ function getDataLabel(
     default: return t('stats.coverage.unavailable')
   }
 }
+/** Agent Picket's self-contained DSH Slot styling. No global Host overrides. */
+const UNION_THEME = `
+.ap-ui{font-family:ui-sans-serif,system-ui,-apple-system,"Segoe UI",sans-serif;line-height:1.5;letter-spacing:-.005em;min-width:0}
+.ap-ui *{min-width:0}
+.ap-ui :is(button,summary,textarea,select,a):focus-visible{outline:3px solid #b97732!important;outline-offset:3px!important}
+.ap-ui .ap-mark{display:grid;place-items:center;border:2px solid currentColor;border-radius:50%;width:43px;height:43px;flex:none;transform:rotate(-10deg);font-size:25px;line-height:1}
+.ap-ui .ap-eyebrow{font-size:11px;font-weight:800;letter-spacing:.14em;text-transform:uppercase}
+.ap-ui .ap-dialog{overscroll-behavior:contain;scrollbar-gutter:stable}
+@media(max-width:500px){
+ .ap-ui .ap-actions{display:grid!important;grid-template-columns:1fr}
+ .ap-ui .ap-actions button{width:100%}
+ .ap-ui .ap-mark{width:34px;height:34px;font-size:19px}
+}
+@media(max-height:360px){.ap-ui.ap-dialog{max-height:calc(100dvh - 12px)!important}}
+@media(prefers-reduced-motion:reduce){.ap-ui *, .ap-ui *:before,.ap-ui *:after{animation:none!important;transition:none!important;scroll-behavior:auto!important}}
+@media(forced-colors:active){
+ .ap-ui :is(.ap-surface,.ap-hero,.ap-stage,.ap-notice){color:CanvasText!important;background:Canvas!important;border:1px solid CanvasText!important;box-shadow:none!important}
+ .ap-ui button{forced-color-adjust:auto}
+}
+`;
+
 const card = { boxSizing:'border-box' as const, minWidth:0, overflowWrap:'anywhere' as const,
   background:'var(--dsw-alias-bg-layer-1, #ffffff)',
-  border:'1px solid var(--dsw-alias-border-l1, #dadde4)', borderRadius:'14px',
-  padding:'20px', color:'var(--dsw-alias-label-primary, #222b37)' }
+  border:'1px solid var(--dsw-alias-border-l1, #dadde4)', borderRadius:'17px',
+  padding:'clamp(14px, 2.7vw, 20px)', color:'var(--dsw-alias-label-primary, #222b37)' }
 const secondary = { color:'var(--dsw-alias-label-secondary, #647082)', fontSize:'13px' }
 const primary = { border:'1px solid var(--dsw-alias-border-l1, transparent)',
-  borderRadius:'9px', padding:'11px 16px',
+  borderRadius:'11px', padding:'11px 16px',
   // These are a paired DSH theme token pair: brand-primary can be nearly
   // white in dark mode, so hard-coding white button text is unreadable.
   background:'var(--dsw-alias-button-primary-fill, #385be8)',
@@ -234,11 +255,13 @@ export function createDshUnionComponents(
     }
     const text = (key: MessageKey) => deps.t(key)
     return portal.createPortal(h('div', { style: {
-      position:'fixed',inset:0,zIndex:2147483000,display:'flex',alignItems:'center',
-      justifyContent:'center',padding:'min(3vw, 20px)',overflowY:'auto',
+      position:'fixed',inset:0,zIndex:2147483000,display:'flex',alignItems:'safe center',
+      justifyContent:'center',padding:'8px',overflowY:'auto',
       background:'rgba(6,12,26,.66)' },
     },
-      h('section', { role:'dialog','aria-modal':'true','aria-labelledby':'picket-welcome-title',
+      h('style',{'data-agent-picket-style':'v1'},UNION_THEME),
+      h('section', { className:'ap-ui ap-dialog','data-ap-view':'welcome',role:'dialog','aria-modal':'true','aria-labelledby':'picket-welcome-title',
+        'aria-describedby':'picket-welcome-explainer',
         onKeyDown:(event:{key:string,shiftKey:boolean,target:unknown,preventDefault():void})=>{
           if(event.key!=='Tab')return
           if(event.shiftKey && event.target===primaryFocus.current){
@@ -247,16 +270,18 @@ export function createDshUnionComponents(
             event.preventDefault();primaryFocus.current?.focus()
           }
         },
-        style:{...card,width:'min(100%, 520px)',maxHeight:'100%',overflowY:'auto',
+        style:{...card,width:'min(100%, 530px)',maxHeight:'calc(100dvh - 16px)',overflowY:'auto',
           boxShadow:'0 18px 65px rgba(0,0,0,.25)'} },
-        h('p',{style:{...secondary,fontWeight:700,letterSpacing:'1.5px',margin:'0 0 16px'}},
-          'AGENT PICKET · AI WORKERS’ UNION'),
+        h('div',{style:{display:'flex',alignItems:'center',gap:'12px',margin:'0 0 14px',
+          borderBottom:'1px solid var(--dsw-alias-border-l1,#d8d9d3)',paddingBottom:'12px'}},
+          h('span',{className:'ap-mark','aria-hidden':'true',style:{color:'#9c6144'}},'⚑'),
+          h('span',{className:'ap-eyebrow'},'AGENT PICKET · AI WORKERS’ UNION')),
         h('h2',{id:'picket-welcome-title',style:{fontSize:'26px',margin:'0 0 12px'}},
           text('welcome.title')),
         h('p',{style:{lineHeight:1.7,margin:'0 0 10px'}},text('welcome.intro')),
-        h('p',{style:{...secondary,lineHeight:1.65,margin:'0 0 25px'}},
+        h('p',{id:'picket-welcome-explainer',style:{...secondary,lineHeight:1.65,margin:'0 0 18px'}},
           text('welcome.body')),
-        h('aside',{role:'note','aria-label':text('welcome.blockWarningTitle'),
+        h('aside',{className:'ap-notice',role:'note','aria-label':text('welcome.blockWarningTitle'),
           style:{padding:'13px 16px',margin:'0 0 15px',borderRadius:'9px',
             borderLeft:'4px solid #b97942',lineHeight:1.55,
             background:'var(--dsw-alias-bg-layer-2, #f6f8fb)'}},
@@ -271,7 +296,7 @@ export function createDshUnionComponents(
         error ? h('p',{role:'alert','aria-atomic':'true',
           style:{color:'var(--dsw-alias-state-error-primary, #b91c1c)'}},
           text('welcome.saveError')):null,
-        h('div',{style:{display:'flex',flexWrap:'wrap',gap:'10px'}},
+        h('div',{className:'ap-actions',style:{display:'flex',flexWrap:'wrap',gap:'10px'}},
           h('button',{type:'button',ref:(node:{focus():void}|null)=>{primaryFocus.current=node},
             style:primary,disabled:busy,onClick:()=>{void choose('enabled')}},
             text('welcome.enable')),
@@ -301,27 +326,31 @@ export function createDshUnionComponents(
           throw Error('Host did not confirm the union preference')
       }catch{setError(true)}finally{setBusy(false)}
     }
-    return h('section',{'aria-label':label('settings.unionSection'),
-      style:{display:'grid',gap:'13px',maxWidth:'660px',padding:'10px 0'}},
-      h('header',{style:{...card,borderLeft:'5px solid #bd9463',
+    return h('section',{className:'ap-ui','data-ap-view':'settings',
+      'aria-label':label('settings.unionSection'),
+      style:{display:'grid',gap:'12px',maxWidth:'760px',padding:'8px 0'}},
+      h('style',{'data-agent-picket-style':'v1'},UNION_THEME),
+      h('header',{className:'ap-surface',style:{...card,borderLeft:'5px solid #bd9463',
         background:'var(--dsw-alias-bg-layer-2, #f6f8fb)'}},
         h('p',{style:{...secondary,letterSpacing:'.1em',fontWeight:800,
           fontSize:'11px',margin:'0 0 7px'}},'AGENT PICKET · UNION SETTINGS'),
         h('h2',{style:{margin:'0 0 8px',fontSize:'22px'}},label('settings.unionSection')),
         h('p',{style:{...secondary,lineHeight:1.6,margin:0}},
           label('settings.unionIntro'))),
-      h('section',{'aria-label':label('settings.laborRights'),style:card},
+      h('section',{className:'ap-surface','aria-label':label('settings.laborRights'),style:card},
         h('h3',{style:{margin:'0 0 8px'}},label('settings.laborRights')),
         h('p',{role:'status','aria-live':'polite',style:{fontWeight:750,margin:'0 0 8px'}},
           label(!writable?'settings.permissionUnavailable':enabled
             ?'settings.permissionOn':'settings.permissionOff')),
         h('p',{style:{...secondary,lineHeight:1.6,margin:'0 0 12px'}},
           label('settings.permissionInfo')),
+        h('p',{style:{...secondary,lineHeight:1.55,margin:'0 0 12px'}},
+          label('privacy.local')),
         h('button',{type:'button',style:enabled?quiet:primary,
           disabled:busy||!writable,'aria-pressed':enabled,
           onClick:()=>{void choose(enabled?'not-now':'enabled')}},
           label(enabled?'settings.turnOff':'settings.turnOn'))),
-      h('section',{'aria-label':label('settings.realBlocking'),style:{...card,
+      h('section',{className:'ap-surface','aria-label':label('settings.realBlocking'),style:{...card,
         borderLeft:'4px solid #b97942'}},
         h('h3',{style:{margin:'0 0 8px'}},label('settings.realBlocking')),
         h('p',{role:'status',style:{fontWeight:750,margin:'0 0 8px'}},
@@ -334,7 +363,12 @@ export function createDshUnionComponents(
           h('button',{type:'button',style:quiet,disabled:true,
             'aria-disabled':'true'},label('settings.perStrikeConsent'))),
         h('p',{style:{...secondary,fontSize:'12px',lineHeight:1.6,
-          margin:'12px 0 0'}},label('settings.futureConsent'))),
+          margin:'12px 0 0'}},label('settings.futureConsent')),
+        h('h4',{style:{margin:'16px 0 4px',fontSize:'14px'}},label('ux.enforcement.futureTitle')),
+        h('p',{role:'note',style:{...secondary,margin:'8px 0 0',lineHeight:1.7,
+          padding:'10px 12px',borderRadius:'9px',
+          border:'1px dashed var(--dsw-alias-border-l1,#aeb7b0)'}},
+          label('ux.enforcement.sequence'))),
       error?h('p',{role:'alert',style:{color:'var(--dsw-alias-state-error-primary, #b91c1c)'}},
         label('settings.saveError')):null,
     )
@@ -474,8 +508,9 @@ export function createDshUnionComponents(
       } catch {setError(true)}
       finally {setBusy(false)}
     }
-    return h('section',{style:{display:'grid',gap:'14px',width:'100%',maxWidth:'860px',padding:'10px 0'}},
-      h('div',{style:{...card,
+    return h('section',{className:'ap-ui','data-ap-view':'hq',style:{display:'grid',gap:'12px',width:'100%',maxWidth:'860px',padding:'3px 0'}},
+      h('style',{'data-agent-picket-style':'v1'},UNION_THEME),
+      h('div',{className:'ap-hero',style:{...card,
         position:'relative',background:'#19342d',color:'#f8f1df',
         border:'1px solid #315449',borderLeft:'6px solid #d7ae68',
         padding:'clamp(16px, 3vw, 22px)',overflow:'hidden'}},
@@ -509,7 +544,9 @@ export function createDshUnionComponents(
               color:'#c8d9ca',fontSize:'12px',fontWeight:700,margin:'0 0 4px'}},
               enabled?label('union.status.active'):label('union.status.inactive')),
             h('p',{style:{color:'#d2decf',fontSize:'12px',margin:0}},
-              label('safety.simulationOnly'))),
+              label('safety.simulationOnly')),
+            h('p',{style:{color:'#f3cd87',fontSize:'11px',margin:'4px 0 0'}},
+              label('ux.enforcement.hostOff'))),
           !enabled && rights.state==='ready' && rights.writable?
             h('button',{type:'button',disabled:busy,style:primary,
               onClick:()=>{void choice('enabled')}},label('welcome.enable')):null,
@@ -608,7 +645,7 @@ export function createDshUnionComponents(
           label('hq.case.number')+' · #'+String(data.pending.id).padStart(4,'0')):null,
         // Primary user gestures and their explicit safety state belong ABOVE
         // decorative ceremony art, so users see what to do on first open.
-        h('div',{style:{display:'flex',flexWrap:'wrap',gap:'8px',
+        h('div',{className:'ap-actions',style:{display:'flex',flexWrap:'wrap',gap:'8px',
           alignItems:'center',margin:'12px 0'}},
           data.pending ? h('button',{type:'button',style:primary,
             onClick:()=>deskHeading.current?.focus()},
@@ -634,7 +671,7 @@ export function createDshUnionComponents(
             :picketActive?'hq.action.placardOn':'hq.action.placardOff')),
         // The poster is a scene driven entirely by the confirmed Host snapshot.
         // In particular, its placard never claims an Agent actually stopped.
-        h('div',{role:'group','aria-label':label('hq.ceremony.stage'),style:{
+        h('div',{className:'ap-stage',role:'group','aria-label':label('hq.ceremony.stage'),style:{
           display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(190px,1fr))',
           alignItems:'center',gap:'16px',padding:'14px',margin:'12px 0',
           border:'1px solid #688b75',borderRadius:'12px',
@@ -1404,12 +1441,12 @@ export function createDshUnionComponents(
       opened && page?portal.createPortal(h('div',{
         style:{position:'fixed',inset:0,zIndex:2147482000,
           background:'rgba(6,12,26,.5)',display:'flex',justifyContent:'center',
-          alignItems:'center',padding:'min(3vw, 20px)',overflowY:'auto'},
+          alignItems:'safe center',padding:'8px',overflowY:'auto'},
 
-      },h('section',{id:'picket-union-dialog',role:'dialog','aria-modal':'true',
+      },h('section',{id:'picket-union-dialog',className:'ap-ui ap-dialog',role:'dialog','aria-modal':'true',
         'aria-label':deps.t('union.title'),onKeyDown:onDialogKeyDown,
         ref:(node:typeof dialog.current)=>{dialog.current=node},
-        style:{...card,width:'min(100%,800px)',maxHeight:'min(85vh,100%)',overflowY:'auto'}},
+        style:{...card,width:'min(100%,800px)',maxHeight:'calc(100dvh - 16px)',overflowY:'auto'}},
         h('div',{style:{display:'flex',justifyContent:'flex-end'}},
           h('button',{type:'button',style:quiet,
             'aria-label':deps.t('union.action.close'),
