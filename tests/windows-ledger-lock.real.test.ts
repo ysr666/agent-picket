@@ -96,3 +96,91 @@ test('malformed native lock and unrelated Host never become eligible for recover
   }
  }finally{rmSync(parent,{recursive:true,force:true})}
 })
+
+
+test('native Windows: two recovery processes cannot own the same stale-lock recovery mutex',{
+ skip:process.platform!=='win32'&&'Real Windows NTFS only',timeout:35_000,
+},async()=>{
+ const parent=mkdtempSync(join(tmpdir(),'ap-ntfs-recovery-race-'))
+ const dir=join(parent,'secure-ledger')
+ let owner:ChildProcess|undefined
+ try {
+  assert.equal(createProtectedNtfsDirectory(dir),true)
+  const lock=join(dir,'aggregate.v1.lock')
+  const stale=JSON.stringify({version:1,pid:2147483647,
+    host:hostname(),token:'b'.repeat(32)})
+  writeFileSync(lock,stale,{flag:'wx',mode:0o600})
+  assert.equal(inspectPrivateNtfsLedgerLock(dir).status,'stale-candidate')
+  const recovery=join(dir,'aggregate.v1.recovery')
+  const worker=String.raw`
+const {openSync,closeSync,fsyncSync,writeFileSync}=require('node:fs');
+let fd;
+try {fd=openSync(process.env.PICKET_TEST_RECOVERY_PATH,'wx',0o600)}
+catch(e){if(e.code==='EEXIST'){process.stdout.write('BUSY\n');process.exit(0)}throw e}
+try{writeFileSync(fd,JSON.stringify({owner:process.pid,token:'c'.repeat(32)}));fsyncSync(fd)}
+finally{closeSync(fd)}
+process.stdout.write('HELD\n');
+if(process.env.PICKET_HOLD_RECOVERY==='1')setInterval(()=>{},1000)
+`
+  function spawnWorker(hold:boolean){
+    return spawn(process.execPath,['-e',worker],{
+      env:{...process.env,PICKET_TEST_RECOVERY_PATH:recovery,
+        PICKET_HOLD_RECOVERY:hold?'1':'0'},
+      stdio:['ignore','pipe','pipe'],windowsHide:true,
+    })
+  }
+  function output(proc:ChildProcess,expected:string):Promise<string>{
+    return new Promise((resolve,reject)=>{
+      let value=''
+      proc.stdout!.on('data',chunk=>{
+        value+=String(chunk)
+        if(value.includes(expected))resolve(value)
+      })
+      proc.once('error',reject)
+      proc.once('exit',()=>{
+        if(!value.includes(expected))reject(new Error('Recovery worker never emitted '+expected))
+      })
+    })
+  }
+  owner=spawnWorker(true)
+  assert.match(await Promise.race([
+    output(owner,'HELD'),new Promise<never>((_,reject)=>
+      setTimeout(()=>reject(new Error('Recovery mutex owner timed out')),8_000)),
+  ]),/HELD/)
+  assert.equal(inspectPrivateNtfsLedgerLock(dir).status,'unconfirmed',
+    'A recovery mutex in use disallows ALL additional stale-lock candidates')
+  const contender=spawnWorker(false)
+  const contenderOut=await Promise.race([
+    output(contender,'BUSY'),new Promise<never>((_,reject)=>
+      setTimeout(()=>reject(new Error('Recovery competitor timed out')),8_000)),
+  ])
+  assert.match(contenderOut,/BUSY/)
+  await Promise.race([
+   new Promise<void>((resolve,reject)=>{
+    if(contender.exitCode!==null||contender.signalCode!==null){
+     contender.exitCode===0?resolve():reject(new Error('Second recovery owner failed'))
+    }else contender.once('exit',code=>code===0?resolve():reject(new Error('Second recovery owner failed')))
+   }),
+   new Promise<never>((_,reject)=>setTimeout(()=>reject(new Error('Second recovery worker failed to exit')),8_000)),
+  ])
+  assert.equal(readFileSync(lock,'utf8'),stale,
+    'Both recovering processes must leave the lock itself unchanged')
+  const finished=new Promise<void>(resolve=>{
+    if(owner!.exitCode!==null||owner!.signalCode!==null)resolve()
+    else owner!.once('exit',()=>resolve())
+  })
+  owner.kill('SIGKILL')
+  await Promise.race([
+    finished,new Promise<never>((_,reject)=>
+      setTimeout(()=>reject(new Error('Recovery owner failed to stop')),8_000)),
+  ])
+  owner=undefined
+  assert.equal(existsSync(recovery),true,'Crash leaves the recovery mutex for investigation')
+  assert.equal(inspectPrivateNtfsLedgerLock(dir).status,'unconfirmed',
+    'Abandoned recovery mutex is never silently stolen')
+  assert.equal(readFileSync(lock,'utf8'),stale)
+ }finally{
+  owner?.kill('SIGKILL')
+  rmSync(parent,{recursive:true,force:true})
+ }
+})
