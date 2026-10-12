@@ -1,5 +1,6 @@
 import {spawnSync} from 'node:child_process'
-import {lstatSync} from 'node:fs'
+import {existsSync,lstatSync,mkdirSync,rmdirSync} from 'node:fs'
+import {dirname,isAbsolute} from 'node:path'
 
 /**
  * Windows DACL can NOT be inferred from stat.mode. This opt-in probe never
@@ -55,4 +56,68 @@ export function verifyPrivateNtfsAcl(path:string,kind:'file'|'directory'):boolea
       env:{...process.env,AGENT_PICKET_ACL_CHECK_PATH:path}})
     return result.status===0&&result.stdout.trim()==='PRIVATE_NTFS_DACL_VERIFIED'
   }catch{return false}
+}
+
+
+/**
+ * Experimental NEW EMPTY directory creator. It does not relax DurableStats'
+ * Windows NO-GO and must never mutate an already existing user directory.
+ * Nothing sensitive is written between mkdir and DACL verification.
+ */
+const PROTECT_NEW_DIRECTORY=String.raw`
+$ErrorActionPreference='Stop'
+$p=$env:AGENT_PICKET_ACL_CHECK_PATH
+if(-not $p){exit 10}
+$info=Get-Item -LiteralPath $p -Force -ErrorAction Stop
+if(-not $info.PSIsContainer){exit 11}
+if(($info.Attributes -band [System.IO.FileAttributes]::ReparsePoint) -ne 0){exit 12}
+if(@([System.IO.Directory]::EnumerateFileSystemEntries($p)).Count -ne 0){exit 13}
+$acl=[System.IO.Directory]::GetAccessControl($p)
+$me=[System.Security.Principal.WindowsIdentity]::GetCurrent().User
+$acl.SetAccessRuleProtection($true,$false)
+foreach($existing in @($acl.GetAccessRules($true,$false,
+ [System.Security.Principal.SecurityIdentifier]))){
+ $acl.RemoveAccessRuleSpecific($existing)
+}
+$acl.SetOwner($me)
+foreach($sid in @($me.Value,'S-1-5-18','S-1-5-32-544')){
+ $identity=New-Object System.Security.Principal.SecurityIdentifier($sid)
+ $rule=New-Object System.Security.AccessControl.FileSystemAccessRule(
+  $identity,[System.Security.AccessControl.FileSystemRights]::FullControl,
+  [System.Security.AccessControl.InheritanceFlags]'ContainerInherit,ObjectInherit',
+  [System.Security.AccessControl.PropagationFlags]::None,
+  [System.Security.AccessControl.AccessControlType]::Allow)
+ $acl.AddAccessRule($rule)
+}
+[System.IO.Directory]::SetAccessControl($p,$acl)
+Write-Output 'NEW_NTFS_DACL_PROTECTED'
+`
+
+export function createProtectedNtfsDirectory(path:string):boolean {
+ if(process.platform!=='win32'||typeof path!=='string'||!isAbsolute(path)
+   ||!path.trim()||existsSync(path))return false
+ let created=false
+ try {
+   const parent=dirname(path)
+   const p=lstatSync(parent)
+   if(!p.isDirectory()||p.isSymbolicLink())return false
+   mkdirSync(path,{recursive:false})
+   created=true
+   const check=lstatSync(path)
+   if(!check.isDirectory()||check.isSymbolicLink())return false
+   const encoded=Buffer.from(PROTECT_NEW_DIRECTORY,'utf16le').toString('base64')
+   const result=spawnSync('powershell.exe',[
+    '-NoLogo','-NoProfile','-NonInteractive','-EncodedCommand',encoded,
+   ],{encoding:'utf8',windowsHide:true,timeout:7_000,maxBuffer:65_536,
+      env:{...process.env,AGENT_PICKET_ACL_CHECK_PATH:path}})
+   if(result.status!==0||result.stdout.trim()!=='NEW_NTFS_DACL_PROTECTED')return false
+   return verifyPrivateNtfsAcl(path,'directory')
+ }catch{return false}
+ finally {
+   // A failed operation may remove its own still-empty test directory, but
+   // MUST never recursively delete data written by another process.
+   if(created&&!verifyPrivateNtfsAcl(path,'directory')){
+    try{rmdirSync(path)}catch{/* preserve uncertain paths, never recurse */}
+   }
+ }
 }

@@ -4,7 +4,7 @@ import {mkdtempSync,rmSync,writeFileSync} from 'node:fs'
 import {spawnSync} from 'node:child_process'
 import {tmpdir} from 'node:os'
 import {join} from 'node:path'
-import {verifyPrivateNtfsAcl} from '../src/adapters/node/windows-private-acl.ts'
+import {verifyPrivateNtfsAcl,createProtectedNtfsDirectory} from '../src/adapters/node/windows-private-acl.ts'
 
 test('Windows ACL probe explicitly refuses unsupported Unix platform',()=>{
   if(process.platform==='win32')return
@@ -71,4 +71,21 @@ foreach($sid in @($me.Value,'S-1-5-18','S-1-5-32-544')){
   assert.equal(verifyPrivateNtfsAcl(file,'file'),false,
    'Granting even read access to Everyone must revoke private-file verification')
  }finally{rmSync(root,{recursive:true,force:true})}
+})
+
+
+test('Windows experimental private directory creator only accepts a NEW empty directory',{
+ skip:process.platform!=='win32'&&'Native Windows security descriptor setup only',timeout:20_000,
+},()=>{
+ const parent=mkdtempSync(join(tmpdir(),'agent-picket-new-acl-'))
+ const target=join(parent,'private-ledger')
+ try {
+  assert.equal(createProtectedNtfsDirectory(target),true)
+  assert.equal(verifyPrivateNtfsAcl(target,'directory'),true)
+  assert.equal(createProtectedNtfsDirectory(target),false,
+   'Never modify a previously existing directory or its ACL')
+  const sample=join(target,'private-counts.json')
+  writeFileSync(sample,'{}',{mode:0o600})
+  assert.equal(verifyPrivateNtfsAcl(sample,'file'),true)
+ }finally{rmSync(parent,{recursive:true,force:true})}
 })
