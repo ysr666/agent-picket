@@ -17,6 +17,7 @@
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "check:dsh-host-archives": "bash scripts/verify-dsh-host-archives.sh",
     "check:dsh-multiowner": "bash scripts/verify-dsh-multiowner.sh",
+    "research:dsh-disk-cas": "bash scripts/verify-dsh-cas-research.sh",
     "check": "npm run typecheck && npm run build && npm test",
     "test:dsh:real": "node scripts/run-real-tests.mjs",
     "build": "node scripts/clean-build.mjs && tsc -p tsconfig.build.json && node scripts/build-dsh-client.mjs"

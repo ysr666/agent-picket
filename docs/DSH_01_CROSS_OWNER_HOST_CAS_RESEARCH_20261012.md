@@ -44,3 +44,31 @@ The stable 1.0 release remains NO-GO until official Host resolves #111, alongsid
 An isolated npm installation of @deepseek-ai/dsh@0.1.7-rc.2 (separate temporary prefix, no changes to existing DSH 0.1.2) exposes dsh-storage-json, dsh-settings and dsh-config-editor but NOT dsh-settings-file. Its JSON storage implementation describes a per-process one-writer / last-write-wins model; that alone cannot establish safe or unsafe cross-owner behavior of the higher-level Host Settings API. The three DSH 0.1.2 SettingsFile P0 probes cannot be invoked against this materially different architecture. Do not claim #111 fixed simply because the old module disappeared.
 
 An initial real Chrome 0.1.7 test invocation also showed our old E2E routing assumption was wrong: we had treated every 0.1.x CLI as the legacy immediate-onboarding path, while this newer Host starts without that same dialog. The test failed its assumption, not a demonstrated user-consent failure. The wrapper scripts/verify-dsh-rights-a11y.sh now checks the actual legacy SettingsFile module before entering that path; if it is absent, returns UNREVIEWED_DSH_SETTINGS_LAYOUT / exit 2 rather than claiming a compatible pass. A separate, genuine, version-scoped modern-host integration acceptance must be written before DSH 0.1.7 can be treated as a supported migration target.
+
+## Extended genuine two-process matrix (2026-10-12)
+
+Three reproducible experiments strengthen the durable disk-generation sketch:
+
+- **Simultaneous independent owners**: start both OS-process owners on the same initial enabled profile; submit a picket and petition concurrently. One (and only one) command is acknowledged, the loser receives an explicit conflict, and a new physical process reads the winning state. This verifies actual overlapping operations, not only ordered stale writes.
+- **Conflict then intentional fresh retry**: a confirmed category erasure occurs while another owner holds an old profile. Its first petition rejects. After observing current disk, an explicitly new non-destructive petition succeeds; reopening confirms the deleted category remains erased.
+- **Revocation then stale retry**: consent is revoked by A. B attempts a petition from obsolete authorization. Both that stale command and B's second command after disk reconciliation reject; reopening confirms OFF and no new petition.
+
+Including the prior tests, five opt-in experimental cases pass with the test-only disk-generation override. All original DSH P0 cases remain RED. This is not an upstream upgrade.
+
+### One-command reproduction (research, never a release signoff)
+
+From the Agent Picket repository with an actual legacy DSH 0.1 SDK:
+
+    AGENT_PICKET_DSH_HOST=/path/to/legacy-dsh-node_modules npm run research:dsh-disk-cas
+
+The new scripts/verify-dsh-cas-research.sh requires SettingsFile and Commands modules and checks three independent suites, each using disposable temporary profiles:
+
+| Suite | Required observation |
+| --- | --- |
+| Unmodified official DSH, 3 release blockers | 0 pass / 3 fail |
+| Content-only disk CAS, OFF-ON ABA counterexample | 0 pass / 1 fail; obsolete command succeeds |
+| Isolated durable disk generation, including overlap and recovery | 5 pass / 0 fail |
+
+Merely skipping tests or failing for an unrelated content-only assertion cannot mark the research summary green. Changes from known observations return an inconclusive error requiring investigation. Even when the command completes, it prints RESEARCH_ONLY and RELEASE_STATUS=P0_NO_GO. The independent real shipping gate is npm run check:dsh-multiowner, run against the UNMODIFIED official SDK. Only its 3/3 passes could contribute toward a future release decision; other blockers remain.
+
+The upstream master branch has migrated away from the old SettingsFile package and GitHub Issues are currently disabled. This is a version-specific reproducible research report, not a current-master patch ready for merge. The modern Host storage/config implementation requires fresh tests.

@@ -310,3 +310,123 @@ test('UPSTREAM EXPERIMENT ABA: a prior owner cannot reuse its consent epoch afte
   rmSync(root,{recursive:true,force:true})
  }
 })
+
+test('UPSTREAM EXPERIMENT: simultaneous two-owner writes must not both acknowledge stale state',{
+ skip:!(host&&process.env.AGENT_PICKET_DSH_DISK_CAS_EXPERIMENT==='1')
+  &&'Research only; genuine DSH 0.1 SettingsFile with disposable disk epoch',
+ timeout:45_000,
+},async()=>{
+ const root=mkdtempSync(join(tmpdir(),'ap-cas-simultaneous-'))
+ const file=join(root,'settings.json')
+ const owners:ReturnType<typeof startOwner>[]=[]
+ const spawn=async(watch:'on'|'off')=>{
+  const o=startOwner(file,watch);owners.push(o);await o.ready;return o
+ }
+ const exec=async(o:ReturnType<typeof startOwner>,line:string)=>
+  o.request('command',line) as Promise<{kind:'success'|'error';text:string}>
+ try{
+  const seed=await spawn('off')
+  assert.equal((await exec(seed,'/union rights on')).kind,'success')
+  await seed.stop()
+  // Two *simultaneously* admitted commands from independent OS processes.
+  const a=await spawn('off'),b=await spawn('off')
+  assert.notEqual(a.child.pid,b.child.pid)
+  const [picket,petition]=await Promise.all([
+   exec(a,'/union strike'),
+   exec(b,'/union petition-demo break'),
+  ])
+  assert.deepEqual([picket.kind,petition.kind].sort(),['error','success'],
+   'Only one owner may receive a success acknowledgement for stale competing snapshots')
+  await a.stop();await b.stop()
+  const verify=await spawn('off')
+  const {value}=await verify.request('read')
+  const key=nativeSessionKey('multiprocess-fixture-session')
+  if(picket.kind==='success'){
+   assert.equal(parsePicketLedger(value.unionPicketLedger)?.sessions[key]?.active,true)
+   assert.equal(Object.keys(parseUnionLedger(value.unionLedger)!.sessions).length,0)
+  }else{
+   assert.equal(parseUnionLedger(value.unionLedger)?.sessions[key]?.pending?.kind,'break')
+   assert.equal(Object.keys(parsePicketLedger(value.unionPicketLedger)!.sessions).length,0)
+  }
+  await verify.stop()
+ }finally{
+  await Promise.all(owners.filter(o=>o.child.exitCode===null).map(o=>o.stop()))
+  rmSync(root,{recursive:true,force:true})
+ }
+})
+
+test('UPSTREAM EXPERIMENT: a rejected stale writer can retry against latest disk without reviving a purged category',{
+ skip:!(host&&process.env.AGENT_PICKET_DSH_DISK_CAS_EXPERIMENT==='1')
+  &&'Research only; genuine DSH 0.1 SettingsFile with disposable disk epoch',
+ timeout:45_000,
+},async()=>{
+ const root=mkdtempSync(join(tmpdir(),'ap-cas-retry-'))
+ const file=join(root,'settings.json')
+ const owners:ReturnType<typeof startOwner>[]=[]
+ const spawn=async()=>{
+  const o=startOwner(file,'off');owners.push(o);await o.ready;return o
+ }
+ const exec=async(o:ReturnType<typeof startOwner>,line:string)=>
+  o.request('command',line) as Promise<{kind:'success'|'error';text:string}>
+ try{
+  const seed=await spawn()
+  assert.equal((await exec(seed,'/union rights on')).kind,'success')
+  assert.equal((await exec(seed,'/union strike')).kind,'success')
+  await seed.stop()
+  const deleting=await spawn(),writer=await spawn()
+  assert.equal((await exec(deleting,'/union purge pickets ALL CONFIRM')).kind,'success')
+  const stale=await exec(writer,'/union petition-demo break')
+  assert.equal(stale.kind,'error',
+   'An unrefreshed owner must not acknowledge a commit that could revive purged data')
+  // The failed atomic CAS reconciles the real disk before rejecting; this
+  // deliberate, NEW command re-reads current enabled consent. It may succeed,
+  // but MUST NOT restore the previously purged picket.
+  const retried=await exec(writer,'/union petition-demo break')
+  assert.equal(retried.kind,'success',
+   'A fresh non-destructive user command should succeed after an observed CAS conflict')
+  await deleting.stop();await writer.stop()
+  const verify=await spawn()
+  const {value}=await verify.request('read')
+  const key=nativeSessionKey('multiprocess-fixture-session')
+  assert.equal(Object.keys(parsePicketLedger(value.unionPicketLedger)!.sessions).length,0)
+  assert.equal(parseUnionLedger(value.unionLedger)?.sessions[key]?.pending?.kind,'break')
+  await verify.stop()
+ }finally{
+  await Promise.all(owners.filter(o=>o.child.exitCode===null).map(o=>o.stop()))
+  rmSync(root,{recursive:true,force:true})
+ }
+})
+
+test('UPSTREAM EXPERIMENT: a stale writer cannot retry after revocation even when it refreshes its settings',{
+ skip:!(host&&process.env.AGENT_PICKET_DSH_DISK_CAS_EXPERIMENT==='1')
+  &&'Research only; genuine DSH 0.1 SettingsFile with disposable disk epoch',
+ timeout:40_000,
+},async()=>{
+ const root=mkdtempSync(join(tmpdir(),'ap-cas-revoked-retry-'))
+ const file=join(root,'settings.json')
+ const owners:ReturnType<typeof startOwner>[]=[]
+ const spawn=async()=>{
+  const o=startOwner(file,'off');owners.push(o);await o.ready;return o
+ }
+ const exec=async(o:ReturnType<typeof startOwner>,line:string)=>
+  o.request('command',line) as Promise<{kind:'success'|'error';text:string}>
+ try{
+  const seed=await spawn()
+  assert.equal((await exec(seed,'/union rights on')).kind,'success')
+  await seed.stop()
+  const revoking=await spawn(),writer=await spawn()
+  assert.equal((await exec(revoking,'/union rights off')).kind,'success')
+  assert.equal((await exec(writer,'/union petition-demo break')).kind,'error')
+  assert.equal((await exec(writer,'/union petition-demo break')).kind,'error',
+   'After refreshing from disk, an old author must not be able to bypass revoked consent')
+  await revoking.stop();await writer.stop()
+  const verify=await spawn()
+  const {value}=await verify.request('read')
+  assert.equal(value.welcomeDecision,'not-now')
+  assert.equal(Object.keys(parseUnionLedger(value.unionLedger)!.sessions).length,0)
+  await verify.stop()
+ }finally{
+  await Promise.all(owners.filter(o=>o.child.exitCode===null).map(o=>o.stop()))
+  rmSync(root,{recursive:true,force:true})
+ }
+})

@@ -252,3 +252,9 @@ AGENT_PICKET_DSH_HOST=<本机真实 DSH 0.1.2 的 node_modules> AGENT_PICKET_DSH
 通过 npm 官方发行包另行安装 DSH 0.1.7-rc.2 至隔离临时目录后核实，该版不再提供 dsh-settings-file 模块，而是包含 dsh-storage-json 与新的设置组件。它的实际用户配置语义与 0.1.2 所测 SettingsFile 不同，原始 #111 三项 SettingsFile 测试不适用；既不能证明新版安全，也不能证明新版存在相同问题。第一次真实 Chrome 测试中旧验收程序误把所有 0.1.x 当作旧式立即欢迎页，在新版无欢迎页时触发测试版本假设失败，而不是用户操作缺陷。
 
 现 scripts/verify-dsh-rights-a11y.sh 对 0.1.x 不只检查版本号，还要求真的存在旧版 SettingsFile SDK；如果 0.1.x 已使用新架构，返回 UNREVIEWED_DSH_SETTINGS_LAYOUT / 退出码 2，明确需另写新版 Host 集成测试。不得把这类不可测情况报告为 0.1.7 兼容性通过，也不得当作 #111 上游已修。安装的既有 DSH 0.1.2 和 0.2.0 环境未发生变化。
+
+### 2026-10-12 · #111 原子版本研究补充：真并发、重试与撤权重试，加一键可复现矩阵
+
+持久化随机磁盘代次原型仍只存在于隔离测试 fixture。新增三项真正独立 OS 进程研究验证：两个 Host 同时提交举牌和申诉，只允许一个旧快照获得成功回执，冷启动第三进程只能看到成功档案；A 删除举牌后，B 旧申诉先被拒绝，再次读取真实磁盘后重新发起非破坏性申诉可成功且不会复活删除内容；A 撤销权限后，B 旧请求与刷新后的重试均被拒绝，OFF 与空档案保持不变。
+
+研究原型现合计 5/5 PASS，而未修改的官方 DSH 仍 0/3，安全边界没有放宽。新增 npm run research:dsh-disk-cas 独立复现脚本，真实旧 SDK 必需，依次核验原始官方 0/3 失败、纯内容比较 OFF-ON ABA 0/1 失败、持久化代次原型 5/5 通过；打印 RESEARCH_ONLY 与 RELEASE_STATUS=P0_NO_GO，避免把隔离原型当成上游正式修复。正式发布门禁仍由 npm run check:dsh-multiowner 单独决定。研究脚本与 fixture 不打包，也不接触真正的 DSH 用户 Profile。
