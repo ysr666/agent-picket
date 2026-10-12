@@ -91,6 +91,8 @@ test('npm dry-run tarball contains prebuilt plugin and no source, tests, or runt
     assert.equal(file.endsWith('.map'), false,
       'Development source maps must not enter the private npm distribution')
   }
+  assert.equal(files.has('dist/adapters/node/windows-private-acl.js'),false,
+    'Unverified Windows NTFS security probe must not ship as a storage backend')
   assert.equal(files.has('dist/adapters/codex/goal-readiness.js'),false,
     'Codex owner-binding contract is experimental and must not ship as working enforcement')
   assert.ok(meta.size < 250_000, 'Package unexpectedly large: review for bundled user files')
