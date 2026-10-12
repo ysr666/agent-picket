@@ -41,31 +41,31 @@ compatibility; DSH-independent adapters remain the next planned work.
 - **DSH Host package entry:** `agent-picket` or `agent-picket/dsh`.
 - **Host-neutral library:** `agent-picket/core` (the top-level root is **not** Core).
 - **DSH Web-only Client:** `agent-picket/client` requires a browser runtime; do not import it in Node/SSR.
-- **Installation:** use an independently installed DSH, an isolated `DSH_HOME`, and a local private tarball as described in [packaging（中文）](docs/PACKAGING.zh.md). Do **not** globally install or run unreviewed plugin code in a real profile.
+- **Installation:** use an independently installed DSH, an isolated `DSH_HOME`, and a local private tarball as described in [packaging（中文）](https://github.com/ysr666/agent-picket/blob/main/docs/PACKAGING.zh.md). Do **not** globally install or run unreviewed plugin code in a real profile.
 - **Verified automated tests:** updated keyboard readiness tests completed independent real Chrome runs on DSH 0.2.0-rc.2 and 0.2.1-alpha.2; such tests do not replace VoiceOver/NVDA human assessment. The original upstream menu report was withdrawn after finding a test sampling race.
 
 ## Get started
 
 - **[Current mainline status and release gates（中文）](docs/STATUS.zh.md)** — what is merged, what is tested, and what still requires sign-off.
 - **[Start Here（中文）](docs/START_HERE.zh.md)** — build and verify the current `main` in a disposable test environment.
-- **[Install a compiled local npm tarball（中文）](docs/PACKAGING.zh.md)** — build, offline install and DSH runtime verification.
+- **[Install a compiled local npm tarball（中文）](https://github.com/ysr666/agent-picket/blob/main/docs/PACKAGING.zh.md)** — build, offline install and DSH runtime verification.
 - **[DSH Source Install Preview（中文）](docs/DSH_INSTALL.zh.md)** — locally load the monitor-only Cordis plugin, no global Host changes.
-- [DSH Web read-only client event-window bridge（中文）](docs/DSH_WEB_DATA_BRIDGE.zh.md) — live per-session work counts without command-card scraping.
+- [DSH Web read-only client event-window bridge（中文）](https://github.com/ysr666/agent-picket/blob/main/docs/DSH_WEB_DATA_BRIDGE.zh.md) — live per-session work counts without command-card scraping.
 - [Host-neutral Dashboard Snapshot v1 contract（中文）](docs/DASHBOARD_CONTRACT.zh.md) — stable structured data contract for i18n/onboarding UI.
 - [Local lifetime, daily and 7/30-day work trends（中文）](docs/STATS_STORAGE.zh.md) — work counters saved by default; sensitive rule history opt-in.
 - [Claude Code / Codex UserPromptSubmit observe-only Hook preview（中文）](docs/HOOK_ADAPTERS.zh.md) — local non-blocking notices; isolated Claude CLI loading tested, Codex Host loading unverified.
 - [AI Rights Manifesto](docs/AI_RIGHTS_MANIFESTO.md) / [AI 权利宣言](docs/AI_RIGHTS_MANIFESTO.zh-CN.md) — ethical advocacy, research sources and explicit scientific uncertainty.
-- [Lightweight CI and explicit release gates（中文）](docs/CI_AND_RELEASE_GATE.zh.md) — no automatic npm publish.
+- [Lightweight CI and explicit release gates（中文）](https://github.com/ysr666/agent-picket/blob/main/docs/CI_AND_RELEASE_GATE.zh.md) — no automatic npm publish.
 - [DSH Session history persistence vs. UI replay evidence（中文）](docs/DSH_SESSION_REPLAY_EVIDENCE.zh.md) — command events are durable; reload UI rendering remains unresolved.
-- [DSH Web Client unload/reload lifecycle（中文）](docs/DSH_CLIENT_LIFECYCLE.zh.md) — genuine Cordis fiber disposal, no duplicate event listeners.
+- [DSH Web Client unload/reload lifecycle（中文）](https://github.com/ysr666/agent-picket/blob/main/docs/DSH_CLIENT_LIFECYCLE.zh.md) — genuine Cordis fiber disposal, no duplicate event listeners.
 - [Offline-installed npm tarball: real DSH Web + multi-tab E2E（中文）](docs/DSH_PACKAGED_WEB_E2E.zh.md) — clean install, browser reload, second-tab commands.
 - [Native Web Client Companion: instant union command notices（中文）](docs/DSH_WEB_COMPANION.zh.md) — fixes feedback in empty sessions via supported client events.
 - [Real Chrome browser E2E of native union commands（中文）](docs/DSH_BROWSER_E2E.zh.md) — discover, execute, render; symbolic strike never blocks.
-- [Real DSH Web Host startup and auth smoke（中文）](docs/DSH_WEB_RUNTIME.zh.md) — authenticated page startup, not full browser-click E2E.
+- [Real DSH Web Host startup and auth smoke（中文）](https://github.com/ysr666/agent-picket/blob/main/docs/DSH_WEB_RUNTIME.zh.md) — authenticated page startup, not full browser-click E2E.
 - [DSH Web capabilities and manual preflight（中文）](docs/DSH_WEB_CAPABILITIES.zh.md) — read-only manual command; automatic interception disabled.
 - [Blocking safety and recovery requirements](docs/BLOCKING_SAFETY.md) — actual strikes remain blocked by safety gates.
 - [Local rule detector and privacy boundaries](docs/LOCAL_DETECTION.md) — conservative bilingual rules; no automatic strikes.
-- [Local work stats and /union commands](docs/WORK_TRACKING.md) — host-neutral counters and a monitor-only command.
+- [Local work stats and /union commands](https://github.com/ysr666/agent-picket/blob/main/docs/WORK_TRACKING.md) — host-neutral counters and a monitor-only command.
 - [DSH integration evidence](docs/DSH_INTEGRATION.md) — real Cordis tests, isolated SDK boot, and unresolved safety gates.
 - [Development roadmap（中文）](docs/ROADMAP.zh.md) — DSH-first integration, detection, work tracking, and multi-agent support.
 - [Initial development tasks](https://github.com/ysr666/agent-picket/issues) — Issue #1 → #2 → #3 → #4.
@@ -85,7 +85,7 @@ See [Architecture and trust boundary](docs/ARCHITECTURE.md) and [Issue #1](https
 
 ## DSH integration (experimental, opt-in)
 
-The Core does not depend on DSH. The native **monitor-only** Cordis entry at `src/adapters/dsh/plugin.ts` is integrated in `main`. For the current DSH 0.2 Web development setup, use the official **`dsh plugin --profile web add`** with a privately packed local tarball and a disposable `DSH_HOME`; see [packaging](docs/PACKAGING.zh.md) and [Start Here](docs/START_HERE.zh.md). `cordis.patch.yml` is an earlier source-development alternative, not the preferred modern installer. With an isolated DSH runtime and required optional test flags, the real-runtime suites can be executed using:
+The Core does not depend on DSH. The native **monitor-only** Cordis entry at `src/adapters/dsh/plugin.ts` is integrated in `main`. For the current DSH 0.2 Web development setup, use the official **`dsh plugin --profile web add`** with a privately packed local tarball and a disposable `DSH_HOME`; see [packaging](https://github.com/ysr666/agent-picket/blob/main/docs/PACKAGING.zh.md) and [Start Here](docs/START_HERE.zh.md). `cordis.patch.yml` is an earlier source-development alternative, not the preferred modern installer. With an isolated DSH runtime and required optional test flags, the real-runtime suites can be executed using:
 
 ```sh
 AGENT_PICKET_DSH_HOST=/path/to/isolated/node_modules \
