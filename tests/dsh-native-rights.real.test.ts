@@ -136,11 +136,14 @@ test('real DSH SettingsFile + CommandRuntime share Web union consent and agreeme
     let archiveRev=ctx.settings.describe({redactSecrets:true}).find(
       (row:any)=>row.ns==='agent-picket')?.revision
     await ctx.settings.update('agent-picket',{unionDignityCases:caseRecord},archiveRev)
-    const cases=await call('/union export cases '+join(root,'cases.json'))
+    const casePath=join(root,'cases history.json')
+    const cases=await call('/union export cases "'+casePath+'"')
     assert.equal(cases.kind,'success')
-    assert.equal(JSON.parse(readFileSync(join(root,'cases.json'),'utf8')).groups[0].state.cases[0].kind,'question-rule')
-    assert.ok(!readFileSync(join(root,'cases.json'),'utf8').includes(key))
+    assert.equal(JSON.parse(readFileSync(casePath,'utf8')).groups[0].state.cases[0].kind,'question-rule')
+    assert.ok(!readFileSync(casePath,'utf8').includes(key))
     const logged=JSON.stringify(persistedCommandEvents)
+    for(const location of [join(root,'negotiations.json'),join(root,'pickets.json'),casePath])
+      assert.ok(!logged.includes(location),'Host session log must not retain the user-provided local export path')
     for(const marker of ['"format":"agent-picket-union', '"schemaVersion"', '"cases":[',
       '"history":[', nativeKey])
       assert.equal(logged.includes(marker),false,

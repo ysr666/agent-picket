@@ -380,3 +380,21 @@ test('CLI export and per-category purge require real consent, explicit CONFIRM a
  assert.equal(h.read().unionPicketLedger,priorPicket)
  } finally {rmSync(root,{recursive:true,force:true})}
 })
+
+test('an archive erased during an in-flight native file export cannot reappear as a new file',async()=>{
+ const root=mkdtempSync(join(tmpdir(),'picket-export-stale-race-'))
+ try{
+  const h=hostHarness()
+  assert.equal((await h.call('rights on')).kind,'success')
+  assert.equal((await h.call('petition-demo')).kind,'success')
+  const path=join(root,'inflight-negotiations.json')
+  // The handler takes a consented snapshot synchronously, then awaits an
+  // actual filesystem O_EXCL open/write. Another real Host owner may purge
+  // the SAME category in that interval without ever turning consent OFF.
+  const exporting=h.call('export negotiations '+path)
+  await h.provider.update('agent-picket',{unionLedger:''},h.revision())
+  assert.equal((await exporting).kind,'error',
+   'A late file export must not create a resurrected copy of a deleted category')
+  assert.throws(()=>readFileSync(path))
+ } finally {rmSync(root,{recursive:true,force:true})}
+})

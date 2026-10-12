@@ -309,7 +309,8 @@ export function registerDshIntegration(
               // may be silently overwritten.
               try {
                 const json=native.exportArchive(id,kind)
-                return writeExplicitUnionArchive(filePath,json,invocation?.signal,()=>native.enabled())
+                return writeExplicitUnionArchive(filePath,json,invocation?.signal,
+                  ()=>native.enabled()&&native.exportArchive(id,kind)===json)
                   .then(()=>ok(native.text('command.native.exportSaved')),
                     ()=>fail(native.text('command.native.exportFailed')))
               } catch {

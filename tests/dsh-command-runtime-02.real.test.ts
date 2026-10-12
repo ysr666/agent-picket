@@ -169,9 +169,10 @@ test('real DSH 0.2 CommandRuntime routes shared symbolic pickets without model c
     }}})
     await hostSettings.update('agent-picket',{unionDignityCases:exampleCases},revision)
     for(const kind of ['negotiations','pickets','cases']){
-      const exported=await call('/union export '+kind+' '+join(exportRoot,kind+'.json'))
+      const selectedPath=join(exportRoot,kind==='cases'?'case history.json':kind+'.json')
+      const exported=await call('/union export '+kind+' "'+selectedPath+'"')
       assert.equal(exported.kind,'success','DSH 0.2 export '+kind)
-      const contents=readFileSync(join(exportRoot,kind+'.json'),'utf8')
+      const contents=readFileSync(selectedPath,'utf8')
       const parsed=JSON.parse(contents)
       assert.equal(parsed.format,'agent-picket-union-'+kind)
       assert.equal(parsed.groups[0]?.current,true)
