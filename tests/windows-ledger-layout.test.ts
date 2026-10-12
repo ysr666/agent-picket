@@ -31,6 +31,15 @@ test('real NTFS synthetic WAL, private snapshot rename and lock lifecycle',{
   const journal=join(dir,'aggregate.v1.journal')
   const log=openSync(journal,'a',0o600)
   try{writeSync(log,Buffer.from('synthetic-event\\n'));fsyncSync(log)}finally{closeSync(log)}
+  // DurableStats checkpoint replaces an EXISTING journal, not merely a
+  // missing snapshot: verify Windows NTFS rename/overwrite semantics.
+  const checkpoint=join(dir,'aggregate.v1-fedcba9876543210.tmp')
+  const checkpointFd=openSync(checkpoint,'wx',0o600)
+  try {fsyncSync(checkpointFd)}finally{closeSync(checkpointFd)}
+  assert.equal(inspectPrivateNtfsLedgerLayout(dir).private,true)
+  renameSync(checkpoint,journal)
+  assert.equal(inspectPrivateNtfsLedgerLayout(dir).private,true,
+    'Replacing the old journal with a checkpoint temp must preserve its private ACL')
   const lock=join(dir,'aggregate.v1.lock')
   writeFileSync(lock,'synthetic-process-lock',{flag:'wx',mode:0o600})
   assert.deepEqual(inspectPrivateNtfsLedgerLayout(dir),{
