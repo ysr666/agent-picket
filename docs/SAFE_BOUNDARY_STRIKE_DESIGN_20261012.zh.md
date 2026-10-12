@@ -69,3 +69,9 @@ node --experimental-strip-types --test tests/dsh-goal-boundary.real.test.ts
 先前 `sdk-minimal` 提示 `session already exists` 的根因是测试误用 `agents.create`，不是 Host 无法恢复。正确恢复入口为 `AgentRegistry.resume`，该接口也是 DSH API Session、ACP 等官方组件采用的路径。完整 E2E 使用可信本地测试控制插件在第二进程执行官方恢复；**并不等于 DSH Web/Desktop UI 的最终真人恢复按钮已经完成验收**。
 
 仍需 #120 完成首次启动的一次知情授权、真实停工状态与恢复界面；仍需多标签页、并发 Steering、3 操作系统及其它 Agent 平台实测，发布闸门继续 NO-GO。
+
+## 2026-10-12 · 首装一次授权的双 Host 原生验收
+
+新增 `tests/dsh-modern-settings-multiowner.real.test.ts` 的 `MODERN HOST #1.0` 原生测试：在两份互相独立的 **真实 DSH Web Host 进程**及隔离的 DSH_HOME 中，用官方认证 `settings/mutate` 一次 CAS 同时提交 `welcomeDecision=enabled` 与 `realGoalStrikeConsent=authorized-v1`。0.2.0-rc.2 和 0.2.1-alpha.2 均通过。实测验证同一次提交只增加一次设置修订号、旧窗口不能覆盖、无效第二字段让整批原子回滚、退出时两个字段一起撤销、重启后撤销依然有效。可复现脚本：`AGENT_PICKET_DSH_BIN=/isolated-dsh/bin/dsh bash scripts/verify-dsh-goal-first-run-host.sh`。
+
+**这是官方 Host 授权原子性的验收，不等于用户已经在浏览器弹窗里真实点击并成功授权。** 首次弹窗必须展示真实 Goal 罢工的充分说明，并由 #120 将同一个“启用 AI 工会”按钮接到 `chooseFirstRun('goal-safe-boundary-v1')`；没有这项 UI 证据不得把模拟欢迎页当成正式真实罢工的知情同意。发布闸门继续 NO-GO。
