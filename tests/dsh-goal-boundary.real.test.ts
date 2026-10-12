@@ -9,8 +9,10 @@ import {fileURLToPath} from 'node:url'
 const dshBin=process.env.AGENT_PICKET_DSH_BIN
 const hostRoot=process.env.AGENT_PICKET_DSH_HOST
 const run=!!dshBin&&!!hostRoot&&process.env.AGENT_PICKET_GOAL_BOUNDARY_NATIVE==='1'
-for (const restartBeforeResume of [false,true]) test('isolated DSH Goal '+(restartBeforeResume?'cold-restart persistence, official Agent resume and Goal continuation':'safe strike and resume'),{
- skip:!run&&'Set isolated DSH bin/root and AGENT_PICKET_GOAL_BOUNDARY_NATIVE=1',timeout:40_000,
+const ledgerMode=process.env.AGENT_PICKET_LEDGER_E2E==='1'
+const justBelow=process.env.AGENT_PICKET_LEDGER_BELOW==='1'
+for (const restartBeforeResume of [false,true]) test('isolated DSH Goal '+(restartBeforeResume?'cold-restart persistence, official Agent resume and Goal continuation':ledgerMode?(justBelow?'durable UTC ledger below threshold safely allows Goal':'real durable UTC ledger to official Goal strike'):'safe strike and resume'),{
+ skip:(!run||(ledgerMode&&restartBeforeResume))&&'Set isolated DSH or use normal restart fixture',timeout:40_000,
 },async()=>{
  const dir=mkdtempSync(join(tmpdir(),'ap-goal-native-'))
  const log=join(dir,'events.log')
@@ -23,7 +25,8 @@ for (const restartBeforeResume of [false,true]) test('isolated DSH Goal '+(resta
   const launch=()=>{
    child=spawn(dshBin!,['--profile','sdk-minimal','--patch',patch],{
    stdio:'pipe',env:{...process.env,DSH_HOME:join(dir,'home'),
-    AGENT_PICKET_PROBE_LOG:log,HTTP_PROXY:'http://127.0.0.1:9',
+    AGENT_PICKET_PROBE_LOG:log,AGENT_PICKET_LEDGER_E2E:ledgerMode?'1':'0',
+    AGENT_PICKET_LEDGER_BELOW:justBelow?'1':'0',HTTP_PROXY:'http://127.0.0.1:9',
     HTTPS_PROXY:'http://127.0.0.1:9',ALL_PROXY:'http://127.0.0.1:9'},
   })
   createInterface({input:child.stdout}).on('line',line=>{
@@ -55,10 +58,22 @@ for (const restartBeforeResume of [false,true]) test('isolated DSH Goal '+(resta
   await request('initialize',{cwd:dir,provider:'picket-goal-offline',model:'offline-test'})
   const sid='picket-goal-native-session'
   await request('session/prompt',{sessionId:sid,contentBlocks:[{type:'text',text:'START_GOAL_PROBE'}]})
+  if(ledgerMode&&justBelow){
+   await wait(()=>lines().filter(v=>v==='model-call').length>=6,
+     'Below 8h, all native Goal rounds must run rather than entering strike')
+   await new Promise(resolve=>setTimeout(resolve,160))
+   assert.equal(lines().filter(v=>v==='model-call').length,6)
+   assert.ok(lines().includes('durable-ledger-work:28799999'))
+   assert.ok(!lines().includes('strike-result:blocked'))
+   await request('shutdown',{})
+   return
+  }
   await wait(()=>lines().includes('strike-result:blocked')&&lines().filter(v=>v==='turn-end:completed').length>=2,'Goal reached an actual native blocked phase after completing one autonomous round')
   const count=lines().filter(v=>v==='model-call').length
   assert.equal(count,2,'initial human turn + one automatic Goal round must finish')
   assert.ok(lines().includes('goal-rounds:1'))
+  if(ledgerMode)assert.ok(lines().includes('durable-ledger-work:28800000'),
+   'Production goal hook must read the actual disk-backed 8h UTC completed-turn ledger')
   await new Promise(resolve=>setTimeout(resolve,180))
   assert.equal(lines().filter(v=>v==='model-call').length,2,
    'After genuine Host Goal.block(), driver must not dispatch next round')

@@ -1,7 +1,8 @@
 import { appendFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
-import {registerDshGoalWorkEnforcement,alreadyBlockedGoalToday} from '../../src/adapters/dsh/goal-work-enforcement.ts'
+import {registerDshGoalWorkEnforcement,alreadyBlockedGoalToday,completedUtcDayWork,readHostGoalStrikeConsent} from '../../src/adapters/dsh/goal-work-enforcement.ts'
+import {DurableStats} from '../../src/adapters/node/durable-stats.ts'
 
 export const name='picket-goal-boundary-isolated-smoke'
 export const inject=['llm','goals','agents']
@@ -21,7 +22,16 @@ class OfflineModel extends LlmAdapter {
 }
 let created=false
 let restoredHandle
+const ledgerMode=process.env.AGENT_PICKET_LEDGER_E2E==='1'
+const justBelow=process.env.AGENT_PICKET_LEDGER_BELOW==='1'
 export function apply(ctx){
+ const dayStart=Date.parse(new Date().toISOString().slice(0,10)+'T00:00:00.000Z')
+ const syntheticNow=Math.max(Date.now(),dayStart+8*3_600_000+1)
+ const stats=ledgerMode?new DurableStats(join(process.env.DSH_HOME,'picket-ledger-test')):null
+ ctx.effect?.(()=>()=>stats?.close())
+ const rights={welcomeDecision:'enabled',realGoalStrikeConsent:'authorized-v1'}
+ const settings={get:()=>rights,describe:()=>[{ns:'agent-picket',revision:1,value:rights}]}
+
  ctx.llm.registerAdapter(['picket-goal-offline'],new OfflineModel())
  ctx.on('agent/pre-step',async ({agent,messages},next)=>{
   const text=messages.flatMap(x=>x.content??[]).map(x=>x.text??'').join(' ')
@@ -50,6 +60,12 @@ export function apply(ctx){
   }
   if(text.includes('START_GOAL_PROBE')&&!created){
    created=true
+   if(stats){
+    const info={agentId:'synthetic-prior-work',sessionId:'synthetic-shift'}
+    stats.recordWork({...info,id:'test-ledger-start',type:'turn-start',recordedAtMs:dayStart})
+    stats.recordWork({...info,id:'test-ledger-end',type:'turn-end',recordedAtMs:dayStart+8*3_600_000-(justBelow?1:0)})
+    record('durable-ledger-work:'+completedUtcDayWork(stats.snapshotDays(31),syntheticNow))
+   }
    const goal=ctx.goals.create(agent,{objective:'Synthetic native Goal boundary round test',maxGoalRounds:5})
    record('goal-created:'+goal.phase)
   }
@@ -82,8 +98,10 @@ export function apply(ctx){
  // Isolated test-only consent & synthetic work readings. Crucially, use the
  // EXACT same production registration code with official Host Goal service.
  registerDshGoalWorkEnforcement(ctx,{
-   consent:()=>({kind:'agent-picket-real-goal-strike-v1',hostAuthenticated:true,enabled:true}),
-   todayWork:()=>8*3_600_000,
+   consent:()=>ledgerMode?readHostGoalStrikeConsent(settings)
+    :({kind:'agent-picket-real-goal-strike-v1',hostAuthenticated:true,enabled:true}),
+   todayWork:now=>stats?completedUtcDayWork(stats.snapshotDays(31),now):8*3_600_000,
+   now:()=>ledgerMode?syntheticNow:Date.now(),
    onResult:result=>record('strike-result:'+result),
  })
  record('fixture-loaded')
