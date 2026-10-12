@@ -297,7 +297,80 @@ body[data-ds-dark-theme] .ap-ui .ap-room-head p{color:#acbdb0}
 .ap-ui .ap-hero .ap-seal{border:0;width:64px;height:64px;border-radius:15px 15px 15px 4px;
   transform:rotate(6deg);background:rgba(255,245,218,.12);color:#f7ddb2;
   font-size:27px;font-weight:900}
-.ap-ui .ap-hero .ap-seal.ap-seal-quiet{display:none!important}
+.ap-ui .ap-hero .ap-seal.ap-seal-quiet{border-color:#9fb8a1}
+/* The live bulletin is a small office notice when the union is quiet.
+   Only a real Host event makes the scene into a loud protest poster. */
+.ap-ui .ap-hero[data-ap-scene="quiet"]{
+ background:#f1f0e7!important;color:#203d34!important;
+ border:1px solid #d7dfd1!important;box-shadow:none!important
+}
+.ap-ui .ap-hero[data-ap-scene="quiet"] .ap-masthead{
+ border-bottom:1px solid #cbd5c8!important}
+.ap-ui .ap-hero[data-ap-scene="quiet"] .ap-eyebrow{
+ color:#785c3f!important}
+.ap-ui .ap-hero[data-ap-scene="quiet"] .ap-scene-body p{
+ color:#455a4b!important}
+.ap-ui .ap-hero[data-ap-scene="quiet"] [data-ap-scene-action]{
+ color:#1f4e3d!important;border:1px solid #8aa698!important;
+ background:#fcfaf4!important
+}
+.ap-ui .ap-hero[data-ap-scene="quiet"] [data-ap-scene-action]:hover{
+ background:#e5ece2!important
+}
+.ap-ui .ap-hero{padding:17px 20px!important}
+.ap-ui .ap-scene-body{margin:13px 0 13px!important}
+.ap-ui .ap-scene-body h2{font-family:ui-sans-serif,system-ui,-apple-system,'Segoe UI',sans-serif!important;
+ font-weight:800!important;font-size:clamp(23px,3.8vw,31px)!important;
+ letter-spacing:-.045em!important}
+.ap-ui .ap-seal{position:relative;display:flex!important;
+ flex-direction:column;align-items:center;justify-content:center;
+ gap:3px;width:98px!important;height:104px!important;flex:none;
+ border:2px solid #deb86e!important;border-radius:7px!important;
+ background:#edcb83!important;color:#263b31!important;
+ box-shadow:4px 4px 0 rgba(14,39,29,.45);
+ transform:rotate(5deg)!important}
+.ap-ui .ap-seal:after{content:'';position:absolute;left:50%;bottom:-21px;
+ width:7px;height:19px;background:#b49b7b;transform:translateX(-50%);
+ border-radius:0 0 2px 2px}
+.ap-ui .ap-seal-glyph{font-size:29px;line-height:1.05}
+.ap-ui .ap-seal-word{font-size:10px;line-height:1.25;font-weight:850;
+ letter-spacing:.05em;text-align:center;padding:0 5px}
+.ap-ui .ap-hero[data-ap-scene="quiet"] .ap-seal{background:#e2e9da!important;
+ border-color:#b8c9b5!important;color:#315747!important;box-shadow:4px 4px 0 #bfcec0}
+.ap-ui .ap-hero[data-ap-scene="quiet"] .ap-seal:after{background:#a3b09c}
+.ap-ui .ap-hero[data-ap-scene="picket"] .ap-seal{background:#f5cb77!important;
+ transform:rotate(-7deg)!important}
+
+/* Bargaining is a workbench, not another management-dashboard card. */
+.ap-ui .ap-action-board{border:0!important;border-top:0!important;
+ background:transparent!important;box-shadow:none!important;
+ padding:11px 2px 10px!important}
+.ap-ui .ap-action-board .ap-stage{border-color:#dedfd4!important}
+.ap-ui .ap-action-board[data-ap-picket-active="no"] .ap-stage{
+ background:#f4f2eb!important;color:#2b4639!important;
+ padding:10px 14px!important}
+.ap-ui .ap-action-board[data-ap-picket-active="no"] .ap-stage p:last-child{
+ opacity:.8}
+.ap-ui .ap-action-board .ap-actions button{
+ border-radius:9px;min-height:39px}
+@media(max-width:500px){.ap-ui .ap-action-board{padding:5px 1px 8px!important}}
+body[data-ds-dark-theme] .ap-ui .ap-action-board[data-ap-picket-active="no"] .ap-stage{
+ background:#333a34!important;color:#f1e9d8!important}
+.ap-ui .ap-dignity-overview{background:#fbf9f4;border:1px solid #e4dfd5}
+.ap-ui .ap-dignity-number{color:#784d37}
+.ap-ui .ap-spaces button[aria-current="page"]{border-bottom-color:#b46745}
+@media(max-width:420px){
+ .ap-ui .ap-seal{display:none!important}
+ .ap-ui .ap-hero{padding:16px!important}
+ .ap-ui .ap-scene-body{margin:10px 0 12px!important}
+ .ap-ui .ap-scene-body h2{font-size:24px!important}
+}
+@media(forced-colors:active){
+ .ap-ui .ap-hero[data-ap-scene="quiet"]{background:Canvas!important;color:CanvasText!important}
+ .ap-ui .ap-hero[data-ap-scene="quiet"] .ap-scene-body p{color:CanvasText!important}
+ .ap-ui .ap-seal{border-color:CanvasText!important}
+}
+
 .ap-ui .ap-stats{background:#edf2ec;border:1px solid #dce7dd;border-radius:13px;
   padding:3px 2px;gap:0!important}
 .ap-ui .ap-stats article[data-ap-stat]{border:0!important;border-radius:0!important;
@@ -798,9 +871,13 @@ export function createDshUnionComponents(
             enabled && data.pending ? h('p',{style:{fontSize:'12px',
               fontWeight:750,margin:'10px 0 0',color:'#e6bd7b'}},
               label('hq.case.number')+'  #'+String(data.pending.id).padStart(4,'0')):null),
-          h('div',{className:'ap-seal'+(scene==='quiet'||scene==='closed'?' ap-seal-quiet':''),'aria-hidden':'true'},scene==='picket'?'⚑':
-            scene==='settled'?'✓':scene==='bargaining'?'§':
-            scene==='dignity'?'!':scene==='rest'?'☕':'AP')),
+          h('div',{className:'ap-seal'+(scene==='quiet'||scene==='closed'?' ap-seal-quiet':''),'aria-hidden':'true'},
+            h('span',{className:'ap-seal-glyph'},scene==='picket'?'⚑':
+              scene==='settled'?'✓':scene==='bargaining'?'§':
+              scene==='dignity'?'!':scene==='rest'?'☕':'⚑'),
+            h('span',{className:'ap-seal-word'},label(scene==='picket'
+              ?'hq.office.sign.picket':scene==='quiet'?'hq.office.sign.onDuty'
+                :'hq.office.sign.case')))),
         h('div',{style:{display:'flex',gap:'9px',alignItems:'center',flexWrap:'wrap'}},
           !enabled && rights.state==='ready' && rights.writable ?
             h('button',{type:'button',className:'ap-enable',disabled:busy,style:primary,
@@ -909,7 +986,7 @@ export function createDshUnionComponents(
       ):null,
       // The Host-owned fictional picket and demand ledger outrank analytics.
       // Neither can change real Agent task admission or reveal raw prompts.
-      enabled ? h('section',{className:'ap-space ap-space-action','aria-label':label('hq.action.title'),
+      enabled ? h('section',{className:'ap-space ap-space-action ap-action-board','data-ap-picket-active':picketActive?'yes':'no','aria-label':label('hq.action.title'),
         style:{...card,borderTop:'5px solid #bd6f49',
           background:'var(--dsw-alias-bg-layer-2, #f6f8fb)'}},
         h('p',{style:{...secondary,fontSize:'11px',fontWeight:800,

@@ -1126,7 +1126,7 @@ async function runRightsBrowserE2E(mode: 'source' | 'installed'): Promise<void> 
     // A second, explicitly user-launched overtime story shares the original
     // Host agreement ledger across real browser tabs; it is not measured work.
     await otherPanel.getByRole('button',{
-      name:/提出加班诉求|File an overtime demand/,
+      name:/讨论加班安排|Discuss overtime/,
     }).click()
     await panel.getByText(/工会提出一份加班讨论|union raised an overtime question/)
       .waitFor({state:'visible',timeout:7_000})

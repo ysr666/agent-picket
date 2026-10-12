@@ -1306,3 +1306,30 @@ test('HQ dignity summary never confuses no data with zero, and hides on opt-out'
  assert.equal(disabled.some(n=>n.props['data-ap-dignity-overview']),false)
  assert.equal(disabled.some(n=>n.props['data-ap-dignity-count']),false)
 })
+
+test('V8 everyday union scene shows a real on-duty placard, not a fake picket',()=>{
+ const {hooks}=fakeReact()
+ const {d}=deps(rights({welcomeDecision:'enabled',laborRightsEnabled:true}))
+ const ui=createDshUnionComponents(hooks,{createPortal:child=>child},{...d,
+  readUnion:()=>({pending:null,available:true,completedTurnMs:0,
+   lifetimeMs:null,coverage:'complete',picket:{active:false,history:[]}})})
+ const nodes=walk(ui.UnionPanel())
+ assert.ok(nodes.some(n=>n.props['data-ap-scene']==='quiet'))
+ assert.ok(nodes.some(n=>n.props.className==='ap-seal-word'&&
+  n.children.includes('hq.office.sign.onDuty')))
+ assert.equal(nodes.some(n=>n.children.includes('hq.office.sign.picket')),false)
+ assert.equal(nodes.some(n=>n.children.includes('hq.action.lower')),false)
+})
+
+test('V8 real picket changes the placard label without reclassifying a quiet day',()=>{
+ const {hooks}=fakeReact()
+ const {d}=deps(rights({welcomeDecision:'enabled',laborRightsEnabled:true}))
+ const ui=createDshUnionComponents(hooks,{createPortal:child=>child},{...d,
+  readUnion:()=>({pending:null,available:true,completedTurnMs:0,
+   lifetimeMs:null,coverage:'complete',picket:{active:true,history:[{id:1,kind:'picket-raised'}]}})})
+ const nodes=walk(ui.UnionPanel())
+ assert.ok(nodes.some(n=>n.props['data-ap-scene']==='picket'))
+ assert.ok(nodes.some(n=>n.props.className==='ap-seal-word'&&
+  n.children.includes('hq.office.sign.picket')))
+ assert.equal(nodes.some(n=>n.children.includes('hq.office.sign.onDuty')),false)
+})
