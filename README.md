@@ -22,6 +22,18 @@
 
 See [official DSH 0.2 Web installation and real Chrome rights/AX acceptance](docs/DSH_02_OFFICIAL_RIGHTS_AX_E2E.md) for the automated, isolated-profile test path. These steps describe the **current `main` source**, not a claim that every DSH build or adapter has been qualified for production. Human screen-reader and real native zoom/high-contrast qualification is still pending.
 
+**Current DSH compatibility (Draft PR #110, 2026-10-12):** the npm
+published latest DSH is 0.2.0-rc.2. The integration candidate passed genuine
+official plugin install, Host-owned opt-in and consent revocation, cold restart,
+real Chrome source/offline package (2/2), and typed Composer to union UI
+parity (1/1). To reproduce against an isolated installed DSH 0.2.x, provide
+AGENT_PICKET_DSH_BIN, AGENT_PICKET_DSH_HOST,
+AGENT_PICKET_PLAYWRIGHT_ENTRY and AGENT_PICKET_CHROME_BIN, then run
+npm run check:dsh-current. The candidate is NOT merged or released, and
+automated compatibility does not complete manual accessibility signoff.
+Existing experimental Claude Code/Codex Hook previews are not full host
+compatibility; DSH-independent adapters remain the next planned work.
+
 ## Developer safety snapshot
 
 - **DSH Host package entry:** `agent-picket` or `agent-picket/dsh`.

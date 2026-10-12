@@ -1,5 +1,29 @@
 # Agent Picket: DSH version and accessibility release gate (2026-10-10)
 
+## 2026-10-12 current DSH compatibility update
+
+The historical 2026-10-10 observations below are superseded by new evidence
+where explicitly indicated. The npm latest tag on 2026-10-12 is
+@deepseek-ai/dsh 0.2.0-rc.2. Version 0.2.1-alpha.2 is preview-only.
+
+- DSH 0.2.0-rc.2 is the main compatibility target. Real Chrome source and
+  separately offline-installed Agent Picket passed 2/2. Genuine two-OS-process
+  official SettingsForms tests cover stale revisions, actual consent ON/OFF,
+  committee case erasure, simultaneous writes and cold restart.
+- DSH 0.1.7-rc.2 is a secondary target: official installed dual-Host
+  SettingsForms passed. The full browser-plus-Composer release bundle for
+  this older version is NOT separately certified here.
+- The real DSH 0.2.x end-to-end compatibility command is
+  npm run check:dsh-current. It requires an isolated actual CLI, node_modules,
+  Chrome and Playwright, and verifies official plugin installation, real
+  Host settings, browser UI and typed Composer commands.
+- Human accessibility acceptance and the wider 1.0 release decision are
+  separate from automatic host compatibility tests.
+- Future Codex and Claude Code adapters must reuse the host-neutral core,
+  not depend on DSH's settings or Composer APIs.
+
+Historical 2026-10-10 investigations follow.
+
 This is an **isolated compatibility observation**, not a claim that the plugin supports all DSH releases. The only active rights settings writer remains DSH's native authenticated Host service. No user DSH profile, credentials, or package installation was modified during these checks.
 
 ## Version evidence
