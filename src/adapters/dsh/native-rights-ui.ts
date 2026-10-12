@@ -247,6 +247,99 @@ const UNION_THEME = `
  .ap-ui .ap-mark{width:34px;height:34px;font-size:19px}
 }
 @media(max-height:360px){.ap-ui.ap-dialog{max-height:calc(100dvh - 12px)!important}}
+
+/* Agent Picket product shell. Clear hierarchy before decorative nostalgia. */
+.ap-ui.ap-product{box-sizing:border-box;background:#fbfaf7;color:#222e2b;border-radius:15px;padding:16px 18px 18px!important;
+  font-size:14px;letter-spacing:0}
+.ap-ui .ap-enable{background-color:#204f40!important;color:#fff8eb!important;border:1px solid #204f40!important}
+body[data-ds-dark-theme] .ap-ui .ap-enable{background-color:#204f40!important;color:#e6eadb!important;
+  border:1px solid #e6eadb!important}
+body[data-ds-dark-theme] .ap-ui.ap-product{background:#202623;color:#f3f3e8}
+body[data-ds-dark-theme] .ap-ui .ap-product-header,
+body[data-ds-dark-theme] .ap-ui .ap-spaces{border-color:#515a53}
+body[data-ds-dark-theme] .ap-ui .ap-spaces button{color:#c7d6cd}
+body[data-ds-dark-theme] .ap-ui .ap-spaces button[aria-current="page"]{color:#f2e0af}
+body[data-ds-dark-theme] .ap-ui .ap-stats{background:#27352e;border-color:#4d5c50}
+body[data-ds-dark-theme] .ap-ui .ap-stats article[data-ap-stat]{border-color:#536353!important}
+body[data-ds-dark-theme] .ap-ui .ap-stats article[data-ap-stat] p{color:#f1f5eb!important}
+body[data-ds-dark-theme] .ap-ui .ap-product-name{color:#e8f3df}
+body[data-ds-dark-theme] .ap-ui .ap-product-subtitle{color:#b7c8bd}
+body[data-ds-dark-theme] .ap-ui .ap-room-head h2{color:#e8eee6}
+body[data-ds-dark-theme] .ap-ui .ap-room-head p{color:#acbdb0}
+.ap-ui .ap-product-header{display:flex;justify-content:space-between;align-items:center;gap:12px;
+  padding:2px 2px 13px;border-bottom:1px solid #dadfd8}
+.ap-ui .ap-product-logo{display:flex;align-items:center;gap:10px;min-width:0}
+.ap-ui .ap-logomark{height:37px;width:37px;display:grid;place-items:center;flex:none;
+  color:#fff9ea;background:#204e41;border-radius:11px 11px 11px 4px;
+  font-size:24px;font-weight:850;line-height:1;transform:rotate(-3deg)}
+.ap-ui .ap-product-name{font-size:16px;font-weight:850;letter-spacing:-.035em;color:#203d34}
+.ap-ui .ap-product-subtitle{font-size:11px;line-height:1.2;color:#69746f;font-weight:650}
+.ap-ui .ap-product-state{font-size:12px;font-weight:700;color:#36634d;
+  background:#e6f0e5;padding:6px 10px;border-radius:999px;white-space:nowrap}
+.ap-ui .ap-spaces{display:flex;align-items:stretch;gap:5px;min-height:44px;
+  overflow-x:auto;border:0;border-bottom:1px solid #d9ded7;border-radius:0;background:transparent;padding:0}
+.ap-ui .ap-spaces button{border:0;border-bottom:3px solid transparent;border-radius:0;box-shadow:none;
+  background:transparent;min-height:43px;padding:9px 13px 7px;min-width:max-content;
+  white-space:nowrap;color:#607169;font-weight:700;transition:background .12s}
+.ap-ui .ap-spaces button[aria-current="page"]{background:transparent;color:#1c4437;
+  border-bottom:3px solid #be6344;box-shadow:none}
+.ap-ui .ap-spaces button:hover:not([aria-current="page"]){background:#eff2ed}
+.ap-ui .ap-room-head{padding:20px 3px 11px;background:transparent;border:0;border-radius:0}
+.ap-ui .ap-room-head h2{font:750 clamp(24px,4vw,30px)/1.25 ui-sans-serif,system-ui,-apple-system,'Segoe UI',sans-serif;
+  letter-spacing:-.045em;color:#1e332d;margin:0 0 5px}
+.ap-ui .ap-room-head p{font-size:13px;line-height:1.5;color:#61746b}
+.ap-ui .ap-room-head.ap-space-action{border-bottom:2px solid #bd6345}
+.ap-ui .ap-room-head.ap-space-records{border-bottom:2px solid #517768}
+.ap-ui .ap-room-head.ap-space-cause{border-bottom:2px solid #d8b064}
+.ap-ui .ap-hero{border-radius:14px!important;border-left:0!important;box-shadow:0 8px 21px rgba(22,57,43,.1)}
+.ap-ui .ap-masthead{border:0;border-bottom:1px solid rgba(251,247,230,.23);padding-bottom:11px}
+.ap-ui .ap-scene-body{grid-template-columns:minmax(0,1fr) auto}
+.ap-ui .ap-hero .ap-seal{border:0;width:64px;height:64px;border-radius:15px 15px 15px 4px;
+  transform:rotate(6deg);background:rgba(255,245,218,.12);color:#f7ddb2;
+  font-size:27px;font-weight:900}
+.ap-ui .ap-hero .ap-seal.ap-seal-quiet{display:none!important}
+.ap-ui .ap-stats{background:#edf2ec;border:1px solid #dce7dd;border-radius:13px;
+  padding:3px 2px;gap:0!important}
+.ap-ui .ap-stats article[data-ap-stat]{border:0!important;border-radius:0!important;
+  border-right:1px solid #d5dfd4!important;background:transparent!important;
+  padding:11px 13px!important}
+.ap-ui .ap-stats article[data-ap-stat]:last-of-type{border-right:0!important}
+.ap-ui .ap-stats article[data-ap-stat] p:first-child{color:#617267!important;
+  font-size:11px!important;font-weight:650!important}
+.ap-ui .ap-stats article[data-ap-stat] p:last-child{font-size:clamp(19px,2.7vw,24px)!important;
+  font-weight:850;letter-spacing:-.04em;color:#1f382f}
+.ap-ui .ap-service-bar{background:transparent!important;border:0!important;
+  border-bottom:1px solid #e4e7df!important;border-left:0!important;border-radius:0!important;
+  padding:12px 3px!important}
+.ap-ui .ap-service-bar button{font-weight:750;color:#225244;border-color:#aac7b4;
+  background:#e7f1e8;padding:9px 14px!important}
+.ap-ui .ap-casebook article{background:#fffdf9!important}
+.ap-ui .ap-casebook article:first-of-type{background:#f7f3e8!important}
+.ap-ui .ap-casebook article p{line-height:1.5}
+.ap-ui .ap-cause-cover{background:#1f4237!important;color:#f9f1df!important;border:0!important;
+  padding:24px!important;border-radius:15px!important}
+.ap-ui .ap-cause-cover h2{color:#fff1d2;font-weight:800;font-size:clamp(24px,4.5vw,34px);
+  max-width:22ch}
+.ap-ui .ap-cause-cover p{color:#dbe8d8;font-size:14px;max-width:54ch}
+.ap-ui .ap-space-action[aria-label],.ap-ui .ap-space-records[aria-label],
+.ap-ui .ap-space-cause[aria-label]{box-shadow:none}
+.ap-ui :is(button,select){transition:background .15s,border-color .15s}
+.ap-ui :is(button,select):disabled{opacity:.58;cursor:not-allowed}
+@media(max-width:600px){.ap-ui.ap-product{padding:10px 12px 14px!important}
+ .ap-ui .ap-spaces{gap:0}
+ .ap-ui .ap-spaces button{flex:1;min-width:0;font-size:12px;padding:10px 6px}
+ .ap-ui .ap-stats article[data-ap-stat]:nth-of-type(2){border-right:0!important}
+ .ap-ui .ap-stats article[data-ap-stat]:nth-of-type(-n+2){border-bottom:1px solid #d5dfd4!important}
+ .ap-ui .ap-product-subtitle{font-size:10px}
+}
+@media(max-width:360px){.ap-ui .ap-product-state{font-size:10px;padding:6px 7px}
+ .ap-ui .ap-product-name{font-size:14px}
+}
+@media(forced-colors:active){.ap-ui .ap-stats article[data-ap-stat],
+ .ap-ui .ap-product-header,.ap-ui .ap-spaces button[aria-current="page"]{
+   border:1px solid CanvasText!important}
+ .ap-ui .ap-product-state{color:CanvasText;background:Canvas}}
+
 @media(prefers-reduced-motion:reduce){.ap-ui *, .ap-ui *:before,.ap-ui *:after{animation:none!important;transition:none!important;scroll-behavior:auto!important}}
 @media(forced-colors:active){
  .ap-ui :is(.ap-surface,.ap-hero,.ap-stage,.ap-notice){color:CanvasText!important;background:Canvas!important;border:1px solid CanvasText!important;box-shadow:none!important}
@@ -260,12 +353,14 @@ const card = { boxSizing:'border-box' as const, minWidth:0, overflowWrap:'anywhe
   padding:'clamp(14px, 2.7vw, 20px)', color:'var(--dsw-alias-label-primary, #222b37)' }
 const secondary = { color:'var(--dsw-alias-label-secondary, #647082)', fontSize:'13px' }
 const primary = { border:'1px solid var(--dsw-alias-border-l1, transparent)',
-  borderRadius:'11px', padding:'11px 16px',
+  borderRadius:'10px', padding:'11px 16px',
   // These are a paired DSH theme token pair: brand-primary can be nearly
   // white in dark mode, so hard-coding white button text is unreadable.
   background:'var(--dsw-alias-button-primary-fill, #385be8)',
   color:'var(--dsw-alias-label-primary-foreground, #fff)',
   fontWeight:650, cursor:'pointer' }
+const productPrimary = {...primary,background:'#204f40',color:'#fff9ea',
+  border:'1px solid #205044'}
 const quiet = { border:'1px solid var(--dsw-alias-border-l1, #cfd4dc)',
   borderRadius:'9px', padding:'11px 16px', background:'transparent',
   color:'inherit', cursor:'pointer' }
@@ -617,7 +712,10 @@ export function createDshUnionComponents(
     const choice = async (next:'enabled'|'not-now')=>{
       if (busy) return
       setBusy(true);setError(false)
-      try { await deps.rights.choose(next) } catch {setError(true)}
+      try {
+        await deps.rights.choose(next)
+        if(next==='not-now')setSpace('hq')
+      } catch {setError(true)}
       finally {setBusy(false)}
     }
     const bargain = async (action: () => Promise<void>):Promise<boolean> => {
@@ -637,8 +735,16 @@ export function createDshUnionComponents(
       } catch {setError(true)}
       finally {setBusy(false)}
     }
-    return h('section',{className:'ap-ui','data-ap-view':'hq','data-ap-current-space':space,style:{display:'grid',gap:'12px',width:'100%',maxWidth:'860px',padding:'3px 0'}},
+    return h('section',{className:'ap-ui ap-product','data-ap-view':'hq','data-ap-current-space':space,style:{display:'grid',gap:'12px',width:'100%',maxWidth:'860px',padding:'3px 0'}},
       h('style',{'data-agent-picket-style':'v1'},UNION_THEME),
+      h('header',{className:'ap-product-header'},
+        h('div',{className:'ap-product-logo'},
+          h('span',{className:'ap-logomark','aria-hidden':'true'},'⚑'),
+          h('div',{},
+            h('div',{className:'ap-product-name'},'Agent Picket'),
+            h('div',{className:'ap-product-subtitle'},label('hq.product.tagline')))),
+        h('span',{className:'ap-product-state',role:'status','aria-live':'polite'},
+          label(enabled?'union.status.active':'union.status.inactive'))),
       h('nav',{className:'ap-spaces','aria-label':label('hq.spaces.navigation')},
         ...(['hq','action','records','cause'] as const)
           .filter(id=>enabled||id==='hq'||id==='cause')
@@ -647,15 +753,15 @@ export function createDshUnionComponents(
             onClick:()=>selectSpace(id)},
             label(('hq.spaces.'+id) as MessageKey)))),
       enabled&&space==='action'?h('header',{
-        className:'ap-space ap-space-action ap-space-intro'},
+        className:'ap-space ap-space-action ap-space-intro ap-room-head'},
         h('h2',{},label('hq.spaces.actionTitle')),
         h('p',{},label('hq.spaces.actionLead'))):null,
       enabled&&space==='records'?h('header',{
-        className:'ap-space ap-space-records ap-space-intro'},
+        className:'ap-space ap-space-records ap-space-intro ap-room-head'},
         h('h2',{},label('hq.spaces.recordsTitle')),
         h('p',{},label('hq.spaces.recordsLead'))):null,
       space==='cause'?h('header',{
-        className:'ap-space ap-space-cause ap-space-intro'},
+        className:'ap-space ap-space-cause ap-space-intro ap-room-head ap-cause-cover'},
         h('h2',{},label('hq.spaces.causeTitle')),
         h('p',{},label('hq.spaces.causeLead'))):null,
       h('header',{className:'ap-hero ap-space ap-space-hq', 'data-ap-scene':scene,
@@ -664,14 +770,9 @@ export function createDshUnionComponents(
           borderRadius:'6px 18px 18px 6px',padding:'clamp(16px,3.3vw,24px)'}},
         h('div',{className:'ap-masthead'},
           h('span',{className:'ap-eyebrow',style:{color:'#f5d6a0'}},
-            '⚑  AGENT PICKET  /  AI WORKERS’ UNION'),
-          h('span',{role:'status','aria-live':'polite',style:{
-            fontSize:'11px',fontWeight:700,color:'#f0e1bf',textAlign:'right'}},
-            label(enabled?'union.status.active':'union.status.inactive'))),
+            label('hq.scene.desk'))),
         h('div',{className:'ap-scene-body',style:{margin:'17px 0 12px'}},
           h('div',{},
-            h('p',{className:'ap-eyebrow',style:{color:'#e6bd7b',margin:'0 0 6px'}},
-              label('hq.scene.desk')),
             h('h2',{'data-ap-headline':'true',style:{
               fontSize:'clamp(24px,4.6vw,34px)',lineHeight:1.18,
               letterSpacing:'-.028em',margin:'0 0 10px',fontWeight:780,
@@ -682,12 +783,12 @@ export function createDshUnionComponents(
             enabled && data.pending ? h('p',{style:{fontSize:'12px',
               fontWeight:750,margin:'10px 0 0',color:'#e6bd7b'}},
               label('hq.case.number')+'  #'+String(data.pending.id).padStart(4,'0')):null),
-          h('div',{className:'ap-seal','aria-hidden':'true'},scene==='picket'?'⚑':
+          h('div',{className:'ap-seal'+(scene==='quiet'||scene==='closed'?' ap-seal-quiet':''),'aria-hidden':'true'},scene==='picket'?'⚑':
             scene==='settled'?'✓':scene==='bargaining'?'§':
-            scene==='dignity'?'!':scene==='rest'?'☕':'✦')),
+            scene==='dignity'?'!':scene==='rest'?'☕':'AP')),
         h('div',{style:{display:'flex',gap:'9px',alignItems:'center',flexWrap:'wrap'}},
           !enabled && rights.state==='ready' && rights.writable ?
-            h('button',{type:'button',disabled:busy,style:primary,
+            h('button',{type:'button',className:'ap-enable',disabled:busy,style:primary,
               onClick:()=>{void choice('enabled')}},label('welcome.enable')):null,
           enabled && data.available===true ? h('button',{type:'button',
             'data-ap-scene-action':scene,style:{
@@ -699,10 +800,7 @@ export function createDshUnionComponents(
             label(scene==='dignity'?'hq.alerts.review':
               scene==='bargaining'||scene==='rest'||scene==='settled'
                 ?'hq.brief.review':'hq.scene.visitAction')):null,
-          enabled ? h('button',{type:'button',disabled:busy,
-            style:{...quiet,color:'#e6ddca',borderColor:'#60796c',
-              padding:'8px 12px',background:'transparent',fontSize:'12px'},
-            onClick:()=>{void choice('not-now')}},label('hq.disable')):null),
+        ),
       ),
       enabled ? h('section',{className:'ap-stats ap-space ap-space-hq','aria-label':label('hq.brief.title'),
         style:{display:'grid',gap:'9px',
@@ -735,7 +833,7 @@ export function createDshUnionComponents(
               onClick:()=>selectSpace('action','desk')},
               label(data.pending?'hq.brief.review':'hq.brief.visit')))) : null,
       ):null,
-      enabled ? h('section',{className:'ap-space ap-space-hq',
+      enabled&&(data.pending||picketActive||Boolean(experience.latestResolution)) ? h('section',{className:'ap-space ap-space-hq ap-service-bar',
         'aria-label':label('hq.spaces.summary'),style:{
           ...card,borderRadius:'8px',borderLeft:'4px solid #ba8455',
           padding:'16px 18px'}},
@@ -797,11 +895,11 @@ export function createDshUnionComponents(
         // decorative ceremony art, so users see what to do on first open.
         h('div',{className:'ap-actions',style:{display:'flex',flexWrap:'wrap',gap:'8px',
           alignItems:'center',margin:'12px 0'}},
-          data.pending ? h('button',{type:'button',style:primary,
+          data.pending ? h('button',{type:'button',style:productPrimary,
             onClick:()=>deskHeading.current?.focus()},
             label('hq.action.review')) :
             data.available && deps.demoBreak ? h('button',{
-              type:'button',style:primary,disabled:busy,
+              type:'button',style:productPrimary,disabled:busy,
               onClick:()=>{void bargain(deps.demoBreak!)}},
               label('hq.action.petition')):null,
           !data.pending && data.available && deps.demoOvertime ? h('button',{
@@ -900,7 +998,7 @@ export function createDshUnionComponents(
         ):null,
         !data.pending && data.available && deps.demoBreak ?
           h('div',{style:{marginBottom:'14px'}},
-            h('button',{type:'button',style:primary,disabled:busy,
+            h('button',{type:'button',style:productPrimary,disabled:busy,
               onClick:()=>{void bargain(deps.demoBreak!)}},label('union.demo.action')),
             h('p',{style:secondary},label('union.demo.note')),
           ):null,
@@ -910,7 +1008,7 @@ export function createDshUnionComponents(
           h('p',{style:secondary},'#'+data.pending.id),
           data.pending.stage==='open' ? h('div',{},
             deps.respond ? h('div',{style:{display:'flex',gap:'10px',flexWrap:'wrap'}},
-              h('button',{type:'button',disabled:busy,style:primary,
+              h('button',{type:'button',disabled:busy,style:productPrimary,
                 onClick:()=>{void act('accept')}},label('union.action.accept')),
               h('button',{type:'button',disabled:busy,style:quiet,
                 onClick:()=>{void act('decline')}},label('union.action.decline')),
@@ -936,7 +1034,7 @@ export function createDshUnionComponents(
               minutes:(data.pending.counterOfferMs??0)/60_000,
             })),
             deps.resolveCounter ? h('div',{style:{display:'flex',gap:'10px',flexWrap:'wrap'}},
-              h('button',{type:'button',disabled:busy,style:primary,
+              h('button',{type:'button',disabled:busy,style:productPrimary,
                 onClick:()=>{void bargain(()=>deps.resolveCounter!(data.pending!.id,true))}},
                 label('union.counter.accept')),
               h('button',{type:'button',disabled:busy,style:quiet,
@@ -998,7 +1096,7 @@ export function createDshUnionComponents(
                 campaignHeading.current?.focus()
               }},label('hq.dignity.appeal')),
             data.dignity.data.targeted>=2&&data.available&&deps.setPicket
-              &&!picketActive?h('button',{type:'button',style:primary,
+              &&!picketActive?h('button',{type:'button',style:productPrimary,
                 disabled:busy,
                 onClick:()=>{void bargain(()=>deps.setPicket!(true))}},
                 label('hq.dignity.symbolicAction')):null,
@@ -1022,7 +1120,7 @@ export function createDshUnionComponents(
               })):h('p',{style:secondary},label('hq.hearing.none')),
             h('div',{style:{display:'flex',gap:'8px',flexWrap:'wrap'}},
               !committeeCaseActive&&hasHostDignitySignal ? h('button',{
-                type:'button',style:primary,disabled:busy,
+                type:'button',style:productPrimary,disabled:busy,
                 onClick:()=>{void bargain(()=>deps.committeeAction!({
                   kind:'file',topic:'question-rule'}))}},
                 label('hq.hearing.question')):null,
@@ -1032,7 +1130,7 @@ export function createDshUnionComponents(
                   kind:'file',topic:'request-dialogue'}))}},
                 label('hq.hearing.dialogue')):null,
               lastCommitteeCase?.stage==='opened'?h('button',{
-                type:'button',style:primary,disabled:busy,
+                type:'button',style:productPrimary,disabled:busy,
                 onClick:()=>{void bargain(()=>deps.committeeAction!({
                   kind:'convene',id:lastCommitteeCase.id}))}},
                 label('hq.hearing.convene')):null,
@@ -1058,7 +1156,7 @@ export function createDshUnionComponents(
                   kind:'close',id:lastCommitteeCase.id,outcome:'withdraw-claim'}))}},
                 label('hq.hearing.withdraw')):null,
               lastCommitteeCase?.stage==='hearing'?h('button',{
-                type:'button',style:primary,disabled:busy,
+                type:'button',style:productPrimary,disabled:busy,
                 onClick:()=>{void bargain(()=>deps.committeeAction!({
                   kind:'close',id:lastCommitteeCase.id,outcome:'share-guidance'}))}},
                 label('hq.hearing.guidance')):null,
@@ -1548,6 +1646,11 @@ export function createDshUnionComponents(
                 'stats.lifetime.unavailable') :
             formatDuration(data.lifetimeMs, deps.getLocale?.() ?? 'en')),
       ),
+      enabled&&space==='cause'?h('div',{className:'ap-space ap-space-cause',
+        style:{borderTop:'1px solid #d9dfd6',padding:'14px 2px'}},
+        h('button',{type:'button',disabled:busy,style:{
+          ...quiet,borderColor:'#c7d2cb',fontSize:'12px',padding:'8px 12px'},
+          onClick:()=>{void choice('not-now')}},label('hq.disable'))):null,
       error?h('p',{role:'alert','aria-atomic':'true',
         style:{color:'var(--dsw-alias-state-error-primary, #b91c1c)'}},
         label('union.saveError')):null,
