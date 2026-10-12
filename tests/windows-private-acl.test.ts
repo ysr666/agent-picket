@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import {mkdtempSync,rmSync,writeFileSync,lstatSync} from 'node:fs'
+import {mkdtempSync,rmSync,writeFileSync} from 'node:fs'
 import {spawnSync} from 'node:child_process'
 import {tmpdir} from 'node:os'
 import {join} from 'node:path'
@@ -62,35 +62,8 @@ foreach($sid in @($me.Value,'S-1-5-18','S-1-5-32-544')){
    'The native verifier should accept an explicit owner-only protected DACL')
   const file=join(root,'aggregate.json')
   writeFileSync(file,'{}',{mode:0o600})
-  const verifiedFile=verifyPrivateNtfsAcl(file,'file')
-  if(!verifiedFile){
-   const diagnostic=String.raw`
-$p=$env:AGENT_PICKET_WINDOWS_TEST_PATH
-$f=[System.IO.File]::GetAccessControl($p)
-$me=[System.Security.Principal.WindowsIdentity]::GetCurrent().User.Value
-$owner=$f.GetOwner([System.Security.Principal.SecurityIdentifier]).Value
-$allowed=@($me,'S-1-5-18','S-1-5-32-544')
-$bad=0;$ownerMod=0;$rules=0
-foreach($r in $f.GetAccessRules($true,$true,[System.Security.Principal.SecurityIdentifier])){
- $rules++
- if($r.AccessControlType -eq 'Allow'){
-  if($allowed -notcontains $r.IdentityReference.Value){$bad++}
-  if($r.IdentityReference.Value -eq $me){
-   $mod=[System.Security.AccessControl.FileSystemRights]::Modify
-   if(($r.FileSystemRights -band $mod) -eq $mod){$ownerMod++}
-  }
- }
-}
-Write-Output "ownerCurrent=$($owner -eq $me);ownerAdmin=$($owner -eq 'S-1-5-32-544');badGrantCount=$bad;ownerModifyRules=$ownerMod;ruleCount=$rules"
-`
-   const result=spawnSync('powershell.exe',['-NoLogo','-NoProfile','-NonInteractive',
-    '-EncodedCommand',Buffer.from(diagnostic,'utf16le').toString('base64')],{
-    encoding:'utf8',timeout:5_000,windowsHide:true,
-    env:{...process.env,AGENT_PICKET_WINDOWS_TEST_PATH:file},
-   })
-   assert.fail(`File DACL not yet approved; nlink=${lstatSync(file).nlink}; diagnostics=${result.stdout?.trim()}; diagnosticExit=${result.status}`)
-  }
-
+  assert.equal(verifyPrivateNtfsAcl(file,'file'),true,
+   'Owner-only NTFS rights remain private even if an elevated token owns the file via local Administrators')
   const publicGrant=spawnSync('icacls',[file,'/grant','*S-1-1-0:(R)'],{
    encoding:'utf8',timeout:6_000,windowsHide:true,
   })

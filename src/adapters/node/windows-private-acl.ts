@@ -17,7 +17,11 @@ $me=[System.Security.Principal.WindowsIdentity]::GetCurrent().User.Value
 try {
  $owner=([System.Security.Principal.NTAccount]$acl.Owner).Translate([System.Security.Principal.SecurityIdentifier]).Value
 }catch {exit 12}
-if($owner -ne $me){exit 13}
+# A Windows elevated token may create files owned by builtin Administrators,
+# like POSIX root. Only permit that for files with explicit current-user
+# Modify rights and NO untrusted allow ACE; directories require exact owner.
+if($owner -ne $me -and -not ((-not $item.PSIsContainer) -and
+ $owner -eq 'S-1-5-32-544')){exit 13}
 if($item.PSIsContainer -and -not $acl.AreAccessRulesProtected){exit 14}
 $allowed=@($me,'S-1-5-18','S-1-5-32-544')
 $hasOwnerModify=$false
