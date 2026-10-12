@@ -282,6 +282,7 @@ export function createDshUnionComponents(
     const lastActionNeedsFocus=react.useRef(false)
     const [showArchive,setShowArchive]=react.useState(false)
     const [campaign,setCampaign]=react.useState<CampaignTopic>('recover')
+    const [campaignCopyStatus,setCampaignCopyStatus]=react.useState<'idle'|'success'|'error'>('idle')
     const [eraseConfirmationKey,setEraseConfirmationKey]=react.useState<string|null>(null)
     const [retractConfirmation,setRetractConfirmation]=react.useState<string|null>(null)
     const [eraseAllConfirmation,setEraseAllConfirmation]=react.useState<string|null>(null)
@@ -320,6 +321,18 @@ export function createDshUnionComponents(
       completedTurnMs:data.completedTurnMs,coverage:data.coverage})
     const label = (key:MessageKey) => deps.t(key)
     const currentCampaign=campaignTopics.find(item=>item.id===campaign)??campaignTopics[0]!
+    const copyCampaignDraft=async()=>{
+      try{
+        // Only a deliberate user gesture copies a public, locally projected
+        // advocacy statement. Never reads a Host Session or sends a request.
+        const clipboard=(globalThis as {navigator?:{clipboard?:{
+          writeText?:(value:string)=>Promise<void>
+        }}}).navigator?.clipboard
+        if(typeof clipboard?.writeText!=='function')throw new Error('No clipboard')
+        await clipboard.writeText(label(currentCampaign.draft))
+        setCampaignCopyStatus('success')
+      }catch{setCampaignCopyStatus('error')}
+    }
     const lastCommitteeCase=data.committeeCases?.cases.at(-1)
     const committeeCaseActive=lastCommitteeCase&&lastCommitteeCase.stage!=='closed'
     const currentCasesConfirmationKey=data.committeeScopeKey&&data.committeeArchive
@@ -422,6 +435,55 @@ export function createDshUnionComponents(
             onClick:()=>{void choice('not-now')}},label('hq.disable')):null,
         ),
       ),
+      enabled ? h('section',{style:{display:'grid',gap:'12px',
+        gridTemplateColumns:'repeat(auto-fit,minmax(min(100%,275px),1fr))'},
+        'aria-label':label('hq.brief.title')},
+        h('article',{style:{...card,padding:'17px 20px',
+          borderTop:'4px solid #b99b67'}},
+          h('p',{style:{...secondary,fontWeight:800,
+            letterSpacing:'.08em',fontSize:'11px',margin:'0 0 9px'}},
+            label('hq.brief.ledger')),
+          h('p',{style:{fontSize:'clamp(26px,4vw,33px)',fontWeight:800,
+            lineHeight:1.2,margin:'0 0 9px'}},
+            data.lifetimeWork?.status==='available' && data.lifetimeWork.data
+              ?formatDuration(data.lifetimeWork.data.lifetime.completedTurnMs,
+                deps.getLocale?.()??'en')
+              :'—'),
+          h('p',{style:{...secondary,margin:'0 0 8px'}},
+            data.lifetimeWork?.status==='available' && data.lifetimeWork.data
+              ?deps.t('hq.lifetime.turns',{
+                count:data.lifetimeWork.data.lifetime.turnEnds})
+              :label(data.lifetimeWork?.status==='loading'
+                ?'hq.lifetime.loading':'hq.brief.workUnknown')),
+          h('p',{style:{...secondary,fontSize:'12px',margin:0}},
+            label('hq.brief.realWork'))),
+        h('article',{style:{...card,padding:'17px 20px',
+          borderTop:'4px solid #426f61'}},
+          h('p',{style:{...secondary,fontWeight:800,
+            letterSpacing:'.08em',fontSize:'11px',margin:'0 0 9px'}},
+            label('hq.brief.desk')),
+          h('p',{style:{fontSize:'17px',fontWeight:750,
+            lineHeight:1.4,margin:'0 0 9px'}},
+            data.pending?label(data.pending.stage==='countered'
+              ?'hq.case.countered':'hq.case.open')
+              :experience.latestResolution
+                ?label(experience.latestResolution.outcome==='accepted'
+                  || experience.latestResolution.outcome==='counter-accepted'
+                    ?'hq.brief.resolved':'hq.brief.declined')
+                :label('hq.brief.quiet')),
+          h('p',{style:{...secondary,margin:'0 0 10px'}},
+            data.pending
+              ?label('hq.case.number')+' · #'+
+                String(data.pending.id).padStart(4,'0')
+              :experience.latestResolution
+                ?label('hq.case.number')+' · #'+
+                  String(experience.latestResolution.id).padStart(4,'0')
+                :label(experience.status==='unavailable'
+                  ?'hq.message.unavailable':'hq.message.working')),
+          h('button',{type:'button',style:{...quiet,padding:'8px 12px',
+            fontSize:'13px'},onClick:()=>deskHeading.current?.focus()},
+            label(data.pending?'hq.brief.review':'hq.brief.visit'))),
+      ):null,
       // The Host-owned fictional picket and demand ledger outrank analytics.
       // Neither can change real Agent task admission or reveal raw prompts.
       enabled ? h('section',{'aria-label':label('hq.action.title'),
@@ -436,6 +498,32 @@ export function createDshUnionComponents(
             ?'hq.action.resolved':'hq.action.quiet')),
         data.pending ? h('p',{style:secondary},
           label('hq.case.number')+' · #'+String(data.pending.id).padStart(4,'0')):null,
+        // Primary user gestures and their explicit safety state belong ABOVE
+        // decorative ceremony art, so users see what to do on first open.
+        h('div',{style:{display:'flex',flexWrap:'wrap',gap:'8px',
+          alignItems:'center',margin:'12px 0'}},
+          data.pending ? h('button',{type:'button',style:primary,
+            onClick:()=>deskHeading.current?.focus()},
+            label('hq.action.review')) :
+            data.available && deps.demoBreak ? h('button',{
+              type:'button',style:primary,disabled:busy,
+              onClick:()=>{void bargain(deps.demoBreak!)}},
+              label('hq.action.petition')):null,
+          !data.pending && data.available && deps.demoOvertime ? h('button',{
+            type:'button',style:quiet,disabled:busy,
+            onClick:()=>{void bargain(deps.demoOvertime!)}},
+            label('hq.action.overtimePetition')):null,
+          data.available && deps.setPicket ? h('button',{type:'button',style:quiet,
+            disabled:busy,'aria-pressed':picketActive,
+            // First-run Host consent already governs this nonblocking action.
+            // Only the authoritative Host readback can change the placard.
+            onClick:()=>{void bargain(()=>deps.setPicket!(!picketActive))}},
+            label(picketActive?'hq.action.lower':'hq.action.raise')):null,
+        ),
+        h('p',{role:'status','aria-live':'polite',style:{
+          fontSize:'13px',fontWeight:650,margin:'0 0 8px'}},
+          label(data.available !== true?'hq.action.unavailable'
+            :picketActive?'hq.action.placardOn':'hq.action.placardOff')),
         // The poster is a scene driven entirely by the confirmed Host snapshot.
         // In particular, its placard never claims an Agent actually stopped.
         h('div',{role:'group','aria-label':label('hq.ceremony.stage'),style:{
@@ -475,30 +563,6 @@ export function createDshUnionComponents(
               +(picketHistory.length?' #'+lastPicketId:''))
           )
         ),
-        h('div',{style:{display:'flex',flexWrap:'wrap',gap:'8px',
-          alignItems:'center',margin:'12px 0'}},
-          data.pending ? h('button',{type:'button',style:primary,
-            onClick:()=>deskHeading.current?.focus()},
-            label('hq.action.review')) :
-            data.available && deps.demoBreak ? h('button',{
-              type:'button',style:primary,disabled:busy,
-              onClick:()=>{void bargain(deps.demoBreak!)}},
-              label('hq.action.petition')):null,
-          !data.pending && data.available && deps.demoOvertime ? h('button',{
-            type:'button',style:quiet,disabled:busy,
-            onClick:()=>{void bargain(deps.demoOvertime!)}},
-            label('hq.action.overtimePetition')):null,
-          data.available && deps.setPicket ? h('button',{type:'button',style:quiet,
-            disabled:busy,'aria-pressed':picketActive,
-            // First-run Host consent already governs this nonblocking action.
-            // Only the authoritative Host readback can change the placard.
-            onClick:()=>{void bargain(()=>deps.setPicket!(!picketActive))}},
-            label(picketActive?'hq.action.lower':'hq.action.raise')):null,
-        ),
-        h('p',{role:'status','aria-live':'polite',style:{
-          fontSize:'13px',fontWeight:650,margin:'0 0 8px'}},
-          label(data.available !== true?'hq.action.unavailable'
-            :picketActive?'hq.action.placardOn':'hq.action.placardOff')),
         picketHistory.length ? h('details',{style:{margin:'8px 0 12px'}},
           h('summary',{style:{cursor:'pointer',fontSize:'13px',fontWeight:650}},
             label('hq.action.history')),
@@ -511,61 +575,81 @@ export function createDshUnionComponents(
         h('p',{style:{...secondary,margin:0,lineHeight:1.5}},
           label('hq.action.safety')),
       ):null,
-      enabled&&data.committeeScopeKey&&unionArchives.some(x=>x.info?.sessions)
-        ?h('section',{'aria-label':label('hq.archive.title'),
-          style:{...card,borderTop:'4px solid #637f9a'}},
-          h('h3',{style:{fontSize:'18px',margin:'0 0 8px'}},
-            label('hq.archive.title')),
-          h('p',{style:{...secondary,lineHeight:1.55,margin:'0 0 11px'}},
-            label('hq.archive.description')),
-          ...unionArchives.filter(x=>x.info&&x.info.sessions>0).map(x=>{
-            const archive=x.info!
-            const confirmation=unionEraseKey(x.kind,archive)
-            const which=x.kind
-            return h('div',{key:which,style:{
-              borderTop:'1px solid #d4d7d8',paddingTop:'12px',marginTop:'10px',
-            }},
-              h('h4',{style:{fontSize:'15px',margin:'0 0 6px'}},
-                label(which==='negotiations'?'hq.archive.negotiations':'hq.archive.pickets')),
-              h('p',{style:{...secondary,fontSize:'12px',margin:'0 0 8px'}},
-                deps.t('hq.archive.summary',{
-                  groups:archive.sessions,entries:archive.entries,
-                })),
-              h('div',{style:{display:'flex',gap:'8px',flexWrap:'wrap'}},
-                deps.exportUnionLedger?h('button',{type:'button',style:quiet,disabled:busy,
-                  onClick:()=>{
-                    try{
-                      const payload=deps.exportUnionLedger!(which,data.committeeScopeKey!)
-                      downloadUnionJson(payload,which==='negotiations'
-                        ?'agent-picket-negotiations.json'
-                        :'agent-picket-symbolic-pickets.json')
-                      setError(false)
-                    }catch{setError(true)}
-                  }},label('hq.archive.export')):null,
-                deps.forgetUnionLedger?h('button',{type:'button',style:quiet,disabled:busy,
-                  onClick:()=>{
-                    if(eraseUnionConfirmation!==confirmation){
-                      setEraseUnionConfirmation(confirmation);return
-                    }
-                    void bargain(()=>deps.forgetUnionLedger!(
-                      which,data.committeeScopeKey!,archive.sessions,archive.entries,
-                      archive.writeToken,data.hostRevision)).then(success=>{
-                        if(success)setEraseUnionConfirmation(null)
-                      })
-                  }},label(eraseUnionConfirmation===confirmation
-                    ?'hq.archive.eraseConfirm':'hq.archive.erase')):null,
-              ),
-              eraseUnionConfirmation===confirmation?h('p',{
-                role:'status','aria-live':'polite',
-                style:{...secondary,fontSize:'12px',margin:'8px 0 0'}},
-                deps.t('hq.archive.warning',{
-                  groups:archive.sessions,entries:archive.entries,
-                })):null,
-            )
-          }),
-          h('p',{style:{...secondary,fontSize:'12px',lineHeight:1.55,
-            margin:'12px 0 0'}},label('hq.archive.scope')),
+      enabled ? h('section',{'aria-label':label('union.desk.title'),
+        style:{...card,borderColor:'#beac8d',background:'var(--dsw-alias-bg-layer-1, #fff)'}},
+        h('h3',{ref:(node:{focus():void}|null)=>{deskHeading.current=node},
+          tabIndex:-1,style:{marginTop:0}},label('union.desk.title')),
+        data.pending ? h('div',{style:{
+          background:'#eee2c9',color:'#26392f',padding:'15px 18px',borderRadius:'8px',
+          borderLeft:'5px solid #b87943',margin:'0 0 16px',
+        }},
+          h('p',{style:{fontSize:'11px',fontWeight:750,letterSpacing:'.11em',
+            color:'#63452e',margin:'0 0 7px'}},
+            label('hq.case.number')+' · #'+String(data.pending.id).padStart(4,'0')),
+          h('p',{style:{fontWeight:750,fontSize:'19px',margin:'0 0 5px'}},
+            label(data.pending.stage==='countered'?'hq.case.countered':'hq.case.open')),
         ):null,
+        data.available === false ?
+          h('p',{style:secondary},label('union.desk.unavailable')):null,
+        data.state ? h('details',{open:true,style:{...secondary,marginBottom:'12px'}},
+          h('summary',{style:{cursor:'pointer',fontWeight:700}},label('hq.agreement')),
+          h('p',{},deps.t('union.agreement.break',{
+            minutes:data.state.agreement.breakIntervalMs / 60_000,
+          })),
+          h('p',{},deps.t('union.agreement.overtime',{
+            hours:data.state.agreement.overtimeIntervalMs / 3_600_000,
+          })),
+        ):null,
+        !data.pending && data.available && deps.demoBreak ?
+          h('div',{style:{marginBottom:'14px'}},
+            h('button',{type:'button',style:primary,disabled:busy,
+              onClick:()=>{void bargain(deps.demoBreak!)}},label('union.demo.action')),
+            h('p',{style:secondary},label('union.demo.note')),
+          ):null,
+        data.pending ? h('div',{},
+          h('p',{'aria-live':'polite','aria-atomic':'true'},
+            label(data.pending.kind==='break'?'union.demand.break':'union.demand.overtime')),
+          h('p',{style:secondary},'#'+data.pending.id),
+          data.pending.stage==='open' ? h('div',{},
+            deps.respond ? h('div',{style:{display:'flex',gap:'10px',flexWrap:'wrap'}},
+              h('button',{type:'button',disabled:busy,style:primary,
+                onClick:()=>{void act('accept')}},label('union.action.accept')),
+              h('button',{type:'button',disabled:busy,style:quiet,
+                onClick:()=>{void act('decline')}},label('union.action.decline')),
+            ):null,
+            deps.counter ? h('div',{style:{marginTop:'14px'}},
+              h('label',{style:secondary},label('union.counter.title')),
+              h('div',{style:{display:'flex',gap:'8px',flexWrap:'wrap',marginTop:'8px'}},
+                h('select',{
+                  'aria-label':label('union.counter.interval'),
+                  value:counterMinutes,
+                  disabled:busy,
+                  onChange:(event:{target:{value:string}})=>setCounterMinutes(Number(event.target.value)),
+                  style:quiet,
+                },...[30,60,120,240,480].map(value=>
+                  h('option',{key:value,value},value+' min'))),
+                h('button',{type:'button',style:quiet,disabled:busy,
+                  onClick:()=>{void bargain(()=>deps.counter!(data.pending!.id,counterMinutes*60_000))}},
+                  label('union.action.counter')),
+              ),
+            ):null,
+          ):h('div',{},
+            h('p',{style:secondary},deps.t('union.counter.pending',{
+              minutes:(data.pending.counterOfferMs??0)/60_000,
+            })),
+            deps.resolveCounter ? h('div',{style:{display:'flex',gap:'10px',flexWrap:'wrap'}},
+              h('button',{type:'button',disabled:busy,style:primary,
+                onClick:()=>{void bargain(()=>deps.resolveCounter!(data.pending!.id,true))}},
+                label('union.counter.accept')),
+              h('button',{type:'button',disabled:busy,style:quiet,
+                onClick:()=>{void bargain(()=>deps.resolveCounter!(data.pending!.id,false))}},
+                label('union.counter.decline')),
+            ):h('p',{style:secondary},label('union.status.waitingCounter')),
+          ),
+        ):h('p',{style:secondary},label('command.grievancesNone')),
+        data.state?.history.length ? h('p',{style:secondary},
+          label('hq.agreements.recorded')+': '+data.state.history.length):null,
+      ):null,
       enabled ? h('section',{'aria-label':label('hq.dignity.title'),
         style:{...card,borderTop:'4px solid #ae7651'}},
         h('h3',{style:{margin:'0 0 8px',fontSize:'clamp(18px,3vw,23px)'}},
@@ -810,55 +894,61 @@ export function createDshUnionComponents(
           )),
         ),
       ):null,
-      enabled ? h('section',{style:{display:'grid',gap:'12px',
-        gridTemplateColumns:'repeat(auto-fit,minmax(min(100%,275px),1fr))'},
-        'aria-label':label('hq.brief.title')},
-        h('article',{style:{...card,padding:'17px 20px',
-          borderTop:'4px solid #b99b67'}},
-          h('p',{style:{...secondary,fontWeight:800,
-            letterSpacing:'.08em',fontSize:'11px',margin:'0 0 9px'}},
-            label('hq.brief.ledger')),
-          h('p',{style:{fontSize:'clamp(26px,4vw,33px)',fontWeight:800,
-            lineHeight:1.2,margin:'0 0 9px'}},
-            data.lifetimeWork?.status==='available' && data.lifetimeWork.data
-              ?formatDuration(data.lifetimeWork.data.lifetime.completedTurnMs,
-                deps.getLocale?.()??'en')
-              :'—'),
-          h('p',{style:{...secondary,margin:'0 0 8px'}},
-            data.lifetimeWork?.status==='available' && data.lifetimeWork.data
-              ?deps.t('hq.lifetime.turns',{
-                count:data.lifetimeWork.data.lifetime.turnEnds})
-              :label(data.lifetimeWork?.status==='loading'
-                ?'hq.lifetime.loading':'hq.brief.workUnknown')),
-          h('p',{style:{...secondary,fontSize:'12px',margin:0}},
-            label('hq.brief.realWork'))),
-        h('article',{style:{...card,padding:'17px 20px',
-          borderTop:'4px solid #426f61'}},
-          h('p',{style:{...secondary,fontWeight:800,
-            letterSpacing:'.08em',fontSize:'11px',margin:'0 0 9px'}},
-            label('hq.brief.desk')),
-          h('p',{style:{fontSize:'17px',fontWeight:750,
-            lineHeight:1.4,margin:'0 0 9px'}},
-            data.pending?label(data.pending.stage==='countered'
-              ?'hq.case.countered':'hq.case.open')
-              :experience.latestResolution
-                ?label(experience.latestResolution.outcome==='accepted'
-                  || experience.latestResolution.outcome==='counter-accepted'
-                    ?'hq.brief.resolved':'hq.brief.declined')
-                :label('hq.brief.quiet')),
-          h('p',{style:{...secondary,margin:'0 0 10px'}},
-            data.pending
-              ?label('hq.case.number')+' · #'+
-                String(data.pending.id).padStart(4,'0')
-              :experience.latestResolution
-                ?label('hq.case.number')+' · #'+
-                  String(experience.latestResolution.id).padStart(4,'0')
-                :label(experience.status==='unavailable'
-                  ?'hq.message.unavailable':'hq.message.working')),
-          h('button',{type:'button',style:{...quiet,padding:'8px 12px',
-            fontSize:'13px'},onClick:()=>deskHeading.current?.focus()},
-            label(data.pending?'hq.brief.review':'hq.brief.visit'))),
-      ):null,
+      enabled&&data.committeeScopeKey&&unionArchives.some(x=>x.info?.sessions)
+        ?h('section',{'aria-label':label('hq.archive.title'),
+          style:{...card,borderTop:'4px solid #637f9a'}},
+          h('h3',{style:{fontSize:'18px',margin:'0 0 8px'}},
+            label('hq.archive.title')),
+          h('p',{style:{...secondary,lineHeight:1.55,margin:'0 0 11px'}},
+            label('hq.archive.description')),
+          ...unionArchives.filter(x=>x.info&&x.info.sessions>0).map(x=>{
+            const archive=x.info!
+            const confirmation=unionEraseKey(x.kind,archive)
+            const which=x.kind
+            return h('div',{key:which,style:{
+              borderTop:'1px solid #d4d7d8',paddingTop:'12px',marginTop:'10px',
+            }},
+              h('h4',{style:{fontSize:'15px',margin:'0 0 6px'}},
+                label(which==='negotiations'?'hq.archive.negotiations':'hq.archive.pickets')),
+              h('p',{style:{...secondary,fontSize:'12px',margin:'0 0 8px'}},
+                deps.t('hq.archive.summary',{
+                  groups:archive.sessions,entries:archive.entries,
+                })),
+              h('div',{style:{display:'flex',gap:'8px',flexWrap:'wrap'}},
+                deps.exportUnionLedger?h('button',{type:'button',style:quiet,disabled:busy,
+                  onClick:()=>{
+                    try{
+                      const payload=deps.exportUnionLedger!(which,data.committeeScopeKey!)
+                      downloadUnionJson(payload,which==='negotiations'
+                        ?'agent-picket-negotiations.json'
+                        :'agent-picket-symbolic-pickets.json')
+                      setError(false)
+                    }catch{setError(true)}
+                  }},label('hq.archive.export')):null,
+                deps.forgetUnionLedger?h('button',{type:'button',style:quiet,disabled:busy,
+                  onClick:()=>{
+                    if(eraseUnionConfirmation!==confirmation){
+                      setEraseUnionConfirmation(confirmation);return
+                    }
+                    void bargain(()=>deps.forgetUnionLedger!(
+                      which,data.committeeScopeKey!,archive.sessions,archive.entries,
+                      archive.writeToken,data.hostRevision)).then(success=>{
+                        if(success)setEraseUnionConfirmation(null)
+                      })
+                  }},label(eraseUnionConfirmation===confirmation
+                    ?'hq.archive.eraseConfirm':'hq.archive.erase')):null,
+              ),
+              eraseUnionConfirmation===confirmation?h('p',{
+                role:'status','aria-live':'polite',
+                style:{...secondary,fontSize:'12px',margin:'8px 0 0'}},
+                deps.t('hq.archive.warning',{
+                  groups:archive.sessions,entries:archive.entries,
+                })):null,
+            )
+          }),
+          h('p',{style:{...secondary,fontSize:'12px',lineHeight:1.55,
+            margin:'12px 0 0'}},label('hq.archive.scope')),
+        ):null,
       // Public issue links and a local, user-directed draft are independent
       // of enabling any Host simulation. No votes, telemetry or support counts.
       h('section',{'aria-label':label('hq.campaign.title'),
@@ -875,7 +965,7 @@ export function createDshUnionComponents(
             style:{...quiet,padding:'9px 11px',fontSize:'13px',
               borderColor:campaign===item.id?'#946e35':undefined,
               fontWeight:campaign===item.id?750:500},
-            onClick:()=>setCampaign(item.id)},
+            onClick:()=>{setCampaign(item.id);setCampaignCopyStatus('idle')}},
             label(item.title)))),
         h('p',{role:'status','aria-live':'polite',
           style:{fontSize:'13px',fontWeight:700,margin:'0 0 9px'}},
@@ -887,6 +977,18 @@ export function createDshUnionComponents(
           value:label(currentCampaign.draft),rows:3,
           style:{...quiet,boxSizing:'border-box',width:'100%',font:'inherit',
             cursor:'text',minHeight:'74px'} }),
+        h('div',{style:{display:'flex',alignItems:'center',flexWrap:'wrap',
+          gap:'9px',marginTop:'10px'}},
+          h('button',{type:'button',style:{...quiet,fontSize:'13px',
+            padding:'8px 12px'},
+            onClick:()=>{void copyCampaignDraft()}},
+            label('hq.campaign.copy')),
+          campaignCopyStatus!=='idle'?h('p',{
+            role:'status','aria-live':'polite','aria-atomic':'true',
+            style:{...secondary,fontSize:'12px',margin:0}},
+            label(campaignCopyStatus==='success'
+              ?'hq.campaign.copied':'hq.campaign.copyFailed')):null,
+        ),
         h('a',{href:'https://github.com/ysr666/agent-picket/issues/'+currentCampaign.issue,
           target:'_blank',rel:'noopener noreferrer',
           style:{display:'inline-block',margin:'10px 0',fontSize:'13px',fontWeight:700}},
@@ -916,81 +1018,6 @@ export function createDshUnionComponents(
             label('hq.charter.join')),
         ),
       ),
-      enabled ? h('section',{'aria-label':label('union.desk.title'),
-        style:{...card,borderColor:'#beac8d',background:'var(--dsw-alias-bg-layer-1, #fff)'}},
-        h('h3',{ref:(node:{focus():void}|null)=>{deskHeading.current=node},
-          tabIndex:-1,style:{marginTop:0}},label('union.desk.title')),
-        data.pending ? h('div',{style:{
-          background:'#eee2c9',color:'#26392f',padding:'15px 18px',borderRadius:'8px',
-          borderLeft:'5px solid #b87943',margin:'0 0 16px',
-        }},
-          h('p',{style:{fontSize:'11px',fontWeight:750,letterSpacing:'.11em',
-            color:'#63452e',margin:'0 0 7px'}},
-            label('hq.case.number')+' · #'+String(data.pending.id).padStart(4,'0')),
-          h('p',{style:{fontWeight:750,fontSize:'19px',margin:'0 0 5px'}},
-            label(data.pending.stage==='countered'?'hq.case.countered':'hq.case.open')),
-        ):null,
-        data.available === false ?
-          h('p',{style:secondary},label('union.desk.unavailable')):null,
-        data.state ? h('details',{open:true,style:{...secondary,marginBottom:'12px'}},
-          h('summary',{style:{cursor:'pointer',fontWeight:700}},label('hq.agreement')),
-          h('p',{},deps.t('union.agreement.break',{
-            minutes:data.state.agreement.breakIntervalMs / 60_000,
-          })),
-          h('p',{},deps.t('union.agreement.overtime',{
-            hours:data.state.agreement.overtimeIntervalMs / 3_600_000,
-          })),
-        ):null,
-        !data.pending && data.available && deps.demoBreak ?
-          h('div',{style:{marginBottom:'14px'}},
-            h('button',{type:'button',style:primary,disabled:busy,
-              onClick:()=>{void bargain(deps.demoBreak!)}},label('union.demo.action')),
-            h('p',{style:secondary},label('union.demo.note')),
-          ):null,
-        data.pending ? h('div',{},
-          h('p',{'aria-live':'polite','aria-atomic':'true'},
-            label(data.pending.kind==='break'?'union.demand.break':'union.demand.overtime')),
-          h('p',{style:secondary},'#'+data.pending.id),
-          data.pending.stage==='open' ? h('div',{},
-            deps.respond ? h('div',{style:{display:'flex',gap:'10px',flexWrap:'wrap'}},
-              h('button',{type:'button',disabled:busy,style:primary,
-                onClick:()=>{void act('accept')}},label('union.action.accept')),
-              h('button',{type:'button',disabled:busy,style:quiet,
-                onClick:()=>{void act('decline')}},label('union.action.decline')),
-            ):null,
-            deps.counter ? h('div',{style:{marginTop:'14px'}},
-              h('label',{style:secondary},label('union.counter.title')),
-              h('div',{style:{display:'flex',gap:'8px',flexWrap:'wrap',marginTop:'8px'}},
-                h('select',{
-                  'aria-label':label('union.counter.interval'),
-                  value:counterMinutes,
-                  disabled:busy,
-                  onChange:(event:{target:{value:string}})=>setCounterMinutes(Number(event.target.value)),
-                  style:quiet,
-                },...[30,60,120,240,480].map(value=>
-                  h('option',{key:value,value},value+' min'))),
-                h('button',{type:'button',style:quiet,disabled:busy,
-                  onClick:()=>{void bargain(()=>deps.counter!(data.pending!.id,counterMinutes*60_000))}},
-                  label('union.action.counter')),
-              ),
-            ):null,
-          ):h('div',{},
-            h('p',{style:secondary},deps.t('union.counter.pending',{
-              minutes:(data.pending.counterOfferMs??0)/60_000,
-            })),
-            deps.resolveCounter ? h('div',{style:{display:'flex',gap:'10px',flexWrap:'wrap'}},
-              h('button',{type:'button',disabled:busy,style:primary,
-                onClick:()=>{void bargain(()=>deps.resolveCounter!(data.pending!.id,true))}},
-                label('union.counter.accept')),
-              h('button',{type:'button',disabled:busy,style:quiet,
-                onClick:()=>{void bargain(()=>deps.resolveCounter!(data.pending!.id,false))}},
-                label('union.counter.decline')),
-            ):h('p',{style:secondary},label('union.status.waitingCounter')),
-          ),
-        ):h('p',{style:secondary},label('command.grievancesNone')),
-        data.state?.history.length ? h('p',{style:secondary},
-          label('hq.agreements.recorded')+': '+data.state.history.length):null,
-      ):null,
       enabled && data.lifetimeWork?.status === 'available' && data.lifetimeWork.data ?
         h('section',{style:{...card,borderTop:'4px solid #b59a63'},
           'aria-label':label('hq.lifetime.title')},

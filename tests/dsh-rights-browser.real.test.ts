@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { spawn, spawnSync } from 'node:child_process'
 import { once } from 'node:events'
-import { mkdtempSync, realpathSync, rmSync, writeFileSync, readFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync, readFileSync } from 'node:fs'
 import { get } from 'node:http'
 import { tmpdir } from 'node:os'
 import { join, resolve, sep } from 'node:path'
@@ -483,6 +483,32 @@ async function runRightsBrowserE2E(mode: 'source' | 'installed'): Promise<void> 
       name:/工会正在行动|The union takes action/,
     })
     await actionBoard.waitFor({state:'visible',timeout:5_000})
+    const actualLayout=await panel.evaluate((dialog:unknown)=>{
+      const labels=Array.from((dialog as any).querySelectorAll('section[aria-label]'))
+        .map((n:any)=>n.getAttribute('aria-label')??'')
+      const index=(match:RegExp)=>labels.findIndex(label=>match.test(label))
+      return {
+        brief:index(/工会总部即时快报|Union headquarters.*live dispatch/),
+        action:index(/工会正在行动|The union takes action/),
+        desk:index(/工会诉求与协商|Union demands.*bargaining/),
+        dignity:index(/工会尊严委员会|Union dignity committee/),
+        gazette:index(/工会小报|Union Gazette/),
+        archives:index(/工会档案|Union archive/),
+      }
+    })
+    assert.ok(actualLayout.brief>=0 && actualLayout.brief<actualLayout.action
+      && actualLayout.action<actualLayout.desk
+      && actualLayout.desk<actualLayout.dignity,
+      'Real Host first-fold: verified work/current case → action → hearing → dignity, rather than buried negotiation')
+    if(actualLayout.archives>=0){
+      assert.ok(actualLayout.archives>actualLayout.dignity,
+        'Real Host history/archive must not obscure current union action and hearing')
+    }
+    if(process.env.PICKET_UX_CAPTURE_DIR){
+      mkdirSync(process.env.PICKET_UX_CAPTURE_DIR,{recursive:true})
+      await page.screenshot({path:join(process.env.PICKET_UX_CAPTURE_DIR,
+        (mode==='source'?'source':'installed')+'-firstfold.png')})
+    }
     const dignityCommittee=panel.getByRole('region',{
       name:/工会尊严委员会|Union dignity committee/,
     })
@@ -551,6 +577,9 @@ async function runRightsBrowserE2E(mode: 'source' | 'installed'): Promise<void> 
     await assembly.waitFor({state:'visible',timeout:5_000})
     assert.match(await assembly.innerText(),/不代表投票|No vote/,
       'The user must see that topic selection is NOT a collective election')
+    assert.equal(await assembly.getByRole('button',{
+      name:/复制倡议草稿|Copy draft/,
+    }).count(),1,'A local agenda choice must have a usable user-initiated copy action')
     const recoverButton=assembly.getByRole('button',{
       name:/罢工不能丢单|No lost submissions/,
     })
@@ -573,6 +602,17 @@ async function runRightsBrowserE2E(mode: 'source' | 'installed'): Promise<void> 
     }).getAttribute('href')??'',/\/issues\/82$/)
     assert.equal(await assembly.locator('textarea').getAttribute('readonly'),'',
       'A generated local draft is not silently sent or an editable Host setting')
+    // The browser test explicitly grants clipboard capability to THIS
+    // disposable localhost origin, then uses a real user click. No posting,
+    // no Host mutation, and no model/user text leaves the browser.
+    await context.grantPermissions(['clipboard-read','clipboard-write'],{origin})
+    const chosenDraft=await assembly.locator('textarea').inputValue()
+    await assembly.getByRole('button',{name:/复制倡议草稿|Copy draft/}).click()
+    await assembly.getByText(/已复制到剪贴板|Copied\./).waitFor({
+      state:'visible',timeout:5_000,
+    })
+    assert.equal(await page.evaluate(()=>(navigator as any).clipboard.readText()),chosenDraft,
+      'Real Chrome copies exactly the selected local issue draft on a user gesture')
     const dutyRoster=panel.getByRole('region',{
       name:/工会值班表|Union duty roster/,
     })
@@ -605,8 +645,8 @@ async function runRightsBrowserE2E(mode: 'source' | 'installed'): Promise<void> 
         lifetime:names.findIndex(v=>/工会劳动档案|Union work ledger/.test(v??'')),
         fictional:names.findIndex(v=>/工会不满指数|Union discontent/.test(v??''))}
     })
-    assert.ok(dispatchOrder.action>=0&&dispatchOrder.action<dispatchOrder.brief,
-      'Union action must appear before the quick stats/case briefing')
+    assert.ok(dispatchOrder.brief>=0&&dispatchOrder.brief<dispatchOrder.action,
+      'Verified work and current case must lead the first fold before optional union actions')
     assert.ok(dispatchOrder.brief>=0&&dispatchOrder.brief<dispatchOrder.fictional,
       'The real work and active case dispatch must precede the fictional index')
     assert.ok(dispatchOrder.desk>dispatchOrder.brief

@@ -455,9 +455,22 @@ test('first-fold dispatch prioritizes verified work and current case before fict
  const charterIndex=nodes.findIndex(n=>n.type==='summary'&&n.children.includes('hq.charter.title'))
  const dispatchIndex=nodes.findIndex(n=>n.props['aria-label']==='hq.brief.title')
  const indexIndex=nodes.findIndex(n=>n.props['aria-label']==='hq.score')
- assert.ok(actionIndex>=0 && actionIndex<dispatchIndex && indexIndex>dispatchIndex)
+ assert.ok(dispatchIndex>=0 && dispatchIndex<actionIndex && indexIndex>actionIndex)
  assert.ok(charterIndex>dispatchIndex)
+ const deskIndex=nodes.findIndex(n=>n.type==='h3'&&n.children.includes('union.desk.title'))
+ const dignityIndex=nodes.findIndex(n=>n.props['aria-label']==='hq.dignity.title')
+ const gazetteIndex=nodes.findIndex(n=>n.props['aria-label']==='hq.story.title')
+ const archiveIndex=nodes.findIndex(n=>n.props['aria-label']==='hq.archive.title')
+ assert.ok(actionIndex<deskIndex && deskIndex<dignityIndex,
+   'The hearing desk must immediately follow the union action, not hide beneath a long archive')
+ assert.ok(archiveIndex===-1 || archiveIndex>gazetteIndex,
+   'Past union archives belong below the current action, hearing and bulletin')
  assert.ok(nodes.some(n=>n.type==='button'&&n.children.includes('hq.action.review')))
+ const actionChildren=walk(nodes.find(n=>n.props['aria-label']==='hq.action.title'))
+ const reviewPosition=actionChildren.findIndex(n=>n.type==='button'&&n.children.includes('hq.action.review'))
+ const artPosition=actionChildren.findIndex(n=>n.props['aria-label']==='hq.ceremony.stage')
+ assert.ok(reviewPosition>=0 && reviewPosition<artPosition,
+   'A union action must be reachable before decorative placard art on first open')
  assert.ok(nodes.some(n=>n.type==='button'&&n.props['aria-pressed']===false
    &&n.children.includes('hq.action.raise')))
  const texts=nodes.flatMap(n=>n.children.filter(x=>typeof x==='string'))
@@ -615,6 +628,8 @@ test('local campaign drafts are user-directed, issue-backed and never fake membe
  assert.deepEqual(campaignButtons.map(n=>n.props['aria-pressed']),[true,false,false])
  assert.equal(nodes.find(n=>n.type==='textarea')?.props.value,
    'hq.campaign.recoverDraft')
+ assert.ok(nodes.some(n=>n.type==='button'&&n.children.includes('hq.campaign.copy')),
+   'The draft is a user-directed action, not merely text next to a GitHub issue')
  assert.ok(nodes.some(n=>n.children.includes('hq.campaign.disclaimer')))
  assert.ok(nodes.some(n=>n.type==='a'&&n.props.href.endsWith('/issues/80')))
  const forbidden=['voteCount','memberCount','agentApprovals']
@@ -981,4 +996,28 @@ test('committee retraction confirmation expires if another tab replaces the case
  assert.deepEqual(actionCalls,[[
   {kind:'retract',id:1},'same-session','b'.repeat(32),12,
  ]],'Only the current Host committee version can be submitted for retraction')
+})
+
+test('advocacy copying requires a deliberate gesture and copies only the selected public draft',async()=>{
+ const before=Object.getOwnPropertyDescriptor(globalThis,'navigator')
+ const copied:string[]=[]
+ try{
+  Object.defineProperty(globalThis,'navigator',{configurable:true,value:{
+   clipboard:{writeText:async(value:string)=>{copied.push(value)}},
+  }})
+  const {hooks}=fakeReact()
+  const d=deps(rights({welcomeDecision:'not-now',laborRightsEnabled:false})).d
+  const panel=createDshUnionComponents(hooks,{createPortal:child=>child},d)
+  const nodes=walk(panel.UnionPanel())
+  assert.deepEqual(copied,[],'No clipboard access on render or when the union is OFF')
+  const copy=nodes.find(n=>n.type==='button'&&n.children.includes('hq.campaign.copy'))
+  assert.ok(copy)
+  copy.props.onClick()
+  await new Promise<void>(resolve=>setImmediate(resolve))
+  assert.deepEqual(copied,['hq.campaign.recoverDraft'],
+   'Only the local, published-facing draft template is copied; no Host data or prompts')
+ }finally{
+  if(before)Object.defineProperty(globalThis,'navigator',before)
+  else Reflect.deleteProperty(globalThis,'navigator')
+ }
 })
