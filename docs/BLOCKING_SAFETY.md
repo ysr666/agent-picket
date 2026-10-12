@@ -105,3 +105,11 @@ file receipt IDs pass through without transformation while an enforce-mode
 Core policy is configured. This does not assert that Host user-input
 recovery has been solved: real blocking remains OFF until genuine end-to-end
 text and attachment retention, provenance, reason and recovery are verified.
+
+## 2026-10-12 design correction: defer strike to an autonomous Goal round boundary
+
+The user clarified that real stoppage should preferentially wait until a **whole current Turn or Goal round finishes**; it need not reject the next human prompt or interrupt work. This opens an independent, official no-upstream-change route for **DSH autonomous Goal continuation**. See `docs/SAFE_BOUNDARY_STRIKE_DESIGN_20261012.zh.md`.
+
+In genuine isolated DSH **0.2.0-rc.2 and 0.2.1-alpha.2** runtime E2E, the official `agent/turn-stopping` callback can call `ctx.goals.block(agent, exactRef, reason)` after a Goal round's model/tool work and *before* the next automatic Goal round. The Host writes durable blocked phase and disarms continuation; `ctx.goals.resume` restores it. A `session/event: turn/end` callback **cannot** synchronously append `goal/change`: the actual Host reports `session append cannot reenter while another append is being published`. `goals.pause` on a running Agent is also not a safe substitute due to its driver's cancellation behavior.
+
+That E2E tested official Host stop/resume with **test-only synthetic threshold and consent**, not the complete end-user product, real 8h collection, verified direct-human provenance or complete cross-platform first-release gate. New versioned Host-authenticated consent and production wiring remain mandatory. Blocking all new ordinary user submissions without draft loss is a **different, still-unproven** Host surface; the Goal path must not be described as solving it.
