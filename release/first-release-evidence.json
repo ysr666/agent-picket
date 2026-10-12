@@ -1,0 +1,28 @@
+{
+  "schemaVersion": 1,
+  "release": "1.0.0",
+  "status": "blocked",
+  "surfaces": {
+    "web": {"status": "not-verified", "evidence": []},
+    "cli": {"status": "not-verified", "evidence": []},
+    "acp": {"status": "not-verified", "evidence": []}
+  },
+  "operatingSystems": {
+    "macos": {"status": "not-verified", "evidence": []},
+    "windows": {"status": "not-verified", "evidence": []},
+    "linux": {"status": "not-verified", "evidence": []}
+  },
+  "hosts": {
+    "dsh": {"status": "not-verified", "realEnforcement": "not-verified", "losslessRecovery": "not-verified", "verifiedHumanProvenance": "not-verified", "visibleRefusalAndResume": "not-verified", "evidence": []},
+    "codex": {"status": "not-verified", "realEnforcement": "not-verified", "losslessRecovery": "not-verified", "verifiedHumanProvenance": "not-verified", "visibleRefusalAndResume": "not-verified", "evidence": []},
+    "claude-code": {"status": "not-verified", "realEnforcement": "not-verified", "losslessRecovery": "not-verified", "verifiedHumanProvenance": "not-verified", "visibleRefusalAndResume": "not-verified", "evidence": []}
+  },
+  "userExperience": {
+    "unionHeadquarters": {"status": "not-verified", "evidence": []},
+    "settings": {"status": "not-verified", "evidence": []},
+    "firstRunWarning": {"status": "not-verified", "evidence": []},
+    "warningAppealResume": {"status": "not-verified", "evidence": []},
+    "responsiveAndAccessibility": {"status": "not-verified", "evidence": []}
+  },
+  "finalHumanApproval": false
+}

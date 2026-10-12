@@ -1053,3 +1053,42 @@ test('Union HQ projects a Host-sourced eight-hour day and cautious targeted-lang
  assert.equal(walk(createDshUnionComponents(hooks,{createPortal:child=>child},off).UnionPanel())
    .some(n=>n.props['aria-label']==='hq.alerts.title'),false)
 })
+
+
+test('first-run welcome explicitly warns about future real enforcement but never grants it',()=>{
+ const {hooks}=fakeReact()
+ const {d}=deps(rights({welcomeDecision:'unseen',laborRightsEnabled:false}))
+ const original=(globalThis as any).document
+ ;(globalThis as any).document={body:{},getElementById:()=>null}
+ try{
+   const {Welcome}=createDshUnionComponents(hooks,{createPortal:node=>node},d)
+   const nodes=walk(Welcome({complete:()=>{}}))
+   assert.ok(nodes.some(n=>n.props['aria-label']==='welcome.blockWarningTitle'))
+   assert.ok(nodes.some(n=>n.children.includes('welcome.blockWarningBody')))
+   assert.ok(nodes.some(n=>n.children.includes('welcome.blockWarningStatus')))
+   assert.equal(nodes.filter(n=>n.type==='button').length,2,
+     'An unsupported Host cannot expose an implicit or preselected block authorization')
+ }finally{(globalThis as any).document=original}
+})
+
+test('dedicated settings section only toggles Host-owned union permission',async()=>{
+ const {hooks}=fakeReact()
+ const initial=deps(rights({welcomeDecision:'enabled',laborRightsEnabled:true}))
+ const {SettingsPanel}=createDshUnionComponents(hooks,{createPortal:node=>node},initial.d)
+ const nodes=walk(SettingsPanel())
+ assert.ok(nodes.some(n=>n.props['aria-label']==='settings.unionSection'))
+ assert.ok(nodes.some(n=>n.children.includes('settings.realBlockingUnavailable')))
+ const disabled=nodes.filter(n=>n.type==='button'&&n.props.disabled===true)
+ assert.equal(disabled.length,2,'Both enforcement and per-strike controls must be unavailable')
+ const off=nodes.find(n=>n.type==='button'&&n.children.includes('settings.turnOff'))
+ assert.ok(off)
+ await off.props.onClick()
+ assert.deepEqual(initial.choices,['not-now'],
+   'The sole working preference writes to the authoritative Host choice')
+ const unavailable=deps(rights({state:'unavailable',writable:false,
+   welcomeDecision:'unseen',laborRightsEnabled:false}))
+ const panel=walk(createDshUnionComponents(hooks,{createPortal:node=>node},unavailable.d).SettingsPanel())
+ assert.ok(panel.some(n=>n.children.includes('settings.permissionUnavailable')))
+ assert.ok(panel.some(n=>n.type==='button'&&n.children.includes('settings.turnOn')
+   &&n.props.disabled===true))
+})

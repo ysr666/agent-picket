@@ -24,7 +24,8 @@
     "check:dsh-current": "bash scripts/verify-dsh-current-compat.sh",
     "check": "npm run typecheck && npm run build && npm test",
     "test:dsh:real": "node scripts/run-real-tests.mjs",
-    "build": "node scripts/clean-build.mjs && tsc -p tsconfig.build.json && node scripts/build-dsh-client.mjs"
+    "build": "node scripts/clean-build.mjs && tsc -p tsconfig.build.json && node scripts/build-dsh-client.mjs",
+    "release:gate": "node scripts/check-first-release.mjs"
   },
   "main": "./dist/adapters/dsh/plugin.js",
   "types": "./dist/adapters/dsh/plugin.d.ts",
@@ -54,6 +55,7 @@
     "LICENSE",
     "cordis.patch.yml",
     "docs/",
+    "!docs/RELEASE_1_0_NONNEGOTIABLE_20261012.zh.md",
     "!docs/AGENT_PICKET_V2_IMPLEMENTATION_AND_SAFETY_20261011.zh.md",
     "!docs/DSH_02_LIFETIME_AUTH_BRIDGE_RESEARCH.zh.md",
     "!docs/DSH_01_CROSS_OWNER_HOST_CAS_RESEARCH_20261012.md",

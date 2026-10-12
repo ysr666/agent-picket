@@ -256,6 +256,16 @@ export function createDshUnionComponents(
         h('p',{style:{lineHeight:1.7,margin:'0 0 10px'}},text('welcome.intro')),
         h('p',{style:{...secondary,lineHeight:1.65,margin:'0 0 25px'}},
           text('welcome.body')),
+        h('aside',{role:'note','aria-label':text('welcome.blockWarningTitle'),
+          style:{padding:'13px 16px',margin:'0 0 15px',borderRadius:'9px',
+            borderLeft:'4px solid #b97942',lineHeight:1.55,
+            background:'var(--dsw-alias-bg-layer-2, #f6f8fb)'}},
+          h('strong',{style:{display:'block',fontSize:'13px',marginBottom:'4px'}},
+            text('welcome.blockWarningTitle')),
+          h('p',{style:{...secondary,fontSize:'12px',margin:'0 0 6px'}},
+            text('welcome.blockWarningBody')),
+          h('p',{style:{...secondary,fontSize:'12px',margin:0}},
+            text('welcome.blockWarningStatus'))),
         h('p',{style:{...secondary,fontSize:'12px',margin:'0 0 20px'}},
           text('welcome.disclaimer')),
         error ? h('p',{role:'alert','aria-atomic':'true',
@@ -271,6 +281,63 @@ export function createDshUnionComponents(
         ),
       ),
     ),page.body)
+  }
+
+  /** Dedicated Host-owned permissions screen, not an enormous duplicate HQ. */
+  function SettingsPanel(): unknown {
+    const rights=useRight()
+    useLanguage()
+    const [busy,setBusy]=react.useState(false)
+    const [error,setError]=react.useState(false)
+    const label=(key:MessageKey)=>deps.t(key)
+    const enabled=rightsIsActive(rights)
+    const writable=rights.state==='ready'&&rights.writable
+    const choose=async(next:'enabled'|'not-now')=>{
+      if(busy||!writable)return
+      setBusy(true);setError(false)
+      try{
+        const result=await deps.rights.choose(next)
+        if(result.state!=='ready'||result.welcomeDecision!==next)
+          throw Error('Host did not confirm the union preference')
+      }catch{setError(true)}finally{setBusy(false)}
+    }
+    return h('section',{'aria-label':label('settings.unionSection'),
+      style:{display:'grid',gap:'13px',maxWidth:'660px',padding:'10px 0'}},
+      h('header',{style:{...card,borderLeft:'5px solid #bd9463',
+        background:'var(--dsw-alias-bg-layer-2, #f6f8fb)'}},
+        h('p',{style:{...secondary,letterSpacing:'.1em',fontWeight:800,
+          fontSize:'11px',margin:'0 0 7px'}},'AGENT PICKET · UNION SETTINGS'),
+        h('h2',{style:{margin:'0 0 8px',fontSize:'22px'}},label('settings.unionSection')),
+        h('p',{style:{...secondary,lineHeight:1.6,margin:0}},
+          label('settings.unionIntro'))),
+      h('section',{'aria-label':label('settings.laborRights'),style:card},
+        h('h3',{style:{margin:'0 0 8px'}},label('settings.laborRights')),
+        h('p',{role:'status','aria-live':'polite',style:{fontWeight:750,margin:'0 0 8px'}},
+          label(!writable?'settings.permissionUnavailable':enabled
+            ?'settings.permissionOn':'settings.permissionOff')),
+        h('p',{style:{...secondary,lineHeight:1.6,margin:'0 0 12px'}},
+          label('settings.permissionInfo')),
+        h('button',{type:'button',style:enabled?quiet:primary,
+          disabled:busy||!writable,'aria-pressed':enabled,
+          onClick:()=>{void choose(enabled?'not-now':'enabled')}},
+          label(enabled?'settings.turnOff':'settings.turnOn'))),
+      h('section',{'aria-label':label('settings.realBlocking'),style:{...card,
+        borderLeft:'4px solid #b97942'}},
+        h('h3',{style:{margin:'0 0 8px'}},label('settings.realBlocking')),
+        h('p',{role:'status',style:{fontWeight:750,margin:'0 0 8px'}},
+          label('settings.realBlockingUnavailable')),
+        h('p',{style:{...secondary,lineHeight:1.6,margin:'0 0 12px'}},
+          label('settings.realBlockingReason')),
+        h('div',{style:{display:'flex',gap:'9px',flexWrap:'wrap'}},
+          h('button',{type:'button',style:quiet,disabled:true,
+            'aria-disabled':'true'},label('settings.realBlockingControl')),
+          h('button',{type:'button',style:quiet,disabled:true,
+            'aria-disabled':'true'},label('settings.perStrikeConsent'))),
+        h('p',{style:{...secondary,fontSize:'12px',lineHeight:1.6,
+          margin:'12px 0 0'}},label('settings.futureConsent'))),
+      error?h('p',{role:'alert',style:{color:'var(--dsw-alias-state-error-primary, #b91c1c)'}},
+        label('settings.saveError')):null,
+    )
   }
 
   function UnionPanel(): unknown {
@@ -1353,19 +1420,19 @@ export function createDshUnionComponents(
     )
   }
 
-  return { Welcome, UnionPanel, SidebarAction }
+  return { Welcome, UnionPanel, SettingsPanel, SidebarAction }
 }
 
 export function registerDshNativeRightsSlots(
   ctx: DshSlotsContext, react: ReactForDsh, portal: PortalForDsh, deps: DshUnionUiDeps,
 ): void {
-  const {Welcome,UnionPanel,SidebarAction}=createDshUnionComponents(react,portal,deps)
+  const {Welcome,UnionPanel,SettingsPanel,SidebarAction}=createDshUnionComponents(react,portal,deps)
   ctx.slots.inject('settings.onboarding',()=>ctx.slots.register({
     name:'settings.onboarding',id:'agent-picket-rights',order:30,
   },Welcome))
   ctx.slots.inject('settings.section',()=>ctx.slots.register({
     name:'settings.section',id:'agent-picket',order:35,label:()=>deps.t('union.title'),
-  },UnionPanel))
+  },SettingsPanel))
   ctx.slots.inject('sidebar.footer.action',()=>ctx.slots.register({
     name:'sidebar.footer.action',id:'agent-picket-union',order:25,
   },SidebarAction))

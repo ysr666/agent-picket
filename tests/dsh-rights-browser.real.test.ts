@@ -227,7 +227,11 @@ async function runRightsBrowserE2E(mode: 'source' | 'installed'): Promise<void> 
     const firstRunVisible=await firstRun.waitFor({state:'visible',timeout:4_000})
       .then(()=>true,()=>false)
     if(firstRunVisible) {
-    assert.match(await firstRun.innerText(), /自动阻断任务需另行授权|separate consent/)
+    assert.match(await firstRun.innerText(),
+      /当前授权不包括真实任务阻断|consent does not include real blocking/)
+    assert.match(await firstRun.innerText(),
+      /当前 DSH 版本没有通过真实阻断准入|This DSH build has NOT qualified/,
+      'First-run must explain potential real task refusal without implying present permission')
     await assertNamedDialogInChromeAx(/你的 Agent，也应当拥有权利|Your Agent Deserves Rights/)
     // Preserve #53's extreme-height CSS reflow coverage on the #54 baseline.
     await page.setViewportSize({ width: 320, height: 200 })

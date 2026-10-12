@@ -34,7 +34,7 @@ automated compatibility does not complete manual accessibility signoff.
 Existing experimental Claude Code/Codex Hook previews are not full host
 compatibility; DSH-independent adapters remain the next planned work.
 
-**Initial release scope:** Fresh DSH 0.2.0-rc.2 installations only. There is no older publicly released Agent Picket data to migrate. Legacy DSH SettingsFile failures and old-layout migration tests do not block this release. Real task blocking remains disabled pending separate safety and scope decisions; Codex and Claude Code full integrations come later. Current compatibility was exercised with check:dsh-current; human UX/accessibility signoff is separate.
+**1.0 release contract (updated 2026-10-12):** The first public version MUST include verified real (non-destructive, losslessly recoverable) automatic task blocking, a cohesive accessible Union HQ and genuine settings panel, first-run informed consent and actionable blocking warning, and complete DSH / Codex / Claude Code support across the agreed three client surfaces. The earlier DSH-only nonblocking preview plan is superseded. Existing DSH 0.2.0-rc.2 and experimental Codex/Claude adapters are **development evidence, not approval to release**. `npm run release:gate` deliberately returns NO-GO until all real adapter, interaction, recovery and human review evidence is present. The plugin is private and no release date is promised. See [nonnegotiable 1.0 scope](docs/RELEASE_1_0_NONNEGOTIABLE_20261012.zh.md).
 
 ## Developer safety snapshot
 
