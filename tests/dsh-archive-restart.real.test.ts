@@ -77,13 +77,23 @@ test('real DSH SettingsFile cold restart honors category-wide deletion across tw
   // Genuine plugin+settings disposal and re-instantiation from disk.
   await phase(async({call,settings})=>{
    for(const kind of ['negotiations','pickets','cases']){
-    const exported=await call(ids[1],'/union export '+kind)
-    assert.equal(exported.kind,'success')
-    const groups=JSON.parse(exported.text).groups
+    const userChosenPath=join(root,'explicit-cold-restart-'+kind+'.json')
+    const exported=await call(ids[1],'/union export '+kind+' '+userChosenPath)
+    assert.equal(exported.kind,'success',
+      'Real Host CLI exports only to an explicitly selected new file')
+    const payload=readFileSync(userChosenPath,'utf8')
+    const groups=JSON.parse(payload).groups
     assert.equal(groups.length,2)
     assert.deepEqual(groups.map((g:any)=>g.current),[false,true])
-    for(const sensitive of [...ids,...keys,'writeToken','synthetic-agent'])
+    for(const sensitive of [...ids,...keys,'writeToken','synthetic-agent']){
+     assert.equal(payload.includes(sensitive),false,
+       'Export cannot reveal original or hashed Session identifiers')
      assert.equal(exported.text.includes(sensitive),false)
+    }
+    assert.equal(exported.text.includes('"groups"'),false,
+      'DSH command/done result must not duplicate archive contents')
+    assert.equal((await call(ids[1],'/union export '+kind+' '+userChosenPath)).kind,'error',
+      'Reopening a Host must not make a previous user export overwriteable')
    }
    const before=settings.get('agent-picket')
    const stale=settings.describe({redactSecrets:true}).find((x:any)=>x.ns==='agent-picket').revision

@@ -211,3 +211,16 @@ AGENT_PICKET_DSH_HOST=<本机真实 DSH 0.1.2 的 node_modules> AGENT_PICKET_DSH
 - 正向测试覆盖：相同 case count 的旧记录修改 stage 后不允许凭旧确认删除、缺失 Host 版本时拒绝、全档案与举牌分类删除的同类保护、UI 确认按钮失效与用户二次确认使用新版本。未把模拟 Host 事件当作真正跨独立 OS Host #111 缺陷已解决。
 
 #111 跨独立 DSH Host 同一个文件的陈旧 namespace 仍可能绕过正常本地修订号和可靠原子写入，包含 OFF→ON 和已确认删除复活。以上修复仅对**同一权威 Host 所有者**内的合法 settingsScope 版本有效。#80 真实模型阻断仍然关闭，真人无障碍与独立安全评估仍未签收。
+
+### 2026-10-12 · 恢复被隐式 SKIP 遮住的真实 Host 冷启动验收
+
+对照之前的 CLI 安全导出改动，额外发现 tests/dsh-archive-restart.real.test.ts 仍使用原来的 /union export CATEGORY 无路径用法，并对命令返回的 text 做 JSON.parse。此时真实 DSH 0.1.2 SettingsFile 冷重启验收**实际 FAIL**，但常规 CI 因未连接真实 Host 环境而将该测试跳过，不能视为正向通过。
+
+现修复真实验收测试：每一类别都通过带明确绝对新文件路径的 CLI 导出，读取文件 JSON 验证两 Session 分组与 current 标记、原始/哈希 Session ID 和写令牌不泄漏到导出文件；同时命令返回文本不包含 JSON 正文，重试同一个文件路径必须拒绝覆盖。再检验三类独立删除、重新加载及正常继续使用。
+
+为了防止今后把没有真实 SDK 的 SKIP 当作完成，新增脚本 scripts/verify-dsh-host-archives.sh 和 npm run check:dsh-host-archives：
+- 缺少 AGENT_PICKET_DSH_HOST 或其真实 DSH 0.1.x SettingsFile/Commands 模块时退出码 2，不可能报告通过。
+- 真正运行上述 cold restart 与真实 OS 进程顺序使用的物理文件测试，必须出现明确的 2 PASS / 0 FAIL 才算验收完成；其余四项已知危险或可选双 Host gate 的 SKIP 不会被误认成测试通过。
+- 故意 RED 的 #111 多独立 Host 所有者竞争仍由用户明确选择的独立实验命令运行，绝不把三项失败门禁伪装为已修复。
+
+受测环境上的专用脚本已运行并得到 REAL_HOST_ARCHIVES_PASS=2 FAIL=0；未设置真实 SDK 的独立测试得到 REAL_HOST_REQUIRED / 退出码 2。此验收**仅验证安装的 DSH 0.1.2 SettingsFile**，不能扩大为 DSH 0.2 ConfigForms、硬盘断电、备份抹除或真正跨 Host 原子性已完成。
