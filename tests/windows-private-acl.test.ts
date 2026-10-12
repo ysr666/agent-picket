@@ -37,7 +37,7 @@ test('native Windows ACL verifier accepts only owner-only protected directories 
   const script=String.raw`
 $ErrorActionPreference='Stop'
 $p=$env:AGENT_PICKET_WINDOWS_TEST_PATH
-$acl=Get-Acl -LiteralPath $p -ErrorAction Stop
+$acl=[System.IO.Directory]::GetAccessControl($p)
 $me=[System.Security.Principal.WindowsIdentity]::GetCurrent().User
 $acl.SetAccessRuleProtection($true,$false)
 $acl.SetOwner($me)
@@ -50,7 +50,7 @@ foreach($sid in @($me.Value,'S-1-5-18','S-1-5-32-544')){
   [System.Security.AccessControl.AccessControlType]::Allow)
  $acl.AddAccessRule($rule)
 }
-Set-Acl -LiteralPath $p -AclObject $acl -ErrorAction Stop
+[System.IO.Directory]::SetAccessControl($p,$acl)
 `
   const secured=spawnSync('powershell.exe',['-NoLogo','-NoProfile','-NonInteractive',
    '-EncodedCommand',Buffer.from(script,'utf16le').toString('base64')],{

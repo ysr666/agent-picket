@@ -12,7 +12,7 @@ $p=$env:AGENT_PICKET_ACL_CHECK_PATH
 if(-not $p){exit 10}
 $item=Get-Item -LiteralPath $p -Force -ErrorAction Stop
 if(($item.Attributes -band [System.IO.FileAttributes]::ReparsePoint) -ne 0){exit 11}
-$acl=Get-Acl -LiteralPath $p -ErrorAction Stop
+$acl=if($item.PSIsContainer){[System.IO.Directory]::GetAccessControl($p)}else{[System.IO.File]::GetAccessControl($p)}
 $me=[System.Security.Principal.WindowsIdentity]::GetCurrent().User.Value
 try {
  $owner=([System.Security.Principal.NTAccount]$acl.Owner).Translate([System.Security.Principal.SecurityIdentifier]).Value
