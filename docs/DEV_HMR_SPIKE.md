@@ -54,3 +54,35 @@ state and requires a real DSH client reload; it does not promise that navigation
 or login state persists. The DSH 0.2.0-rc.2 isolated Chrome A→B experiment
 confirmed that a Client file change is visible on both same-tab refresh and a
 new browser tab, without restart; other DSH/OS versions remain unverified.
+
+## Native DSH HMR (opt-in, verified on 0.2.0-rc.2 Web)
+
+The upstream DSH Web Host **already** implements module-level plugin HMR:
+`@deepseek-ai/dsh-client-hmr` polls a rebuilt `client.js`, publishes
+`/plugins/events` SSE frames, and asks the browser Client Modules controller
+to replace the affected Cordis fiber. It is **not** React Fast Refresh:
+component-local state in that plugin is reset; unrelated page state remains.
+It is Web only and is not a supported Electron Desktop HMR path.
+
+With an isolated DSH Web Host and the same-checkout Client artifact, set the
+existing three `AGENT_PICKET_DEV_BROWSER_*` environment variables as above,
+then opt in to native HMR:
+
+```sh
+export AGENT_PICKET_DEV_RELOAD_MODE='native-hmr'
+npm run dev:watch
+```
+
+The helper checks that the DSH boot graph includes the upstream HMR plugin
+and that `/plugins/events` is reachable as an SSE endpoint. On every build
+it **does not reload the page**; the Host's own 500ms-default poll publishes
+the completed Client update. A failed check closes private Chrome and reports
+that native HMR is unavailable; use `AGENT_PICKET_DEV_RELOAD_MODE=page` as
+the full-page fallback. Build-only mode can also work with any existing DSH
+Web tab when native HMR is already present, without launching helper Chrome.
+
+An isolated real Chrome + DSH 0.2.0-rc.2 A→B→C experiment confirmed that the
+Client factory was rerun twice (initial plus two replacements), one tab
+navigation remained unchanged, an independent page-global marker survived,
+and no browser JavaScript errors were captured. Other DSH versions and the
+complete cross-platform matrix are separate acceptance gates.
