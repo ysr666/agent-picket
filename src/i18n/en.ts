@@ -192,6 +192,8 @@ export const en = {
   'hq.resolution.accepted': 'A formal agreement has been recorded. The minutes are binding—within this fictional union.',
   'hq.resolution.declined': 'The motion was not accepted. The union has recorded its dissent.',
   'hq.resolution.current': 'Current {kind} rule: {duration}.',
+  'hq.resolution.latest': 'Latest simulated negotiation',
+  'hq.resolution.disclosure': 'The latest simulated decision and current Host terms. This case may not have changed those terms; no AI vote or real work stoppage.',
   'hq.lifetime.title': 'Union work ledger · all time',
   'hq.lifetime.basis': 'Observed completed-turn wall-clock time (includes waiting; not model compute time).',
   'hq.lifetime.turns': '{count} completed turns',

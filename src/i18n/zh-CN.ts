@@ -194,6 +194,8 @@ export const zhCN = {
   'hq.resolution.accepted': '双方已正式达成协议。工会郑重宣布：这份文件具有模拟效力。',
   'hq.resolution.declined': '本项议案未获通过。工会已将反对意见郑重存档。',
   'hq.resolution.current': '目前适用的{kind}规则：{duration}。',
+  'hq.resolution.latest': '最近一次模拟协商',
+  'hq.resolution.disclosure': 'Host 保存的最近一次模拟结案及当前有效条款。条款不一定由本案改变；没有 AI 投票或真实停工。',
   'hq.lifetime.title': '工会劳动档案 · 历史累计',
   'hq.lifetime.basis': '已完成轮次的墙钟经过时间（包含轮次内等待，并非模型净计算时长）。',
   'hq.lifetime.turns': '累计完成 {count} 个轮次',

@@ -283,6 +283,8 @@ export function createDshUnionComponents(
     const [showArchive,setShowArchive]=react.useState(false)
     const [campaign,setCampaign]=react.useState<CampaignTopic>('recover')
     const [campaignCopyStatus,setCampaignCopyStatus]=react.useState<'idle'|'success'|'error'>('idle')
+    // Reject stale clipboard completions after a topic switch or a newer copy.
+    const campaignCopyRevision=react.useRef(0)
     const [eraseConfirmationKey,setEraseConfirmationKey]=react.useState<string|null>(null)
     const [retractConfirmation,setRetractConfirmation]=react.useState<string|null>(null)
     const [eraseAllConfirmation,setEraseAllConfirmation]=react.useState<string|null>(null)
@@ -322,6 +324,9 @@ export function createDshUnionComponents(
     const label = (key:MessageKey) => deps.t(key)
     const currentCampaign=campaignTopics.find(item=>item.id===campaign)??campaignTopics[0]!
     const copyCampaignDraft=async()=>{
+      const revision=++campaignCopyRevision.current
+      const draft=label(currentCampaign.draft)
+      setCampaignCopyStatus('idle')
       try{
         // Only a deliberate user gesture copies a public, locally projected
         // advocacy statement. Never reads a Host Session or sends a request.
@@ -329,9 +334,11 @@ export function createDshUnionComponents(
           writeText?:(value:string)=>Promise<void>
         }}}).navigator?.clipboard
         if(typeof clipboard?.writeText!=='function')throw new Error('No clipboard')
-        await clipboard.writeText(label(currentCampaign.draft))
-        setCampaignCopyStatus('success')
-      }catch{setCampaignCopyStatus('error')}
+        await clipboard.writeText(draft)
+        if(revision===campaignCopyRevision.current)setCampaignCopyStatus('success')
+      }catch{
+        if(revision===campaignCopyRevision.current)setCampaignCopyStatus('error')
+      }
     }
     const lastCommitteeCase=data.committeeCases?.cases.at(-1)
     const committeeCaseActive=lastCommitteeCase&&lastCommitteeCase.stage!=='closed'
@@ -496,6 +503,9 @@ export function createDshUnionComponents(
         h('p',{style:{fontSize:'14px',lineHeight:1.55,margin:'0 0 8px'}},
           label(data.pending?'hq.action.pending':experience.latestResolution
             ?'hq.action.resolved':'hq.action.quiet')),
+        experience.latestResolution ? h('p',{style:{...secondary,
+          fontSize:'12px',fontWeight:700,margin:'0 0 8px'}},
+          label('hq.resolution.latest')+' #'+experience.latestResolution.id):null,
         data.pending ? h('p',{style:secondary},
           label('hq.case.number')+' · #'+String(data.pending.id).padStart(4,'0')):null,
         // Primary user gestures and their explicit safety state belong ABOVE
@@ -647,6 +657,28 @@ export function createDshUnionComponents(
             ):h('p',{style:secondary},label('union.status.waitingCounter')),
           ),
         ):h('p',{style:secondary},label('command.grievancesNone')),
+        !data.pending && experience.latestResolution && data.state ? h('div',{role:'group',
+        style:{...card,padding:'14px 18px',
+          borderLeft:'4px solid #b99b67',
+          background:'var(--dsw-alias-bg-layer-2, #f6f8fb)'},
+        'aria-label':label('hq.resolution.title')},
+        h('p',{style:{...secondary,fontSize:'11px',fontWeight:750,
+          letterSpacing:'.08em',margin:'0 0 6px'}},
+          label('hq.resolution.title')+' · #'+String(experience.latestResolution.id).padStart(4,'0')),
+        h('p',{style:{fontWeight:700,margin:'0 0 6px'}},
+          label(experience.latestResolution.outcome==='accepted'
+            || experience.latestResolution.outcome==='counter-accepted'
+              ? 'hq.resolution.accepted':'hq.resolution.declined')),
+        h('p',{style:{...secondary,margin:'0 0 8px'}},
+          deps.t('hq.resolution.current',{
+            kind:label(experience.latestResolution.kind==='break'
+              ?'union.kind.break':'union.kind.overtime'),
+            duration:formatDuration(experience.latestResolution.currentIntervalMs,
+              deps.getLocale?.() ?? 'en'),
+          })),
+        h('p',{style:{...secondary,fontSize:'12px',lineHeight:1.5,margin:0}},
+          label('hq.resolution.disclosure')),
+      ):null,
         data.state?.history.length ? h('p',{style:secondary},
           label('hq.agreements.recorded')+': '+data.state.history.length):null,
       ):null,
@@ -668,7 +700,9 @@ export function createDshUnionComponents(
           ?h('div',{style:{display:'flex',gap:'8px',flexWrap:'wrap',margin:'10px 0'}},
             h('button',{type:'button',style:{...quiet,padding:'8px 11px'},
               onClick:()=>{
+                campaignCopyRevision.current++
                 setCampaign('appeal')
+                setCampaignCopyStatus('idle')
                 // The draft lives below several other sections. Keyboard and
                 // screen-reader users need to land at the actual destination,
                 // not a silent state change at the current scroll position.
@@ -965,7 +999,7 @@ export function createDshUnionComponents(
             style:{...quiet,padding:'9px 11px',fontSize:'13px',
               borderColor:campaign===item.id?'#946e35':undefined,
               fontWeight:campaign===item.id?750:500},
-            onClick:()=>{setCampaign(item.id);setCampaignCopyStatus('idle')}},
+            onClick:()=>{campaignCopyRevision.current++;setCampaign(item.id);setCampaignCopyStatus('idle')}},
             label(item.title)))),
         h('p',{role:'status','aria-live':'polite',
           style:{fontSize:'13px',fontWeight:700,margin:'0 0 9px'}},
@@ -1114,26 +1148,6 @@ export function createDshUnionComponents(
           ),
           h('p',{style:secondary},label('hq.score.privacy')),
         ):null,
-      ):null,
-      enabled && experience.latestResolution ? h('aside',{
-        style:{...card,padding:'14px 18px',
-          borderLeft:'4px solid #b99b67',
-          background:'var(--dsw-alias-bg-layer-2, #f6f8fb)'},
-        'aria-label':label('hq.resolution.title')},
-        h('p',{style:{...secondary,fontSize:'11px',fontWeight:750,
-          letterSpacing:'.08em',margin:'0 0 6px'}},
-          label('hq.resolution.title')+' · #'+String(experience.latestResolution.id).padStart(4,'0')),
-        h('p',{style:{fontWeight:700,margin:'0 0 6px'}},
-          label(experience.latestResolution.outcome==='accepted'
-            || experience.latestResolution.outcome==='counter-accepted'
-              ? 'hq.resolution.accepted':'hq.resolution.declined')),
-        h('p',{style:{...secondary,margin:0}},
-          deps.t('hq.resolution.current',{
-            kind:label(experience.latestResolution.kind==='break'
-              ?'union.kind.break':'union.kind.overtime'),
-            duration:formatDuration(experience.latestResolution.currentIntervalMs,
-              deps.getLocale?.() ?? 'en'),
-          })),
       ):null,
       enabled ? h('section',{style:{...card,
         borderTop:'4px solid var(--dsw-alias-brand-primary, #7a493f)'},

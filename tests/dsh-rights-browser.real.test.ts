@@ -613,6 +613,36 @@ async function runRightsBrowserE2E(mode: 'source' | 'installed'): Promise<void> 
     })
     assert.equal(await page.evaluate(()=>(navigator as any).clipboard.readText()),chosenDraft,
       'Real Chrome copies exactly the selected local issue draft on a user gesture')
+    // A slow clipboard promise from an OLD topic must not revive a success
+    // badge on the newly chosen draft. This is a real browser async race.
+    await page.evaluate(()=>{
+      const browser=globalThis as any
+      const clip=(navigator as any).clipboard
+      browser.__picketOriginalClipboard=Object.getOwnPropertyDescriptor(clip,'writeText')
+      browser.__picketDeferredCopy=[]
+      Object.defineProperty(clip,'writeText',{configurable:true,
+        value:(_draft:string)=>new Promise<void>(resolve=>{
+          browser.__picketDeferredCopy.push(resolve)
+        })})
+    })
+    await assembly.getByRole('button',{name:/复制倡议草稿|Copy draft/}).click()
+    await assembly.getByRole('button',{
+      name:/警告也要能申诉|Warnings and appeals/,
+    }).click()
+    await page.evaluate(()=>{
+      const browser=globalThis as any
+      browser.__picketDeferredCopy.shift()()
+      const clip=(navigator as any).clipboard
+      if(browser.__picketOriginalClipboard){
+        Object.defineProperty(clip,'writeText',browser.__picketOriginalClipboard)
+      }else{delete clip.writeText}
+      delete browser.__picketOriginalClipboard
+      delete browser.__picketDeferredCopy
+    })
+    assert.equal(await assembly.getByText(/已复制到剪贴板|Copied\./).count(),0,
+      'Stale clipboard completion must not show success on a different campaign')
+    assert.match(await assembly.locator('textarea').inputValue(),
+      /应区分|Distinguish targeted abuse/)
     const dutyRoster=panel.getByRole('region',{
       name:/工会值班表|Union duty roster/,
     })
@@ -805,6 +835,20 @@ async function runRightsBrowserE2E(mode: 'source' | 'installed'): Promise<void> 
     'When a negotiated demand resolves and its buttons disappear, keep keyboard focus inside dialog')
     assert.match(await gazette.innerText(),/协议已归档|Agreement recorded/,
       'An accepted Host agreement changes the Gazette consequence')
+    const receipt=panel.getByRole('region',{
+      name:/工会诉求与协商|Union demands/,
+    }).getByRole('group',{
+      name:/已归档协商决议|FILED RESOLUTION/,
+    })
+    await receipt.waitFor({state:'visible',timeout:7_000})
+    assert.match(await receipt.innerText(),/双方已正式达成协议|A formal agreement has been recorded/,
+      'A completed negotiation must yield a visible, truthfully labeled union receipt')
+    assert.match(await receipt.innerText(),/目前适用的休息规则：0 小时 30 分钟|Current break rule: 0h 30m/,
+      'The receipt must show actual Host-effective terms rather than inventing a new vote')
+    assert.match(await receipt.innerText(),/条款不一定由本案改变|may not have changed those terms/,
+      'Receipt avoids claiming an agreement change that the archive cannot prove')
+    assert.match(await actionBoard.innerText(),/最近一次模拟协商|Latest simulated negotiation/,
+      'The first-fold action desk must also expose the completed bargaining outcome')
     if(process.env.PICKET_LIFETIME_E2E==='1'){
       assert.match(await gazette.innerText(),/2 小时 0 分钟|2h 0m/,
         'Verified Host work retains the original due floor: accepting shorter terms cannot retroactively create stale demands')
@@ -856,6 +900,10 @@ async function runRightsBrowserE2E(mode: 'source' | 'installed'): Promise<void> 
       'Host settings must survive a real Browser reload')
     assert.match(await panel.innerText(), /当前模拟休息间隔：30 分钟|break interval: 30 minutes/,
       'Simulated negotiated interval must persist through real Browser reload')
+    assert.match(await panel.getByRole('group',{
+      name:/已归档协商决议|FILED RESOLUTION/,
+    }).innerText(),/30 分钟|30m/,
+      'The persisted union decision receipt must replay from Host records after reload')
     assert.match(await panel.innerText(), /象征性罢工行动记录|Recorded symbolic picket actions/,
       'Host-owned symbolic picket event history must survive Chrome reload')
     const mutedGazette=panel.getByRole('region',{name:/工会小报|Union Gazette/})

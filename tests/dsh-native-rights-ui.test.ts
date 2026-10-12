@@ -611,6 +611,9 @@ test('accepted stored resolution generates a factual current-terms receipt in na
  assert.ok(text.includes('hq.resolution.current'))
  const receipt=nodes.find(n=>n.props['aria-label']==='hq.resolution.title')
  assert.ok(receipt)
+ const desk=nodes.find(n=>n.props['aria-label']==='union.desk.title')
+ assert.ok(desk && walk(desk).some(n=>n.props['aria-label']==='hq.resolution.title'),
+   'A filed union resolution belongs next to the bargaining controls, not below analytics')
 })
 
 
