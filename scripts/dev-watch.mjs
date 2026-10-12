@@ -60,9 +60,8 @@ const root = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 
 function buildOnce(getChild) {
   return new Promise((resolveBuild, rejectBuild) => {
-    const isWindows = process.platform === 'win32'
-    const command = isWindows ? 'cmd.exe' : 'npm'
-    const args = isWindows ? ['/d', '/s', '/c', 'npm', 'run', 'build'] : ['run', 'build']
+    const command = process.execPath
+    const args = ['scripts/dev-staged-build.mjs']
     const child = spawn(command, args, { cwd: root, stdio: 'inherit' })
     getChild(child)
     child.once('error', rejectBuild)
@@ -139,7 +138,7 @@ function main() {
   // Only source, builder and compiler config; never watch dist (our own output).
   try {
     observe('src', true, () => true)
-    observe('scripts', false, filename => /^(?:build-dsh-client|clean-build)\.mjs$/.test(filename))
+    observe('scripts', false, filename => /^(?:build-dsh-client|dev-staged-build|clean-build)\.mjs$/.test(filename))
     observe('.', false, filename => /^(?:package\.json|tsconfig(?:\.build)?\.json)$/.test(filename))
   } catch (error) {
     for (const watcher of watches) watcher.close()

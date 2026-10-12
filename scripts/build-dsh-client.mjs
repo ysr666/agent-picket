@@ -1,12 +1,17 @@
 import { readFileSync, writeFileSync, rmSync } from 'node:fs'
-import { fileURLToPath } from 'node:url'
+import { fileURLToPath, pathToFileURL } from 'node:url'
+import { resolve, sep } from 'node:path'
 
 /**
  * Zero-dependency DSH browser factory builder. Every included module and
  * import edge is enumerated. React and react-dom are NOT bundled: they come
  * from DSH's own platform singleton module table through _require.
  */
-const root = new URL('../dist/', import.meta.url)
+const index = process.argv.indexOf('--out-dir')
+if (index >= 0 && !process.argv[index + 1]) throw new Error('Missing --out-dir value')
+const root = index >= 0
+  ? pathToFileURL(resolve(process.argv[index + 1]) + sep)
+  : new URL('../dist/', import.meta.url)
 const output = fileURLToPath(new URL('adapters/dsh/client.js', root))
 const modules = [
   'i18n/en.js',
