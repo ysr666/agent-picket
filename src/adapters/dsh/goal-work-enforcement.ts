@@ -56,19 +56,30 @@ export function completedUtcDayWork(
 export function alreadyBlockedGoalToday(
   events:readonly unknown[],goalId:string,nowMs:number,
 ):boolean {
-  if(!Array.isArray(events)||!goalId||!Number.isSafeInteger(nowMs)||nowMs<0)return true
+  if(!Array.isArray(events)||!goalId||!Number.isSafeInteger(nowMs)
+    ||nowMs<0||nowMs>8_640_000_000_000_000)return true
   const start=Date.parse(new Date(nowMs).toISOString().slice(0,10)+'T00:00:00.000Z')
+  // The latest Goal block may have a DIFFERENT cause. Scan all events:
+  // an older union stop today must still suppress a second physical strike
+  // after the user resumes, even if another Host actor blocked it meanwhile.
   for(let i=events.length-1;i>=0;i--){
     const row=events[i] as {type?:unknown;data?:unknown}|null
     if(row?.type!=='goal/change')continue
     const change=row.data as {operation?:unknown;goal?:{
-      id?:unknown;updatedAt?:unknown;blockedReason?:{code?:unknown}
+      id?:unknown;blockedReason?:{code?:unknown}
     };updatedAt?:unknown}|null
     if(change?.operation!=='block'||change.goal?.id!==goalId)continue
     const time=change.updatedAt
-    if(typeof time!=='number'||!Number.isSafeInteger(time)||time<0)return true
-    if(time<start)return false
-    if(change.goal.blockedReason?.code==='picket-work-limit')return true
+    // A malformed relevant Host history can no longer prove there was no
+    // previous strike. Fail CLOSED for additional blocks, never guess/retry.
+    if(typeof time!=='number'||!Number.isSafeInteger(time)||time<0
+      ||time>8_640_000_000_000_000)return true
+    // A Host event may be committed after the caller sampled its clock, or
+    // the clock may move backwards. Treat a future-dated current-day union
+    // block as evidence of ALREADY BLOCKED, never as permission to block again.
+    if(time>=start&&change.goal.blockedReason?.code==='picket-work-limit')return true
+    // Do not exit on another (e.g. user/Host) block event or yesterday's
+    // union strike: a later/older matching event may still be present.
   }
   return false
 }

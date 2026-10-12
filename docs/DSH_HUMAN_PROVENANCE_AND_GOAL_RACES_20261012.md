@@ -1,0 +1,19 @@
+# DSH provenance and Goal concurrency safety evidence (2026-10-12)
+
+## Real source evidence: RPC `kind:user` is not a human attestation
+
+Official DSH SDK JSON-RPC (`dsh-sdk-jsonrpc-server`) creates a message with `source:{kind:'user'}` from `session/prompt` without requiring a physical UI action. Official DSH Web (`dsh-api-session-controller`) additionally sets a correlating `rpcId` in `source`, but that identifies a submitted RPC request, **not** a verified human rather than a script, API client, or agent. Neither public source shape is an authenticated direct-human attestation.
+
+The actual DSH SDK AgentLoop E2E now verifies source `'human'` but assurance `'claimed'`, and that no `rpcId` is needed for this Host's user message; `tests/dsh-provenance-gate.test.ts` separately tries `source:{kind:'user',rpcId:'...',assurance:'verified',hostAuthenticated:true}` and proves `normalizeDshPrompt` STILL returns `claimed`. Consecutive strongly targeted insults from this claimed source cannot cause `UnionEngine` or `advanceDignityEscalation` to request a physical block. A proper Host-owned, authenticated direct-human gesture/submit provenance receipt would be required. **Do not turn on abuse-triggered real enforcement using source.kind or rpcId alone.**
+
+## Goal stop + resume clock and interleaving safety
+
+A restored Goal can have a previous union-block event followed by a newer block for an unrelated reason. The previous `alreadyBlockedGoalToday` implementation considered only the most recent block, incorrectly allowing a second same-day union strike. Now it scans the complete trusted Goal change history, suppressing any same-UTC-day `picket-work-limit` for that exact Goal even if other types of blocks appear later. An invalid timestamp for that Goal causes a conservative no-new-block decision.
+
+An additional real-HOST E2E exposed that a caller can sample its clock just **before** an official Goal `block` commits, with the corresponding event's timestamp slightly later. The prior `time <= nowMs` check then incorrectly permitted a re-block after user resume. Removing that upper comparison fixes clock rollback / timestamp skew; if the official session says the Goal was stopped today, an unchanged local sampled clock does not erase it. The full native 8h stored-ledger positive case found this bug in the first run and passed after the fix.
+
+Pure concurrency tests cover two independent active Goal sessions (separate official Goal IDs and history), repeated callbacks, an intervening other-reason hold, stale Agent identity, disabled/revoked permission, partial work, and revocation occurring during the `DurableStats` read. The authenticated consent is checked **again after the work snapshot**; if it changed, no physical hold is requested. No tool is canceled and no user prompt or attachment is intercepted.
+
+The actual isolated official DSH Host E2E now additionally runs two Goal sessions concurrently inside the SAME SDK runtime; both safely block after a completed first automatic round, refrain from subsequent automatic work, then each independently resume for the correct remaining rounds, without duplicated model calls. A cross-process three-platform native matrix and UI human signoff are still **not** proven. The package's reusable script `scripts/verify-dsh-goal-safe-boundary.sh` runs 5 native checks per DSH 0.2.x installation: two live/cold-restoration cases, stored-work eight-hour positive and one-millisecond-below negative, and two concurrent Goal sessions.
+
+The abuse escalation pipeline remains monitor/review ONLY on DSH until an official direct-human provenance contract and visible warnings and appeals are demonstrated. The 1.0 release evidence gate remains NO-GO; no PR is merged and no plugin is published based on these unit/isolated tests.

@@ -73,8 +73,24 @@ test('official Goal block history disarms immediate same-day re-strikes after re
   goal:{id:'g1',blockedReason:{code:'picket-work-limit'}},updatedAt:today}}]
  assert.equal(alreadyBlockedGoalToday(events,'g1',today),true)
  assert.equal(alreadyBlockedGoalToday(events,'g1',today+10_000),true)
+ assert.equal(alreadyBlockedGoalToday(events,'g1',today-1),true,
+  'Host goal/change can land after the snapshot clock; a backwards clock cannot re-strike')
  assert.equal(alreadyBlockedGoalToday(events,'g2',today),false)
  assert.equal(alreadyBlockedGoalToday(events,'g1',today+86_400_000),false)
+ const laterHostBlock={type:'goal/change',data:{operation:'block',
+  goal:{id:'g1',blockedReason:{code:'other-host-rule'}},updatedAt:today+100}}
+ assert.equal(alreadyBlockedGoalToday([...events,laterHostBlock],'g1',today+101),true,
+  'A newer other-cause block cannot hide the prior union strike')
+ assert.equal(alreadyBlockedGoalToday([laterHostBlock,...events],'g1',today+101),true,
+  'A reordered Host log cannot hide the prior union strike')
+ assert.equal(alreadyBlockedGoalToday([{type:'goal/change',data:{operation:'block',
+  goal:{id:'g1',blockedReason:{code:'picket-work-limit'}},updatedAt:today-86_400_000}},
+  ...events],'g1',today),true)
+ assert.equal(alreadyBlockedGoalToday([{type:'goal/change',data:{operation:'block',
+  goal:{id:'g1',blockedReason:{code:'picket-work-limit'}},updatedAt:NaN}}],
+  'g1',today),true,'Malformed relevant Host log fails closed')
+ assert.equal(alreadyBlockedGoalToday(events,'g1',Infinity),true)
+
  assert.equal(alreadyBlockedGoalToday([{type:'goal/change',data:{operation:'block',
   goal:{id:'g1',blockedReason:{code:'round-limit'}},updatedAt:today}}],'g1',today),false)
 })

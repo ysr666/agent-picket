@@ -3,6 +3,7 @@ import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import {registerDshGoalWorkEnforcement,alreadyBlockedGoalToday,completedUtcDayWork,readHostGoalStrikeConsent} from '../../src/adapters/dsh/goal-work-enforcement.ts'
 import {DurableStats} from '../../src/adapters/node/durable-stats.ts'
+import {normalizeDshPrompt} from '../../src/adapters/dsh/integration.ts'
 
 export const name='picket-goal-boundary-isolated-smoke'
 export const inject=['llm','goals','agents']
@@ -20,7 +21,7 @@ class OfflineModel extends LlmAdapter {
   yield {type:'finish',reason:{kind:'stop'}}
  }
 }
-let created=false
+const createdSessions=new Set()
 let restoredHandle
 const ledgerMode=process.env.AGENT_PICKET_LEDGER_E2E==='1'
 const justBelow=process.env.AGENT_PICKET_LEDGER_BELOW==='1'
@@ -58,8 +59,14 @@ export function apply(ctx){
     record('goal-resumed:'+after.phase)
    }else record('goal-restored-not-blocked')
   }
-  if(text.includes('START_GOAL_PROBE')&&!created){
-   created=true
+  if(text.includes('START_GOAL_PROBE')&&!createdSessions.has(agent.session.id)){
+   const user=messages.find(message=>message.source?.kind==='user')
+   const normalized=user&&normalizeDshPrompt(agent,user,Date.now())
+   record('source-human-assurance:'+String(normalized?.provenance.assurance??'none'))
+   record('source-human-actor:'+String(normalized?.provenance.actor??'none'))
+   record('source-rpc-id-present:'+String(typeof user?.source?.rpcId==='string'))
+
+   createdSessions.add(agent.session.id)
    if(stats){
     const info={agentId:'synthetic-prior-work',sessionId:'synthetic-shift'}
     stats.recordWork({...info,id:'test-ledger-start',type:'turn-start',recordedAtMs:dayStart})
@@ -90,6 +97,9 @@ export function apply(ctx){
  })
  ctx.on('session/event',(session,event)=>{
   if(event.type==='turn/end')record('turn-end:'+event.data.reason.kind)
+  if(event.type==='goal/change'&&event.data?.operation==='block'
+    &&event.data?.goal?.blockedReason?.code==='picket-work-limit')
+    record('goal-blocked:'+session.id)
  })
  ctx.on('agent/turn-stopping',({agent})=>{
   const goal=ctx.goals.get(agent)
