@@ -836,3 +836,33 @@ test('current-session erase confirmation expires on another tab’s case update'
  assert.deepEqual(eraseArgs,[['session-a',1,'b'.repeat(32)]],
   'Only a fresh exact-Host-version confirmation can call the erasure port')
 })
+
+test('the dignity appeal action navigates to its actual unsent draft for keyboard users',()=>{
+ const {hooks}=fakeReact()
+ const d=deps(rights({welcomeDecision:'enabled',laborRightsEnabled:true})).d
+ const withDignity:DshUnionUiDeps={...d,readUnion:()=>({
+  pending:null,available:true,completedTurnMs:null,coverage:'not-loaded',lifetimeMs:null,
+  dignity:{status:'available',data:{
+   schemaVersion:1,source:'dsh-host-volatile-dignity',
+   origin:'claimed-user-source',persistence:'memory-only',enforcement:false,
+   checked:2,safe:0,review:1,targeted:1,latest:'review',
+  }},
+ })}
+ const nodes=walk(createDshUnionComponents(hooks,{createPortal:child=>child},
+  withDignity).UnionPanel())
+ const appeal=nodes.find(n=>n.type==='button'
+  &&n.children.includes('hq.dignity.appeal'))
+ const heading=nodes.find(n=>n.type==='h3'
+  &&n.children.includes('hq.campaign.title'))
+ assert.ok(appeal)
+ assert.ok(heading)
+ assert.equal(heading.props.tabIndex,-1,
+  'Campaign heading must be focusable without adding a tab stop')
+ assert.equal(typeof heading.props.ref,'function',
+  'The actual destination must receive a focus ref')
+ let moved=0
+ heading.props.ref({focus(){moved++}})
+ appeal.props.onClick()
+ assert.equal(moved,1,
+  'Challenge should reveal the lower draft by focusing its actual heading')
+})

@@ -1230,6 +1230,22 @@ async function runRightsBrowserE2E(mode: 'source' | 'installed'): Promise<void> 
       await sameSessionCommittee.getByRole('button',{
         name:/正式提出规则异议|File a disagreement with the rule/,
       }).waitFor({state:'visible',timeout:9_000})
+      // Genuine DOM/keyboard navigation: the lightweight appeal shortcut
+      // merely selects an unsent public-issue draft. Its focus must move to
+      // that lower section, not appear to do nothing at the complaint card.
+      await sameSessionCommittee.getByRole('button',{
+        name:/质疑规则判断|Challenge a possible misclassification/,
+      }).click()
+      const campaignHeading=panel.getByRole('heading',{
+        name:/给 AI 工会选一个议题|Choose a cause for the union/,
+      })
+      assert.equal(await campaignHeading.evaluate((element:any)=>
+        element===(globalThis as any).document.activeElement),true,
+        'Appeal shortcut must bring keyboard focus to the actual draft')
+      assert.match(await panel.getByRole('textbox',{
+        name:/可复制或自行修改的倡议文案|A statement you can copy or adapt/,
+      }).inputValue(),/应区分|Distinguish targeted abuse/,
+        'The targeted appeal draft is selected, not silently unchanged')
       await sameSessionCommittee.getByText(/工会提议协商|The union proposes/)
         .waitFor({state:'visible',timeout:9_000})
       assert.doesNotMatch(await sameSessionCommittee.innerText(),

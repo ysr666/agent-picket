@@ -1,5 +1,5 @@
 import { createBrowserDashboardBridge } from './client-dashboard.ts'
-import { createBrowserLifetimeWorkReader } from './client-lifetime.ts'
+import { createBrowserLifetimeWorkReader, createCompletedTurnRefreshGate } from './client-lifetime.ts'
 import { createBrowserDignityReader } from './client-dignity.ts'
 import { createDshBrowserUnionDesk, type UnionSettingsSection } from './client-bargaining.ts'
 import { createDshClientRightsScope, type DshSettingsScope } from './client-rights-scope.ts'
@@ -110,6 +110,7 @@ export function apply(ctx: ClientContext, react?: ReactForDsh, portal?: PortalFo
     })
     const uiLocale = () => resolveLocale({ hostLocale: scoped.locale?.getLocale().active })
     const activeId = () => currentDshUnionSession(scoped.sessions.list?.getSnapshot())
+    const shouldRefreshLifetime=createCompletedTurnRefreshGate()
     const readUnion = () => {
       const id = activeId()
       const data = id ? bridge?.getSnapshot(id) : undefined
@@ -134,11 +135,23 @@ export function apply(ctx: ClientContext, react?: ReactForDsh, portal?: PortalFo
           activeId()??'agent-picket:global-work')
         const data = readUnion()
         void desk.observe(data.completedTurnMs, data.coverage)
-        // Trigger only at observed real Host turn boundaries, not polling or
-        // every tool event. The authenticated route returns volatile counts.
+        // Refresh the work-only ledger on a VERIFIED new completed turn,
+        // not on tool activity, render, arbitrary settings changes or timers.
+        // This shared gate deduplicates background and open-panel listeners.
         const id=activeId()
+        const hostWork=id?bridge?.getSnapshot(id):undefined
+        const currentConsent=owner.snapshot().laborRightsEnabled
+        if(!currentConsent){
+          shouldRefreshLifetime(null,null) // An actual revoke clears the cursor.
+        }else if(id&&hostWork?.coverage==='complete'&&hostWork.sessionWork
+          &&shouldRefreshLifetime(id,hostWork.sessionWork.turnEnds)){
+          // A temporarily partial event window must NOT erase the last known
+          // completed-turn cursor: when complete evidence comes back, the new
+          // completed turn should still trigger a fresh work-only Host read.
+          void lifetime?.refresh() // preserves the user's 7/30-day selection
+        }
         if(dignity&&id&&data.coverage!=='unavailable') {
-          const work=bridge?.getSnapshot(id).sessionWork
+          const work=hostWork?.sessionWork
           if(work&&(work.turnStarts!==lastTurnStart||work.turnEnds!==lastTurnEnd)){
             lastTurnStart=work.turnStarts;lastTurnEnd=work.turnEnds
             void dignity.refresh()

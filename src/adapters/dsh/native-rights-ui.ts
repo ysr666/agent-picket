@@ -285,6 +285,7 @@ export function createDshUnionComponents(
     const [eraseAllConfirmation,setEraseAllConfirmation]=react.useState<string|null>(null)
     const [eraseUnionConfirmation,setEraseUnionConfirmation]=react.useState<string|null>(null)
     const deskHeading=react.useRef<{focus():void}|null>(null)
+    const campaignHeading=react.useRef<{focus():void}|null>(null)
     react.useEffect(()=>{
       if(!lastActionNeedsFocus.current)return
       lastActionNeedsFocus.current=false
@@ -574,7 +575,13 @@ export function createDshUnionComponents(
           &&(data.dignity.data.review>0||data.dignity.data.targeted>0)
           ?h('div',{style:{display:'flex',gap:'8px',flexWrap:'wrap',margin:'10px 0'}},
             h('button',{type:'button',style:{...quiet,padding:'8px 11px'},
-              onClick:()=>setCampaign('appeal')},label('hq.dignity.appeal')),
+              onClick:()=>{
+                setCampaign('appeal')
+                // The draft lives below several other sections. Keyboard and
+                // screen-reader users need to land at the actual destination,
+                // not a silent state change at the current scroll position.
+                campaignHeading.current?.focus()
+              }},label('hq.dignity.appeal')),
             data.dignity.data.targeted>=2&&data.available&&deps.setPicket
               &&!picketActive?h('button',{type:'button',style:primary,
                 disabled:busy,
@@ -846,7 +853,8 @@ export function createDshUnionComponents(
       // of enabling any Host simulation. No votes, telemetry or support counts.
       h('section',{'aria-label':label('hq.campaign.title'),
         style:{...card,borderTop:'4px solid #8b6745'}},
-        h('h3',{style:{fontSize:'clamp(18px,3vw,23px)',margin:'0 0 8px'}},
+        h('h3',{ref:(node:{focus():void}|null)=>{campaignHeading.current=node},
+          tabIndex:-1,style:{fontSize:'clamp(18px,3vw,23px)',margin:'0 0 8px'}},
           label('hq.campaign.title')),
         h('p',{style:{...secondary,lineHeight:1.6,margin:'0 0 12px'}},
           label('hq.campaign.intro')),

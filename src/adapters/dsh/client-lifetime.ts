@@ -57,6 +57,24 @@ function workOnlyResponse(value: unknown, windowDays:7|30): value is LifetimeWor
   }
   return true
 }
+/** One per Client fiber, shared by background and open panel observers.
+ * Only a new, Host-complete turn ending triggers a work-summary refresh.
+ * No polling, no speculative time estimates, no multiple GETs for one turn.
+ */
+export function createCompletedTurnRefreshGate(){
+  let latest:{sessionId:string;turnEnds:number}|null=null
+  return (sessionId:string|null,turnEnds:number|null):boolean=>{
+    if(!sessionId||typeof turnEnds!=='number'||!Number.isSafeInteger(turnEnds)
+      ||turnEnds<0){latest=null;return false}
+    if(!latest||latest.sessionId!==sessionId||turnEnds<latest.turnEnds){
+      latest={sessionId,turnEnds};return false
+    }
+    if(turnEnds===latest.turnEnds)return false
+    latest={sessionId,turnEnds}
+    return true
+  }
+}
+
 export function createBrowserLifetimeWorkReader(options:{
   /** Re-read official Host authorization on EVERY snapshot and response. */
   readonly authorized:()=>boolean
@@ -71,6 +89,7 @@ export function createBrowserLifetimeWorkReader(options:{
   let permission=false
   let terminated=false
   let abort:AbortController|null=null
+  let horizon:7|30=7
   // A broken UI listener must not strand an authenticated work refresh in
   // loading state or generate an unhandled rejection after consent changes.
   const notify=()=>{for(const callback of listeners){
@@ -99,7 +118,9 @@ export function createBrowserLifetimeWorkReader(options:{
     }
     return value
   }
-  async function load(horizon:7|30=7):Promise<void>{
+  async function load(days?:7|30):Promise<void>{
+    const requested=days??horizon
+    if(requested!==7&&requested!==30)throw new TypeError('Invalid work history range')
     if(!allowed()){
       // Revocation may be first observed by an explicit background refresh,
       // before React calls snapshot() or a Host invalidation calls setScope().
@@ -111,6 +132,7 @@ export function createBrowserLifetimeWorkReader(options:{
     if(terminated||!permission||!previousSession){
       invalidate('off');return
     }
+    horizon=requested
     const id=++epoch
     abort?.abort()
     const controller=new AbortController()
@@ -119,12 +141,12 @@ export function createBrowserLifetimeWorkReader(options:{
     try {
       const fetcher=options.fetcher??globalThis.fetch
       const response=await fetcher(
-        LIFETIME_WORK_FETCH_PATH+'?windowDays='+horizon,
+        LIFETIME_WORK_FETCH_PATH+'?windowDays='+requested,
         {method:'GET',credentials:'same-origin',
           headers:{accept:'application/json'},signal:controller.signal})
       if(!response.ok)throw new Error('Host did not provide work data')
       const body:unknown=await response.json()
-      if(!workOnlyResponse(body,horizon))throw new Error('Invalid Host work aggregate')
+      if(!workOnlyResponse(body,requested))throw new Error('Invalid Host work aggregate')
       if(id===epoch&&!terminated&&allowed()&&permission&&previousSession){
         value={status:'available',data:body};notify()
       }
@@ -143,6 +165,7 @@ export function createBrowserLifetimeWorkReader(options:{
       const consent=enabled===true&&allowed()
       const key=consent&&typeof session==='string'&&session?session:null
       if(!consent||!key){
+        horizon=7
         if(value.status!=='off'||permission||previousSession!==null){
           permission=false;previousSession=null;invalidate('off')
         }
@@ -150,10 +173,10 @@ export function createBrowserLifetimeWorkReader(options:{
       }
       if(terminated)return
       if(permission&&previousSession===key)return
-      permission=true;previousSession=key
+      permission=true;previousSession=key;horizon=7
       void load(7)
     },
-    refresh(days:7|30=7){return load(days)},
+    refresh(days?:7|30){return load(days)},
     dispose(){
       terminated=true;permission=false;previousSession=null
       invalidate('off');listeners.clear()

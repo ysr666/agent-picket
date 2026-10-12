@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { createBrowserLifetimeWorkReader } from '../src/adapters/dsh/client-lifetime.ts'
+import { createBrowserLifetimeWorkReader, createCompletedTurnRefreshGate } from '../src/adapters/dsh/client-lifetime.ts'
 
 const stamp=Date.parse('2026-10-11T12:00:00Z')
 const zero={turnStarts:1,turnEnds:1,toolCalls:3,toolResults:3,completedTurnMs:9000}
@@ -177,4 +177,43 @@ test('a revoked permission observed by an explicit refresh cannot poison later r
  assert.equal(reads,2,'A fresh Host authorization must re-fetch even with unchanged Session')
  assert.equal(reader.snapshot().status,'available')
  reader.dispose()
+})
+
+test('refresh without a new horizon preserves the user-selected 30-day work view',async()=>{
+ const requests:string[]=[]
+ const reader=createBrowserLifetimeWorkReader({
+  authorized:()=>true,
+  fetcher:async url=>{
+   requests.push(String(url))
+   return fetchOk(String(url).includes('windowDays=30')?30:7)
+  },
+ })
+ reader.setScope(true,'same-session')
+ await settle()
+ await reader.refresh(30)
+ assert.equal(reader.snapshot().data?.windowDays,30)
+ await reader.refresh()
+ assert.equal(reader.snapshot().data?.windowDays,30,
+  'A completed Host turn must not unexpectedly switch the user back to 7 days')
+ assert.deepEqual(requests.map(url=>url.slice(url.indexOf('windowDays='))),[
+  'windowDays=7','windowDays=30','windowDays=30',
+ ])
+ reader.dispose()
+})
+
+
+test('one verified completed turn triggers exactly one new lifetime read across two panels',()=>{
+ const shouldRefresh=createCompletedTurnRefreshGate()
+ assert.equal(shouldRefresh('a',0),false)
+ assert.equal(shouldRefresh('a',0),false,'Duplicate startup render is not a new turn')
+ assert.equal(shouldRefresh('a',1),true,'One actual Host completed turn refreshes the work archive')
+ assert.equal(shouldRefresh('a',1),false,'Open panel must not double-fetch')
+ assert.equal(shouldRefresh('a',1),false,'Unrelated tool and settings updates do nothing')
+ assert.equal(shouldRefresh('a',2),true)
+ assert.equal(shouldRefresh(null,null),false,'Revoking Host consent clears baseline')
+ assert.equal(shouldRefresh('a',2),false,'Reauthorization starts from fresh Host data')
+ assert.equal(shouldRefresh('a',3),true)
+ assert.equal(shouldRefresh('b',7),false,'A different Session starts at its own baseline')
+ assert.equal(shouldRefresh('b',8),true)
+ assert.equal(shouldRefresh('b',4),false,'A reset or truncated stream cannot invent a new turn')
 })
