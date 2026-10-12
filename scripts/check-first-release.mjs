@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 import { readFileSync } from 'node:fs'
+import { pathToFileURL } from 'node:url'
 
 /**
  * This check is deliberately NOT included in `npm run check`: 1.0 must remain
@@ -42,7 +43,7 @@ export function checkFirstRelease(value){
   return reasons
 }
 
-if(process.argv[1] && import.meta.url===new URL('file://'+process.argv[1]).href){
+if(process.argv[1] && import.meta.url===pathToFileURL(process.argv[1]).href){
   let input
   try{input=JSON.parse(readFileSync(process.argv[2]
     || new URL('../release/first-release-evidence.json',import.meta.url),'utf8'))}
