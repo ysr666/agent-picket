@@ -51,6 +51,7 @@
     "dist/",
     "!dist/**/*.js.map",
     "!dist/**/*.d.ts.map",
+    "!dist/adapters/codex/**",
     "README.md",
     "LICENSE",
     "cordis.patch.yml",
