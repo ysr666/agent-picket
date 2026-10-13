@@ -269,6 +269,10 @@ test('native NTFS checkpoint cannot erase other DurableStats v1 counter families
   const snapshot={version:1,secret:'ab'.repeat(32),sequence:1,
    totals,daily:{[day]:{...totals}},seen:[]}
   writeFileSync(join(dir,'aggregate.v1.json'),JSON.stringify(snapshot),{flag:'wx',mode:0o600})
+  // A complete v1 ledger includes a WAL file even when all current
+  // records are checkpointed. Missing-WAL fixtures are now intentionally
+  // rejected instead of silently recreated by the writer.
+  writeFileSync(join(dir,'aggregate.v1.journal'),'',{flag:'wx',mode:0o600})
   writer=new ExperimentalNtfsWalWriter(dir)
   assert.deepEqual(writer.snapshot,{sequence:1,toolCalls:0})
   assert.equal(writer.recordSyntheticToolCall('new-tool','sandbox-agent','sandbox-session',now+3),true)
@@ -303,6 +307,7 @@ test('native Windows rejects exhausted v1 sequence BEFORE any WAL mutation',{
     checked:0,safe:0,review:0,targeted:0},daily:{},seen:[]}
   const snap=join(dir,'aggregate.v1.json'),wal=join(dir,'aggregate.v1.journal')
   writeFileSync(snap,JSON.stringify(snapshot),{flag:'wx',mode:0o600})
+  writeFileSync(wal,'',{flag:'wx',mode:0o600})
   writer=new ExperimentalNtfsWalWriter(dir)
   const snapshotBefore=readFileSync(snap),walBefore=readFileSync(wal)
   assert.throws(()=>writer!.recordSyntheticToolCall('should-not-commit',
