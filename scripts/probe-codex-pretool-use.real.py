@@ -7,7 +7,7 @@ if os.environ.get('AGENT_PICKET_CODEX_PRETOOL_NATIVE')!='1':
  print('SKIP: opt in explicitly with AGENT_PICKET_CODEX_PRETOOL_NATIVE=1')
  sys.exit(0)
 MODE=os.environ.get('AP_TOOL_MODE','deny')
-assert MODE in ('deny','allow','fail')
+assert MODE in ('deny','allow','fail','host-disabled')
 CODEX=os.environ.get('AGENT_PICKET_CODEX_BIN')
 if not CODEX or not os.path.isabs(CODEX):
  raise RuntimeError('Set AGENT_PICKET_CODEX_BIN to the ABSOLUTE official Codex binary')
@@ -53,7 +53,7 @@ else:script+="process.exit(1);"
 state=root/'synthetic-union-campaign.json'
 now=int(time.time()*1000)
 policy={'version':1,'host':'codex','scope':'pending-Bash-tools-only',
- 'realStrikeConsent':True,'enabled':MODE=='deny','campaign':{
+ 'realStrikeConsent':True,'enabled':MODE!='allow','campaign':{
   'active':True,'startedAtMs':now-1000,'expiresAtMs':now+60000,
   'cause':'collective-vote'}}
 state.write_text(json.dumps(policy))
@@ -94,6 +94,15 @@ try:
  assert selected['sourcePath']==str(home/'hooks.json')
  rpc('config/batchWrite',{'edits':[{'keyPath':'hooks.state','value':{selected['key']:{'trusted_hash':selected['currentHash']}},'mergeStrategy':'upsert'}],'filePath':None,'expectedVersion':None,'reloadUserConfig':True})
  assert rpc('hooks/list',{'cwds':[str(root)]})['data'][0]['hooks'][0]['trustStatus']=='trusted'
+ if MODE=='host-disabled':
+  # Host-owned emergency opt-out in test home, while union action remains ON.
+  assert policy['enabled'] and policy['realStrikeConsent']
+  rpc('config/batchWrite',{'edits':[{'keyPath':'hooks.state',
+   'value':{selected['key']:{'trusted_hash':selected['currentHash'],'enabled':False}},
+   'mergeStrategy':'upsert'}],'filePath':None,'expectedVersion':None,
+   'reloadUserConfig':True})
+  after=rpc('hooks/list',{'cwds':[str(root)]})['data'][0]['hooks'][0]
+  assert after['enabled'] is False and after['trustStatus']=='trusted'
  t=rpc('thread/start',{'cwd':str(root),'ephemeral':True})
  # No user prompts or real account info logged.
  rpc('turn/start',{'threadId':t['thread']['id'],'input':[{'type':'text','text':'SYNTHETIC_AGENT_PICKET_TEST_TOOL_ONLY'}]})
@@ -105,16 +114,20 @@ try:
  if (root/'hook-fields.json').exists():print('EVENT_FIELDS',(root/'hook-fields.json').read_text(),flush=True)
  time.sleep(2)
  print('FINAL_REQUESTS',len(requests),'FINAL_SIDE_EFFECT',side_effect.exists(),flush=True)
- assert (root/'hook-fields.json').exists(),'Expected exact Host PreToolUse event'
+ if MODE=='host-disabled':
+  assert not (root/'hook-fields.json').exists(), 'Officially disabled Hook must NOT fire'
+ else:
+  assert (root/'hook-fields.json').exists(),'Expected exact Host PreToolUse event'
  assert len(requests)>=2,'Model mock should see tool result in a subsequent Responses request'
  assert side_effect.exists()==(MODE!='deny'),'OFF/FAILED state outcome differs from expected Host behavior'
  if side_effect.exists():assert side_effect.read_text()=='SYNTHETIC_TOOL_EXECUTED'
  print('SYNTHETIC_NATIVE_RESULT',json.dumps({'mode':MODE,
   'official_host':version,'official_hook_name':'Bash',
-  'actual_picket_adapter_executed':MODE!='fail',
-  'hook_fired':True,'tool_executed':side_effect.exists(),
+  'actual_picket_adapter_executed':MODE not in ('fail','host-disabled'),
+  'hook_fired':MODE!='host-disabled','tool_executed':side_effect.exists(),
   'model_requests':len(requests),'temporary_workspace_only':True,
-  'production_fail_closed_guarantee':False}),flush=True)
+  'production_fail_closed_guarantee':False,
+  'host_disabled_independent_of_active_union':MODE=='host-disabled'}),flush=True)
  if len(requests)>1:print('SECOND_INPUT_KINDS',[(v.get('type'),v.get('call_id')) for v in requests[1].get('input',[])][-5:],flush=True)
 finally:
  if proc and proc.poll() is None:proc.terminate();proc.wait(timeout=3)
