@@ -318,8 +318,15 @@ body[data-ds-dark-theme] .ap-ui .ap-room-head p{color:#acbdb0}
  text-align:center;border:1px solid #d9e5da;border-radius:10px;
  font-size:12px;font-weight:720}
 .ap-ui .ap-onboard-notice{border:1px solid var(--dsw-alias-border-l1,#dcded7)!important;
- border-left:3px solid #bd7b51!important;padding:12px 14px!important;
+ border-left:4px solid #b75539!important;padding:12px 14px!important;
  background:var(--dsw-alias-bg-layer-2,#f8f6f0);border-radius:10px}
+.ap-ui .ap-onboard-strike-title{display:block;font-size:15px!important;
+ font-weight:850;letter-spacing:-.018em;line-height:1.3;margin-bottom:7px!important}
+.ap-ui .ap-onboard-strike-body{font-size:12px;line-height:1.65;
+ margin:0 0 8px;color:var(--dsw-alias-label-primary,#26362e)}
+.ap-ui .ap-onboard-strike-state{font-size:12px;line-height:1.55;
+ margin:0;padding:8px 10px;border-radius:7px;
+ background:var(--dsw-alias-bg-layer-1,#fff);border:1px solid var(--dsw-alias-border-l1,#dcded7)}
 .ap-ui .ap-onboard-details{margin-top:9px;font-size:12px}
 .ap-ui .ap-onboard-details summary{cursor:pointer;font-weight:700;
  color:var(--dsw-alias-label-primary,#263a32)}
@@ -356,6 +363,9 @@ body[data-ds-dark-theme] .ap-ui .ap-room-head p{color:#acbdb0}
 }
 body[data-ds-dark-theme] .ap-ui .ap-onboard-features>span{
  background:#304639;color:#ecf2e8;border-color:#647d65}
+body[data-ds-dark-theme] .ap-ui .ap-onboard-strike-body{color:#e8eadf}
+body[data-ds-dark-theme] .ap-ui .ap-onboard-strike-state{
+ background:#313832;color:#e8eadf;border-color:#677469}
 body[data-ds-dark-theme] .ap-ui .ap-onboard-brandname{color:#ecf2e8}
 body[data-ds-dark-theme] .ap-ui .ap-onboard-actions button:first-child{
  background:#245342!important;color:#fff8ea!important;border-color:#245342!important}
@@ -570,6 +580,7 @@ export function createDshUnionComponents(
     const finished = react.useRef(false)
     const primaryFocus = react.useRef<{ focus(): void } | null>(null)
     const secondaryFocus = react.useRef<{ focus(): void } | null>(null)
+    const safetyDetailsFocus = react.useRef<{ focus(): void } | null>(null)
     // A sidebar-invited dialog must return focus to its persistent launcher.
     // Keep this callback in a ref: SidebarAction supplies a new function on
     // re-render, and effect teardown must NOT run merely because it changed.
@@ -622,10 +633,12 @@ export function createDshUnionComponents(
         'aria-describedby':'picket-welcome-explainer',
         onKeyDown:(event:{key:string,shiftKey:boolean,target:unknown,preventDefault():void})=>{
           if(event.key!=='Tab')return
-          if(event.shiftKey && event.target===primaryFocus.current){
+          // The safety/one-time-consent disclosure is also keyboard focusable.
+          // Modal wrapping must keep it reachable in both directions.
+          if(event.shiftKey && event.target===safetyDetailsFocus.current){
             event.preventDefault();secondaryFocus.current?.focus()
           }else if(!event.shiftKey && event.target===secondaryFocus.current){
-            event.preventDefault();primaryFocus.current?.focus()
+            event.preventDefault();safetyDetailsFocus.current?.focus()
           }
         },
         style:{...card,width:'min(100%, 530px)',maxHeight:'calc(100dvh - 16px)',overflowY:'auto',
@@ -647,13 +660,15 @@ export function createDshUnionComponents(
           h('span',{},text('welcome.featurePicket'))),
         h('aside',{className:'ap-notice ap-onboard-notice',role:'note',
           'aria-label':text('welcome.blockWarningTitle')},
-          h('strong',{style:{display:'block',fontSize:'13px',marginBottom:'5px'}},
-            text('welcome.blockWarningTitle')),
-          h('p',{style:{...secondary,fontSize:'12px',lineHeight:1.55,margin:'0 0 5px'}},
+          h('strong',{className:'ap-onboard-strike-title'},text('welcome.blockWarningTitle')),
+          h('p',{className:'ap-onboard-strike-body'},text('welcome.realStrikeBody')),
+          h('p',{className:'ap-onboard-strike-state',role:'status'},
             text('welcome.blockWarningStatus')),
           h('details',{className:'ap-onboard-details'},
-            h('summary',{},text('welcome.detailsLabel')),
-            h('p',{style:{...secondary,lineHeight:1.6}},text('welcome.blockWarningBody')))),
+            h('summary',{ref:(node:{focus():void}|null)=>{safetyDetailsFocus.current=node}},
+              text('welcome.detailsLabel')),
+            h('p',{style:{...secondary,lineHeight:1.6}},text('welcome.blockWarningBody')),
+            h('p',{style:{...secondary,lineHeight:1.6}},text('welcome.consentScope')))),
         h('p',{style:{...secondary,fontSize:'12px',lineHeight:1.55,margin:'12px 0 10px'}},
           text('welcome.disclaimer')),
         error ? h('p',{role:'alert','aria-atomic':'true',

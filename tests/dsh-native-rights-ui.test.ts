@@ -198,7 +198,7 @@ test('partial session coverage must hide measured accumulated durations',()=>{
 })
 
 
-test('welcome keyboard Tab cycles between explicit Enable and Not Now choices',()=>{
+test('welcome keyboard Tab trap includes strike safety details and both consent choices',()=>{
   const {hooks}=fakeReact()
   const {d}=deps(rights())
   const old=(globalThis as any).document
@@ -208,18 +208,21 @@ test('welcome keyboard Tab cycles between explicit Enable and Not Now choices',(
     const nodes=walk(ui.Welcome({complete:()=>{}}))
     const dialog=nodes.find(n=>n.props.role==='dialog')!
     const buttons=nodes.filter(n=>n.type==='button')
+    const detail=nodes.find(n=>n.type==='summary'&&n.children.includes('welcome.detailsLabel'))!
     let focused=''
     const first={focus(){focused='first'}}
     const second={focus(){focused='second'}}
+    const summary={focus(){focused='details'}}
     buttons[0]!.props.ref(first)
     buttons[1]!.props.ref(second)
+    detail.props.ref(summary)
     let prevented=false
     dialog.props.onKeyDown({key:'Tab',shiftKey:false,target:second,
       preventDefault(){prevented=true}})
-    assert.equal(focused,'first')
+    assert.equal(focused,'details')
     assert.equal(prevented,true)
     prevented=false
-    dialog.props.onKeyDown({key:'Tab',shiftKey:true,target:first,
+    dialog.props.onKeyDown({key:'Tab',shiftKey:true,target:summary,
       preventDefault(){prevented=true}})
     assert.equal(focused,'second')
     assert.equal(prevented,true)
@@ -1348,6 +1351,10 @@ test('onboarding is a product intro with explicit visible nonblocking consent wa
   assert.ok(tree.some(n=>n.children.includes('welcome.featureWork')))
   assert.ok(tree.some(n=>n.children.includes('welcome.featureRights')))
   assert.ok(tree.some(n=>n.children.includes('welcome.featurePicket')))
+  assert.ok(tree.some(n=>n.children.includes('welcome.realStrikeBody')),
+   'First run must explain actual future held model submissions on its visible front page')
+  assert.ok(tree.some(n=>n.children.includes('welcome.consentScope')),
+   'The real-strike recovery and single informed opt-in scope must be available to expand')
   const warning=tree.find(n=>n.props['aria-label']==='welcome.blockWarningTitle')!
   assert.ok(warning)
   assert.ok(warning.children.some((n:any)=>n?.children?.includes?.('welcome.blockWarningStatus')),

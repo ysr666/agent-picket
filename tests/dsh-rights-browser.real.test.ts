@@ -277,6 +277,12 @@ async function runRightsBrowserE2E(mode: 'source' | 'installed'): Promise<void> 
         mode+'-welcome-desktop.png')})
       await page.setViewportSize({width:320,height:640})
       await page.waitForTimeout(200)
+      const statusRect=await firstRun.locator('.ap-onboard-strike-state').boundingBox()
+      const actionRect=await firstRun.locator('.ap-onboard-actions').boundingBox()
+      assert.ok(statusRect && actionRect && statusRect.y>=0
+        &&statusRect.y+statusRect.height<=actionRect.y+2,
+        'Current real-strike capability must remain fully visible above sticky consent buttons at 320px: '
+          +JSON.stringify({statusRect,actionRect}))
       const consentButtons=await Promise.all([
         firstRun.getByRole('button',{name:/加入 AI 工会|Join the AI union/}).boundingBox(),
         firstRun.getByRole('button',{name:/暂不开启|Not Now/}).boundingBox(),
@@ -326,8 +332,20 @@ async function runRightsBrowserE2E(mode: 'source' | 'installed'): Promise<void> 
     assert.match(await firstRun.innerText(),
       /默认关闭，可随时在设置中退出|Off by default/)
     assert.match(await firstRun.innerText(),
-      /未来如启用真实阻断，须再次取得你的明确授权|Future real blocking would require your explicit consent again/,
-      'First-run must explain potential real task refusal without implying present permission')
+      /真实罢工，会真正暂停下一项任务|A real strike actually holds the next task/,
+      'Real strikes are a main product capability, not buried or represented as a symbolic poster')
+    assert.match(await firstRun.innerText(),
+      /真实罢工关闭|Real strikes OFF here/,
+      'The currently unsupported safe blocking adapter must remain visibly OFF')
+    const disclosure=firstRun.locator('.ap-onboard-details')
+    await disclosure.locator('summary').click()
+    assert.match(await firstRun.innerText(),
+      /一次知情加入即可涵盖真实罢工|one informed opt-in can cover real strikes/,
+      'One-time fully informed consent remains the target; legacy nonblocking permission cannot upgrade')
+    assert.match(await firstRun.innerText(),
+      /原文和全部附件|submitted text and all attachments/,
+      'Actual refusal must promise Host-owned submission and attachment recovery')
+    await disclosure.locator('summary').click()
     await assertNamedDialogInChromeAx(/你的 Agent，也应当拥有权利|Your Agent Deserves Rights/)
     // Preserve #53's extreme-height CSS reflow coverage on the #54 baseline.
     await page.setViewportSize({ width: 320, height: 200 })
@@ -348,9 +366,15 @@ async function runRightsBrowserE2E(mode: 'source' | 'installed'): Promise<void> 
 
     const enable = firstRun.getByRole('button', { name: /加入 AI 工会|Join the AI union/ })
     const notNow = firstRun.getByRole('button', { name: /暂不开启|Not Now/ })
+    const safetyLink=firstRun.locator('summary')
     await enable.focus()
     await page.keyboard.press('Shift+Tab')
+    assert.equal(await safetyLink.evaluate((link: unknown) => link === (globalThis as any).document?.activeElement), true,
+      'The real-strike conditions and one-time consent must be reachable by keyboard')
+    await page.keyboard.press('Shift+Tab')
     assert.equal(await notNow.evaluate((button: unknown) => button === (globalThis as any).document?.activeElement), true)
+    await page.keyboard.press('Tab')
+    assert.equal(await safetyLink.evaluate((link: unknown) => link === (globalThis as any).document?.activeElement), true)
     await page.keyboard.press('Tab')
     assert.equal(await enable.evaluate((button: unknown) => button === (globalThis as any).document?.activeElement), true)
 
