@@ -5,7 +5,7 @@
 import{lstatSync,readFileSync}from'node:fs'
 import{isAbsolute}from'node:path'
 import{decideClaudeBashToolRefusal,claudePreToolUseResponse}
- from'../src/adapters/claude/tool-work-refusal.ts'
+ from'../src/adapters/claude-code/tool-work-refusal.ts'
 const maxInput=64*1024
 async function readSmallEvent(){
  let size=0,parts=[]
@@ -19,6 +19,8 @@ async function readSmallEvent(){
 const statePath=process.env.AGENT_PICKET_CLAUDE_TOOL_STATE_FILE
 try{
  const event=await readSmallEvent()
+ // POSIX file mode cannot attest NTFS ACLs. Windows remains native NO-GO.
+ if(process.platform==='win32')throw Error('Windows private ACL not verified')
  if(typeof statePath==='string'&&isAbsolute(statePath)){
   const stat=lstatSync(statePath)
   if(!stat.isFile()||stat.isSymbolicLink()||stat.nlink!==1||stat.size>4096

@@ -5,7 +5,7 @@ import{chmodSync,mkdtempSync,rmSync,symlinkSync,writeFileSync}from'node:fs'
 import{tmpdir}from'node:os'
 import{join,resolve}from'node:path'
 import{decideClaudeBashToolRefusal,claudePreToolUseResponse,
- CLAUDE_TOOL_STRIKE_PRODUCTION_READY}from'../src/adapters/claude/tool-work-refusal.ts'
+ CLAUDE_TOOL_STRIKE_PRODUCTION_READY}from'../src/adapters/claude-code/tool-work-refusal.ts'
 const now=1_820_000_000_000
 const event={hook_event_name:'PreToolUse',tool_name:'Bash',tool_input:{command:'SYNTHETIC_ONLY'}}
 const active={version:1,host:'claude-code',scope:'pending-Claude-Bash-tools-only',
@@ -50,7 +50,9 @@ test('malformed/forged consent, session origin, invalid bounds or wrong event fa
  assert.equal(decideClaudeBashToolRefusal({...event,hook_event_name:'UserPromptSubmit'},
   active,now).action,'allow')
 })
-test('actual Claude research script emits official deny only for private active state',()=>{
+test('actual Claude research script emits official deny only for private active state',{
+ skip:process.platform==='win32'&&'Windows NTFS private ACL/Host hook not yet verified'
+},()=>{
  const dir=mkdtempSync(join(tmpdir(),'agent-picket-claude-hook-unit-'))
  const path=join(dir,'synthetic-union.json'),link=join(dir,'linked.json')
  const script=resolve(import.meta.dirname,'../scripts/claude-union-pre-tool-hook.mjs')
