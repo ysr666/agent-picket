@@ -1,6 +1,7 @@
 /**
  * ISOLATED RESEARCH ONLY; excluded from npm. Not a production DurableStats.
- * Narrow v1-compatible NTFS WAL writer: no dead-owner takeover, explicit test-only checkpoint,
+ * Research-only v1 WAL format plus NEW-ledger sidecar anchor (no legacy migration):
+ * no dead-owner takeover, explicit test-only checkpoint,
  * no torn-tail repair; checkpoint requires manual test invocation.
  */
 import {createHmac,randomBytes} from 'node:crypto'
@@ -11,9 +12,11 @@ import {isAbsolute,join} from 'node:path'
 import {createProtectedNtfsDirectory,verifyPrivateNtfsAcl} from './windows-private-acl.ts'
 import {inspectPrivateNtfsLedgerLayout} from './windows-ledger-layout.ts'
 import {replayVerifiedV1SnapshotWal} from './windows-wal-replay.ts'
+import {auditExperimentalWalAnchor} from './windows-wal-anchor.experimental.ts'
 
 const snapshotName='aggregate.v1.json'
 const journalName='aggregate.v1.journal'
+const anchorName='aggregate.v1.anchor'
 const lockName='aggregate.v1.lock'
 const totalsZero={turnStarts:0,turnEnds:0,toolCalls:0,toolResults:0,
  completedTurnMs:0,checked:0,safe:0,review:0,targeted:0}
@@ -87,6 +90,24 @@ export class ExperimentalNtfsWalWriter {
    if(!inspectPrivateNtfsLedgerLayout(directory).private)throw Error('NTFS layout changed during writer initialization')
   }catch(error){this.close();throw error}
  }
+ // TEST ONLY: a separate fsynced sequence/tool-call watermark is committed
+ // AFTER WAL fsync but BEFORE an event is acknowledged. A crash in-between
+ // leaves a mismatch and demands forensic recovery, never automatic rollback.
+ #writeAnchor(sequence:number,toolCalls:number,tipMac:string|null):void{
+  const anchor=join(this.#directory,anchorName)
+  const temp=join(this.#directory,'aggregate.v1-'+randomBytes(8).toString('hex')+'.tmp')
+  let fd:number|undefined
+  try{
+   fd=openSync(temp,'wx',0o600)
+   writeFileSync(fd,JSON.stringify({version:1,sequence,toolCalls,tipMac}))
+   fsyncSync(fd);closeSync(fd);fd=undefined
+   if(!verifyPrivateNtfsAcl(temp,'file'))throw Error('Anchor temp ACL unverified')
+   renameSync(temp,anchor)
+   if(!verifyPrivateNtfsAcl(anchor,'file'))throw Error('Committed anchor ACL unverified')
+  }finally{
+   if(fd!==undefined)try{closeSync(fd)}catch{/* fail closed */}
+  }
+ }
  #initialize(existing:boolean):void{
   const snap=join(this.#directory,snapshotName)
   const wal=join(this.#directory,journalName)
@@ -107,9 +128,12 @@ export class ExperimentalNtfsWalWriter {
    const journalFd=openSync(wal,'wx',0o600)
    try{fsyncSync(journalFd)}finally{closeSync(journalFd)}
    if(!verifyPrivateNtfsAcl(wal,'file'))throw Error('Initial WAL ACL unverified')
+   this.#writeAnchor(0,0,null)
    return
   }
   if(!existsSync(wal))throw Error('Missing existing WAL; cannot prove no data loss')
+  const anchor=join(this.#directory,anchorName)
+  if(!existsSync(anchor))throw Error('Missing independent WAL anchor; no safe migration')
   const snapText=readFileSync(snap,'utf8')
   const raw=JSON.parse(snapText) as {secret?:string;seen?:string[];sequence?:number}
   const bytes=readFileSync(wal)
@@ -117,6 +141,8 @@ export class ExperimentalNtfsWalWriter {
   const recovered=replayVerifiedV1SnapshotWal(snapText,bytes)
   if(recovered.status!=='verified'||recovered.tornTail)
    throw Error('WAL requires forensic review before writing')
+  if(auditExperimentalWalAnchor(snapText,bytes,readFileSync(anchor,'utf8'))!=='verified')
+   throw Error('WAL anchor mismatch; suspected committed work rollback')
   if((recovered.applied??0)>MAX_RECORDS_BETWEEN_CHECKPOINTS)throw Error('Experimental WAL limit reached')
   this.#secret=raw.secret!
   this.#sequence=recovered.sequence!
@@ -154,7 +180,8 @@ export class ExperimentalNtfsWalWriter {
  get snapshot():Readonly<{sequence:number;toolCalls:number}>{
   return {sequence:this.#sequence,toolCalls:this.#toolCalls}
  }
- recordSyntheticToolCall(eventId:string,agentId:string,sessionId:string,atMs:number):boolean{
+ recordSyntheticToolCall(eventId:string,agentId:string,sessionId:string,atMs:number,
+  afterWalFsyncForTest?:()=>void):boolean{
   if(this.#closed||this.#faulted||this.#fd===undefined)throw Error('Writer is not usable')
   if([eventId,agentId,sessionId].some(v=>typeof v!=='string'||!v||v.length>128)
     ||!Number.isSafeInteger(atMs)||atMs<0||atMs>8_640_000_000_000_000)
@@ -185,6 +212,8 @@ export class ExperimentalNtfsWalWriter {
    const bytes=Buffer.from(JSON.stringify({seq,fp,changes,atMs,mac})+'\n')
    if(writeSync(this.#fd,bytes)!==bytes.length)throw Error('Short WAL write')
    fsyncSync(this.#fd)
+   afterWalFsyncForTest?.()
+   this.#writeAnchor(seq,this.#totals.toolCalls+1,mac)
    this.#sequence=seq;this.#toolCalls++;this.#totals.toolCalls++;this.#seen.add(fp)
    if(this.#seen.size>MAX_FINGERPRINTS)
     this.#seen.delete(this.#seen.values().next().value!)

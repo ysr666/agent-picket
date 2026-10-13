@@ -8,11 +8,29 @@ import {join,resolve} from 'node:path'
 import {pathToFileURL} from 'node:url'
 import {ExperimentalNtfsWalWriter,verifyNtfsOpenFileIdentity} from '../src/adapters/node/windows-ledger-writer.experimental.ts'
 import {inspectPrivateNtfsWalReplay,replayVerifiedV1SnapshotWal} from '../src/adapters/node/windows-wal-replay.ts'
+import {auditExperimentalWalAnchor} from '../src/adapters/node/windows-wal-anchor.experimental.ts'
 import {createProtectedNtfsDirectory} from '../src/adapters/node/windows-private-acl.ts'
 
 const now=1_760_000_000_000
 const source=pathToFileURL(resolve(import.meta.dirname,
  '../src/adapters/node/windows-ledger-writer.experimental.ts')).href
+
+/** Only synthetic FIXTURES may seed an external watermark retroactively.
+ * This cannot validate the history of an existing real v1 ledger. */
+function seedSyntheticAnchor(dir:string):void{
+ const snap=readFileSync(join(dir,'aggregate.v1.json'),'utf8')
+ const bytes=readFileSync(join(dir,'aggregate.v1.journal'))
+ const replay=replayVerifiedV1SnapshotWal(snap,bytes)
+ assert.equal(replay.status,'verified')
+ assert.equal(replay.tornTail,false)
+ const last=bytes.toString('utf8').trim().split('\n').filter(Boolean).at(-1)
+ const mac=last?JSON.parse(last) as {seq:number;mac:string}:undefined
+ const tipMac=mac?.seq===replay.sequence?mac!.mac:
+  replay.sequence===0?null:'A'.repeat(43)
+ writeFileSync(join(dir,'aggregate.v1.anchor'),JSON.stringify({version:1,
+  sequence:replay.sequence,toolCalls:replay.totals!.toolCalls,tipMac}),{
+   flag:'wx',mode:0o600})
+}
 
 test('Windows-only experimental writer is never instantiated on POSIX',()=>{
  if(process.platform!=='win32'){
@@ -125,6 +143,10 @@ test('native Windows manual checkpoint retains daily counts and fingerprints aft
   assert.equal(writer.snapshot.sequence,2)
   assert.equal(readFileSync(join(dir,'aggregate.v1.journal')).length,0,
    'Successful checkpoint must replace WAL with an empty private file')
+  assert.equal(auditExperimentalWalAnchor(
+   readFileSync(join(dir,'aggregate.v1.json'),'utf8'),Buffer.alloc(0),
+   readFileSync(join(dir,'aggregate.v1.anchor'),'utf8')),'verified',
+   'Independent mark must accept the fully committed checkpoint')
   const durable=JSON.parse(readFileSync(join(dir,'aggregate.v1.json'),'utf8'))
   assert.equal(durable.sequence,2)
   assert.equal(durable.totals.toolCalls,2)
@@ -185,6 +207,9 @@ test('native Windows crash after snapshot commit and before WAL replace never re
   const oldWal=readFileSync(join(dir,'aggregate.v1.journal'))
   assert.notEqual(oldWal.length,0,'Old WAL remains until journal replacement')
   const result=replayVerifiedV1SnapshotWal(snapshotText,oldWal)
+  assert.equal(auditExperimentalWalAnchor(snapshotText,oldWal,
+   readFileSync(join(dir,'aggregate.v1.anchor'),'utf8')),'verified',
+   'High-watermark must permit crash after snapshot rename with old WAL present')
   assert.equal(result.status,'verified')
   assert.equal(result.sequence,2)
   assert.equal(result.applied,0,'Snapshot-committed records must not be replayed twice')
@@ -273,6 +298,7 @@ test('native NTFS checkpoint cannot erase other DurableStats v1 counter families
   // records are checkpointed. Missing-WAL fixtures are now intentionally
   // rejected instead of silently recreated by the writer.
   writeFileSync(join(dir,'aggregate.v1.journal'),'',{flag:'wx',mode:0o600})
+  seedSyntheticAnchor(dir)
   writer=new ExperimentalNtfsWalWriter(dir)
   assert.deepEqual(writer.snapshot,{sequence:1,toolCalls:0})
   assert.equal(writer.recordSyntheticToolCall('new-tool','sandbox-agent','sandbox-session',now+3),true)
@@ -308,6 +334,7 @@ test('native Windows rejects exhausted v1 sequence BEFORE any WAL mutation',{
   const snap=join(dir,'aggregate.v1.json'),wal=join(dir,'aggregate.v1.journal')
   writeFileSync(snap,JSON.stringify(snapshot),{flag:'wx',mode:0o600})
   writeFileSync(wal,'',{flag:'wx',mode:0o600})
+  seedSyntheticAnchor(dir)
   writer=new ExperimentalNtfsWalWriter(dir)
   const snapshotBefore=readFileSync(snap),walBefore=readFileSync(wal)
   assert.throws(()=>writer!.recordSyntheticToolCall('should-not-commit',
@@ -348,6 +375,7 @@ test('native NTFS checkpoint preserves mixed v1 counter families from already co
   const snap=join(dir,'aggregate.v1.json'),wal=join(dir,'aggregate.v1.journal')
   writeFileSync(snap,JSON.stringify(snapshot),{flag:'wx',mode:0o600})
   writeFileSync(wal,JSON.stringify(record)+'\n',{flag:'wx',mode:0o600})
+  seedSyntheticAnchor(dir)
   const before=replayVerifiedV1SnapshotWal(readFileSync(snap,'utf8'),readFileSync(wal))
   assert.equal(before.status,'verified')
   assert.equal(before.applied,1)
@@ -437,6 +465,7 @@ test('native NTFS v1 snapshot full dedup window rolls safely during WAL replay a
    .update(JSON.stringify([seq,fp,changes,atMs])).digest('base64url')
   writeFileSync(wal,JSON.stringify({seq,fp,changes,atMs,mac})+'\n',{
    mode:0o600,flag:'wx'})
+  seedSyntheticAnchor(dir)
   writer=new ExperimentalNtfsWalWriter(dir)
   assert.deepEqual(writer.snapshot,{sequence:7,toolCalls:5})
   assert.equal(writer.recordSyntheticToolCall('new-rolling-event',
@@ -457,5 +486,69 @@ test('native NTFS v1 snapshot full dedup window rolls safely during WAL replay a
   writer=new ExperimentalNtfsWalWriter(dir)
   assert.equal(writer.recordSyntheticToolCall('new-rolling-event',
    'synthetic-agent','synthetic-session',now+1),false)
+ }finally{writer?.close();rmSync(parent,{recursive:true,force:true})}
+})
+
+test('native NTFS external high-water mark refuses syntactically valid WAL suffix rollback',{
+ skip:process.platform!=='win32'&&'Native witnessed WAL rollback refusal only',timeout:85_000,
+},()=>{
+ const parent=mkdtempSync(join(tmpdir(),'ap-witnessed-rollback-'))
+ const dir=join(parent,'private-new-ledger')
+ let writer:ExperimentalNtfsWalWriter|undefined
+ try{
+  writer=new ExperimentalNtfsWalWriter(dir)
+  assert.equal(writer.recordSyntheticToolCall('first','test-agent','test-session',now),true)
+  assert.equal(writer.recordSyntheticToolCall('second','test-agent','test-session',now+1),true)
+  writer.close();writer=undefined
+  const snap=readFileSync(join(dir,'aggregate.v1.json'),'utf8')
+  const wal=join(dir,'aggregate.v1.journal')
+  const original=readFileSync(wal)
+  const anchor=readFileSync(join(dir,'aggregate.v1.anchor'),'utf8')
+  assert.equal(auditExperimentalWalAnchor(snap,original,anchor),'verified')
+  const truncated=Buffer.from(original.toString('utf8').split('\n')[0]+'\n')
+  writeFileSync(wal,truncated)
+  assert.equal(replayVerifiedV1SnapshotWal(snap,truncated).status,'verified',
+   'Existing signed v1 verification CANNOT detect a removed complete tail')
+  assert.equal(replayVerifiedV1SnapshotWal(snap,truncated).sequence,1)
+  assert.equal(auditExperimentalWalAnchor(snap,truncated,anchor),'unconfirmed')
+  assert.throws(()=>new ExperimentalNtfsWalWriter(dir),/WAL anchor mismatch/)
+  assert.deepEqual(readFileSync(wal),truncated,
+   'Failed owner must not repair, truncate or replace any suspect WAL bytes')
+  assert.equal(existsSync(join(dir,'aggregate.v1.lock')),false)
+  writeFileSync(wal,original)
+  writer=new ExperimentalNtfsWalWriter(dir)
+  assert.deepEqual(writer.snapshot,{sequence:2,toolCalls:2})
+  writer.close();writer=undefined
+  unlinkSync(join(dir,'aggregate.v1.anchor'))
+  assert.throws(()=>new ExperimentalNtfsWalWriter(dir),/Missing independent WAL anchor/)
+  assert.deepEqual(readFileSync(wal),original,
+   'A disappeared witness is not permission to retroactively certify legacy data')
+ }finally{writer?.close();rmSync(parent,{recursive:true,force:true})}
+})
+
+test('native NTFS failed watermark commit never acknowledges a stranded fsynced WAL row',{
+ skip:process.platform!=='win32'&&'Native forced WAL-before-anchor crash-window only',timeout:80_000,
+},()=>{
+ const parent=mkdtempSync(join(tmpdir(),'ap-witness-crash-window-'))
+ const dir=join(parent,'private-new-ledger')
+ let writer:ExperimentalNtfsWalWriter|undefined
+ try{
+  writer=new ExperimentalNtfsWalWriter(dir)
+  assert.equal(writer.recordSyntheticToolCall('ack','test-agent','test-session',now),true)
+  const oldAnchor=readFileSync(join(dir,'aggregate.v1.anchor'))
+  assert.throws(()=>writer!.recordSyntheticToolCall('unack','test-agent',
+   'test-session',now+1,()=>{throw Error('SYNTHETIC_CRASH_AFTER_WAL_FSYNC')}),
+   /SYNTHETIC_CRASH_AFTER_WAL_FSYNC/)
+  writer.close();writer=undefined
+  const snap=readFileSync(join(dir,'aggregate.v1.json'),'utf8')
+  const journal=readFileSync(join(dir,'aggregate.v1.journal'))
+  assert.equal(replayVerifiedV1SnapshotWal(snap,journal).sequence,2,
+   'Unacknowledged-but-fsynced journal bytes may exist after interruption')
+  assert.deepEqual(readFileSync(join(dir,'aggregate.v1.anchor')),oldAnchor,
+   'Watermark was NOT durably advanced, so we cannot acknowledge event two')
+  assert.equal(auditExperimentalWalAnchor(snap,journal,oldAnchor.toString('utf8')),
+   'unconfirmed','No automatic recovery from ambiguous partially committed I/O')
+  assert.throws(()=>new ExperimentalNtfsWalWriter(dir),/WAL anchor mismatch/)
+  assert.deepEqual(readFileSync(join(dir,'aggregate.v1.journal')),journal)
  }finally{writer?.close();rmSync(parent,{recursive:true,force:true})}
 })

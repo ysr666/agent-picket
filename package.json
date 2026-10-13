@@ -57,6 +57,7 @@
     "!dist/adapters/node/windows-ledger-lock.*",
     "!dist/adapters/node/windows-wal-replay.*",
     "!dist/adapters/node/windows-ledger-writer.experimental.*",
+    "!dist/adapters/node/windows-wal-anchor.experimental.*",
     "README.md",
     "LICENSE",
     "cordis.patch.yml",
