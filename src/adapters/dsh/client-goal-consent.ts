@@ -10,30 +10,43 @@ export interface RealGoalConsentSection {
   readonly realGoalStrikeConsent?:'off'|'authorized-v1'
 }
 export const REAL_GOAL_DISCLOSURE_VERSION='goal-safe-boundary-v1' as const
-export function createDshRealGoalConsentControl(scope:DshSettingsScope<RealGoalConsentSection>){
+export interface GoalCapabilityWitness {
+  snapshot():boolean
+  qualify(fresh?:boolean):Promise<boolean>
+  subscribe(listener:()=>void):()=>void
+}
+export function createDshRealGoalConsentControl(
+  scope:DshSettingsScope<RealGoalConsentSection>,service:GoalCapabilityWitness,
+){
   const snapshot=()=>{
     try {
       const s=scope.getSnapshot()
       const value=s.value?.realGoalStrikeConsent??'off'
       const valid=s.status==='ready'&&s.mode==='host'
         &&(value==='off'||value==='authorized-v1')
-      return {available:valid,writable:valid&&s.writable,
+      return {available:valid&&service.snapshot(),writable:valid&&s.writable,
         authorized:valid&&s.value?.welcomeDecision==='enabled'
           &&value==='authorized-v1'}
     }catch{return {available:false,writable:false,authorized:false}}
   }
   return {
     snapshot,
+    subscribe:service.subscribe,
+    qualify:service.qualify,
     /** UI must display explicit uninterrupted-current-round + resumable-Goal warning first. */
     async choose(choice:'off'|'authorized-v1',disclosureVersion?:typeof REAL_GOAL_DISCLOSURE_VERSION){
       const before=scope.getSnapshot()
       if(before.status!=='ready'||before.mode!=='host'||!before.writable)
         throw new Error('Host-owned Goal strike settings unavailable')
       if(choice==='authorized-v1'){
+        if(!await service.qualify(true)||!service.snapshot())
+          throw new Error('Official Goal Host service has not been verified')
         if(disclosureVersion!==REAL_GOAL_DISCLOSURE_VERSION
           ||before.value?.welcomeDecision!=='enabled')
           throw new Error('New real Goal interruption disclosure not acknowledged')
       }
+      if(choice==='authorized-v1'&&!service.snapshot())
+        throw new Error('Official Goal Host service lost before consent')
       await scope.set('realGoalStrikeConsent',choice)
       const after=scope.getSnapshot()
       if(after.status!=='ready'||after.mode!=='host'

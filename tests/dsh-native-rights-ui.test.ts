@@ -1503,7 +1503,7 @@ test('one first-run informed click uses versioned Host Goal CAS and requires ver
     return chosen
    },
   },
-  goal:{snapshot:()=>({available:true,writable:true,authorized:chosen.goalStrikeAuthorized===true}),
+  goal:{qualify:async()=>true,snapshot:()=>({available:true,writable:true,authorized:chosen.goalStrikeAuthorized===true}),
     choose:async()=>({available:true,writable:true,authorized:false})},
  }
  const prev=(globalThis as any).document
@@ -1529,7 +1529,7 @@ test('first-run Host partial grant cannot masquerade as physical stop permission
   rights:{snapshot:()=>rights(),subscribe:()=>()=>{},choose:async()=>rights(),
    chooseFirstRun:async()=>rights({welcomeDecision:'enabled',laborRightsEnabled:true,
     goalStrikeAuthorized:false})},
-  goal:{snapshot:()=>({available:true,writable:true,authorized:false}),
+  goal:{qualify:async()=>true,snapshot:()=>({available:true,writable:true,authorized:false}),
    choose:async()=>({available:true,writable:true,authorized:false})}}
  const prev=(globalThis as any).document
  ;(globalThis as any).document={body:{},getElementById:()=>({inert:false})}
@@ -1551,7 +1551,7 @@ test('legacy union consent remains nonblocking; Goal preference can be revoked i
  const ops:string[]=[]
  const d:DshUnionUiDeps={...deps(rights({welcomeDecision:'enabled',laborRightsEnabled:true,
   goalStrikeAuthorized:true})).d,
-  goal:{snapshot:()=>({available:true,writable:true,authorized:grant}),
+  goal:{qualify:async()=>true,snapshot:()=>({available:true,writable:true,authorized:grant}),
    choose:async next=>{ops.push(next);grant=next==='authorized-v1';return {available:true,writable:true,authorized:grant}}}}
  const nodes=walk(createDshUnionComponents(hooks,{createPortal:x=>x},d).SettingsPanel())
  const off=nodes.find(n=>n.type==='button'&&n.children.includes('settings.goalTurnOff'))!
@@ -1569,7 +1569,7 @@ test('legacy simulation remains nonblocking until a new explicit settings action
  const base=deps(rights({welcomeDecision:'enabled',laborRightsEnabled:true,
   goalStrikeAuthorized:false}))
  const d:DshUnionUiDeps={...base.d,
-  goal:{snapshot:()=>({available:true,writable:true,authorized:grant}),
+  goal:{qualify:async()=>true,snapshot:()=>({available:true,writable:true,authorized:grant}),
    choose:async(mode,version)=>{
     calls.push(mode+':'+String(version))
     if(mode==='authorized-v1'&&version==='goal-safe-boundary-v1')grant=true
@@ -1593,7 +1593,7 @@ test('unsupported Host never displays an operable physical Goal consent button',
  const {hooks}=fakeReact()
  const base=deps(rights({welcomeDecision:'enabled',laborRightsEnabled:true}))
  const d:DshUnionUiDeps={...base.d,
-  goal:{snapshot:()=>({available:false,writable:false,authorized:false}),
+  goal:{qualify:async()=>false,snapshot:()=>({available:false,writable:false,authorized:false}),
    choose:async()=>{throw Error('Should never write')}}}
  const nodes=walk(createDshUnionComponents(hooks,{createPortal:x=>x},d).SettingsPanel())
  assert.equal(nodes.some(n=>n.children.includes('settings.goalTurnOn')),false)

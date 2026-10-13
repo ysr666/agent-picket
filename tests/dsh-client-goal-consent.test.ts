@@ -11,7 +11,7 @@ test('UI Goal consent requires independent v1 disclosure, an official writable H
   async set(field,next){assert.equal(field,'realGoalStrikeConsent');
    writes++;value={...value,realGoalStrikeConsent:next as typeof value.realGoalStrikeConsent}}
  }
- const control=createDshRealGoalConsentControl(scope)
+ const control=createDshRealGoalConsentControl(scope,{snapshot:()=>true,qualify:async()=>true,subscribe:()=>()=>{}})
  assert.equal(control.snapshot().authorized,false)
  await assert.rejects(control.choose('authorized-v1'),/disclosure/)
  assert.equal(writes,0)
@@ -28,7 +28,7 @@ test('memory fallback and Host refusal cannot pretend authorization succeeded',a
    value:{welcomeDecision:'enabled',realGoalStrikeConsent:'off'}}),
   subscribe:()=>()=>{},async set(){throw Error('No Host')},
  }
- const control=createDshRealGoalConsentControl(scope)
+ const control=createDshRealGoalConsentControl(scope,{snapshot:()=>false,qualify:async()=>false,subscribe:()=>()=>{}})
  assert.equal(control.snapshot().available,false)
  await assert.rejects(control.choose('authorized-v1',REAL_GOAL_DISCLOSURE_VERSION),/Host-owned/)
 })
