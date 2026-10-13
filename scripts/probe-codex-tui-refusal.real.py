@@ -6,10 +6,11 @@ try:
 except ImportError:
  print('SKIP: install pexpect in a disposable development environment')
  sys.exit(0)
+image_only_mode=os.environ.get('AGENT_PICKET_CODEX_TUI_IMAGE_ONLY_NATIVE')=='1'
 two_image_mode=os.environ.get('AGENT_PICKET_CODEX_TUI_TWO_IMAGES_NATIVE')=='1'
-image_mode=two_image_mode or os.environ.get('AGENT_PICKET_CODEX_TUI_IMAGE_NATIVE')=='1'
+image_mode=image_only_mode or two_image_mode or os.environ.get('AGENT_PICKET_CODEX_TUI_IMAGE_NATIVE')=='1'
 if os.environ.get('AGENT_PICKET_CODEX_TUI_NATIVE')!='1' and not image_mode:
- print('SKIP: set AGENT_PICKET_CODEX_TUI_NATIVE=1 (text), AGENT_PICKET_CODEX_TUI_IMAGE_NATIVE=1 (one PNG) or AGENT_PICKET_CODEX_TUI_TWO_IMAGES_NATIVE=1 (two PNGs)')
+ print('SKIP: set AGENT_PICKET_CODEX_TUI_NATIVE=1 (text), AGENT_PICKET_CODEX_TUI_IMAGE_NATIVE=1 (one PNG) or AGENT_PICKET_CODEX_TUI_TWO_IMAGES_NATIVE=1 (two PNGs) or AGENT_PICKET_CODEX_TUI_IMAGE_ONLY_NATIVE=1 (image-only)')
  sys.exit(0)
 CODEX=os.environ.get('AGENT_PICKET_CODEX_BIN') or shutil.which('codex')
 if not CODEX or not os.path.isabs(CODEX):
@@ -17,7 +18,7 @@ if not CODEX or not os.path.isabs(CODEX):
 version=subprocess.check_output([CODEX,'--version'],text=True).strip()
 if version!='codex-cli 0.146.1':
  raise RuntimeError('Native TUI contract must be revalidated for this version: '+version)
-PROMPT='SYNTHETIC_TUI_REJECTED_MESSAGE_ONLY_20261013'
+PROMPT='' if image_only_mode else 'SYNTHETIC_TUI_REJECTED_MESSAGE_ONLY_20261013'
 
 def screen(text):
  import unicodedata
@@ -158,12 +159,13 @@ try:
  assert 'Agent Picket AI union:' in ''.join(raw), 'No visible union grievance/reason'
  assert (root/'hook_fired').exists(), 'Official Hook never ran'
  assert TestAPI.hits==0, 'No model request is allowed while union action holds'
- assert PROMPT not in denied, 'Test assumes post-veto draft is no longer in composer'
+ if not image_only_mode:
+  assert PROMPT not in denied, 'Test assumes post-veto draft is no longer in composer'
  # User-driven, ordinary official Codex TUI history-edit key. No private
  # rollout access, transcript scraping or Agent Picket-owned raw text queue.
  tui.send('\x1b[A');grab(1)
  restored=screen(''.join(raw))
- expected_editor=('› [Image #1] '+('[Image #2] ' if two_image_mode else '')+PROMPT) if image_mode else ('› '+PROMPT)
+ expected_editor=('› [Image #1]' if image_only_mode else (('› [Image #1] '+('[Image #2] ' if two_image_mode else '')+PROMPT) if image_mode else ('› '+PROMPT)))
  assert expected_editor in restored, 'UP did not restore original composer contents'
  # Simulate separate authorized Union settings OFF; neither Hook trust nor
  # Codex process state is modified, and no user prompt is ever rewritten.
@@ -172,8 +174,8 @@ try:
  deadline=time.time()+5
  while TestAPI.hits<1 and time.time()<deadline:grab(.2)
  assert TestAPI.hits==1, 'Restored prompt was not dispatched exactly once after opt-out'
- assert len(TestAPI.payloads)==1 and PROMPT.encode() in TestAPI.payloads[0], \
-  'Exact recovered synthetic input did not reach the local model endpoint'
+ assert len(TestAPI.payloads)==1 and (not PROMPT or PROMPT.encode() in TestAPI.payloads[0]), \
+  'Exact recovered synthetic prompt did not reach the local model endpoint'
  image_bytes_identical=False
  if image_mode:
   # A recovered [Image #1] UI placeholder is NOT sufficient. Inspect the
@@ -187,10 +189,10 @@ try:
  assert tui.isalive(), 'TUI unexpectedly exited'
  print(json.dumps({'result':'PASS','codex':version,
   'official_hook_blocked':True,'blocked_model_requests':0,
-  'visible_union_reason':True,'original_text_restored_by_up_arrow':True,
+  'visible_union_reason':True,'original_text_restored_by_up_arrow':(None if image_only_mode else True),
   'settings_off_resubmitted_requests':1,'resubmission_payload_preserved':True,
   'synthetic_interactive_png_count_and_sha256_verified':(2 if two_image_mode else 1) if image_mode and image_bytes_identical else (0 if image_mode else None),
-  'image_mode':image_mode,
+  'image_mode':image_mode,'image_only_mode':image_only_mode,
   'all_attachment_paths_and_restart_verified':False,'desktop_verified':False,
   'workspace_and_hook_trust':'isolated-test-only'},ensure_ascii=False))
 
