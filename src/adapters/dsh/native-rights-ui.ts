@@ -426,7 +426,12 @@ export function createDshUnionComponents(
       try{
         const result=await deps.goal.choose(next,
           next==='authorized-v1'?'goal-safe-boundary-v1':undefined)
-        if(result.authorized!==(next==='authorized-v1')||!result.available
+        // Revocation is Host-owned and must remain possible even if the
+        // official Goal RPC service has disappeared. Only NEW consent needs
+        // current service availability; either choice still requires Host
+        // authorization readback to match the requested setting.
+        if(result.authorized!==(next==='authorized-v1')
+          ||(next==='authorized-v1'&&!result.available)
           ||goalStatus(deps).authorized!==result.authorized)
           throw Error('Host did not confirm Goal consent')
       }catch{setError(true)}finally{setBusy(false)}

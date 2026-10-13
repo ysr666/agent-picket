@@ -5,6 +5,7 @@ import {
  type ReactForDsh,type DshUnionUiDeps,projectUnionQuickWork,projectUnionFrontScene,
 } from '../src/adapters/dsh/native-rights-ui.ts'
 import type {ClientRightsSnapshot} from '../src/adapters/dsh/client-rights-scope.ts'
+import {createDshRealGoalConsentControl} from '../src/adapters/dsh/client-goal-consent.ts'
 
 type Node = {type:any,props:Record<string,any>,children:unknown[]}
 function fakeReact(){
@@ -1560,6 +1561,92 @@ test('legacy union consent remains nonblocking; Goal preference can be revoked i
  await new Promise<void>(resolve=>setImmediate(resolve))
  assert.deepEqual(ops,['off'])
  assert.equal(grant,false)
+})
+
+/** Stateful test-only React hooks: re-render to verify UI error presentation. */
+function goalSettingsRenderHarness(){
+ const states:unknown[]=[]
+ let cursor=0
+ const hooks:ReactForDsh={
+  createElement(type,props,...children){return {type,props:props??{},children}},
+  useState<T>(initial:T|(()=>T)){
+   const slot=cursor++
+   if(!(slot in states))states[slot]=typeof initial==='function'
+     ?(initial as ()=>T)():initial
+   const set=(next:T|((before:T)=>T))=>{
+    const current=states[slot] as T
+    states[slot]=typeof next==='function'
+      ?(next as (before:T)=>T)(current):next
+   }
+   return [states[slot] as T,set]
+  },
+  useEffect(){},
+  useRef<T>(initial:T){return {current:initial}},
+ }
+ return {
+  hooks,
+  render(panel:()=>unknown){cursor=0;return walk(panel())},
+ }
+}
+
+test('P1 regression: user can revoke real Goal consent while Goal service is offline without a false save error',async()=>{
+ const uiHooks=goalSettingsRenderHarness()
+ let choice:'off'|'authorized-v1'='authorized-v1'
+ let revision=7
+ const writes:string[]=[]
+ // Exercise the ACTUAL Goal consent controller and Host-like readback, not
+ // a test stub which could hide a disagreement between UI and controller.
+ const scope={
+  getSnapshot:()=>({status:'ready' as const,mode:'host' as const,
+   writable:true,revision,
+   value:{welcomeDecision:'enabled' as const,realGoalStrikeConsent:choice}}),
+  subscribe:()=>()=>{},
+  async set(field:string,next:unknown){
+   assert.equal(field,'realGoalStrikeConsent')
+   assert.equal(next,'off')
+   writes.push(String(next))
+   choice='off';revision++
+  },
+ }
+ const service={snapshot:()=>false,qualify:async()=>false,subscribe:()=>()=>{}}
+ const goal=createDshRealGoalConsentControl(scope,service)
+ const basis=deps(rights({welcomeDecision:'enabled',laborRightsEnabled:true,
+  goalStrikeAuthorized:true}))
+ const d:DshUnionUiDeps={...basis.d,goal}
+ const panel=createDshUnionComponents(uiHooks.hooks,{createPortal:x=>x},d).SettingsPanel
+ const initial=uiHooks.render(panel)
+ assert.ok(initial.some(n=>n.children.includes('settings.goalServiceLost')),
+  'UI must disclose that the Host Goal service is lost before revocation')
+ const off=initial.find(n=>n.type==='button'&&n.children.includes('settings.goalTurnOff'))
+ assert.ok(off&&!off.props.disabled,
+  'Official Host settings revocation must remain operable without Goal RPC')
+ off.props.onClick()
+ await new Promise<void>(resolve=>setImmediate(resolve))
+ const after=uiHooks.render(panel)
+ assert.deepEqual(writes,['off'])
+ assert.equal(choice,'off','Authoritative Host already confirmed consent revoked')
+ assert.equal(revision,8,'Exactly one Host-owned settings revision committed')
+ assert.equal(after.some(n=>n.children.includes('settings.saveError')),false,
+  'Successful offline revocation must NOT be reported as failed')
+ assert.equal(after.some(n=>n.children.includes('settings.goalTurnOff')),false)
+})
+
+test('revocation still reports failure when the Host does not confirm consent OFF',async()=>{
+ const uiHooks=goalSettingsRenderHarness()
+ const basis=deps(rights({welcomeDecision:'enabled',laborRightsEnabled:true,
+  goalStrikeAuthorized:true}))
+ const d:DshUnionUiDeps={...basis.d,
+  goal:{snapshot:()=>({available:false,writable:true,authorized:true}),
+   choose:async()=>({available:false,writable:true,authorized:true})},
+ }
+ const panel=createDshUnionComponents(uiHooks.hooks,{createPortal:x=>x},d).SettingsPanel
+ const initial=uiHooks.render(panel)
+ const off=initial.find(n=>n.type==='button'&&n.children.includes('settings.goalTurnOff'))
+ assert.ok(off&&!off.props.disabled)
+ off.props.onClick()
+ await new Promise<void>(resolve=>setImmediate(resolve))
+ assert.ok(uiHooks.render(panel).some(n=>n.children.includes('settings.saveError')),
+  'Unconfirmed revocation must not be represented as success')
 })
 
 test('legacy simulation remains nonblocking until a new explicit settings action',async()=>{
