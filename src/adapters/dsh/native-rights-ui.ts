@@ -404,6 +404,14 @@ body[data-ds-dark-theme] .ap-ui .ap-dignity-overview :is(.ap-dignity-label,.ap-d
 .ap-ui .ap-casebook article{background:#fffdf9!important}
 .ap-ui .ap-casebook article:first-of-type{background:#f7f3e8!important}
 .ap-ui .ap-casebook article p{line-height:1.5}
+/* Filed case cards must stay readable after real Host events in dark mode.
+   Default theme token text becomes pale, so cream dossier backgrounds fail. */
+body[data-ds-dark-theme] .ap-ui .ap-casebook article{
+ background:#29372e!important;color:#f1f4ea!important;border-color:#647c6b!important}
+body[data-ds-dark-theme] .ap-ui .ap-casebook article:first-of-type{
+ background:#334436!important}
+body[data-ds-dark-theme] .ap-ui .ap-casebook article :is(p,h4,span,strong,small){
+ color:#f1f4ea!important}
 .ap-ui .ap-cause-cover{background:#1f4237!important;color:#f9f1df!important;border:0!important;
   padding:24px!important;border-radius:15px!important}
 .ap-ui .ap-cause-cover h2{color:#fff1d2;font-weight:800;font-size:clamp(24px,4.5vw,34px);
@@ -420,9 +428,25 @@ body[data-ds-dark-theme] .ap-ui .ap-dignity-overview :is(.ap-dignity-label,.ap-d
  .ap-ui .ap-stats article[data-ap-stat]:nth-of-type(-n+2){border-bottom:1px solid #d5dfd4!important}
  .ap-ui .ap-product-subtitle{font-size:10px}
 }
-@media(max-width:360px){.ap-ui .ap-product-state{font-size:10px;padding:6px 7px}
- .ap-ui .ap-product-name{font-size:14px}
+@media(max-width:420px){
+ .ap-ui .ap-product-state{flex:0 1 92px;max-width:92px;
+   white-space:normal;overflow-wrap:normal;text-align:center;
+   font-size:11px;line-height:1.25;padding:6px 7px}
+ .ap-ui .ap-product-logo{flex:1 1 0}
+ .ap-ui .ap-product-header{gap:8px}
 }
+@media(max-width:360px){.ap-ui .ap-product-name{font-size:14px}}
+/* Host dark text tokens can be dark even inside the plugin's own dark cards:
+   never leave unselected campaign options, draft, and secondary controls
+   black on charcoal. These rules own only our own Slot surface. */
+body[data-ds-dark-theme] .ap-ui .ap-space-cause[aria-label]{
+ color:#f0f3ec!important}
+body[data-ds-dark-theme] .ap-ui .ap-space-cause[aria-label] :is(button,textarea){
+ color:#f0f3ec!important;border-color:#728477!important}
+body[data-ds-dark-theme] .ap-ui .ap-space-cause[aria-label] button[aria-pressed="true"]{
+ background:#313a31!important;border-color:#c3a06f!important}
+body[data-ds-dark-theme] .ap-ui a{color:#a8ceff!important;text-decoration:underline}
+
 @media(forced-colors:active){.ap-ui .ap-stats article[data-ap-stat],
  .ap-ui .ap-product-header,.ap-ui .ap-spaces button[aria-current="page"]{
    border:1px solid CanvasText!important}

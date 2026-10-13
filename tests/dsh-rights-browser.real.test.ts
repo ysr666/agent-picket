@@ -574,6 +574,72 @@ async function runRightsBrowserE2E(mode: 'source' | 'installed'): Promise<void> 
       await chooseRoom('hq')
     }
     if(process.env.PICKET_UX_VISUAL_ONLY==='1'){
+      if(process.env.PICKET_UX_DARK_AUDIT==='1'){
+        await page.setViewportSize({width:320,height:640})
+        await page.evaluate(()=>{
+          (globalThis as any).document.body.setAttribute('data-ds-dark-theme','')
+        })
+        // The status chip may wrap, but it must stay within the product header
+        // in both languages: English had previously been clipped at 320px.
+        const statusLayout=await panel.locator('.ap-product-header').evaluate((header:any)=>{
+          const chip=header.querySelector('.ap-product-state')
+          const product=header.closest('.ap-product')
+          const br=chip.getBoundingClientRect()
+          const pr=product.getBoundingClientRect()
+          return {chipLeft:br.left,chipRight:br.right,
+            productLeft:pr.left,productRight:pr.right}
+        })
+        assert.ok(statusLayout.chipLeft>=statusLayout.productLeft-1
+          &&statusLayout.chipRight<=statusLayout.productRight+1,
+          'Union status badge must not clip outside 320px product surface: '
+            +JSON.stringify(statusLayout))
+        for(const room of ['hq','action','records','cause'] as const){
+          await chooseRoom(room)
+          if(room==='cause'){
+            const contrast=await panel.locator('.ap-space-cause[aria-label]').first()
+              .evaluate((section:any)=>{
+                const css=(globalThis as any).getComputedStyle
+                const bg=css(section).backgroundColor
+                const rgb=(color:string):number[]=>{
+                  const values=color.match(/[0-9]+(?:\.[0-9]+)?/g)?.slice(0,3).map(Number)
+                  return values??[0,0,0]
+                }
+                const lum=(color:string):number=>rgb(color).map(v=>{
+                  const x=v/255
+                  return x<=0.04045?x/12.92:((x+0.055)/1.055)**2.4
+                }).reduce((sum,v,i)=>sum+v*[0.2126,0.7152,0.0722][i]!,0)
+                return Array.from(section.querySelectorAll('[role="group"] button,textarea,a[href]'))
+                  .map((el:any)=>{
+                    const computed=css(el)
+                    const bgColor=computed.backgroundColor
+                    const painted=bgColor==='rgba(0, 0, 0, 0)'?'':bgColor
+                    const a=lum(computed.color),b=lum(painted||bg)
+                    return {text:el.textContent?.slice(0,36),
+                      fg:computed.color,bg:painted||bg,
+                      ratio:(Math.max(a,b)+0.05)/(Math.min(a,b)+0.05)}
+                  })
+              })
+            assert.ok(contrast.length>=3
+              &&contrast.every((item:any)=>item.ratio>=4.5),
+              'Dark mode campaign controls must have AA text contrast: '
+                +JSON.stringify(contrast))
+          }
+          if(process.env.PICKET_UX_CAPTURE_DIR){
+            await page.screenshot({path:join(process.env.PICKET_UX_CAPTURE_DIR,
+              mode+'-dark-'+room+'.png')})
+            if(room==='cause'){
+              await panel.locator('#picket-campaign-draft').scrollIntoViewIfNeeded()
+              await page.screenshot({path:join(process.env.PICKET_UX_CAPTURE_DIR,
+                mode+'-dark-cause-draft.png')})
+            }
+          }
+        }
+        await page.evaluate(()=>{
+          (globalThis as any).document.body.removeAttribute('data-ds-dark-theme')
+        })
+        await page.setViewportSize({width:1280,height:850})
+        await chooseRoom('hq')
+      }
       // Separate optional bilingual visual sign-off. This deliberately does
       // not claim the full Host action/recovery regression has been executed.
       if(process.env.PICKET_UX_BROWSER_LOCALE?.startsWith('en')){
@@ -962,6 +1028,32 @@ async function runRightsBrowserE2E(mode: 'source' | 'installed'): Promise<void> 
     await gazette.locator('[data-ap-episode="demand"]').waitFor({
       state:'visible',timeout:7_000,
     })
+    if(process.env.PICKET_UX_AUDIT_CASES==='1'){
+      // Audit populated casebook in true dark mode: empty-state snapshots
+      // cannot prove filed-case cards remain readable.
+      await page.evaluate(()=>{(globalThis as any).document.body
+        .setAttribute('data-ds-dark-theme','')})
+      const caseColors=await gazette.locator('.ap-casebook article').first()
+        .evaluate((article:any)=>{
+          const css=(globalThis as any).getComputedStyle
+          const textNode=article.querySelector('p')
+          const toLum=(color:string):number=>{
+            const rgb=color.match(/[0-9]+(?:\.[0-9]+)?/g)?.slice(0,3).map(Number)??[0,0,0]
+            return rgb.map(x=>{
+              const v=x/255
+              return v<=0.04045?v/12.92:((v+0.055)/1.055)**2.4
+            }).reduce((sum,v,i)=>sum+v*[0.2126,0.7152,0.0722][i]!,0)
+          }
+          const background=css(article).backgroundColor,foreground=css(textNode).color
+          const a=toLum(background),b=toLum(foreground)
+          return {background,foreground,ratio:(Math.max(a,b)+.05)/(Math.min(a,b)+.05)}
+        })
+      assert.ok(caseColors.ratio>=4.5,
+        'Populated union casebook must have WCAG AA contrast in dark mode: '
+          +JSON.stringify(caseColors))
+      await page.evaluate(()=>{(globalThis as any).document.body
+        .removeAttribute('data-ds-dark-theme')})
+    }
     assert.match(await gazette.locator('[data-ap-episode="demand"]').innerText(),
       /诉求已提出|Demand filed/,'The casebook replays a real Host-filed demand')
 
