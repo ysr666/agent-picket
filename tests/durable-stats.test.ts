@@ -5,6 +5,7 @@ import { join } from 'node:path'
 import test from 'node:test'
 import { DurableStats } from '../src/adapters/node/durable-stats.ts'
 import { completedUtcDayWork } from '../src/adapters/dsh/goal-work-enforcement.ts'
+import {readDshDashboardSnapshot} from '../src/adapters/dsh/integration.ts'
 import type { HumanPrompt, WorkEvent } from '../src/core/types.ts'
 
 function withPrivateDir(run: (dir: string) => void): void {
@@ -164,6 +165,10 @@ test('physical Goal counter accepts only a live owner of the original WAL and pr
     assert.equal(ledger.recordWork(event('trusted-start','turn-start',start)),true)
     assert.equal(ledger.recordWork(event('trusted-end','turn-end',end)),true)
     assert.equal(ledger.trustedWorkDays(31)?.at(-1)?.totals.completedTurnMs,8*3_600_000)
+    const dashboard=()=>readDshDashboardSnapshot({
+      clock:{now:()=>end+1},lifetimeStats:ledger,statsStorageState:'unavailable',
+    })
+    assert.equal(dashboard().statistics.storage,'available')
     // Replace just the filename, leaving an already-open valid WAL FD behind.
     // A stale in-memory eight hours must never become physical-strike proof.
     renameSync(join(dir,'aggregate.v1.journal'),join(dir,'moved.journal'))
@@ -171,6 +176,10 @@ test('physical Goal counter accepts only a live owner of the original WAL and pr
     assert.equal(ledger.trustedWorkDays(31),null)
     assert.equal(completedUtcDayWork(ledger.trustedWorkDays(31)??undefined,end+1),null,
       'Even a previously genuine 8h counter cannot trigger a Goal when its WAL is replaced')
+    const degraded=dashboard()
+    assert.equal(degraded.statistics.storage,'unavailable')
+    assert.equal(degraded.statistics.lifetime,null)
+    assert.equal(degraded.statistics.recentDays,null)
     assert.equal(ledger.trustedWorkDays(31),null,'Storage remains faulted')
     assert.throws(()=>ledger.recordWork(event('later','tool-start',end+1)),/not writable/)
     assert.equal(ledger.snapshotDays(31).at(-1)?.totals.completedTurnMs,8*3_600_000,

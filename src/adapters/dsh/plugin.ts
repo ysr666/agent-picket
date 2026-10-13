@@ -80,7 +80,10 @@ export function apply(ctx: DshIntegrationContext): void {
   // never activates enforcement; it checks the live Host permission per call.
   registerDshLifetimeWorkFetch(ctx as unknown as LifetimeHostContext, {
     authorized: () => nativeUnion?.enabled() === true,
-    store: () => lifetime,
+    store: () => {
+      try {return lifetime?.trustedWorkDays(31) !== null ? lifetime : undefined}
+      catch {return undefined}
+    },
   })
   const dignity=createVolatileDignityLedger()
   const durable: DetectionProvider = {

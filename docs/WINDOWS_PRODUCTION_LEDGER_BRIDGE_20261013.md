@@ -15,6 +15,8 @@ Protect the **already existing physical Goal 8h work-counter read** when a suppo
 
 Tests construct a genuine 8-hour completed-turn record, then replace only the journal path or change the lock owner token while keeping the cached totals. The Goal threshold input must become \`null\` rather than falsely authorizing an automatic stop. No prompt content, attachments or raw Session/Event IDs are written by the stats ledger.
 
+**Explicit UI/RPC degradation:** the DSH dashboard projection now checks the same trusted-writer status before reporting persistent storage as available. A faulted writer reports storage=unavailable with null lifetime totals/daily history, never zero-filled or cached data labeled trustworthy. The official authenticated work-only lifetime fetch port likewise receives no store when the writer becomes untrusted. This narrowly changes shared DSH integration and plugin read paths; no other Host service or Goal state machine is changed.
+
 **Boundaries:** this is a POSIX safety gate, **NOT** an NTFS production implementation, power-loss durability claim or a physical Windows Goal E2E. No new Host APIs, and no weakening of \`release:gate\`.
 
 ## Windows-native negative product-path gate

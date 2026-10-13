@@ -88,6 +88,7 @@ export interface DshIntegrationOptions {
   readonly manualPreflight?: DetectionProvider
   /** Optional, single-writer, explicitly configured persistent aggregate. */
   readonly lifetimeStats?: Pick<DurableStats, 'snapshot' | 'snapshotDays' | 'reset' | 'classificationEnabled'>
+    & Partial<Pick<DurableStats,'trustedWorkDays'>>
   /** The persistence switch is independent of the user's labor-rights experience. */
   readonly statsStorageState?: Exclude<DashboardStorageState, 'available'>
   /** An owner-provided read-only view of the UI preference; never mutates settings. */
@@ -111,7 +112,20 @@ export function readDshDashboardSnapshot(
   const id = typeof agent?.id === 'string' && agent.id ? agent.id : null
   const sessionId = typeof agent?.session?.id === 'string' && agent.session.id
     ? agent.session.id : null
-  const available = options.lifetimeStats !== undefined
+  // A cached historical summary is NOT a healthy backing store: neither
+  // the UI nor Host lifetime RPC may present stale failed writes as trusted.
+  const verified = (() => {
+    if (!options.lifetimeStats) return null
+    try {
+      const store = options.lifetimeStats
+      const days = typeof store.trustedWorkDays === 'function'
+        ? store.trustedWorkDays(31) : store.snapshotDays(31)
+      if (days === null) return null
+      return { lifetime: store.snapshot(), daily: days,
+        classificationEnabled: store.classificationEnabled }
+    } catch { return null }
+  })()
+  const available = verified !== null
   const storage = available ? 'available' as const
     : options.statsStorageState ?? 'unavailable'
   let rights = false
@@ -146,9 +160,9 @@ export function readDshDashboardSnapshot(
     sessionRules: rights && id && sessionId
       ? options.detections?.snapshot(id, sessionId) ?? null : null,
     storage,
-    lifetime: options.lifetimeStats?.snapshot() ?? null,
-    lifetimeRulePersistence: options.lifetimeStats?.classificationEnabled,
-    daily: options.lifetimeStats?.snapshotDays(31) ?? null,
+    lifetime: verified?.lifetime ?? null,
+    lifetimeRulePersistence: verified?.classificationEnabled,
+    daily: verified?.daily ?? null,
   })
 }
 
