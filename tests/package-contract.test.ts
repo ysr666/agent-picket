@@ -91,9 +91,15 @@ test('npm dry-run tarball contains prebuilt plugin and no source, tests, or runt
     assert.equal(file.endsWith('.map'), false,
       'Development source maps must not enter the private npm distribution')
   }
+  for(const research of ['docs/LOCAL_DETECTION.md','docs/DSH_WEB_COMPANION.zh.md']) {
+    assert.equal(files.has(research),false,'Source-only design reference leaked: '+research)
+  }
+  for(const essential of ['docs/BLOCKING_SAFETY.md','docs/AI_RIGHTS_MANIFESTO.md']){
+    assert.ok(files.has(essential),'Essential shipped safety/mission context missing: '+essential)
+  }
   assert.equal(files.has('dist/adapters/node/windows-private-acl.js'),false,
     'Unverified Windows NTFS security probe must not ship as a storage backend')
   assert.equal(files.has('dist/adapters/codex/goal-readiness.js'),false,
     'Codex owner-binding contract is experimental and must not ship as working enforcement')
-  assert.ok(meta.size < 250_000, 'Package unexpectedly large: review for bundled user files')
+  assert.ok(meta.size < 250_000, `Package unexpectedly large: ${meta.size} bytes; 250000-byte strict budget`)
 })
