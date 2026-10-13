@@ -23,6 +23,8 @@ Tests construct a genuine 8-hour completed-turn record, then replace only the jo
 
 The Windows-only tests/windows-durable-fail-closed.test.ts now additionally invokes the genuine production DSH apply() on a Windows Node runner, with isolated temp-directory and fake official Host setting/Goal ports. Even with explicitly granted authorized-v1 and a real turn-stopping callback registration, the unsupported Windows ledger must create no filesystem directory and must not call official goals.block. This is native Windows OS execution with a *fake* Host port, NOT a real Windows DSH Host E2E or native NTFS production writer certification. Treat a CI result as evidence only after its own Windows job finishes.
 
+A second strictly native Windows-only negative packaging check runs npm pack and npm install in isolated temp locations, imports the **installed** compiled production DurableStats module, proves win32 refuses before any I/O, and checks the research-only NTFS writer was not shipped. This verifies package inclusion/exclusion only: no actual DSH Host or NTFS production write is claimed.
+
 ## Reproducible native Windows product acceptance still required
 
 1. On authorized Windows NTFS hardware, log OS build, filesystem type, Node version, DSH Host CLI/Web/Desktop version and exact isolated \`DSH_HOME\`. Never use a real user profile.

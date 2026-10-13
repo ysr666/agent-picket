@@ -1,8 +1,10 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import {existsSync,mkdtempSync,rmSync} from 'node:fs'
+import {execFileSync} from 'node:child_process'
+import {pathToFileURL} from 'node:url'
 import {tmpdir} from 'node:os'
-import {join} from 'node:path'
+import {join,resolve} from 'node:path'
 import {DurableStats} from '../src/adapters/node/durable-stats.ts'
 import {apply} from '../src/adapters/dsh/plugin.ts'
 
@@ -79,4 +81,36 @@ test('native Windows production DSH plugin cannot trigger real Goal strike from 
    else process.env.AGENT_PICKET_STATS_DIR=savedDir
    rmSync(root,{recursive:true,force:true})
  }
+})
+
+test('native Windows installed npm tarball includes production gate but excludes research-only NTFS writer', {
+ skip:process.platform!=='win32'&&'Real Windows installed package verification only',
+ timeout:80_000,
+},async()=>{
+ const root=mkdtempSync(join(tmpdir(),'ap-win-installed-package-'))
+ const destination=join(root,'installed')
+ try{
+  // npm pack is the exact artifact CI audits, not a build-tree import.
+  const info=JSON.parse(execFileSync('npm.cmd',['pack','--json',
+    '--ignore-scripts','--pack-destination',root],{
+     cwd:resolve(import.meta.dirname,'..'),encoding:'utf8',timeout:35_000,
+     windowsHide:true,shell:true,
+  })) as Array<{filename:string,size:number}>
+  assert.equal(info.length,1)
+  assert.ok(info[0]!.size<250_000)
+  execFileSync('npm.cmd',['install','--prefix',destination,'--no-save',
+    '--ignore-scripts','--no-audit','--no-fund',join(root,info[0]!.filename)],{
+     encoding:'utf8',timeout:40_000,windowsHide:true,shell:true,
+  })
+  const dir=join(destination,'node_modules','agent-picket')
+  assert.equal(existsSync(join(dir,'dist','adapters','node',
+    'windows-ledger-writer.experimental.js')),false,
+    'Research writer must never ship as the production ledger')
+  const installed=await import(pathToFileURL(join(dir,'dist','adapters','node',
+    'durable-stats.js')).href) as {DurableStats:typeof DurableStats}
+  const wanted=join(root,'never-create','stats')
+  assert.throws(()=>new installed.DurableStats(wanted),
+    /Windows DurableStats disabled: verified private NTFS ledger backend required/)
+  assert.equal(existsSync(join(root,'never-create')),false)
+ }finally{rmSync(root,{recursive:true,force:true})}
 })
