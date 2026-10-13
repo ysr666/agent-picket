@@ -1,6 +1,6 @@
 import { createHmac, randomBytes } from 'node:crypto'
 import {
-  closeSync, existsSync, fsyncSync, ftruncateSync, lstatSync, mkdirSync,
+  closeSync, existsSync, fstatSync, fsyncSync, ftruncateSync, lstatSync, mkdirSync,
   openSync, readFileSync, renameSync, unlinkSync, writeFileSync, writeSync,
 } from 'node:fs'
 import { hostname } from 'node:os'
@@ -426,6 +426,42 @@ export class DurableStats {
     }
     return Object.keys(this.#data.daily).sort().slice(-limit)
       .map(day => ({ day, totals: { ...this.#data.daily[day]! } }))
+  }
+
+  /**
+   * Physical Goal enforcement must NOT use cached statistics after storage
+   * faults, release of ownership, or replacement of the on-disk WAL/lock.
+   * This does not certify Windows NTFS (which remains disabled) or power-loss
+   * durability. It only protects the currently supported POSIX backend.
+   *
+   * Diagnostic/UI snapshotDays() intentionally remains read-only after close;
+   * those cached values are never an authorization to stop agent work.
+   */
+  trustedWorkDays(limit = 31): ReturnType<DurableStats['snapshotDays']> | null {
+    if (this.#closed || this.#faulted || !this.#ownedLock ||
+      this.#journalFd === undefined) return null
+    try {
+      const name = join(this.#dir, JOURNAL)
+      const opened = fstatSync(this.#journalFd, { bigint: true })
+      const named = lstatSync(name, { bigint: true })
+      if (!opened.isFile() || !named.isFile() || named.isSymbolicLink() ||
+        opened.dev !== named.dev || opened.ino !== named.ino ||
+        opened.nlink !== 1n || named.nlink !== 1n ||
+        !privateRegularFile(name, MAX_JOURNAL_BYTES)) {
+        throw new Error('Trusted work WAL identity lost')
+      }
+      const lock = join(this.#dir, LOCK)
+      if (!privateRegularFile(lock, 4096)) throw new Error('Private work lock lost')
+      const owner = JSON.parse(readFileSync(lock, 'utf8')) as LockData
+      if (owner.version !== 1 || owner.token !== this.#lockToken ||
+        owner.pid !== process.pid || owner.host !== hostname()) {
+        throw new Error('Work lock ownership changed')
+      }
+      return this.snapshotDays(limit)
+    } catch {
+      this.#faulted = true
+      return null
+    }
   }
 
   reset(): void {

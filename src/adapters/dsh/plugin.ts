@@ -47,7 +47,7 @@ export function apply(ctx: DshIntegrationContext): void {
   registerDshGoalWorkEnforcement(ctx as unknown as Parameters<typeof registerDshGoalWorkEnforcement>[0],{
     consent:()=>readHostGoalStrikeConsent(nativeSettings),
     todayWork:now=>{
-      try{return completedUtcDayWork(lifetime?.snapshotDays(31),now)}catch{return null}
+      try{return completedUtcDayWork(lifetime?.trustedWorkDays(31)??undefined,now)}catch{return null}
     },
   })
   const rules = new LocalRuleDetector()
