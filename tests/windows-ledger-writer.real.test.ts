@@ -27,8 +27,9 @@ function seedSyntheticAnchor(dir:string):void{
  const mac=last?JSON.parse(last) as {seq:number;mac:string}:undefined
  const tipMac=mac?.seq===replay.sequence?mac!.mac:
   replay.sequence===0?null:'A'.repeat(43)
- writeFileSync(join(dir,'aggregate.v1.anchor'),JSON.stringify({version:1,
-  sequence:replay.sequence,toolCalls:replay.totals!.toolCalls,tipMac}),{
+ writeFileSync(join(dir,'aggregate.v1.anchor'),JSON.stringify({version:2,
+  sequence:replay.sequence,toolCalls:replay.totals!.toolCalls,tipMac,
+  stateDigest:replay.stateDigest}),{
    flag:'wx',mode:0o600})
 }
 
@@ -618,4 +619,48 @@ test('native NTFS OS-killed writer after WAL fsync does not certify an older ind
   assert.deepEqual(readFileSync(join(dir,'aggregate.v1.journal')),wal,
    'Neither failure nor observer may truncate the unconfirmed work')
  }finally{child?.kill('SIGKILL');rmSync(parent,{recursive:true,force:true})}
+})
+
+test('native NTFS v2 witness rejects valid-shaped snapshot field or dedup rollback',{
+ skip:process.platform!=='win32'&&'Native multi-field checkpoint witness only',timeout:95_000,
+},()=>{
+ const parent=mkdtempSync(join(tmpdir(),'ap-witness-all-fields-'))
+ const dir=join(parent,'new-private-ledger')
+ let writer:ExperimentalNtfsWalWriter|undefined
+ try{
+  writer=new ExperimentalNtfsWalWriter(dir)
+  assert.equal(writer.recordSyntheticToolCall('logical-1','synth-agent','synth-session',now),true)
+  assert.equal(writer.recordSyntheticToolCall('logical-2','synth-agent','synth-session',now+1),true)
+  writer.checkpointForTest()
+  writer.close();writer=undefined
+  const snap=join(dir,'aggregate.v1.json')
+  const original=readFileSync(snap,'utf8')
+  const witness=readFileSync(join(dir,'aggregate.v1.anchor'),'utf8')
+  const wal=readFileSync(join(dir,'aggregate.v1.journal'))
+  const date=new Date(now).toISOString().slice(0,10)
+  assert.equal(auditExperimentalWalAnchor(original,wal,witness),'verified')
+  assert.equal(inspectPrivateNtfsAnchoredWalReplay(dir),'verified')
+  const mutations:[string,(snapshot:any)=>void][]=[
+   ['other aggregate counter',v=>{v.totals.turnStarts=9}],
+   ['per-day counter',v=>{v.daily[date].toolCalls=0}],
+   ['fingerprint deletion',v=>{v.seen.pop()}],
+   ['HMAC secret replacement',v=>{v.secret='b0'.repeat(32)}],
+  ]
+  for(const [label,mutate] of mutations){
+   const parsed=JSON.parse(original)
+   mutate(parsed)
+   const modified=JSON.stringify(parsed)
+   assert.equal(replayVerifiedV1SnapshotWal(modified,wal).status,'verified',label)
+   writeFileSync(snap,modified)
+   assert.equal(inspectPrivateNtfsAnchoredWalReplay(dir),'unconfirmed',label)
+   assert.equal(auditExperimentalWalAnchor(modified,wal,witness),'unconfirmed',label)
+  }
+  assert.throws(()=>new ExperimentalNtfsWalWriter(dir),/WAL anchor mismatch/)
+  writeFileSync(snap,original)
+  assert.equal(inspectPrivateNtfsAnchoredWalReplay(dir),'verified')
+  writer=new ExperimentalNtfsWalWriter(dir)
+  assert.deepEqual(writer.snapshot,{sequence:2,toolCalls:2})
+  assert.equal(writer.recordSyntheticToolCall('logical-2','synth-agent','synth-session',now+1),false,
+   'Previously committed fingerprint must survive snapshot repair')
+ }finally{writer?.close();rmSync(parent,{recursive:true,force:true})}
 })

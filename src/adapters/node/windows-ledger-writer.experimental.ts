@@ -98,8 +98,16 @@ export class ExperimentalNtfsWalWriter {
   const temp=join(this.#directory,'aggregate.v1-'+randomBytes(8).toString('hex')+'.tmp')
   let fd:number|undefined
   try{
+   const recovered=replayVerifiedV1SnapshotWal(
+    readFileSync(join(this.#directory,snapshotName),'utf8'),
+    readFileSync(join(this.#directory,journalName)))
+   if(recovered.status!=='verified'||recovered.tornTail
+      ||recovered.sequence!==sequence||recovered.totals?.toolCalls!==toolCalls
+      ||typeof recovered.stateDigest!=='string')
+    throw Error('Anchor cannot attest inconsistent recovered WAL state')
    fd=openSync(temp,'wx',0o600)
-   writeFileSync(fd,JSON.stringify({version:1,sequence,toolCalls,tipMac}))
+   writeFileSync(fd,JSON.stringify({version:2,sequence,toolCalls,tipMac,
+    stateDigest:recovered.stateDigest}))
    fsyncSync(fd);closeSync(fd);fd=undefined
    if(!verifyPrivateNtfsAcl(temp,'file'))throw Error('Anchor temp ACL unverified')
    renameSync(temp,anchor)
