@@ -6,9 +6,10 @@ try:
 except ImportError:
  print('SKIP: install pexpect in a disposable development environment')
  sys.exit(0)
-image_mode=os.environ.get('AGENT_PICKET_CODEX_TUI_IMAGE_NATIVE')=='1'
+two_image_mode=os.environ.get('AGENT_PICKET_CODEX_TUI_TWO_IMAGES_NATIVE')=='1'
+image_mode=two_image_mode or os.environ.get('AGENT_PICKET_CODEX_TUI_IMAGE_NATIVE')=='1'
 if os.environ.get('AGENT_PICKET_CODEX_TUI_NATIVE')!='1' and not image_mode:
- print('SKIP: explicitly set AGENT_PICKET_CODEX_TUI_NATIVE=1 for text, or AGENT_PICKET_CODEX_TUI_IMAGE_NATIVE=1 for a single interactive synthetic PNG')
+ print('SKIP: set AGENT_PICKET_CODEX_TUI_NATIVE=1 (text), AGENT_PICKET_CODEX_TUI_IMAGE_NATIVE=1 (one PNG) or AGENT_PICKET_CODEX_TUI_TWO_IMAGES_NATIVE=1 (two PNGs)')
  sys.exit(0)
 CODEX=os.environ.get('AGENT_PICKET_CODEX_BIN') or shutil.which('codex')
 if not CODEX or not os.path.isabs(CODEX):
@@ -69,6 +70,13 @@ if image_mode:
   +chunk(b'IDAT',zlib.compress(scanlines))
   +chunk(b'IEND',b''))
  image.write_bytes(original_image)
+ if two_image_mode:
+  second_image=root/'synthetic-two-image.png'
+  scanlines_two=b''.join(b'\x00'+bytes((233,41,105))*16 for _ in range(16))
+  second_png=(b'\x89PNG\r\n\x1a\n'
+   +chunk(b'IHDR',struct.pack('>2I5B',16,16,8,2,0,0,0))
+   +chunk(b'IDAT',zlib.compress(scanlines_two))+chunk(b'IEND',b''))
+  second_image.write_bytes(second_png)
 class TestAPI(BaseHTTPRequestHandler):
  hits=0
  payloads=[]
@@ -134,6 +142,9 @@ try:
   # Does not touch the user's system clipboard or Codex implementation.
   tui.send('\x1b[200~'+str(image)+'\x1b[201~');grab(1)
   assert '[Image #1]' in screen(''.join(raw)), 'Official TUI never attached synthetic PNG'
+  if two_image_mode:
+   tui.send('\x1b[200~'+str(second_image)+'\x1b[201~');grab(1)
+   assert '[Image #2]' in screen(''.join(raw)), 'Official TUI never attached second synthetic PNG'
  tui.send(PROMPT);grab(.4);tui.send('\r');grab(3)
  denied=screen(''.join(raw))
  deadline=time.time()+8
@@ -152,7 +163,7 @@ try:
  # rollout access, transcript scraping or Agent Picket-owned raw text queue.
  tui.send('\x1b[A');grab(1)
  restored=screen(''.join(raw))
- expected_editor=('› [Image #1] '+PROMPT) if image_mode else ('› '+PROMPT)
+ expected_editor=('› [Image #1] '+('[Image #2] ' if two_image_mode else '')+PROMPT) if image_mode else ('› '+PROMPT)
  assert expected_editor in restored, 'UP did not restore original composer contents'
  # Simulate separate authorized Union settings OFF; neither Hook trust nor
  # Codex process state is modified, and no user prompt is ever rewritten.
@@ -167,17 +178,18 @@ try:
  if image_mode:
   # A recovered [Image #1] UI placeholder is NOT sufficient. Inspect the
   # TEST-ONLY fake model request and prove the actual PNG bytes survived.
-  match=re.search(rb'data:image/png;base64,([A-Za-z0-9+/=]+)',TestAPI.payloads[0])
-  assert match, 'No PNG was delivered after official Host refusal and opt-out'
-  recovered_image=base64.b64decode(match.group(1),validate=True)
-  image_bytes_identical=(recovered_image==original_image)
-  assert image_bytes_identical, 'Original synthetic image was not byte-preserved'
+  matches=re.findall(rb'data:image/png;base64,([A-Za-z0-9+/=]+)',TestAPI.payloads[0])
+  originals=[original_image,second_png] if two_image_mode else [original_image]
+  assert len(matches)==len(originals),'Incorrect number of encoded PNG images in model request'
+  received=[base64.b64decode(m,validate=True) for m in matches]
+  image_bytes_identical=(received==originals)
+  assert image_bytes_identical, 'Synthetic image bytes, count or attachment order changed'
  assert tui.isalive(), 'TUI unexpectedly exited'
  print(json.dumps({'result':'PASS','codex':version,
   'official_hook_blocked':True,'blocked_model_requests':0,
   'visible_union_reason':True,'original_text_restored_by_up_arrow':True,
   'settings_off_resubmitted_requests':1,'resubmission_payload_preserved':True,
-  'synthetic_interactive_single_png_sha256_equal':image_bytes_identical if image_mode else None,
+  'synthetic_interactive_png_count_and_sha256_verified':(2 if two_image_mode else 1) if image_mode and image_bytes_identical else (0 if image_mode else None),
   'image_mode':image_mode,
   'all_attachment_paths_and_restart_verified':False,'desktop_verified':False,
   'workspace_and_hook_trust':'isolated-test-only'},ensure_ascii=False))
