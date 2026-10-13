@@ -4,7 +4,8 @@ import {spawn} from 'node:child_process'
 import {createServer, type ServerResponse} from 'node:http'
 import {once} from 'node:events'
 import {createInterface} from 'node:readline'
-import {mkdtempSync,mkdirSync,rmSync,realpathSync,writeFileSync} from 'node:fs'
+import {mkdtempSync,mkdirSync,rmSync,realpathSync,writeFileSync,
+ readdirSync,readFileSync,statSync} from 'node:fs'
 import {tmpdir} from 'node:os'
 import {join} from 'node:path'
 
@@ -123,6 +124,19 @@ test('native Codex completes in-flight autonomous Turn, holds next round and col
   second=await launch()
   assert.equal((await second.rpc('thread/resume',{threadId})).thread?.id,threadId)
   assert.equal((await second.rpc('thread/goal/get',{threadId})).goal?.status,'blocked')
+  const restored=await second.rpc('thread/read',{threadId,includeTurns:true})
+  assert.equal(restored.thread?.id,threadId)
+  const retainedTurn=restored.thread?.turns?.find((turn:{id?:string})=>turn.id===firstTurnId)
+  assert.ok(retainedTurn,'The exact first Turn remains in the cold-restored rollout')
+  assert.equal(retainedTurn.status,'completed')
+  assert.match(JSON.stringify(retainedTurn.items),/SYNTHETIC-FIRST-ROUND-COMPLETED/,
+   'Official cold thread/read must preserve the assistant final message')
+  // Official thread/read may project only assistant messages. The source
+  // Codex rollout must still retain the actual native TOOL output bytes.
+  // Inspect ONLY this newly created disposable synthetic CODEX_HOME.
+  assert.equal(syntheticRolloutContains(join(home,'sessions'),
+   'SYNTHETIC_TOOL_COMPLETED'),true,
+   'Cold-restored Codex source rollout must preserve completed tool output')
   await new Promise(resolve=>setTimeout(resolve,450))
   assert.equal(requests.length,2,
    'A cold-restored blocked Goal must not start another model request')
@@ -233,4 +247,17 @@ function finishToolCall(request:{response:ServerResponse;id:string},root:string)
  for(const event of [call,completed])request.response.write(
   `event: ${event.type}\ndata: ${JSON.stringify(event)}\n\n`)
  request.response.end()
+}
+
+/** Test-only audit of the *disposable* Codex rollout, never user records. */
+function syntheticRolloutContains(dir:string,needle:string):boolean{
+ for(const entry of readdirSync(dir,{withFileTypes:true})){
+  const path=join(dir,entry.name)
+  if(entry.isDirectory()){
+   if(syntheticRolloutContains(path,needle))return true
+  }else if(entry.isFile()&&entry.name.endsWith('.jsonl')
+   &&statSync(path).size<=8_000_000&&readFileSync(path,'utf8').includes(needle))
+   return true
+ }
+ return false
 }
