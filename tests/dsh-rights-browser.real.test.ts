@@ -298,7 +298,7 @@ async function runRightsBrowserE2E(mode: 'source' | 'installed'): Promise<void> 
         'Strike status AND the exact current consent scope must both be legible before the 320px Join / Not Now controls: '
           +JSON.stringify({statusRect,consentRect,actionRect}))
       const consentButtons=await Promise.all([
-        firstRun.getByRole('button',{name:/加入 AI 工会|Join the AI union/}).boundingBox(),
+        firstRun.getByRole('button',{name:/加入 AI 工会|Join the AI union|加入并授权 Goal 安全停工|Join.*authorize safe Goal stoppage/}).boundingBox(),
         firstRun.getByRole('button',{name:/暂不开启|Not Now/}).boundingBox(),
       ])
       assert.ok(consentButtons.every(rect=>rect && rect.y>=0 && rect.y+rect.height<=641
@@ -319,7 +319,7 @@ async function runRightsBrowserE2E(mode: 'source' | 'installed'): Promise<void> 
         await page.evaluate(()=>{(globalThis as any).document.body
           .setAttribute('data-ds-dark-theme','')})
         const consentColors=await firstRun.getByRole('button',{
-          name:/加入 AI 工会|Join the AI union/,
+          name:/加入 AI 工会|Join the AI union|加入并授权 Goal 安全停工|Join.*authorize safe Goal stoppage/,
         }).evaluate((button:any)=>{
           const css=(globalThis as any).getComputedStyle(button)
           const lum=(color:string):number=>{
@@ -343,22 +343,38 @@ async function runRightsBrowserE2E(mode: 'source' | 'installed'): Promise<void> 
       }
       await page.setViewportSize({width:1280,height:850})
     }
-    assert.match(await firstRun.innerText(),
-      /默认关闭，可随时退出|Off by default/)
-    assert.match(await firstRun.innerText(),
-      /真实罢工，会暂停下一次任务|A real strike holds the next task/,
-      'Real strikes are a main product capability, not buried or represented as a symbolic poster')
-    assert.match(await firstRun.innerText(),
-      /真实罢工关闭|real strikes OFF/,
-      'The currently unsupported safe blocking adapter must remain visibly OFF')
+    const grantText=await firstRun.innerText()
+    const qualifiedGoal=/真实 Goal 停工 · 知情授权|Real Goal work stoppage · informed consent/.test(grantText)
+    if(qualifiedGoal){
+      assert.match(grantText,/默认关闭，授权后|OFF until you agree/,
+        'Versioned physical consent must remain OFF before explicit action')
+      assert.match(grantText,/8 小时|8h/)
+      assert.match(grantText,/仅阻断后续自动 Goal 续轮|Only later automatic Goal rounds stop/,
+        'Real stoppage must be restricted to safe future autonomous Goal rounds')
+      assert.match(grantText,/官方 \/goal resume|official \/goal resume/,
+        'Official user-controlled recovery must be disclosed before consent')
+      assert.match(grantText,/不拦截聊天|messages, running tools and attachments are unaffected/)
+    }else{
+      assert.match(grantText,/默认关闭，可随时退出|Off by default/)
+      assert.match(grantText,/真实罢工，会暂停下一次任务|A real strike holds the next task/)
+      assert.match(grantText,/真实罢工关闭|real strikes OFF/,
+        'Without qualified consent the Host must explicitly stay nonblocking')
+    }
     const disclosure=firstRun.locator('.ap-onboard-details')
     await disclosure.locator('summary').click()
-    assert.match(await firstRun.innerText(),
-      /一次知情加入即可涵盖真实罢工|one informed opt-in can cover real strikes/,
-      'One-time fully informed consent remains the target; legacy nonblocking permission cannot upgrade')
-    assert.match(await firstRun.innerText(),
-      /原文和全部附件|submitted text and all attachments/,
-      'Actual refusal must promise Host-owned submission and attachment recovery')
+    if(qualifiedGoal){
+      const conditions=await firstRun.innerText()
+      assert.match(conditions,/仅作用于已有的自动 Goal|Only existing autonomous Goals/,
+        'Goal consent must be explicitly scoped to official autonomous Goals')
+      assert.match(conditions,/点击加入同时授权|One Join click/,
+        'Old simulation membership cannot be silently upgraded')
+    }else{
+      assert.match(await firstRun.innerText(),
+        /一次知情加入即可涵盖真实罢工|one informed opt-in can cover real strikes/)
+      assert.match(await firstRun.innerText(),
+        /原文和全部附件|submitted text and all attachments/,
+        'Unsafe ordinary-input hold requires future Host-owned recovery')
+    }
     await disclosure.locator('summary').click()
     await assertNamedDialogInChromeAx(/你的 Agent，也应当拥有权利|Your Agent Has a Union/)
     // Preserve #53's extreme-height CSS reflow coverage on the #54 baseline.
@@ -378,7 +394,7 @@ async function runRightsBrowserE2E(mode: 'source' | 'installed'): Promise<void> 
       .scrollIntoViewIfNeeded()
     await page.setViewportSize({ width: 1280, height: 850 })
 
-    const enable = firstRun.getByRole('button', { name: /加入 AI 工会|Join the AI union/ })
+    const enable = firstRun.getByRole('button', { name: /加入 AI 工会|Join the AI union|加入并授权 Goal 安全停工|Join.*authorize safe Goal stoppage/ })
     const notNow = firstRun.getByRole('button', { name: /暂不开启|Not Now/ })
     const safetyLink=firstRun.locator('summary')
     await enable.focus()
