@@ -1109,7 +1109,7 @@ test('UX #120: informed first run has bounded dialog, warning and both explicit 
   const dialog=nodes.find(x=>x.props['data-ap-view']==='welcome')!
   assert.equal(dialog.props['aria-describedby'],'picket-welcome-explainer')
   assert.match(dialog.props.style.maxHeight,/100dvh/)
-  assert.equal(dialog.props.className,'ap-ui ap-dialog')
+  assert.equal(dialog.props.className,'ap-ui ap-dialog ap-onboarding')
   assert.ok(nodes.some(x=>x.props.role==='note'
     &&x.props['aria-label']==='welcome.blockWarningTitle'))
   const buttons=nodes.filter(x=>x.type==='button')
@@ -1332,4 +1332,40 @@ test('V8 real picket changes the placard label without reclassifying a quiet day
  assert.ok(nodes.some(n=>n.props.className==='ap-seal-word'&&
   n.children.includes('hq.office.sign.picket')))
  assert.equal(nodes.some(n=>n.children.includes('hq.office.sign.onDuty')),false)
+})
+
+test('onboarding is a product intro with explicit visible nonblocking consent warning',()=>{
+ const {hooks}=fakeReact()
+ const {d}=deps(rights())
+ const old=(globalThis as any).document
+ ;(globalThis as any).document={body:{},getElementById:()=>({inert:false})}
+ try {
+  const tree=walk(createDshUnionComponents(hooks,{createPortal:child=>child},d)
+   .Welcome({complete:()=>{}}))
+  const dialog=tree.find(x=>x.props['data-ap-view']==='welcome')!
+  assert.ok(dialog.props.className.includes('ap-onboarding'))
+  assert.ok(tree.some(n=>n.props.className==='ap-onboard-features'))
+  assert.ok(tree.some(n=>n.children.includes('welcome.featureWork')))
+  assert.ok(tree.some(n=>n.children.includes('welcome.featureRights')))
+  assert.ok(tree.some(n=>n.children.includes('welcome.featurePicket')))
+  const warning=tree.find(n=>n.props['aria-label']==='welcome.blockWarningTitle')!
+  assert.ok(warning)
+  assert.ok(warning.children.some((n:any)=>n?.children?.includes?.('welcome.blockWarningStatus')),
+   'Current nonblocking boundary must be visible, not hidden in a disclosure')
+  assert.ok(tree.some(n=>n.type==='details'&&n.props.className==='ap-onboard-details'))
+  assert.deepEqual(tree.filter(n=>n.type==='button').map(n=>n.children[0]),
+   ['welcome.enable','welcome.notNow'])
+ }finally{(globalThis as any).document=old}
+})
+
+test('settings prioritize membership; future real-strike controls are disclosure-only',()=>{
+ const {hooks}=fakeReact()
+ const {d}=deps(rights({welcomeDecision:'not-now',laborRightsEnabled:false}))
+ const tree=walk(createDshUnionComponents(hooks,{createPortal:child=>child},d)
+  .SettingsPanel())
+ assert.ok(tree.some(n=>n.props.className==='ap-settings-block'&&n.type==='details'))
+ assert.ok(tree.some(n=>n.type==='summary'&&n.children.includes('settings.advancedTitle')))
+ assert.ok(tree.some(n=>n.type==='button'&&n.children.includes('settings.turnOn')&&!n.props.disabled))
+ assert.ok(tree.some(n=>n.type==='button'&&n.children.includes('settings.realBlockingControl')&&n.props.disabled))
+ assert.ok(tree.some(n=>n.type==='button'&&n.children.includes('settings.perStrikeConsent')&&n.props.disabled))
 })

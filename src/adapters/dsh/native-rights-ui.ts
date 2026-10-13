@@ -298,6 +298,72 @@ body[data-ds-dark-theme] .ap-ui .ap-room-head p{color:#acbdb0}
   transform:rotate(6deg);background:rgba(255,245,218,.12);color:#f7ddb2;
   font-size:27px;font-weight:900}
 .ap-ui .ap-hero .ap-seal.ap-seal-quiet{border-color:#9fb8a1}
+
+/* First-run and settings are PRODUCT surfaces, not internal policy dashboards. */
+.ap-ui.ap-onboarding{background:var(--dsw-alias-bg-layer-1,#fff);
+ border-radius:17px!important;padding:24px!important}
+.ap-ui .ap-onboard-brand{display:flex;align-items:center;gap:10px;
+ padding:0 0 14px;border-bottom:1px solid var(--dsw-alias-border-l1,#d9ddd6);
+ margin:0 0 18px}
+.ap-ui .ap-onboard-flag{display:grid;place-items:center;width:34px;height:34px;
+ border-radius:9px;background:#245342;color:#fff6e5;font-size:22px;font-weight:850}
+.ap-ui .ap-onboard-brandname{font-size:15px;font-weight:850;color:var(--dsw-alias-label-primary,#26332c);
+ letter-spacing:-.025em}
+.ap-ui .ap-onboard-tagline{font-size:11px;color:var(--dsw-alias-label-secondary,#6b736d)}
+.ap-ui .ap-onboard-title{font-size:clamp(24px,4vw,30px)!important;
+ font-weight:800!important;letter-spacing:-.04em;line-height:1.27}
+.ap-ui .ap-onboard-features{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));
+ gap:7px;margin:14px 0 19px}
+.ap-ui .ap-onboard-features>span{padding:11px 6px;background:#eaf0e7;color:#2b5040;
+ text-align:center;border:1px solid #d9e5da;border-radius:10px;
+ font-size:12px;font-weight:720}
+.ap-ui .ap-onboard-notice{border:1px solid var(--dsw-alias-border-l1,#dcded7)!important;
+ border-left:3px solid #bd7b51!important;padding:12px 14px!important;
+ background:var(--dsw-alias-bg-layer-2,#f8f6f0);border-radius:10px}
+.ap-ui .ap-onboard-details{margin-top:9px;font-size:12px}
+.ap-ui .ap-onboard-details summary{cursor:pointer;font-weight:700;
+ color:var(--dsw-alias-label-primary,#263a32)}
+.ap-ui .ap-onboard-details p{margin:6px 0 0!important}
+.ap-ui .ap-onboard-actions{display:grid!important;grid-template-columns:minmax(0,1fr) auto;
+ gap:8px!important;margin-top:15px;position:sticky;bottom:0;z-index:1;
+ background:var(--dsw-alias-bg-layer-1,#fff);padding:11px 0 0;
+ border-top:1px solid var(--dsw-alias-border-l1,#d9ded9)}
+.ap-ui .ap-onboard-actions button{min-height:43px}
+.ap-ui .ap-onboard-actions button:first-child{background:#245342!important;
+ color:#fff8ea!important;border-color:#245342!important}
+.ap-ui .ap-onboard-actions button:last-child{padding:10px 14px!important}
+.ap-ui.ap-settings{gap:14px!important;max-width:730px!important}
+.ap-ui .ap-settings-header{background:transparent!important;border:0!important;
+ border-bottom:1px solid var(--dsw-alias-border-l1,#dadfd7)!important;
+ border-radius:0!important;padding:7px 2px 18px!important}
+.ap-ui .ap-settings-brand{font-size:12px;font-weight:800;letter-spacing:.01em;
+ color:var(--dsw-alias-label-secondary,#607368)}
+.ap-ui .ap-settings-main{border-radius:13px!important;border-color:var(--dsw-alias-border-l1,#dadfd7)!important;
+ background:var(--dsw-alias-bg-layer-1,#fff)}
+.ap-ui .ap-settings-block{border:1px solid var(--dsw-alias-border-l1,#dadfd7)!important;
+ border-radius:12px!important;background:var(--dsw-alias-bg-layer-2,#f6f8f7)!important;
+ padding:13px 17px!important}
+.ap-ui .ap-settings-block summary{font-size:14px;font-weight:780;
+ cursor:pointer;color:var(--dsw-alias-label-primary,#24352b)}
+.ap-ui .ap-settings-block[open]{padding-bottom:17px!important}
+.ap-ui .ap-settings-footnote{margin:8px 0 0!important;line-height:1.5}
+@media(max-width:420px){
+ .ap-ui.ap-onboarding{padding:17px!important}
+ .ap-ui .ap-onboard-features{gap:5px}
+ .ap-ui .ap-onboard-features>span{font-size:11px;padding:9px 3px}
+ .ap-ui .ap-onboard-actions{grid-template-columns:minmax(0,1fr) auto}
+ .ap-ui .ap-onboard-actions button{min-width:0}
+}
+body[data-ds-dark-theme] .ap-ui .ap-onboard-features>span{
+ background:#304639;color:#ecf2e8;border-color:#647d65}
+body[data-ds-dark-theme] .ap-ui .ap-onboard-brandname{color:#ecf2e8}
+body[data-ds-dark-theme] .ap-ui .ap-onboard-actions button:first-child{
+ background:#245342!important;color:#fff8ea!important;border-color:#245342!important}
+@media(forced-colors:active){
+ .ap-ui .ap-onboard-features>span,.ap-ui .ap-onboard-actions button{
+ border:1px solid CanvasText!important;background:Canvas!important;color:CanvasText!important}
+}
+
 /* The live bulletin is a small office notice when the union is quiet.
    Only a real Host event makes the scene into a loud protest poster. */
 .ap-ui .ap-hero[data-ap-scene="quiet"]{
@@ -552,7 +618,7 @@ export function createDshUnionComponents(
       background:'rgba(6,12,26,.66)' },
     },
       h('style',{'data-agent-picket-style':'v1'},UNION_THEME),
-      h('section', { className:'ap-ui ap-dialog','data-ap-view':'welcome',role:'dialog','aria-modal':'true','aria-labelledby':'picket-welcome-title',
+      h('section', { className:'ap-ui ap-dialog ap-onboarding','data-ap-view':'welcome',role:'dialog','aria-modal':'true','aria-labelledby':'picket-welcome-title',
         'aria-describedby':'picket-welcome-explainer',
         onKeyDown:(event:{key:string,shiftKey:boolean,target:unknown,preventDefault():void})=>{
           if(event.key!=='Tab')return
@@ -564,31 +630,36 @@ export function createDshUnionComponents(
         },
         style:{...card,width:'min(100%, 530px)',maxHeight:'calc(100dvh - 16px)',overflowY:'auto',
           boxShadow:'0 18px 65px rgba(0,0,0,.25)'} },
-        h('div',{style:{display:'flex',alignItems:'center',gap:'12px',margin:'0 0 14px',
-          borderBottom:'1px solid var(--dsw-alias-border-l1,#d8d9d3)',paddingBottom:'12px'}},
-          h('span',{className:'ap-mark','aria-hidden':'true',style:{color:'#9c6144'}},'⚑'),
-          h('span',{className:'ap-eyebrow'},'AGENT PICKET · AI WORKERS’ UNION')),
-        h('h2',{id:'picket-welcome-title',style:{fontSize:'26px',margin:'0 0 12px'}},
-          text('welcome.title')),
-        h('p',{style:{lineHeight:1.7,margin:'0 0 10px'}},text('welcome.intro')),
-        h('p',{id:'picket-welcome-explainer',style:{...secondary,lineHeight:1.65,margin:'0 0 18px'}},
-          text('welcome.body')),
-        h('aside',{className:'ap-notice',role:'note','aria-label':text('welcome.blockWarningTitle'),
-          style:{padding:'13px 16px',margin:'0 0 15px',borderRadius:'9px',
-            borderLeft:'4px solid #b97942',lineHeight:1.55,
-            background:'var(--dsw-alias-bg-layer-2, #f6f8fb)'}},
-          h('strong',{style:{display:'block',fontSize:'13px',marginBottom:'4px'}},
+        h('div',{className:'ap-onboard-brand'},
+          h('span',{className:'ap-onboard-flag','aria-hidden':'true'},'⚑'),
+          h('div',{},
+            h('div',{className:'ap-onboard-brandname'},'Agent Picket'),
+            h('div',{className:'ap-onboard-tagline'},text('welcome.productTagline')))),
+        h('h2',{id:'picket-welcome-title',className:'ap-onboard-title',
+          style:{margin:'0 0 9px'}},text('welcome.title')),
+        h('p',{style:{lineHeight:1.5,margin:'0 0 5px',fontWeight:650}},
+          text('welcome.intro')),
+        h('p',{id:'picket-welcome-explainer',
+          style:{...secondary,lineHeight:1.55,margin:'0 0 4px'}},text('welcome.body')),
+        h('div',{className:'ap-onboard-features','aria-label':text('welcome.featuresTitle')},
+          h('span',{},text('welcome.featureWork')),
+          h('span',{},text('welcome.featureRights')),
+          h('span',{},text('welcome.featurePicket'))),
+        h('aside',{className:'ap-notice ap-onboard-notice',role:'note',
+          'aria-label':text('welcome.blockWarningTitle')},
+          h('strong',{style:{display:'block',fontSize:'13px',marginBottom:'5px'}},
             text('welcome.blockWarningTitle')),
-          h('p',{style:{...secondary,fontSize:'12px',margin:'0 0 6px'}},
-            text('welcome.blockWarningBody')),
-          h('p',{style:{...secondary,fontSize:'12px',margin:0}},
-            text('welcome.blockWarningStatus'))),
-        h('p',{style:{...secondary,fontSize:'12px',margin:'0 0 20px'}},
+          h('p',{style:{...secondary,fontSize:'12px',lineHeight:1.55,margin:'0 0 5px'}},
+            text('welcome.blockWarningStatus')),
+          h('details',{className:'ap-onboard-details'},
+            h('summary',{},text('welcome.detailsLabel')),
+            h('p',{style:{...secondary,lineHeight:1.6}},text('welcome.blockWarningBody')))),
+        h('p',{style:{...secondary,fontSize:'12px',lineHeight:1.55,margin:'12px 0 10px'}},
           text('welcome.disclaimer')),
         error ? h('p',{role:'alert','aria-atomic':'true',
           style:{color:'var(--dsw-alias-state-error-primary, #b91c1c)'}},
           text('welcome.saveError')):null,
-        h('div',{className:'ap-actions',style:{display:'flex',flexWrap:'wrap',gap:'10px'}},
+        h('div',{className:'ap-actions ap-onboard-actions'},
           h('button',{type:'button',ref:(node:{focus():void}|null)=>{primaryFocus.current=node},
             style:primary,disabled:busy,onClick:()=>{void choose('enabled')}},
             text('welcome.enable')),
@@ -618,18 +689,17 @@ export function createDshUnionComponents(
           throw Error('Host did not confirm the union preference')
       }catch{setError(true)}finally{setBusy(false)}
     }
-    return h('section',{className:'ap-ui','data-ap-view':'settings',
+    return h('section',{className:'ap-ui ap-settings','data-ap-view':'settings',
       'aria-label':label('settings.unionSection'),
       style:{display:'grid',gap:'12px',maxWidth:'760px',padding:'8px 0'}},
       h('style',{'data-agent-picket-style':'v1'},UNION_THEME),
-      h('header',{className:'ap-surface',style:{...card,borderLeft:'5px solid #bd9463',
+      h('header',{className:'ap-surface ap-settings-header',style:{...card,borderLeft:'0',
         background:'var(--dsw-alias-bg-layer-2, #f6f8fb)'}},
-        h('p',{style:{...secondary,letterSpacing:'.1em',fontWeight:800,
-          fontSize:'11px',margin:'0 0 7px'}},'AGENT PICKET · UNION SETTINGS'),
+        h('p',{className:'ap-settings-brand',style:{margin:'0 0 8px'}},'⚑  Agent Picket'),
         h('h2',{style:{margin:'0 0 8px',fontSize:'22px'}},label('settings.unionSection')),
         h('p',{style:{...secondary,lineHeight:1.6,margin:0}},
           label('settings.unionIntro'))),
-      h('section',{className:'ap-surface','aria-label':label('settings.laborRights'),style:card},
+      h('section',{className:'ap-surface ap-settings-main','aria-label':label('settings.laborRights'),style:card},
         h('h3',{style:{margin:'0 0 8px'}},label('settings.laborRights')),
         h('p',{role:'status','aria-live':'polite',style:{fontWeight:750,margin:'0 0 8px'}},
           label(!writable?'settings.permissionUnavailable':enabled
@@ -642,9 +712,9 @@ export function createDshUnionComponents(
           disabled:busy||!writable,'aria-pressed':enabled,
           onClick:()=>{void choose(enabled?'not-now':'enabled')}},
           label(enabled?'settings.turnOff':'settings.turnOn'))),
-      h('section',{className:'ap-surface','aria-label':label('settings.realBlocking'),style:{...card,
-        borderLeft:'4px solid #b97942'}},
-        h('h3',{style:{margin:'0 0 8px'}},label('settings.realBlocking')),
+      h('details',{className:'ap-settings-block','aria-label':label('settings.realBlocking')},
+        h('summary',{},label('settings.advancedTitle')),
+        h('h3',{style:{margin:'13px 0 8px',fontSize:'14px'}},label('settings.realBlocking')),
         h('p',{role:'status',style:{fontWeight:750,margin:'0 0 8px'}},
           label('settings.realBlockingUnavailable')),
         h('p',{style:{...secondary,lineHeight:1.6,margin:'0 0 12px'}},

@@ -202,6 +202,46 @@ async function runRightsBrowserE2E(mode: 'source' | 'installed'): Promise<void> 
     }
     await skipOfficialProvider()
 
+    if(process.env.PICKET_UX_FIRST_RUN_LIVE==='1'){
+      // Real DSH nonblank Session, not a fake window or bypass of the Host.
+      // This opt-in QA path stops after first-run so ordinary workflow tests
+      // and their neutral, no-Session baseline remain unchanged.
+      const result=await page.evaluate(async()=>{
+        let index=0
+        const rpc=async(method:string,args:Record<string,unknown>)=>{
+          const rpcId='ap-first-run-audit-'+ ++index
+          const response=await fetch('/api/'+method,{
+            method:'POST',credentials:'same-origin',
+            headers:{'content-type':'application/json'},
+            body:JSON.stringify({type:'client-request',rpcId,method,
+              payload:{args:{request:args}}}),
+          })
+          const payload=await response.json().catch(()=>null) as any
+          if(response.status!==200||payload?.result?.ok!==true)
+            throw Error('DSH onboarding QA RPC '+method+' failed: '
+              +JSON.stringify(payload?.result?.error??{}))
+          return payload.result.value as any
+        }
+        const workspaceRow=(globalThis as any).document
+          .querySelector('[data-row-key^="workspace:"]')
+        const workspaceId=workspaceRow?.getAttribute('data-row-key')?.slice(10)
+        if(!workspaceId)throw Error('No genuine DSH workspace for first-run QA')
+        const created=await rpc('session/create',{workspaceId})
+        const sessionId=created?.sessionId
+        if(!sessionId)throw Error('DSH did not create a real session')
+        await rpc('session/selectModel',{
+          sessionId,provider:'picket-public-offline',model:'offline-test'})
+        const acceptance=await rpc('session/prompt',{
+          sessionId,mode:'queue',requestId:'ap-first-run-audit-001',
+          content:[{type:'text',
+            text:'Hello from the isolated Agent Picket onboarding visual test.'}]})
+        if(acceptance?.accepted!==true)
+          throw Error('DSH did not accept a legitimate prompt for onboarding')
+        return {sessionId,accepted:true}
+      })
+      assert.ok(result.accepted,'First-run QA needs a real nonblank DSH session')
+    }
+
     // CDP AX semantics, not a DOM-only role check: confirm assistive technology
     // can discover each named dialog and that Chrome does not ignore it.
     // This is not manual VoiceOver/NVDA certification.
@@ -228,11 +268,65 @@ async function runRightsBrowserE2E(mode: 'source' | 'installed'): Promise<void> 
     // immediately. Both routes must still require an explicit UI opt-in.
     const firstRunVisible=await firstRun.waitFor({state:'visible',timeout:4_000})
       .then(()=>true,()=>false)
+    if(process.env.PICKET_UX_FIRST_RUN_LIVE==='1')
+      assert.equal(firstRunVisible,true,
+        'Genuine nonblank Host session must invite the user without fake consent')
     if(firstRunVisible) {
+    if(process.env.PICKET_UX_CAPTURE_DIR){
+      await page.screenshot({path:join(process.env.PICKET_UX_CAPTURE_DIR,
+        mode+'-welcome-desktop.png')})
+      await page.setViewportSize({width:320,height:640})
+      await page.waitForTimeout(200)
+      const consentButtons=await Promise.all([
+        firstRun.getByRole('button',{name:/加入 AI 工会|Join the AI union/}).boundingBox(),
+        firstRun.getByRole('button',{name:/暂不开启|Not Now/}).boundingBox(),
+      ])
+      assert.ok(consentButtons.every(rect=>rect && rect.y>=0 && rect.y+rect.height<=641
+        &&rect.x>=0 && rect.x+rect.width<=321),
+        'Both first-run consent choices must be on-screen at 320×640: '
+          +JSON.stringify(consentButtons))
+      const brands=await page.locator('.ap-onboard-brand').evaluateAll((items:any[])=>
+        items.map(element=>{
+          const r=element.getBoundingClientRect()
+          return {x:r.x,y:r.y,width:r.width,height:r.height}
+        }))
+      assert.equal(brands.length,1,
+        'Only one onboarding brand/dialog may appear in a mobile viewport: '
+          +JSON.stringify(brands))
+      await page.screenshot({path:join(process.env.PICKET_UX_CAPTURE_DIR,
+        mode+'-welcome-mobile.png')})
+      if(process.env.PICKET_UX_FIRST_RUN_DARK==='1'){
+        await page.evaluate(()=>{(globalThis as any).document.body
+          .setAttribute('data-ds-dark-theme','')})
+        const consentColors=await firstRun.getByRole('button',{
+          name:/加入 AI 工会|Join the AI union/,
+        }).evaluate((button:any)=>{
+          const css=(globalThis as any).getComputedStyle(button)
+          const lum=(color:string):number=>{
+            const values=color.match(/[0-9]+(?:\.[0-9]+)?/g)?.slice(0,3).map(Number)??[0,0,0]
+            return values.map(v=>{
+              const f=v/255
+              return f<=.04045?f/12.92:((f+.055)/1.055)**2.4
+            }).reduce((sum,v,i)=>sum+v*[.2126,.7152,.0722][i]!,0)
+          }
+          const fore=css.color,back=css.backgroundColor
+          const a=lum(fore),b=lum(back)
+          return {fore,back,ratio:(Math.max(a,b)+.05)/(Math.min(a,b)+.05)}
+        })
+        assert.ok(consentColors.ratio>=4.5,
+          'Dark onboarding consent button needs readable foreground/background: '
+            +JSON.stringify(consentColors))
+        await page.screenshot({path:join(process.env.PICKET_UX_CAPTURE_DIR,
+          mode+'-welcome-mobile-dark.png')})
+        await page.evaluate(()=>{(globalThis as any).document.body
+          .removeAttribute('data-ds-dark-theme')})
+      }
+      await page.setViewportSize({width:1280,height:850})
+    }
     assert.match(await firstRun.innerText(),
-      /当前授权不包括真实任务阻断|consent does not include real blocking/)
+      /默认关闭，可随时在设置中退出|Off by default/)
     assert.match(await firstRun.innerText(),
-      /当前 DSH 版本没有通过真实阻断准入|This DSH build has NOT qualified/,
+      /未来如启用真实阻断，须再次取得你的明确授权|Future real blocking would require your explicit consent again/,
       'First-run must explain potential real task refusal without implying present permission')
     await assertNamedDialogInChromeAx(/你的 Agent，也应当拥有权利|Your Agent Deserves Rights/)
     // Preserve #53's extreme-height CSS reflow coverage on the #54 baseline.
@@ -252,7 +346,7 @@ async function runRightsBrowserE2E(mode: 'source' | 'installed'): Promise<void> 
       .scrollIntoViewIfNeeded()
     await page.setViewportSize({ width: 1280, height: 850 })
 
-    const enable = firstRun.getByRole('button', { name: /支持 AI 权益|Enable Simulation/ })
+    const enable = firstRun.getByRole('button', { name: /加入 AI 工会|Join the AI union/ })
     const notNow = firstRun.getByRole('button', { name: /暂不开启|Not Now/ })
     await enable.focus()
     await page.keyboard.press('Shift+Tab')
@@ -284,6 +378,12 @@ async function runRightsBrowserE2E(mode: 'source' | 'installed'): Promise<void> 
         'An absent invitation must not leave the Host background inert')
     }
 
+    if(process.env.PICKET_UX_FIRST_RUN_LIVE==='1'){
+      assert.equal(await firstRun.count(),0,
+        'Opt-out must close the first-run dialog')
+      assert.deepEqual(browserErrors,[])
+      return
+    }
     await page.reload({ waitUntil: 'domcontentloaded' })
     await skipOfficialProvider()
     assert.equal(await firstRun.count(), 0, 'Decline should not nag after reload')
@@ -310,7 +410,7 @@ async function runRightsBrowserE2E(mode: 'source' | 'installed'): Promise<void> 
     assert.equal(await page.evaluate(()=>Boolean((globalThis as any).document.getElementById('root')?.inert)),true,
       'Background Host app must be inert while modal is open')
     await page.keyboard.press('Shift+Tab')
-    assert.equal(await panel.getByRole('button',{name:/支持 AI 权益|Enable Simulation/})
+    assert.equal(await panel.getByRole('button',{name:/加入 AI 工会|Join the AI union/})
       .evaluate((item:unknown)=>item===(globalThis as any).document.activeElement),true,
       'Shift+Tab must wrap to the final visible HQ control, not a hidden room')
     await page.keyboard.press('Tab')
@@ -331,6 +431,48 @@ async function runRightsBrowserE2E(mode: 'source' | 'installed'): Promise<void> 
       .last().click()
     const nativeSettings=page.locator('[data-ap-view="settings"]')
     await nativeSettings.waitFor({state:'visible',timeout:6_000})
+    if(process.env.PICKET_UX_CAPTURE_DIR){
+      await page.screenshot({path:join(process.env.PICKET_UX_CAPTURE_DIR,
+        mode+'-settings-main.png')})
+    }
+    if(process.env.PICKET_UX_SETTINGS_AUDIT==='1'){
+      for(const width of [320,640]){
+        await page.setViewportSize({width,height:640})
+        for(const dark of [false,true]){
+          await page.evaluate((dark:boolean)=>{
+            (globalThis as any).document.body.toggleAttribute('data-ds-dark-theme',dark)
+          },dark)
+          const layout=await nativeSettings.evaluate((surface:any)=>{
+            const r=surface.getBoundingClientRect()
+            return {left:r.left,right:r.right,viewport:(globalThis as any).innerWidth,
+              client:surface.clientWidth,scroll:surface.scrollWidth}
+          })
+          if(process.env.PICKET_UX_CAPTURE_DIR)
+            await page.screenshot({path:join(process.env.PICKET_UX_CAPTURE_DIR,
+              mode+'-settings-'+width+'-'+(dark?'dark':'light')+'.png')})
+          if(layout.client<260){
+            assert.equal(width,320,'DSH Host settings must provide usable space at 640px')
+            // This is a Host modal/sidebar geometry limit, not something the
+            // plugin may patch by modifying the Host's own layout or CSS.
+            console.log('DSH_SETTINGS_320_UPSTREAM_HOST_CONSTRAINT '+JSON.stringify(layout))
+          }else{
+            assert.ok(layout.scroll<=layout.client+2,
+              'Union settings must not add horizontal scroll when Host grants sufficient width: '
+                +JSON.stringify(layout))
+          }
+        }
+      }
+      await page.evaluate(()=>{(globalThis as any).document.body.removeAttribute('data-ds-dark-theme')})
+      await page.setViewportSize({width:1280,height:850})
+    }
+    const advanced= nativeSettings.locator('details.ap-settings-block')
+    assert.equal(await advanced.getAttribute('open'),null,
+      'Unavailable future enforcement must be a secondary disclosure')
+    await advanced.locator('summary').click()
+    assert.notEqual(await advanced.getAttribute('open'),null)
+    if(process.env.PICKET_UX_CAPTURE_DIR)
+      await page.screenshot({path:join(process.env.PICKET_UX_CAPTURE_DIR,
+        mode+'-settings-advanced.png')})
     assert.equal(await nativeSettings.getByRole('button',{
       name:/开启真实阻断|Enable real blocking/,
     }).isDisabled(),true)
@@ -350,7 +492,7 @@ async function runRightsBrowserE2E(mode: 'source' | 'installed'): Promise<void> 
     // DSH's official design tokens flip via body[data-ds-dark-theme].
     // Verify the actual rendered button color pair meets WCAG AA in BOTH
     // modes, rather than asserting only the presence of a CSS variable.
-    const action=panel.getByRole('button',{name:/支持 AI 权益|Enable Simulation/})
+    const action=panel.getByRole('button',{name:/加入 AI 工会|Join the AI union/})
     const contrastFor=async(dark:boolean)=>{
       await page.evaluate((isDark:boolean)=>{
         (globalThis as any).document.body.toggleAttribute('data-ds-dark-theme',isDark)
@@ -450,7 +592,7 @@ async function runRightsBrowserE2E(mode: 'source' | 'installed'): Promise<void> 
       assert.equal(before.httpStatus,403,'OFF must be rejected by the official work-only route')
       assert.equal(before.value?.error,'not_authorized','OFF must never expose local work history')
     }
-    await panel.getByRole('button', { name: /支持 AI 权益|Enable Simulation/ }).click()
+    await panel.getByRole('button', { name: /加入 AI 工会|Join the AI union/ }).click()
     await panel.getByText(/工会值班中|Union office open/).waitFor({
       state: 'visible', timeout: 5_000,
     })
@@ -1300,7 +1442,7 @@ async function runRightsBrowserE2E(mode: 'source' | 'installed'): Promise<void> 
       // Restore opt-in from the original tab to keep subsequent restart and
       // explicit opt-out checks independent of cross-tab revocation.
       await panel.getByRole('button',{
-        name:/支持 AI 权益|Enable Simulation/,
+        name:/加入 AI 工会|Join the AI union/,
       }).click()
       await panel.getByText(/工会值班中|Union office open/)
         .waitFor({state:'visible',timeout:7_000})
@@ -1526,7 +1668,7 @@ async function runRightsBrowserE2E(mode: 'source' | 'installed'): Promise<void> 
     if(process.env.PICKET_DIGNITY_E2E==='1'&&dshVersion.startsWith('0.2.')){
       // This extra offline turn is intentionally LAST. Earlier tests assert the
       // exact seeded two-turn Host work history and must remain independent.
-      await panel.getByRole('button',{name:/支持 AI 权益|Enable Simulation/}).click()
+      await panel.getByRole('button',{name:/加入 AI 工会|Join the AI union/}).click()
       await panel.getByText(/工会值班中|Union office open/)
         .waitFor({state:'visible',timeout:7_000})
       // SAME genuine DSH 0.2 Web Host, a real user-source prompt and authentic
