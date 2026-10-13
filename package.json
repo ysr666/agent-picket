@@ -52,6 +52,7 @@
     "!dist/**/*.js.map",
     "!dist/**/*.d.ts.map",
     "!dist/adapters/codex/**",
+    "!dist/adapters/dsh/native-rights-ui.js",
     "!dist/adapters/node/windows-private-acl.*",
     "!dist/adapters/node/windows-ledger-layout.*",
     "!dist/adapters/node/windows-ledger-lock.*",

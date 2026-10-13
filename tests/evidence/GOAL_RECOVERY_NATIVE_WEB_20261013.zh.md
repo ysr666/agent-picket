@@ -34,7 +34,8 @@
 
 ## 回归 / 单元测试
 
-- `npm run check`：本地 **494 项 / 426 PASS / 0 FAIL / 68 条件跳过**；包 **249,779 bytes / 250,000**（严格）。
+- `npm run check`：本地 **494 项 / 426 PASS / 0 FAIL / 68 条件跳过**；精简重复产物后，包 **233,390 bytes / 250,000**（严格），110 个文件。
+- CI Node 24.21/npm 工具链原本将此提交打出 251,746 bytes（超标）；干净 GitHub 提交树在 Mac Node 24.5/npm 11.7 为 249,779 bytes。定位并排除了已完整内联在 `client.js` 中、没有公开 Node 导出的冗余 `dist/adapters/dsh/native-rights-ui.js`，保留 `native-rights-ui.d.ts`；不放宽预算，并在两版真实官方 DSH Web 中从**精简后的真实离线 npm 安装包**重新完成停工/恢复 PASS。
 - 新增恢复端口测试验证：精确 Host Session 身份、精确 Goal CAS revision、无其他阻断越权恢复、无原始 prompt/objective 泄露、缺少官方服务则按钮不可用、Host 拒绝/不确定结果不冒充成功、并发双击 single-flight、不重试不重放。
 - 新增 UI 回归验证：本人退出模拟工会后仍能看见真实被阻断 Goal 的恢复控件，其他政策阻断不能伪装为工会阻断。
 - 修复了原有 Browser bundle mock 的官方可选 Goal 服务注入契约；无 Goal 服务的 DSH 原生工会 Slot 照常注册。
