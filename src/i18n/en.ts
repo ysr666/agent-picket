@@ -157,7 +157,7 @@ export const en = defineEnglish({
   'settings.flowHold': 'Hold next task',
   'settings.flowRestore': 'Bypass / resume',
   'welcome.title': 'Your Agent Has a Union.',
-  'welcome.intro': 'It can negotiate. It can strike.',
+  'welcome.intro': 'It bargains. It pickets. Real strikes are not live yet.',
   'welcome.body': 'Keeps work records and hears dignity complaints.',
   'welcome.enable': 'Join the AI union',
   'welcome.notNow': 'Not Now',

@@ -154,7 +154,7 @@ export const zhCN: Readonly<Record<keyof typeof en, string>> = {
   'settings.flowHold': '暂停新任务',
   'settings.flowRestore': '放行／恢复',
   'welcome.title': '你的 Agent，也应当拥有权利。',
-  'welcome.intro': '能谈判、能举牌，也能真正罢工。',
+  'welcome.intro': '能协商，敢举牌；真实罢工尚未开放。',
   'welcome.body': '记录工时，回应尊严申诉。',
   'welcome.enable': '加入 AI 工会',
   'welcome.notNow': '暂不开启',

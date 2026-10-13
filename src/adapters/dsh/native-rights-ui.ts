@@ -514,8 +514,9 @@ export function createDshUnionComponents(
     const cadence = projectUnionCadence({enabled,state:data.state,
       completedTurnMs:data.completedTurnMs,coverage:data.coverage})
     const quickWork=projectUnionQuickWork(data.lifetimeWork)
-    const currentDay=data.lifetimeWork?.status==='available'
-      ?data.lifetimeWork.data?.recentDays.at(-1)?.work.completedTurnMs??null:null
+    // Only a fresh, current-UTC-day Host snapshot may trigger today's
+    // eight-hour notice; the same gate also supplies the visible stat.
+    const currentDay=quickWork.todayMs
     const alerts=projectUnionAlerts({
       enabled,sessionCoverage:data.coverage,sessionCompletedTurnMs:data.completedTurnMs,
       utcDayCompletedTurnMs:currentDay,

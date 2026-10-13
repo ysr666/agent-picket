@@ -1034,12 +1034,14 @@ test('Union HQ projects a Host-sourced eight-hour day and cautious targeted-lang
  const {hooks}=fakeReact()
  const {d}=deps(rights({welcomeDecision:'enabled',laborRightsEnabled:true}))
  const emptyWork=()=>({turnStarts:0,turnEnds:0,toolCalls:0,toolResults:0,completedTurnMs:0})
- const rows=Array.from({length:7},(_,i)=>({day:'2026-10-'+String(i+6).padStart(2,'0'),work:emptyWork()}))
+ const observedAt=Date.now()
+ const rows=Array.from({length:7},(_,i)=>({
+  day:new Date(observedAt+(i-6)*86_400_000).toISOString().slice(0,10),work:emptyWork()}))
  rows[6]!.work={...emptyWork(),completedTurnMs:8*3_600_000}
  const scoped:DshUnionUiDeps={...d,readUnion:()=>({
    available:true,pending:null,completedTurnMs:null,coverage:'partial',lifetimeMs:null,
    lifetimeWork:{status:'available',data:{schemaVersion:1,source:'dsh-host-durable-work',
-     generatedAtMs:0,windowDays:7,durationBasis:'completed-turn-wall-clock-including-waits',
+     generatedAtMs:observedAt,windowDays:7,durationBasis:'completed-turn-wall-clock-including-waits',
      lifetime:emptyWork(),recentDays:rows}},
    dignity:{status:'available',data:{schemaVersion:1,source:'dsh-host-volatile-dignity',
      origin:'claimed-user-source',enforcement:false,persistence:'memory-only',
@@ -1168,6 +1170,43 @@ test('UX #120: today, Monday-based UTC week and lifetime come from real daily Ho
   recentDays:[...data.recentDays.slice(1),day(1,60000)]}
  assert.equal(projectUnionQuickWork({status:'available',data:shifted},tuesday).weekMs,150000)
 })
+
+test('stale previous-UTC-day Host snapshots never produce a today eight-hour notice',()=>{
+ const {hooks}=fakeReact()
+ const {d}=deps(rights({welcomeDecision:'enabled',laborRightsEnabled:true}))
+ const observedAt=Date.now()-86_400_000
+ const day=new Date(observedAt).toISOString().slice(0,10)
+ const today=new Date().toISOString().slice(0,10)
+ const duration=9*3_600_000
+ const work={turnStarts:1,turnEnds:1,toolCalls:0,toolResults:0,completedTurnMs:duration}
+ const lifetimeWork={
+  status:'available' as const,
+  data:{
+   schemaVersion:1 as const,source:'dsh-host-durable-work' as const,
+   generatedAtMs:observedAt,windowDays:7 as const,
+   durationBasis:'completed-turn-wall-clock-including-waits' as const,
+   lifetime:work,recentDays:[{day,work}],
+  },
+ }
+ const render=(snapshot:typeof lifetimeWork)=>{
+  const ui=createDshUnionComponents(hooks,{createPortal:child=>child},{
+   ...d,readUnion:()=>({
+    available:true,pending:null,completedTurnMs:null,
+    coverage:'unavailable',lifetimeMs:null,lifetimeWork:snapshot,
+   }),
+  })
+  return walk(ui.UnionPanel())
+ }
+ const yesterday=render(lifetimeWork)
+ assert.equal(projectUnionQuickWork(lifetimeWork).todayMs,null)
+ assert.equal(yesterday.some(n=>n.children.includes('hq.alerts.daily-eight-hours')),false,
+  'Old Host snapshots cannot cause a new UTC-day work warning')
+ const current=render({...lifetimeWork,data:{...lifetimeWork.data,
+  generatedAtMs:Date.now(),recentDays:[{day:today,work}]}})
+ assert.ok(current.some(n=>n.children.includes('hq.alerts.daily-eight-hours')),
+  'Fresh nine-hour work in the current UTC day must still be reported')
+})
+
 
 test('UX #120: four primary stats are accessible without opening archives',()=>{
  const {hooks}=fakeReact()
