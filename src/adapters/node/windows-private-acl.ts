@@ -1,6 +1,6 @@
 import {spawnSync} from 'node:child_process'
 import {existsSync,lstatSync,mkdirSync,rmdirSync} from 'node:fs'
-import {dirname,isAbsolute} from 'node:path'
+import {dirname,isAbsolute,parse,resolve} from 'node:path'
 
 /**
  * Windows DACL can NOT be inferred from stat.mode. This opt-in probe never
@@ -98,9 +98,20 @@ export function createProtectedNtfsDirectory(path:string):boolean {
    ||!path.trim()||existsSync(path))return false
  let created=false
  try {
-   const parent=dirname(path)
-   const p=lstatSync(parent)
-   if(!p.isDirectory()||p.isSymbolicLink())return false
+   // Checking only the immediate parent is insufficient: an earlier
+   // ancestor can itself be an NTFS junction that redirects our new folder
+   // into an unrelated tree. This is read-only path validation; handle-based
+   // atomic identity is still required before any production use.
+   let current=dirname(resolve(path))
+   const root=parse(current).root
+   while(true){
+     const p=lstatSync(current)
+     if(!p.isDirectory()||p.isSymbolicLink())return false
+     if(current.toLowerCase()===root.toLowerCase())break
+     const next=dirname(current)
+     if(next===current)return false
+     current=next
+   }
    mkdirSync(path,{recursive:false})
    created=true
    const check=lstatSync(path)

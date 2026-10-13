@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import {mkdtempSync,rmSync,writeFileSync} from 'node:fs'
+import {mkdtempSync,rmSync,writeFileSync,mkdirSync,symlinkSync,existsSync} from 'node:fs'
 import {spawnSync} from 'node:child_process'
 import {tmpdir} from 'node:os'
 import {join} from 'node:path'
@@ -87,5 +87,26 @@ test('Windows experimental private directory creator only accepts a NEW empty di
   const sample=join(target,'private-counts.json')
   writeFileSync(sample,'{}',{mode:0o600})
   assert.equal(verifyPrivateNtfsAcl(sample,'file'),true)
+ }finally{rmSync(parent,{recursive:true,force:true})}
+})
+
+
+test('private NTFS creator rejects a junction GRANDPARENT without leaving a directory',{
+ skip:process.platform!=='win32'&&'Native Windows ancestor-junction regression only',
+ timeout:20_000,
+},()=>{
+ const parent=mkdtempSync(join(tmpdir(),'agent-picket-create-junction-'))
+ const real=join(parent,'real-parent')
+ const nested=join(real,'nested')
+ const alias=join(parent,'redirected-parent')
+ try{
+  mkdirSync(real)
+  mkdirSync(nested)
+  symlinkSync(real,alias,'junction')
+  const throughAlias=join(alias,'nested','never-create')
+  assert.equal(createProtectedNtfsDirectory(throughAlias),false,
+   'The full parent ancestry must be verified, not just the last segment')
+  assert.equal(existsSync(join(nested,'never-create')),false,
+   'Refused nested NTFS junction must not create even an empty directory')
  }finally{rmSync(parent,{recursive:true,force:true})}
 })
