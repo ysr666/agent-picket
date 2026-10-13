@@ -1,4 +1,4 @@
-import os,subprocess,tempfile,shutil,threading,time,json,select,sys,re
+import os,subprocess,tempfile,shutil,threading,time,json,select,sys,re,base64,hashlib,struct,zlib
 from pathlib import Path
 from http.server import ThreadingHTTPServer,BaseHTTPRequestHandler
 try:
@@ -6,8 +6,9 @@ try:
 except ImportError:
  print('SKIP: install pexpect in a disposable development environment')
  sys.exit(0)
-if os.environ.get('AGENT_PICKET_CODEX_TUI_NATIVE')!='1':
- print('SKIP: explicitly set AGENT_PICKET_CODEX_TUI_NATIVE=1')
+image_mode=os.environ.get('AGENT_PICKET_CODEX_TUI_IMAGE_NATIVE')=='1'
+if os.environ.get('AGENT_PICKET_CODEX_TUI_NATIVE')!='1' and not image_mode:
+ print('SKIP: explicitly set AGENT_PICKET_CODEX_TUI_NATIVE=1 for text, or AGENT_PICKET_CODEX_TUI_IMAGE_NATIVE=1 for a single interactive synthetic PNG')
  sys.exit(0)
 CODEX=os.environ.get('AGENT_PICKET_CODEX_BIN') or shutil.which('codex')
 if not CODEX or not os.path.isabs(CODEX):
@@ -56,6 +57,18 @@ def screen(text):
 
 root=Path(tempfile.mkdtemp(prefix='ap-codex-tui-real-'))
 root=Path(os.path.realpath(root));home=root/'home';home.mkdir()
+image=root/'synthetic-one-image.png'
+original_image=None
+if image_mode:
+ # Deterministic 16x16 synthetic RGB PNG. stdlib only, no personal clipboard.
+ def chunk(tag,data):
+  return struct.pack('>I',len(data))+tag+data+struct.pack('>I',zlib.crc32(tag+data))
+ scanlines=b''.join(b'\x00'+bytes((34,145,229))*16 for _ in range(16))
+ original_image=(b'\x89PNG\r\n\x1a\n'
+  +chunk(b'IHDR',struct.pack('>2I5B',16,16,8,2,0,0,0))
+  +chunk(b'IDAT',zlib.compress(scanlines))
+  +chunk(b'IEND',b''))
+ image.write_bytes(original_image)
 class TestAPI(BaseHTTPRequestHandler):
  hits=0
  payloads=[]
@@ -116,15 +129,22 @@ try:
  # It never approves a user's workspace or changes their real CODEX_HOME.
  tui.send('\r');grab(1.5)
  assert 'OpenAI Codex' in screen(''.join(raw)), 'Real native Codex TUI not ready'
+ if image_mode:
+  # Genuine terminal bracketed paste => official TUI attaches the local image.
+  # Does not touch the user's system clipboard or Codex implementation.
+  tui.send('\x1b[200~'+str(image)+'\x1b[201~');grab(1)
+  assert '[Image #1]' in screen(''.join(raw)), 'Official TUI never attached synthetic PNG'
  tui.send(PROMPT);grab(.4);tui.send('\r');grab(3)
  denied=screen(''.join(raw))
  deadline=time.time()+8
- while ('UserPromptSubmit hook (blocked)' not in denied or
-        'Agent Picket AI union:' not in denied) and time.time()<deadline:
+ while ('UserPromptSubmit hook (blocked)' not in ''.join(raw) or
+        'Agent Picket AI union:' not in ''.join(raw)) and time.time()<deadline:
   grab(.2)
   denied=screen(''.join(raw))
- assert 'UserPromptSubmit hook (blocked)' in denied, 'No official TUI block feedback'
- assert 'Agent Picket AI union:' in denied, 'No visible union grievance/reason'
+ # The TUI redraw may scroll this notice out of its CURRENT 38-row screen;
+ # require it in real terminal output, not only in the latest paint.
+ assert 'UserPromptSubmit hook (blocked)' in ''.join(raw), 'No official TUI block feedback'
+ assert 'Agent Picket AI union:' in ''.join(raw), 'No visible union grievance/reason'
  assert (root/'hook_fired').exists(), 'Official Hook never ran'
  assert TestAPI.hits==0, 'No model request is allowed while union action holds'
  assert PROMPT not in denied, 'Test assumes post-veto draft is no longer in composer'
@@ -132,7 +152,8 @@ try:
  # rollout access, transcript scraping or Agent Picket-owned raw text queue.
  tui.send('\x1b[A');grab(1)
  restored=screen(''.join(raw))
- assert '› '+PROMPT in restored, 'UP did not restore exact original prompt into editor'
+ expected_editor=('› [Image #1] '+PROMPT) if image_mode else ('› '+PROMPT)
+ assert expected_editor in restored, 'UP did not restore original composer contents'
  # Simulate separate authorized Union settings OFF; neither Hook trust nor
  # Codex process state is modified, and no user prompt is ever rewritten.
  union['enabled']=False;state.write_text(json.dumps(union))
@@ -142,12 +163,23 @@ try:
  assert TestAPI.hits==1, 'Restored prompt was not dispatched exactly once after opt-out'
  assert len(TestAPI.payloads)==1 and PROMPT.encode() in TestAPI.payloads[0], \
   'Exact recovered synthetic input did not reach the local model endpoint'
+ image_bytes_identical=False
+ if image_mode:
+  # A recovered [Image #1] UI placeholder is NOT sufficient. Inspect the
+  # TEST-ONLY fake model request and prove the actual PNG bytes survived.
+  match=re.search(rb'data:image/png;base64,([A-Za-z0-9+/=]+)',TestAPI.payloads[0])
+  assert match, 'No PNG was delivered after official Host refusal and opt-out'
+  recovered_image=base64.b64decode(match.group(1),validate=True)
+  image_bytes_identical=(recovered_image==original_image)
+  assert image_bytes_identical, 'Original synthetic image was not byte-preserved'
  assert tui.isalive(), 'TUI unexpectedly exited'
  print(json.dumps({'result':'PASS','codex':version,
   'official_hook_blocked':True,'blocked_model_requests':0,
   'visible_union_reason':True,'original_text_restored_by_up_arrow':True,
   'settings_off_resubmitted_requests':1,'resubmission_payload_preserved':True,
-  'attachment_recovery_verified':False,'desktop_verified':False,
+  'synthetic_interactive_single_png_sha256_equal':image_bytes_identical if image_mode else None,
+  'image_mode':image_mode,
+  'all_attachment_paths_and_restart_verified':False,'desktop_verified':False,
   'workspace_and_hook_trust':'isolated-test-only'},ensure_ascii=False))
 
 finally:
