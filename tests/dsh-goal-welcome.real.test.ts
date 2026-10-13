@@ -332,7 +332,39 @@ test('real DSH Web: one informed first-run click atomically confirms union and G
      await page.screenshot({path:join(resolve(capture),'real-goal-blocked-320.png')})
      await page.setViewportSize({width:1280,height:850})
    }
-   await resume.click()
+   if(process.env.PICKET_GOAL_RACE_E2E==='1'){
+     // Two independent real Chromium Web Client tabs both see one official
+     // durable Host Goal revision. Concurrent user clicks must not create
+     // multiple Host CAS revisions or replay the original Goal prompt.
+     const other=await ctx.newPage()
+     await other.goto(base,{waitUntil:'domcontentloaded',timeout:15_000})
+     const continueOther=other.getByRole('button',{name:/^(继续|Continue)$/})
+     if(await continueOther.isVisible().catch(()=>false))
+       await continueOther.click({timeout:4000})
+     const otherRow=other.locator('[data-row-key="session:'+created.sessionId+'"]')
+     await otherRow.waitFor({state:'visible',timeout:12000})
+     if(await otherRow.getAttribute('aria-selected')!=='true')
+       await otherRow.click({timeout:7000})
+     const otherOpener=other.getByRole('button',{name:/AI 工会|AI Workers.*Union/}).first()
+     await otherOpener.click({timeout:7000})
+     const otherUnion=other.locator('[role="dialog"]').filter({has:other.locator('[data-ap-view="hq"]')})
+     await otherUnion.waitFor({state:'visible',timeout:7000})
+     const otherResume=otherUnion.getByRole('button',{name:/恢复此 Goal 的自动工作|Resume this Goal/})
+     await otherResume.waitFor({state:'visible',timeout:8000})
+     const race=await Promise.allSettled([
+       resume.click({timeout:3500}),
+       otherResume.click({timeout:3500}),
+     ])
+     assert.ok(race.some(v=>v.status==='fulfilled'),
+       'At least one genuine user tab must be able to resume the blocked Goal')
+     console.log('GOAL_NATIVE_TWO_TAB_USER_CLICKS '+JSON.stringify(
+       race.map(x=>x.status)))
+     await otherUnion.locator('section[data-ap-real-goal="blocked"]')
+       .waitFor({state:'detached',timeout:10_000})
+     await other.close()
+   }else{
+     await resume.click()
+   }
    const recovery=await page.evaluate(async(sessionId:string)=>{
     let status:any=null
     for(let i=0;i<100;i++){
@@ -353,8 +385,8 @@ test('real DSH Web: one informed first-run click atomically confirms union and G
       roundsStarted:status?.roundsStarted,activation:status?.activation,
       reason:status?.blockedReason?.code??null}
    },created.sessionId)
-   assert.ok(recovery.revision>blocked.revision,
-    'Official DSH Goal CAS revision must advance after the UI recovery click')
+   assert.equal(recovery.revision,blocked.revision+1,
+    'Exactly one official Host Goal CAS revision must occur after human UI resume')
    assert.notEqual(recovery.phase,'blocked')
    assert.equal(recovery.reason,null)
    console.log('GOAL_NATIVE_UI_RECOVERY_CONFIRMED '+JSON.stringify(recovery))
