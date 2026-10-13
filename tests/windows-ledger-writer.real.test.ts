@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import {spawn, type ChildProcess} from 'node:child_process'
+import {createHmac} from 'node:crypto'
 import {mkdtempSync,readFileSync,writeFileSync,existsSync,rmSync,openSync,closeSync} from 'node:fs'
 import {tmpdir} from 'node:os'
 import {join,resolve} from 'node:path'
@@ -285,5 +286,85 @@ test('native NTFS checkpoint cannot erase other DurableStats v1 counter families
   assert.equal(verified.totals?.completedTurnMs,5000)
   assert.equal(verified.totals?.review,1)
   assert.equal(verified.totals?.toolCalls,1)
+ }finally{writer?.close();rmSync(parent,{recursive:true,force:true})}
+})
+
+
+test('native Windows rejects exhausted v1 sequence BEFORE any WAL mutation',{
+ skip:process.platform!=='win32'&&'NTFS maximum safe v1 sequence boundary only',timeout:80_000,
+},()=>{
+ const parent=mkdtempSync(join(tmpdir(),'ap-writer-sequence-exhausted-'))
+ const dir=join(parent,'protected-v1-ledger')
+ let writer:ExperimentalNtfsWalWriter|undefined
+ try{
+  assert.equal(createProtectedNtfsDirectory(dir),true)
+  const snapshot={version:1,secret:'cd'.repeat(32),sequence:Number.MAX_SAFE_INTEGER,
+   totals:{turnStarts:0,turnEnds:0,toolCalls:0,toolResults:0,completedTurnMs:0,
+    checked:0,safe:0,review:0,targeted:0},daily:{},seen:[]}
+  const snap=join(dir,'aggregate.v1.json'),wal=join(dir,'aggregate.v1.journal')
+  writeFileSync(snap,JSON.stringify(snapshot),{flag:'wx',mode:0o600})
+  writer=new ExperimentalNtfsWalWriter(dir)
+  const snapshotBefore=readFileSync(snap),walBefore=readFileSync(wal)
+  assert.throws(()=>writer!.recordSyntheticToolCall('should-not-commit',
+   'sandbox-agent','sandbox-session',now),/sequence exhausted/)
+  assert.deepEqual(readFileSync(snap),snapshotBefore,'Snapshot must not mutate')
+  assert.deepEqual(readFileSync(wal),walBefore,'No unsafe WAL row may be appended')
+  writer.close();writer=undefined
+  const verified=inspectPrivateNtfsWalReplay(dir)
+  assert.equal(verified.status,'verified')
+  assert.equal(verified.sequence,Number.MAX_SAFE_INTEGER)
+  const reopened=new ExperimentalNtfsWalWriter(dir)
+  writer=reopened
+  assert.equal(reopened.snapshot.toolCalls,0)
+  assert.equal(reopened.snapshot.sequence,Number.MAX_SAFE_INTEGER)
+ }finally{writer?.close();rmSync(parent,{recursive:true,force:true})}
+})
+
+test('native NTFS checkpoint preserves mixed v1 counter families from already committed WAL',{
+ skip:process.platform!=='win32'&&'NTFS production-v1 multi-family WAL checkpoint only',timeout:80_000,
+},()=>{
+ const parent=mkdtempSync(join(tmpdir(),'ap-writer-multifamily-wal-'))
+ const dir=join(parent,'protected-v1-ledger')
+ let writer:ExperimentalNtfsWalWriter|undefined
+ try{
+  assert.equal(createProtectedNtfsDirectory(dir),true)
+  const secret='ef'.repeat(32)
+  const day=new Date(now).toISOString().slice(0,10)
+  const initial={turnStarts:3,turnEnds:2,toolCalls:1,toolResults:1,
+   completedTurnMs:99,checked:1,safe:1,review:0,targeted:0}
+  const changes={turnStarts:2,turnEnds:1,toolCalls:1,toolResults:3,
+   completedTurnMs:1234,checked:3,safe:1,review:1,targeted:1}
+  const snapshot={version:1,secret,sequence:7,totals:initial,
+   daily:{[day]:{...initial}},seen:[]}
+  const fp='B'.repeat(43),seq=8,atMs=now
+  const mac=createHmac('sha256',Buffer.from(secret,'hex'))
+   .update(JSON.stringify([seq,fp,changes,atMs])).digest('base64url')
+  const record={seq,fp,changes,atMs,mac}
+  const snap=join(dir,'aggregate.v1.json'),wal=join(dir,'aggregate.v1.journal')
+  writeFileSync(snap,JSON.stringify(snapshot),{flag:'wx',mode:0o600})
+  writeFileSync(wal,JSON.stringify(record)+'\n',{flag:'wx',mode:0o600})
+  const before=replayVerifiedV1SnapshotWal(readFileSync(snap,'utf8'),readFileSync(wal))
+  assert.equal(before.status,'verified')
+  assert.equal(before.applied,1)
+  writer=new ExperimentalNtfsWalWriter(dir)
+  assert.deepEqual(writer.snapshot,{sequence:8,toolCalls:2})
+  assert.equal(writer.recordSyntheticToolCall('followup','sandbox-agent','sandbox-session',now+1),true)
+  writer.checkpointForTest()
+  writer.close();writer=undefined
+  const saved=JSON.parse(readFileSync(snap,'utf8'))
+  for(const key of Object.keys(initial) as (keyof typeof initial)[]){
+   const expected=initial[key]+changes[key]+Number(key==='toolCalls')
+   assert.equal(saved.totals[key],expected,'WAL cumulative field lost: '+key)
+   assert.equal(saved.daily[day][key],expected,'WAL daily field lost: '+key)
+  }
+  assert.equal(saved.sequence,9)
+  assert.ok(saved.seen.includes(fp),'Committed WAL fingerprint must survive checkpoint')
+  const verified=inspectPrivateNtfsWalReplay(dir)
+  assert.equal(verified.status,'verified')
+  assert.equal(verified.sequence,9)
+  assert.deepEqual(verified.totals,saved.totals)
+  writer=new ExperimentalNtfsWalWriter(dir)
+  assert.equal(writer.recordSyntheticToolCall('followup','sandbox-agent','sandbox-session',now+1),false,
+   'Repeated work event after mixed-family recovery and checkpoint must be deduplicated')
  }finally{writer?.close();rmSync(parent,{recursive:true,force:true})}
 })

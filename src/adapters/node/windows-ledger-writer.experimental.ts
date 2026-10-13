@@ -148,6 +148,11 @@ export class ExperimentalNtfsWalWriter {
   const fp=createHmac('sha256',Buffer.from(this.#secret,'hex'))
    .update(JSON.stringify(['work',agentId,sessionId,eventId])).digest('base64url')
   if(this.#seen.has(fp))return false
+  // An exhausted sequence must be rejected BEFORE any WAL bytes are written.
+  // Otherwise replay rejects the unsafe JSON number and a once-valid ledger
+  // becomes permanently unopenable even though the event was unacknowledged.
+  if(!Number.isSafeInteger(this.#sequence+1))
+   throw Error('Experimental WAL sequence exhausted')
   if(this.#sinceCheckpoint>=MAX_RECORDS_BETWEEN_CHECKPOINTS
    ||this.#seen.size>=MAX_FINGERPRINTS)throw Error('Experimental WAL checkpoint or dedup capacity exceeded')
   const day=new Date(atMs).toISOString().slice(0,10)
