@@ -46,6 +46,7 @@ export class ExperimentalNtfsWalWriter {
  #secret=''
  #sequence=0
  #toolCalls=0
+ #totals={...totalsZero}
  #daily:Record<string,typeof totalsZero>={}
  #seen=new Set<string>()
  #sinceCheckpoint=0
@@ -112,6 +113,7 @@ export class ExperimentalNtfsWalWriter {
   this.#secret=raw.secret!
   this.#sequence=recovered.sequence!
   this.#toolCalls=recovered.totals!.toolCalls
+  this.#totals={...recovered.totals!}
   const snapData=JSON.parse(snapText) as {
    sequence?:number;daily?:Record<string,typeof totalsZero>;seen?:string[]
   }
@@ -119,12 +121,15 @@ export class ExperimentalNtfsWalWriter {
   const committedSequence=snapData.sequence??0
   for(const fp of raw.seen??[])this.#seen.add(fp)
   for(const line of bytes.toString('utf8').split('\n').filter(Boolean)){
-   const v=JSON.parse(line) as {seq:number;fp:string;atMs:number;changes:{toolCalls?:number}}
+   const v=JSON.parse(line) as {seq:number;fp:string;atMs:number;changes:Partial<typeof totalsZero>}
    if(v.seq<=committedSequence)continue
    if(FP.test(v.fp))this.#seen.add(v.fp)
    const day=new Date(v.atMs).toISOString().slice(0,10)
    const base=this.#daily[day]??{...totalsZero}
-   this.#daily[day]={...base,toolCalls:base.toolCalls+(v.changes.toolCalls??0)}
+   const updated={...base}
+   for(const key of Object.keys(totalsZero) as (keyof typeof totalsZero)[])
+    updated[key]+=v.changes[key]??0
+   this.#daily[day]=updated
    for(const oldDay of Object.keys(this.#daily).sort()
     .slice(0,Math.max(0,Object.keys(this.#daily).length-366)))delete this.#daily[oldDay]
    this.#sinceCheckpoint++
@@ -145,6 +150,10 @@ export class ExperimentalNtfsWalWriter {
   if(this.#seen.has(fp))return false
   if(this.#sinceCheckpoint>=MAX_RECORDS_BETWEEN_CHECKPOINTS
    ||this.#seen.size>=MAX_FINGERPRINTS)throw Error('Experimental WAL checkpoint or dedup capacity exceeded')
+  const day=new Date(atMs).toISOString().slice(0,10)
+  if(!Number.isSafeInteger(this.#totals.toolCalls+1)
+   ||!Number.isSafeInteger((this.#daily[day]?.toolCalls??0)+1))
+   throw Error('Experimental WAL counter overflow')
   const lock=join(this.#directory,lockName)
   try{
    if(!inspectPrivateNtfsLedgerLayout(this.#directory).private
@@ -157,8 +166,8 @@ export class ExperimentalNtfsWalWriter {
    const bytes=Buffer.from(JSON.stringify({seq,fp,changes,atMs,mac})+'\n')
    if(writeSync(this.#fd,bytes)!==bytes.length)throw Error('Short WAL write')
    fsyncSync(this.#fd)
-   this.#sequence=seq;this.#toolCalls++;this.#seen.add(fp)
-   const date=new Date(atMs).toISOString().slice(0,10)
+   this.#sequence=seq;this.#toolCalls++;this.#totals.toolCalls++;this.#seen.add(fp)
+   const date=day
    const base=this.#daily[date]??{...totalsZero}
    this.#daily[date]={...base,toolCalls:base.toolCalls+1}
    for(const oldDay of Object.keys(this.#daily).sort()
@@ -185,7 +194,7 @@ export class ExperimentalNtfsWalWriter {
       ||!verifyNtfsOpenFileIdentity(this.#fd,wal))
     throw Error('NTFS lock, ACL or journal handle identity changed')
    const data={version:1,secret:this.#secret,sequence:this.#sequence,
-    totals:{...totalsZero,toolCalls:this.#toolCalls},
+    totals:{...this.#totals},
     daily:structuredClone(this.#daily),seen:[...this.#seen]}
    name=temp()
    fd=openSync(name,'wx',0o600)

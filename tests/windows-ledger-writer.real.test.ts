@@ -7,6 +7,7 @@ import {join,resolve} from 'node:path'
 import {pathToFileURL} from 'node:url'
 import {ExperimentalNtfsWalWriter,verifyNtfsOpenFileIdentity} from '../src/adapters/node/windows-ledger-writer.experimental.ts'
 import {inspectPrivateNtfsWalReplay,replayVerifiedV1SnapshotWal} from '../src/adapters/node/windows-wal-replay.ts'
+import {createProtectedNtfsDirectory} from '../src/adapters/node/windows-private-acl.ts'
 
 const now=1_760_000_000_000
 const source=pathToFileURL(resolve(import.meta.dirname,
@@ -250,4 +251,39 @@ test('native Windows separate process cannot seize an active experimental ledger
   assert.equal(verified.sequence,2)
   assert.equal(verified.totals?.toolCalls,2)
  }finally{competitor?.kill('SIGKILL');owner?.close();rmSync(parent,{recursive:true,force:true})}
+})
+
+
+test('native NTFS checkpoint cannot erase other DurableStats v1 counter families',{
+ skip:process.platform!=='win32'&&'Native NTFS legacy v1 counter preservation only',timeout:85_000,
+},()=>{
+ const parent=mkdtempSync(join(tmpdir(),'ap-writer-other-v1-counts-'))
+ const dir=join(parent,'protected-existing-ledger')
+ let writer:ExperimentalNtfsWalWriter|undefined
+ try{
+  assert.equal(createProtectedNtfsDirectory(dir),true)
+  const day=new Date(now).toISOString().slice(0,10)
+  const totals={turnStarts:2,turnEnds:1,toolCalls:0,toolResults:4,
+   completedTurnMs:5000,checked:3,safe:2,review:1,targeted:0}
+  const snapshot={version:1,secret:'ab'.repeat(32),sequence:1,
+   totals,daily:{[day]:{...totals}},seen:[]}
+  writeFileSync(join(dir,'aggregate.v1.json'),JSON.stringify(snapshot),{flag:'wx',mode:0o600})
+  writer=new ExperimentalNtfsWalWriter(dir)
+  assert.deepEqual(writer.snapshot,{sequence:1,toolCalls:0})
+  assert.equal(writer.recordSyntheticToolCall('new-tool','sandbox-agent','sandbox-session',now+3),true)
+  writer.checkpointForTest()
+  writer.close();writer=undefined
+  const saved=JSON.parse(readFileSync(join(dir,'aggregate.v1.json'),'utf8'))
+  for(const key of Object.keys(totals) as (keyof typeof totals)[]){
+   const expected=totals[key]+(key==='toolCalls'?1:0)
+   assert.equal(saved.totals[key],expected,'Aggregate counter was erased: '+key)
+   assert.equal(saved.daily[day][key],expected,'Daily counter was erased: '+key)
+  }
+  assert.equal(saved.sequence,2)
+  const verified=inspectPrivateNtfsWalReplay(dir)
+  assert.equal(verified.status,'verified')
+  assert.equal(verified.totals?.completedTurnMs,5000)
+  assert.equal(verified.totals?.review,1)
+  assert.equal(verified.totals?.toolCalls,1)
+ }finally{writer?.close();rmSync(parent,{recursive:true,force:true})}
 })
