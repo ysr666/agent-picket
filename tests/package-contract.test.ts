@@ -97,6 +97,8 @@ test('npm dry-run tarball contains prebuilt plugin and no source, tests, or runt
   for(const essential of ['docs/BLOCKING_SAFETY.md','docs/AI_RIGHTS_MANIFESTO.md']){
     assert.ok(files.has(essential),'Essential shipped safety/mission context missing: '+essential)
   }
+  assert.equal(files.has('dist/adapters/node/windows-ledger-writer.experimental.js'),false,
+    'Unverified Windows WAL writer MUST NEVER ship as production storage')
   assert.equal(files.has('dist/adapters/node/windows-private-acl.js'),false,
     'Unverified Windows NTFS security probe must not ship as a storage backend')
   assert.equal(files.has('dist/adapters/codex/goal-readiness.js'),false,
