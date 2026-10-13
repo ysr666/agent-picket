@@ -58,7 +58,8 @@ export async function readCodexOfficialGoal(
 
 export type CodexGoalSafetyGap=
   |'real-consent-missing'|'owner-unverified'|'safe-turn-boundary-unverified'
-  |'atomic-transition-unverified'|'hold-and-resume-unverified'
+  |'atomic-transition-unverified'|'multi-owner-fencing-unverified'
+  |'hold-and-resume-unverified'
 /**
  * An ACK from thread/goal/set alone supplies none of these guarantees.
  * In particular 0.146.1 ThreadGoalSetParams has NO expected revision/CAS.
@@ -66,6 +67,8 @@ export type CodexGoalSafetyGap=
 export function inspectCodexGoalHoldSafety(proof:{
   readonly consentFromHost:boolean
   readonly activeOwnerVerified:boolean
+  /** A second App-Server cannot resume and execute the same active Goal. */
+  readonly exclusiveCrossProcessGoalOwnerVerified:boolean
   readonly safeIdleBoundaryVerified:boolean
   readonly conditionalCommitVerified:boolean
   readonly durableLosslessRecoveryVerified:boolean
@@ -73,6 +76,8 @@ export function inspectCodexGoalHoldSafety(proof:{
   const gaps:CodexGoalSafetyGap[]=[]
   if(proof.consentFromHost!==true)gaps.push('real-consent-missing')
   if(proof.activeOwnerVerified!==true)gaps.push('owner-unverified')
+  if(proof.exclusiveCrossProcessGoalOwnerVerified!==true)
+   gaps.push('multi-owner-fencing-unverified')
   if(proof.safeIdleBoundaryVerified!==true)gaps.push('safe-turn-boundary-unverified')
   if(proof.conditionalCommitVerified!==true)gaps.push('atomic-transition-unverified')
   if(proof.durableLosslessRecoveryVerified!==true)gaps.push('hold-and-resume-unverified')
@@ -81,6 +86,7 @@ export function inspectCodexGoalHoldSafety(proof:{
 /** Actual published App-Server 0.146.1 read/write is insufficient for automatic strikes. */
 export const CODEX_0146_NATIVE_GOAL_CAPABILITY=Object.freeze({
  consentFromHost:false,activeOwnerVerified:false,
+ exclusiveCrossProcessGoalOwnerVerified:false,
  safeIdleBoundaryVerified:false,conditionalCommitVerified:false,
  durableLosslessRecoveryVerified:false,
 })
