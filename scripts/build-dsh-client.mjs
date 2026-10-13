@@ -13,6 +13,8 @@ const modules = [
   'i18n/zh-CN.js',
   'i18n/index.js',
   'adapters/dsh/client-rights-scope.js',
+  'adapters/dsh/client-goal-consent.js',
+  'adapters/dsh/client-goal-capability.js',
   'adapters/dsh/client-host-settings-017.js',
   'product/union-desk.js',
   'product/union-ledger.js',
@@ -43,7 +45,7 @@ const allowedImports = new Map([
   ['adapters/dsh/client-lifetime.js', new Set(['./lifetime-work-contract.js'])],
   ['adapters/dsh/client-dignity.js', new Set(['./dignity-contract.js'])],
   ['adapters/dsh/client.js', new Set([
-    './client-dashboard.js', './client-rights-scope.js', './client-bargaining.js',
+    './client-dashboard.js', './client-rights-scope.js', './client-goal-consent.js', './client-goal-capability.js', './client-bargaining.js',
     './native-rights-ui.js', './client-host-settings-017.js', './client-lifetime.js', './client-dignity.js', '../../i18n/index.js',
   ])],
 ])

@@ -65,6 +65,10 @@ test('packaged DSH Client loads native React Slots without extra React, model ca
     locale:{getLocale:()=>({active:'zh'}),subscribe:()=>()=>{}},
     inject(services:string[],cb:(ctx:any)=>void){
       if (Array.from(services).includes('configForms')) return
+      if(services.includes('remote.goals')){
+        assert.deepEqual(Array.from(services),['remote','remote.goals'])
+        return // Unsupported Host: union still mounts without Goal RPC.
+      }
       assert.deepEqual(Array.from(services),['slots','settingsScope','locale'])
       cb(ctx)
     },

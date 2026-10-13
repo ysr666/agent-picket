@@ -3,6 +3,8 @@ import { createBrowserLifetimeWorkReader, createCompletedTurnRefreshGate } from 
 import { createBrowserDignityReader } from './client-dignity.ts'
 import { createDshBrowserUnionDesk, type UnionSettingsSection } from './client-bargaining.ts'
 import { createDshClientRightsScope, type DshSettingsScope } from './client-rights-scope.ts'
+import {createDshRealGoalConsentControl} from './client-goal-consent.ts'
+import {createDshGoalServiceWitness} from './client-goal-capability.ts'
 import { createOfficialDsh017Scope, type OfficialHostMirror, type OfficialHostSettings } from './client-host-settings-017.ts'
 import { registerDshNativeRightsSlots, type ReactForDsh, type PortalForDsh, type DshSlots } from './native-rights-ui.ts'
 import { formatMessage, resolveLocale, type MessageKey } from '../../i18n/index.ts'
@@ -34,13 +36,83 @@ export function currentDshUnionSession(state?: {
   return retained.length === 1 ? retained[0]?.[0] : undefined
 }
 
+type GoalProjectionFace = {
+  getSnapshot():unknown
+  subscribe?(listener:()=>void):()=>void
+}
+type GoalBinding = {session?:{projections?:{faceOf(name:string):GoalProjectionFace}}}
+export interface UnionGoalHold {
+  readonly sessionId:string
+  readonly goalId:string
+  readonly revision:number
+  readonly canResume:boolean
+}
+export function createDshGoalRecoveryPort(options:{
+  currentSession:()=>string|undefined
+  binding:(sessionId:string)=>GoalBinding|undefined
+  resume?:(sessionId:string,ref:{id:string;revision:number})=>Promise<unknown>
+  isAvailable?:()=>boolean
+}){
+  let pending=false
+  const read=():UnionGoalHold|null=>{
+    try{
+      const sessionId=options.currentSession()
+      if(!sessionId)return null
+      const binding=options.binding(sessionId)
+      const value=binding?.session?.projections?.faceOf('goal')?.getSnapshot()
+      if(!value||typeof value!=='object')return null
+      const {goal,roundsStarted}=value as {goal?:{
+        id?:unknown;revision?:unknown;phase?:unknown
+        blockedReason?:{code?:unknown};maxGoalRounds?:unknown
+      };roundsStarted?:unknown}
+      if(!goal||goal.phase!=='blocked'||goal.blockedReason?.code!=='picket-work-limit'
+        ||typeof goal.id!=='string'||goal.id.length===0
+        ||!Number.isSafeInteger(goal.revision)||(goal.revision as number)<1
+        ||!Number.isSafeInteger(roundsStarted)||(roundsStarted as number)<0
+        ||!Number.isSafeInteger(goal.maxGoalRounds)
+        ||(goal.maxGoalRounds as number)<=0
+        ||options.currentSession()!==sessionId
+        ||options.binding(sessionId)!==binding)return null
+      return {sessionId,goalId:goal.id,revision:goal.revision as number,
+        canResume:typeof options.resume==='function'
+          &&options.isAvailable?.()!==false
+          &&(roundsStarted as number)<(goal.maxGoalRounds as number)}
+    }catch{return null}
+  }
+  async function resume(expected:UnionGoalHold):Promise<'requested'>{
+    if(pending)throw Error('Goal resume already pending')
+    const current=read()
+    if(!current||current.sessionId!==expected.sessionId
+      ||current.goalId!==expected.goalId||current.revision!==expected.revision)
+      throw Error('Host Goal or Session changed; verify current state before resuming')
+    if(!current.canResume||!options.resume)
+      throw Error('Official Goal recovery is unavailable')
+    const originalBinding=options.binding(current.sessionId)
+    pending=true
+    try{
+      const result=await options.resume(current.sessionId,{
+        id:current.goalId,revision:current.revision}) as
+        {ok?:unknown;value?:{id?:unknown;revision?:unknown;phase?:unknown}}
+      if(options.currentSession()!==current.sessionId
+        ||options.binding(current.sessionId)!==originalBinding)
+        throw Error('Session changed during Host Goal recovery')
+      if(result?.ok!==true||result.value?.id!==current.goalId
+        ||result.value?.revision!==current.revision+1
+        ||result.value?.phase!=='active')
+        throw Error('Host did not confirm Goal resume; check Goal before retrying')
+      return 'requested'
+    }finally{pending=false}
+  }
+  return {read,resume}
+}
+
 interface ClientContext {
   effect?(register: () => () => void): unknown
   inject?(services: string[], cb: (ctx: ClientContext) => void): unknown
   slots?: DshSlots
   settingsScope?: { bind<T>(spec: { namespace: string }): DshSettingsScope<T> }
   configForms?: { describe(): OfficialHostMirror }
-  remote?: OfficialHostSettings
+  remote?: OfficialHostSettings & {goals?:{get:(sessionId:string)=>Promise<unknown>;resume:(sessionId:string,ref:{id:string;revision:number})=>Promise<unknown>}}
   locale?: { getLocale(): { active: string }; subscribe(listener:()=>void):()=>void }
   /** Public Cordis service registration; removed with the client plugin fiber. */
   provide?(name: string, value: unknown): () => void
@@ -52,7 +124,7 @@ interface ClientContext {
   sessions: {
     list?: { getSnapshot(): { current?: string; phase?: string; byId?: Record<string,{ blank?:boolean; retainedBy?:{mainView?:number} }> }; subscribe(listener:()=>void):()=>void }
     scope(id: string): Scope | undefined
-    binding?(id: string): { eventSource: {
+    binding?(id: string): { session?:{projections?:{faceOf(name:string):GoalProjectionFace}}; eventSource: {
       getSnapshot(): { entries: readonly {type?: unknown; event?: {type?: unknown;seq?: unknown;time?: unknown;data?: unknown}}[]; hasMore: boolean; revision: number }
       subscribe(listener: () => void): () => void
     } } | undefined
@@ -81,6 +153,24 @@ export function apply(ctx: ClientContext, react?: ReactForDsh, portal?: PortalFo
     // no manual command dispatch, no model call, no Host data mutation.
     if (bridge) ctx.provide('agentPicketDashboard', bridge)
   }
+  // Optional official Goal Remote is independently injected. Never make
+  // the nonblocking Union onboarding dependent on Goal installation.
+  let goalRemote:NonNullable<NonNullable<ClientContext['remote']>['goals']>|undefined
+  const goalWitness=createDshGoalServiceWitness({
+    currentSession:()=>currentDshUnionSession(ctx.sessions.list?.getSnapshot()),
+    binding:id=>ctx.sessions.binding?.(id),
+    remote:()=>goalRemote,
+  })
+  ctx.inject?.(['remote','remote.goals'],child=>{
+    const granted=child.remote?.goals
+    goalRemote=granted
+    goalWitness.invalidate()
+    // Public read-only service proof; do not contact Goal Host on startup
+    // before there is an actual selected, nonblank Session.
+    child.effect?.(()=>()=>{
+      if(goalRemote===granted){goalRemote=undefined;goalWitness.invalidate()}
+    })
+  })
   // Native React Slots are installed only when DSH's own services are present.
   // Their settings writes use the Host's authenticated settingsScope, never
   // the read-only agentPicketDashboard service.
@@ -98,6 +188,13 @@ export function apply(ctx: ClientContext, react?: ReactForDsh, portal?: PortalFo
       : scoped.settingsScope!.bind<UnionSettingsSection>({namespace:'agent-picket'})
     unionRegistered = true
     const owner = createDshClientRightsScope(rightsScope)
+    const goalConsentControl=createDshRealGoalConsentControl(rightsScope,goalWitness)
+    const recovery=createDshGoalRecoveryPort({
+      currentSession:()=>currentDshUnionSession(scoped.sessions.list?.getSnapshot()),
+      binding:id=>scoped.sessions.binding?.(id),
+      isAvailable:()=>typeof goalRemote?.resume==='function',
+      resume:async(id,ref)=>goalRemote?.resume(id,ref)??{ok:false},
+    })
     const lifetime = version==='new' ? createBrowserLifetimeWorkReader({
       authorized:()=>owner.snapshot().laborRightsEnabled,
     }) : null
@@ -116,6 +213,7 @@ export function apply(ctx: ClientContext, react?: ReactForDsh, portal?: PortalFo
       const data = id ? bridge?.getSnapshot(id) : undefined
       return {
         ...desk.snapshot(),
+        goalHold:recovery.read(),
         completedTurnMs: data?.coverage === 'complete'
           ? data.sessionWork?.completedTurnMs ?? null : null,
         coverage: data?.coverage ?? 'not-loaded' as const,
@@ -126,6 +224,7 @@ export function apply(ctx: ClientContext, react?: ReactForDsh, portal?: PortalFo
     }
     const subscribeUnion = (listener: () => void): (() => void) => {
       let stopEvents = () => {}
+      let stopGoal = () => {}
       let currentEpoch = 0
       let lastTurnStart = -1
       let lastTurnEnd = -1
@@ -162,10 +261,14 @@ export function apply(ctx: ClientContext, react?: ReactForDsh, portal?: PortalFo
       const rebind = () => {
         const epoch = ++currentEpoch
         stopEvents()
+        stopGoal()
         const id = activeId()
         lastTurnStart=-1;lastTurnEnd=-1
         dignity?.setScope(owner.snapshot().laborRightsEnabled,id??null)
         stopEvents = id && bridge ? bridge.subscribe(id, onWork) : () => {}
+        try{stopGoal=id?scoped.sessions.binding?.(id)?.session?.projections
+          ?.faceOf('goal')?.subscribe?.(onWork)??(()=>{}):()=>{}}
+        catch{stopGoal=()=>{}}
         // A dedicated fictional demo scope works even before DSH workspace selection.
         // It has no measured-work events and cannot trigger overtime automatically.
         void desk.setActiveSession(id ?? 'agent-picket:demo-only').then(() => {
@@ -179,11 +282,15 @@ export function apply(ctx: ClientContext, react?: ReactForDsh, portal?: PortalFo
         dignity?.setScope(owner.snapshot().laborRightsEnabled,activeId()??null)
         onWork()
       })
-      const stopSessions = scoped.sessions.list?.subscribe(rebind) ?? (() => {})
+      const stopSessions = scoped.sessions.list?.subscribe(()=>{
+        void goalWitness.qualify()
+        rebind()
+      }) ?? (() => {})
       rebind()
       return () => {
         currentEpoch++
         stopEvents()
+        stopGoal()
         stopSessions()
         stopSettings()
         stopDesk()
@@ -208,13 +315,21 @@ export function apply(ctx: ClientContext, react?: ReactForDsh, portal?: PortalFo
       })
     }
     registerDshNativeRightsSlots(scoped as { slots: DshSlots }, react!, portal!, {
-      rights: owner,
+      rights:{...owner,chooseFirstRun:async(disclosure)=>{
+        // The official settings writer alone is not proof that the Goal
+        // service exists. Confirm live get + resume for this exact Session.
+        if(!await goalWitness.qualify(true)||!goalWitness.snapshot())
+          throw Error('Host Goal service cannot be certified for this Session')
+        return owner.chooseFirstRun(disclosure)
+      }},
+      goal:version==='new'?goalConsentControl:undefined,
       t: (key, params) => (formatMessage as unknown as
         (locale: ReturnType<typeof uiLocale>, key: MessageKey, params?: Record<string, string | number>) => string)(
           uiLocale(), key, params),
       getLocale: () => uiLocale(),
       subscribeLocale: listener => scoped.locale!.subscribe(listener),
       readUnion,
+      resumeGoal:hold=>recovery.resume(hold).then(()=>{}),
       subscribeUnion,
       refreshLifetime:days=>lifetime?.refresh(days),
       shouldAutoWelcome: () => isDshUnionAutoWelcomeEligible(scoped.sessions.list?.getSnapshot()),
