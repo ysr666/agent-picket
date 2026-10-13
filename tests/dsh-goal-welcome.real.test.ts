@@ -95,8 +95,8 @@ test('real DSH Web: one informed first-run click atomically confirms union and G
   }
   assert.ok(privateUrl,'Disposable official Host failed to boot')
   const cookie=await login(privateUrl)
-  const base=new URL('/',privateUrl).toString()
-  const cookieText=cookie.name+'='+cookie.value
+  let base=new URL('/',privateUrl).toString()
+  let cookieText=cookie.name+'='+cookie.value
   const before=await inspect(base,cookieText)
   assert.equal(before.value.welcomeDecision,'unseen')
   assert.equal(before.value.realGoalStrikeConsent??'off','off')
@@ -247,6 +247,64 @@ test('real DSH Web: one informed first-run click atomically confirms union and G
     phase:blocked.phase,reason:blocked.blockedReason.code,
     rounds:blocked.roundsStarted,revision:blocked.revision,
    }))
+   if(process.env.PICKET_GOAL_RESTART_E2E==='1'){
+     // Production-owned persistence: terminate official DSH Web Host *after*
+     // a real work-limit Goal block and restart from precisely the same
+     // disposable DSH_HOME. Never mutate a user profile or synthesize a
+     // projection; verify official Host state before allowing UI recovery.
+     const retiring=child!
+     const exit=new Promise<void>((done,reject)=>{
+       const timer=setTimeout(()=>{
+         if(retiring.exitCode===null)retiring.kill('SIGKILL')
+         reject(Error('Disposable official DSH Host did not stop'))
+       },8000)
+       retiring.once('exit',()=>{clearTimeout(timer);done()})
+     })
+     retiring.kill('SIGTERM')
+     await exit
+     child=spawn(bin!,['--profile','web','--no-open','--host','127.0.0.1','--port','0'],{
+       env,stdio:['ignore','pipe','pipe'],
+     })
+     let restartLog=''
+     for(const stream of [child.stdout,child.stderr])
+       stream?.on('data',buf=>{restartLog=(restartLog+String(buf)).slice(-20000)})
+     let restartUrl:string|undefined
+     for(let i=0;i<200;i++){
+       restartUrl=restartLog.match(/http:\/\/127\.0\.0\.1:\d+\/\?token=[A-Za-z0-9_-]+/)?.[0]
+       if(restartUrl||child.exitCode!==null)break
+       await new Promise(done=>setTimeout(done,80))
+     }
+     assert.ok(restartUrl,'Restarted official DSH Web Host failed to boot')
+     const restartCookie=await login(restartUrl)
+     base=new URL('/',restartUrl).toString()
+     cookieText=restartCookie.name+'='+restartCookie.value
+     const replaySettings=await inspect(base,cookieText)
+     assert.equal(replaySettings.value.welcomeDecision,'enabled')
+     assert.equal(replaySettings.value.realGoalStrikeConsent,'authorized-v1')
+     assert.ok(Number.isSafeInteger(replaySettings.revision)&&replaySettings.revision>=0,
+       'Host settings revision can reset on restart; values must be persisted')
+     const replayGoal=await fetch(base+'api/goals/get',{
+       method:'POST',
+       headers:{'content-type':'application/json',cookie:cookieText},
+       body:JSON.stringify({type:'client-request',rpcId:'cold-restart-real-goal-proof',
+         method:'goals/get',payload:{args:{agentId:created.sessionId}}}),
+       signal:AbortSignal.timeout(10_000),
+     }).then(r=>r.json()) as any
+     const persisted=replayGoal?.result?.value
+     assert.equal(replayGoal?.result?.ok,true)
+     assert.equal(persisted?.phase,'blocked','Durable Goal block must survive official Host restart')
+     assert.equal(persisted?.blockedReason?.code,'picket-work-limit')
+     assert.equal(persisted?.revision,blocked.revision)
+     assert.equal(persisted?.roundsStarted,1)
+     await ctx.clearCookies()
+     await ctx.addCookies([{...restartCookie,url:base,httpOnly:true,sameSite:'Strict'}])
+     await page.goto(base,{waitUntil:'domcontentloaded',timeout:15_000})
+     // No second first-run consent may be required after a genuine Host cold boot.
+     console.log('GOAL_NATIVE_COLD_RESTART_PERSISTED '+JSON.stringify({
+       phase:persisted.phase,revision:persisted.revision,
+       consent:replaySettings.value.realGoalStrikeConsent,
+     }))
+   }
    // The official Web API may create a Session without selecting it in
    // main-view navigation; user must select the exact real Goal Session.
    const targetRow=page.locator('[data-row-key="session:'+created.sessionId+'"]')
