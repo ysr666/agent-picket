@@ -8,10 +8,18 @@ except ImportError:
  sys.exit(0)
 image_only_mode=os.environ.get('AGENT_PICKET_CODEX_TUI_IMAGE_ONLY_NATIVE')=='1'
 two_image_mode=os.environ.get('AGENT_PICKET_CODEX_TUI_TWO_IMAGES_NATIVE')=='1'
-image_mode=image_only_mode or two_image_mode or os.environ.get('AGENT_PICKET_CODEX_TUI_IMAGE_NATIVE')=='1'
-if os.environ.get('AGENT_PICKET_CODEX_TUI_NATIVE')!='1' and not image_mode:
- print('SKIP: set AGENT_PICKET_CODEX_TUI_NATIVE=1 (text), AGENT_PICKET_CODEX_TUI_IMAGE_NATIVE=1 (one PNG) or AGENT_PICKET_CODEX_TUI_TWO_IMAGES_NATIVE=1 (two PNGs) or AGENT_PICKET_CODEX_TUI_IMAGE_ONLY_NATIVE=1 (image-only)')
+startup_image_mode=os.environ.get('AGENT_PICKET_CODEX_TUI_STARTUP_IMAGE_NATIVE')=='1'
+restart_text_mode=os.environ.get('AGENT_PICKET_CODEX_TUI_RESTART_TEXT_NATIVE')=='1'
+restart_image_mode=os.environ.get('AGENT_PICKET_CODEX_TUI_RESTART_IMAGE_NATIVE')=='1'
+image_mode=(image_only_mode or two_image_mode or startup_image_mode
+ or restart_image_mode or os.environ.get('AGENT_PICKET_CODEX_TUI_IMAGE_NATIVE')=='1')
+if os.environ.get('AGENT_PICKET_CODEX_TUI_NATIVE')!='1' and not image_mode and not restart_text_mode:
+ print('SKIP: set AGENT_PICKET_CODEX_TUI_NATIVE=1, _IMAGE_NATIVE=1, _TWO_IMAGES_NATIVE=1, _IMAGE_ONLY_NATIVE=1, _STARTUP_IMAGE_NATIVE=1, _RESTART_TEXT_NATIVE=1 or _RESTART_IMAGE_NATIVE=1, each with the complete AGENT_PICKET_CODEX_TUI_ prefix')
  sys.exit(0)
+if sum([image_only_mode,two_image_mode,startup_image_mode,restart_text_mode,
+ restart_image_mode,os.environ.get('AGENT_PICKET_CODEX_TUI_IMAGE_NATIVE')=='1',
+ os.environ.get('AGENT_PICKET_CODEX_TUI_NATIVE')=='1'])!=1:
+ raise RuntimeError('Select exactly ONE native test mode, never combine')
 CODEX=os.environ.get('AGENT_PICKET_CODEX_BIN') or shutil.which('codex')
 if not CODEX or not os.path.isabs(CODEX):
  raise RuntimeError('Set AGENT_PICKET_CODEX_BIN to an absolute official Codex executable')
@@ -123,7 +131,9 @@ try:
  rpc('config/batchWrite',{'edits':[{'keyPath':'hooks.state','value':{h['key']:{'trusted_hash':h['currentHash']}},'mergeStrategy':'upsert'}],'filePath':None,'expectedVersion':None,'reloadUserConfig':True})
  assert rpc('hooks/list',{'cwds':[str(root)]})['data'][0]['hooks'][0]['trustStatus']=='trusted'
  app.terminate();app.wait(timeout=3);app=None
- tui=pexpect.spawn(CODEX,['-C',str(root)],cwd=str(root),env=env,encoding='utf-8',timeout=8,dimensions=(38,110))
+ cli_args=['-C',str(root)]
+ if startup_image_mode:cli_args.extend(['-i',str(image),PROMPT])
+ tui=pexpect.spawn(CODEX,cli_args,cwd=str(root),env=env,encoding='utf-8',timeout=8,dimensions=(38,110))
  raw=[]
  def grab(sec):
   end=time.time()+sec
@@ -137,8 +147,8 @@ try:
  # This trust action is for our own newly generated empty temporary workspace.
  # It never approves a user's workspace or changes their real CODEX_HOME.
  tui.send('\r');grab(1.5)
- assert 'OpenAI Codex' in screen(''.join(raw)), 'Real native Codex TUI not ready'
- if image_mode:
+ assert startup_image_mode or 'OpenAI Codex' in screen(''.join(raw)), 'Real native Codex TUI not ready'
+ if image_mode and not startup_image_mode:
   # Genuine terminal bracketed paste => official TUI attaches the local image.
   # Does not touch the user's system clipboard or Codex implementation.
   tui.send('\x1b[200~'+str(image)+'\x1b[201~');grab(1)
@@ -146,7 +156,9 @@ try:
   if two_image_mode:
    tui.send('\x1b[200~'+str(second_image)+'\x1b[201~');grab(1)
    assert '[Image #2]' in screen(''.join(raw)), 'Official TUI never attached second synthetic PNG'
- tui.send(PROMPT);grab(.4);tui.send('\r');grab(3)
+ if not startup_image_mode:
+  tui.send(PROMPT);grab(.4);tui.send('\r');grab(3)
+ else:grab(3)
  denied=screen(''.join(raw))
  deadline=time.time()+8
  while ('UserPromptSubmit hook (blocked)' not in ''.join(raw) or
@@ -161,6 +173,59 @@ try:
  assert TestAPI.hits==0, 'No model request is allowed while union action holds'
  if not image_only_mode:
   assert PROMPT not in denied, 'Test assumes post-veto draft is no longer in composer'
+ if startup_image_mode:
+  tui.send('\x1b[A');grab(1.5)
+  after=screen(''.join(raw))
+  text_present=PROMPT in after
+  png_present='[Image #1]' in after
+  # A negative observation is a release BLOCKER, not successful enforcement.
+  # Pin to the real Host version: if it changes, investigate, don't auto-green.
+  assert not text_present and not png_present, \
+   'Startup recovery behavior changed; re-evaluate official UI and bytes'
+  print(json.dumps({'result':'KNOWN_NO_GO_STARTUP_IMAGE','codex':version,
+   'official_hook_blocked':True,'blocked_model_requests':0,
+   'up_restored_startup_text':text_present,'up_restored_startup_png':png_present,
+   'real_strike_eligible':False,'isolated_test_only':True}))
+  sys.exit(0)
+ if restart_text_mode or restart_image_mode:
+  # Simulate abrupt end of ONLY the test process, then use official resume.
+  tui.terminate(force=True);tui=None
+  tui=pexpect.spawn(CODEX,['resume','--last','-C',str(root)],cwd=str(root),
+   env=env,encoding='utf-8',timeout=8,dimensions=(38,110))
+  raw=[];grab(3)
+  current=screen(''.join(raw))
+  if 'Update available!' in current:
+   # User-visible update menu of disposable test home; choose skip.
+   tui.send('3');tui.send('\r');grab(2)
+   current=screen(''.join(raw))
+  if 'Do you trust the contents of this directory?' in current:
+   tui.send('\r');grab(2)
+  tui.send('\x1b[A');grab(1.5)
+  recalled=screen(''.join(raw))
+  assert PROMPT in recalled,'After restart, even synthetic text not visible'
+  union['enabled']=False;state.write_text(json.dumps(union))
+  tui.send('\r');grab(3)
+  deadline=time.time()+5
+  while TestAPI.hits<1 and time.time()<deadline:grab(.2)
+  assert TestAPI.hits==1,'Resuming must send exactly one manual user request'
+  assert PROMPT.encode() in TestAPI.payloads[0],'Recovered text must reach local mock model'
+  images=re.findall(rb'data:image/png;base64,([A-Za-z0-9+/=]+)',TestAPI.payloads[0])
+  if restart_image_mode:
+   assert '[Image #1]' in recalled,'Restart must render original image placeholder'
+   assert len(images)==0 and b'data:image/' not in TestAPI.payloads[0], \
+    'Image restart behavior changed; verify actual binary contents and update gate'
+   print(json.dumps({'result':'KNOWN_NO_GO_RESTART_PNG_LOST','codex':version,
+    'visible_image_placeholder_after_up':True,
+    'resubmitted_text_preserved':True,'resubmitted_png_payload_count':0,
+    'model_requests_after_user_resume':1,'real_strike_eligible':False,
+    'isolated_test_only':True}))
+  else:
+   assert ('› '+PROMPT) in recalled,'Text-only restart not editable'
+   assert not images,'Text-only request must not invent attachments'
+   print(json.dumps({'result':'PASS_RESTART_TEXT_ONLY','codex':version,
+    'original_text_preserved':True,'model_requests_after_user_resume':1,
+    'attachment_recovery_claimed':False,'isolated_test_only':True}))
+  sys.exit(0)
  # User-driven, ordinary official Codex TUI history-edit key. No private
  # rollout access, transcript scraping or Agent Picket-owned raw text queue.
  tui.send('\x1b[A');grab(1)

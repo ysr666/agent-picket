@@ -47,6 +47,7 @@ test('successful native pre-model veto alone is NEVER production safety readines
  assert.deepEqual(verdict.gaps,[
   'real-user-consent-unverified', 'campaign-provenance-unverified',
   'rejection-notice-unverified','lossless-prompt-and-attachments-unverified',
+  'known-lossy-host-paths-unresolved',
   'settings-revocation-unverified','hook-failure-ux-unverified',
   'host-client-matrix-unverified',
  ])
@@ -58,4 +59,20 @@ test('successful native pre-model veto alone is NEVER production safety readines
   failureDegradationVisibleVerified:true,requiredClientMatrixVerified:true,
  }).gaps.includes('lossless-prompt-and-attachments-unverified'),true,
  'Even all other green flags cannot mask missing native input recovery')
+})
+
+
+test('known unsafe Codex -i and resumed PNG paths stay blocked even with all other UX evidence',()=>{
+ const proof={...CODEX_0146_PROMPT_REFUSAL_PRODUCTION_PROOF,
+  officialHook:inspect(response([hook])),
+  realUserConsentVerified:true,campaignProvenanceVerified:true,
+  visibleRejectionNoticeVerified:true,fullInputRecoveryVerified:true,
+  userRevocationVerified:true,failureDegradationVisibleVerified:true,
+  requiredClientMatrixVerified:true}
+ const result=inspectCodexNewWorkProductionReadiness(proof)
+ assert.equal(result.ready,false)
+ assert.deepEqual(result.gaps,['known-lossy-host-paths-unresolved'])
+ assert.equal(inspectCodexNewWorkProductionReadiness({
+  ...proof,knownLossyHostPathsResolvedVerified:false,
+ }).ready,false,'Known lossy Host modes cannot be excused by UI promises')
 })

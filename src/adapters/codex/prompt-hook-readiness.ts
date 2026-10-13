@@ -68,6 +68,7 @@ export type CodexNewWorkSafetyGap =
  |'campaign-provenance-unverified'
  |'rejection-notice-unverified'
  |'lossless-prompt-and-attachments-unverified'
+ |'known-lossy-host-paths-unresolved'
  |'settings-revocation-unverified'
  |'hook-failure-ux-unverified'
  |'host-client-matrix-unverified'
@@ -81,6 +82,9 @@ export interface CodexNewWorkProductionProof {
  readonly visibleRejectionNoticeVerified:boolean
  /** Full composer text + attachments survived an actual native rejected input. */
  readonly fullInputRecoveryVerified:boolean
+ /** Host-official API must exclude OR repair *all* demonstrated unsafe paths.
+  * Hook cannot claim per-client exemption from missing attachment metadata. */
+ readonly knownLossyHostPathsResolvedVerified:boolean
  /** A real settings opt-out and Host /hooks escape path are both tested. */
  readonly userRevocationVerified:boolean
  /** Broken/time-out hooks cannot masquerade as an active reliable strike. */
@@ -101,6 +105,8 @@ export function inspectCodexNewWorkProductionReadiness(
  if(proof.visibleRejectionNoticeVerified!==true)gaps.push('rejection-notice-unverified')
  if(proof.fullInputRecoveryVerified!==true)
   gaps.push('lossless-prompt-and-attachments-unverified')
+ if(proof.knownLossyHostPathsResolvedVerified!==true)
+  gaps.push('known-lossy-host-paths-unresolved')
  if(proof.userRevocationVerified!==true)gaps.push('settings-revocation-unverified')
  if(proof.failureDegradationVisibleVerified!==true)
   gaps.push('hook-failure-ux-unverified')
@@ -117,6 +123,7 @@ export const CODEX_0146_PROMPT_REFUSAL_PRODUCTION_PROOF=Object.freeze({
  campaignProvenanceVerified:false,
  visibleRejectionNoticeVerified:false,
  fullInputRecoveryVerified:false,
+ knownLossyHostPathsResolvedVerified:false,
  userRevocationVerified:false,
  failureDegradationVisibleVerified:false,
  requiredClientMatrixVerified:false,
