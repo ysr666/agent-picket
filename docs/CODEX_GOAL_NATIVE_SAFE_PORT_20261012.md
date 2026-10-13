@@ -31,3 +31,16 @@ This is a stronger **persistent paused/blocked state** proof, NOT evidence that 
 ## 2026-10-13 · Two separate idle Goals isolated across three native owner lifetimes
 
 The opt-in native 0.146.1 regression now creates **two different persistent thread IDs and two distinct synthetic paused Goals in the same App-Server process**. Process A reads back both `paused`; after full shutdown, process B restores both exact thread IDs, changes ONLY the first Goal to `blocked`, and confirms the second still reads `paused`, same objective, zero tokens. After a second full process restart, process C again confirms `blocked` on the first and `paused` on the second, both preserving their original synthetic objectives with no model turns. macOS ARM64 native App-Server test: **1/1 PASS**. This provides owner-scoped identity/isolation and persistence evidence, but still DOES NOT prove an external controller can atomically halt an active autonomous Goal at the turn boundary.
+
+## 2026-10-13 · Native negative test: a blocked Goal is not a global `turn/start` veto
+
+With official Codex **0.146.1** on macOS ARM64 and a disposable, empty `CODEX_HOME` (synthetic text only; nonfunctional localhost model proxy), an actual App-Server owner:
+
+1. Created an idle persistent thread and used official `thread/goal/set` to set a synthetic Goal to `blocked`.
+2. Received `blocked` from the native Host.
+3. Sent a *separate explicit* official `turn/start` for a harmless synthetic input, **without** an intervening `goal/resume` or unblocking call.
+4. Observed native `turn/start` ACK with a real Turn ID and status `inProgress`, followed by `turn/started`. A later `thread/goal/get` **still** reported `blocked`.
+
+The opt-in regression is `tests/codex-goal-boundary-gap.real.test.ts`, run with `AGENT_PICKET_CODEX_GOAL_NATIVE=1 AGENT_PICKET_CODEX_BIN=/absolute/path/to/codex node --experimental-strip-types --test tests/codex-goal-boundary-gap.real.test.ts`.
+
+**Scope:** This proves a blocked Goal status is **not** a universal pre-Turn/model-call barrier. Explicit client-requested Turns and autonomous Goal continuation are distinct; this negative probe **does not** prove autonomous continuation bypasses the Goal hold or that a real model request was completed. It also does not give the external Agent Picket controller owner serialization, Goal CAS/revision, informed consent or a verified safe boundary. The 0.146.1 official generated `ThreadGoalSetParams` schema has only `threadId`, `objective`, `status` and `tokenBudget`, with no expected revision. Real Codex strike enforcement stays **OFF / NO-GO**. Never use a UI overlay or a post-hoc `goal/set` ACK as a substitute for the missing Host interlock.
