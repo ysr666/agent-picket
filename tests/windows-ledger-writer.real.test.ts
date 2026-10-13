@@ -1,11 +1,11 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import {spawn, type ChildProcess} from 'node:child_process'
-import {mkdtempSync,readFileSync,writeFileSync,existsSync,rmSync} from 'node:fs'
+import {mkdtempSync,readFileSync,writeFileSync,existsSync,rmSync,openSync,closeSync} from 'node:fs'
 import {tmpdir} from 'node:os'
 import {join,resolve} from 'node:path'
 import {pathToFileURL} from 'node:url'
-import {ExperimentalNtfsWalWriter} from '../src/adapters/node/windows-ledger-writer.experimental.ts'
+import {ExperimentalNtfsWalWriter,verifyNtfsOpenFileIdentity} from '../src/adapters/node/windows-ledger-writer.experimental.ts'
 import {inspectPrivateNtfsWalReplay,replayVerifiedV1SnapshotWal} from '../src/adapters/node/windows-wal-replay.ts'
 
 const now=1_760_000_000_000
@@ -190,4 +190,24 @@ test('native Windows crash after snapshot commit and before WAL replace never re
   assert.throws(()=>new ExperimentalNtfsWalWriter(dir),/existing lock or recovery/)
   assert.deepEqual(readFileSync(join(dir,'aggregate.v1.journal')),oldWal)
  }finally{child?.kill('SIGKILL');rmSync(parent,{recursive:true,force:true})}
+})
+
+
+test('native Windows verifies actual opened WAL identity, not just pathname or ACL',{
+ skip:process.platform!=='win32'&&'Native NTFS handle identity only',timeout:35_000,
+},()=>{
+ const parent=mkdtempSync(join(tmpdir(),'ap-handle-file-id-'))
+ const one=join(parent,'synthetic-one.dat'),two=join(parent,'synthetic-two.dat')
+ let fd:number|undefined
+ try{
+  writeFileSync(one,'synthetic-one',{flag:'wx',mode:0o600})
+  writeFileSync(two,'synthetic-two',{flag:'wx',mode:0o600})
+  fd=openSync(one,'r')
+  assert.equal(verifyNtfsOpenFileIdentity(fd,one),true,
+    'A real NTFS file opened by Node must be identified as the same path')
+  assert.equal(verifyNtfsOpenFileIdentity(fd,two),false,
+    'The current pathname must not be allowed to refer to a different file')
+  assert.equal(verifyNtfsOpenFileIdentity(fd,join(parent,'missing')),false)
+  closeSync(fd);fd=undefined
+ }finally{if(fd!==undefined)closeSync(fd);rmSync(parent,{recursive:true,force:true})}
 })

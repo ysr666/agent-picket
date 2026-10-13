@@ -4,7 +4,7 @@
  * no torn-tail repair; checkpoint requires manual test invocation.
  */
 import {createHmac,randomBytes} from 'node:crypto'
-import {closeSync,existsSync,fsyncSync,openSync,
+import {closeSync,existsSync,fstatSync,fsyncSync,lstatSync,openSync,
  readFileSync,renameSync,unlinkSync,writeFileSync,writeSync} from 'node:fs'
 import {hostname} from 'node:os'
 import {isAbsolute,join} from 'node:path'
@@ -21,6 +21,24 @@ const FP=/^[A-Za-z0-9_-]{43}$/
 const MAX_RECORDS_BETWEEN_CHECKPOINTS=255
 const MAX_FINGERPRINTS=16384
 const MAX_BYTES=4_000_000
+
+/**
+ * Research-only handle/path identity check: an ACL checked by pathname is NOT
+ * proof that the file descriptor still refers to that same NTFS file.
+ * A zero/unsupported file ID fails closed. This is NOT a kernel-atomic lock.
+ */
+export function verifyNtfsOpenFileIdentity(fd:number,path:string):boolean{
+ if(process.platform!=='win32'||!isAbsolute(path)||!Number.isSafeInteger(fd)||fd<0)
+  return false
+ try {
+  const opened=fstatSync(fd,{bigint:true})
+  const named=lstatSync(path,{bigint:true})
+  return opened.isFile()&&named.isFile()&&!named.isSymbolicLink()
+   &&opened.nlink===1n&&named.nlink===1n
+   &&opened.ino>0n&&opened.ino===named.ino
+   &&opened.dev===named.dev
+ }catch{return false}
+}
 
 export class ExperimentalNtfsWalWriter {
  readonly #directory:string
@@ -60,7 +78,9 @@ export class ExperimentalNtfsWalWriter {
    this.#initialize(existing)
    const journal=join(directory,journalName)
    this.#fd=openSync(journal,'a',0o600)
-   if(!verifyPrivateNtfsAcl(journal,'file'))throw Error('Journal ACL unverified')
+   if(!verifyPrivateNtfsAcl(journal,'file')
+    ||!verifyNtfsOpenFileIdentity(this.#fd,journal))
+    throw Error('Journal ACL or file handle identity unverified')
    if(!inspectPrivateNtfsLedgerLayout(directory).private)throw Error('NTFS layout changed during writer initialization')
   }catch(error){this.close();throw error}
  }
@@ -128,8 +148,9 @@ export class ExperimentalNtfsWalWriter {
   const lock=join(this.#directory,lockName)
   try{
    if(!inspectPrivateNtfsLedgerLayout(this.#directory).private
-      ||JSON.parse(readFileSync(lock,'utf8')).token!==this.#token)
-    throw Error('NTFS lock or ACL changed')
+      ||JSON.parse(readFileSync(lock,'utf8')).token!==this.#token
+      ||!verifyNtfsOpenFileIdentity(this.#fd,join(this.#directory,journalName)))
+    throw Error('NTFS lock, ACL or opened journal identity changed')
    const seq=this.#sequence+1,changes={toolCalls:1}
    const mac=createHmac('sha256',Buffer.from(this.#secret,'hex'))
     .update(JSON.stringify([seq,fp,changes,atMs])).digest('base64url')
@@ -160,8 +181,9 @@ export class ExperimentalNtfsWalWriter {
   let name:string|undefined, fd:number|undefined
   try {
    if(!inspectPrivateNtfsLedgerLayout(this.#directory).private
-      ||JSON.parse(readFileSync(join(this.#directory,lockName),'utf8')).token!==this.#token)
-    throw Error('NTFS lock or ACL changed')
+      ||JSON.parse(readFileSync(join(this.#directory,lockName),'utf8')).token!==this.#token
+      ||!verifyNtfsOpenFileIdentity(this.#fd,wal))
+    throw Error('NTFS lock, ACL or journal handle identity changed')
    const data={version:1,secret:this.#secret,sequence:this.#sequence,
     totals:{...totalsZero,toolCalls:this.#toolCalls},
     daily:structuredClone(this.#daily),seen:[...this.#seen]}
@@ -183,6 +205,8 @@ export class ExperimentalNtfsWalWriter {
    renameSync(name,wal);name=undefined
    if(!verifyPrivateNtfsAcl(wal,'file'))throw Error('New WAL ACL unverified')
    this.#fd=openSync(wal,'a',0o600)
+   if(!verifyNtfsOpenFileIdentity(this.#fd,wal))
+    throw Error('Post-checkpoint WAL handle identity unverified')
    this.#sinceCheckpoint=0
   }catch(error){this.#faulted=true;throw error}
   finally{
