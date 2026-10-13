@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 import {spawn, type ChildProcess} from 'node:child_process'
 import {createHmac} from 'node:crypto'
-import {mkdtempSync,readFileSync,writeFileSync,existsSync,rmSync,openSync,closeSync,unlinkSync} from 'node:fs'
+import {mkdtempSync,readFileSync,writeFileSync,existsSync,rmSync,openSync,closeSync,unlinkSync,renameSync} from 'node:fs'
 import {tmpdir} from 'node:os'
 import {join,resolve} from 'node:path'
 import {pathToFileURL} from 'node:url'
@@ -662,5 +662,51 @@ test('native NTFS v2 witness rejects valid-shaped snapshot field or dedup rollba
   assert.deepEqual(writer.snapshot,{sequence:2,toolCalls:2})
   assert.equal(writer.recordSyntheticToolCall('logical-2','synth-agent','synth-session',now+1),false,
    'Previously committed fingerprint must survive snapshot repair')
+ }finally{writer?.close();rmSync(parent,{recursive:true,force:true})}
+})
+
+test('native NTFS writer pins the original lock identity, not a copied valid owner token',{
+ skip:process.platform!=='win32'&&'Native lock pathname substitution only',timeout:105_000,
+},()=>{
+ const parent=mkdtempSync(join(tmpdir(),'ap-owner-lock-file-object-'))
+ const dir=join(parent,'new-private-ledger')
+ let writer:ExperimentalNtfsWalWriter|undefined
+ try{
+  writer=new ExperimentalNtfsWalWriter(dir)
+  assert.equal(writer.recordSyntheticToolCall('before','synth-agent','synth-session',now),true)
+  const lock=join(dir,'aggregate.v1.lock')
+  const tokenCopy=readFileSync(lock)
+  // A second file with a BYTE-FOR-BYTE COPY of the owner's token is not
+  // evidence of ownership. This is a temporary synthetic test ledger only.
+  const copy=join(dir,'aggregate.v1-abcdef0123456789.tmp')
+  writeFileSync(copy,tokenCopy,{flag:'wx',mode:0o600})
+  let substituted=false
+  try{renameSync(copy,lock);substituted=true}
+  catch(error){
+   assert.ok(['EPERM','EACCES','EBUSY','EEXIST'].includes((error as NodeJS.ErrnoException).code??''),
+    'Unexpected filesystem error while attempting native same-token substitution')
+   unlinkSync(copy)
+  }
+  if(substituted){
+   const journal=join(dir,'aggregate.v1.journal')
+   const before=readFileSync(journal)
+   assert.throws(()=>writer!.recordSyntheticToolCall('after','synth-agent',
+    'synth-session',now+1),/opened journal identity changed|opened journal|identity changed/,
+    'Same-token replacement lock MUST NOT impersonate pinned original file ID')
+   assert.deepEqual(readFileSync(journal),before,
+    'Substituted owner must not cause even an unacknowledged journal append')
+   writer.close();writer=undefined
+   assert.deepEqual(readFileSync(lock),tokenCopy,
+    'Close MUST NOT delete a different file with a copied owner token')
+   assert.equal(existsSync(lock),true)
+   assert.throws(()=>new ExperimentalNtfsWalWriter(dir),/existing lock or recovery/)
+  }else{
+   // If Windows denies replacing a held lock, that is an equally valid
+   // protective OS barrier; the real owner must still write and close.
+   assert.equal(writer.recordSyntheticToolCall('after','synth-agent',
+    'synth-session',now+1),true)
+   writer.close();writer=undefined
+   assert.equal(existsSync(lock),false)
+  }
  }finally{writer?.close();rmSync(parent,{recursive:true,force:true})}
 })

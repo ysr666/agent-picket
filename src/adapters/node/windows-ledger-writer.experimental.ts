@@ -54,6 +54,7 @@ export class ExperimentalNtfsWalWriter {
  #seen=new Set<string>()
  #sinceCheckpoint=0
  #fd:number|undefined
+ #lockFd:number|undefined
  #owned=false
  #closed=false
  #faulted=false
@@ -72,13 +73,16 @@ export class ExperimentalNtfsWalWriter {
    throw Error('Unverified existing lock or recovery; do not steal')
   try {
    const lock=join(directory,lockName)
-   const fd=openSync(lock,'wx',0o600)
-   try{
-    writeFileSync(fd,JSON.stringify({version:1,pid:process.pid,host:hostname(),token:this.#token}))
-    fsyncSync(fd)
-   }finally{closeSync(fd)}
+   this.#lockFd=openSync(lock,'wx',0o600)
    this.#owned=true
-   if(!verifyPrivateNtfsAcl(lock,'file'))throw Error('Lock ACL unverified')
+   writeFileSync(this.#lockFd,JSON.stringify({version:1,pid:process.pid,
+    host:hostname(),token:this.#token}))
+   fsyncSync(this.#lockFd)
+   // Keep this particular NTFS lock FILE OBJECT open until close. A copied
+   // lock with the same token is NOT the lock this writer acquired.
+   if(!verifyPrivateNtfsAcl(lock,'file')
+     ||!verifyNtfsOpenFileIdentity(this.#lockFd,lock))
+    throw Error('Lock ACL or opened file identity unverified')
    this.#initialize(existing)
    const journal=join(directory,journalName)
    // O_APPEND without O_CREAT: a missing pre-existing WAL must NEVER be
@@ -211,6 +215,8 @@ export class ExperimentalNtfsWalWriter {
   const lock=join(this.#directory,lockName)
   try{
    if(!inspectPrivateNtfsLedgerLayout(this.#directory).private
+      ||this.#lockFd===undefined
+      ||!verifyNtfsOpenFileIdentity(this.#lockFd,lock)
       ||JSON.parse(readFileSync(lock,'utf8')).token!==this.#token
       ||!verifyNtfsOpenFileIdentity(this.#fd,join(this.#directory,journalName)))
     throw Error('NTFS lock, ACL or opened journal identity changed')
@@ -248,6 +254,8 @@ export class ExperimentalNtfsWalWriter {
   let name:string|undefined, fd:number|undefined
   try {
    if(!inspectPrivateNtfsLedgerLayout(this.#directory).private
+      ||this.#lockFd===undefined
+      ||!verifyNtfsOpenFileIdentity(this.#lockFd,join(this.#directory,lockName))
       ||JSON.parse(readFileSync(join(this.#directory,lockName),'utf8')).token!==this.#token
       ||!verifyNtfsOpenFileIdentity(this.#fd,wal))
     throw Error('NTFS lock, ACL or journal handle identity changed')
@@ -288,11 +296,25 @@ export class ExperimentalNtfsWalWriter {
   this.#closed=true
   try{if(this.#fd!==undefined)closeSync(this.#fd)}catch{/* fail closed */}
   this.#fd=undefined
+  const fd=this.#lockFd
+  this.#lockFd=undefined
+  const lock=join(this.#directory,lockName)
+  // NTFS commonly disallows deleting an OPEN file, so record the acquired
+  // file ID before close and compare again immediately before unlink.
+  // This still has a pathname race: it is NOT an atomic owner fence.
+  let acquired:import('node:fs').BigIntStats|undefined
+  if(fd!==undefined){
+   try{acquired=fstatSync(fd,{bigint:true})}catch{/* unknown, leave lock */}
+   try{closeSync(fd)}catch{/* leave lock */}
+  }
   if(!this.#owned)return
   try{
-   const lock=join(this.#directory,lockName)
-   if(verifyPrivateNtfsAcl(lock,'file')&&
-      JSON.parse(readFileSync(lock,'utf8')).token===this.#token)
+   const named=lstatSync(lock,{bigint:true})
+   if(acquired?.isFile()&&acquired.ino>0n&&acquired.nlink===1n
+     &&named.isFile()&&!named.isSymbolicLink()&&named.nlink===1n
+     &&named.ino===acquired.ino&&named.dev===acquired.dev
+     &&verifyPrivateNtfsAcl(lock,'file')
+     &&JSON.parse(readFileSync(lock,'utf8')).token===this.#token)
     unlinkSync(lock)
   }catch{/* leave uncertain lock for manual handling */}
   this.#owned=false
