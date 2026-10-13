@@ -1,10 +1,11 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import {mkdtempSync,rmSync} from 'node:fs'
+import {existsSync,mkdtempSync,rmSync} from 'node:fs'
 import {tmpdir} from 'node:os'
 import {join} from 'node:path'
 import {spawn} from 'node:child_process'
 import {SqliteWorkCandidate} from '../scripts/windows-sqlite-ledger-candidate.mjs'
+import {createProtectedNtfsDirectory,verifyPrivateNtfsAcl} from '../src/adapters/node/windows-private-acl.ts'
 
 const fp=(n:number)=>n.toString(16).padStart(64,'0')
 const DAY='2026-10-13'
@@ -85,4 +86,24 @@ test('SQLite native process termination: committed record persists and unfinishe
    assert.equal(db.count(DAY),7_200_000)
    db.close()
  }finally{rmSync(dir,{recursive:true,force:true})}
+})
+
+test('native Windows SQLite files inherit verified private NTFS DACLs',{
+ skip:process.platform!=='win32'&&'Requires Windows NTFS',timeout:35_000,
+},()=>{
+ const root=mkdtempSync(join(tmpdir(),'agent-picket-sqlite-private-'))
+ const privateDir=join(root,'private')
+ try{
+  assert.equal(createProtectedNtfsDirectory(privateDir),true)
+  assert.equal(verifyPrivateNtfsAcl(privateDir,'directory'),true)
+  const db=new SqliteWorkCandidate(privateDir)
+  try{
+   assert.equal(db.commitCompleted(fp(6),DAY,180_000),true)
+   for(const suffix of ['', '-wal', '-shm']){
+    const path=join(privateDir,'work-candidate.sqlite'+suffix)
+    if(existsSync(path))assert.equal(verifyPrivateNtfsAcl(path,'file'),true,
+      'SQLite sidecar '+suffix+' must inherit private DACL')
+   }
+  }finally{db.close()}
+ }finally{rmSync(root,{recursive:true,force:true})}
 })

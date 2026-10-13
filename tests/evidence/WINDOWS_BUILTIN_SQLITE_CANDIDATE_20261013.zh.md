@@ -27,10 +27,10 @@ NTFS 是 Windows 的默认文件系统之一，不是必须自研的日志协议
 | 证据 | 当前状态 |
 |---|---|
 | macOS Node24 原生 SQLite 事务、去重、重开、进程强制终止 | 已实测 PASS |
-| Ubuntu Node22.19 / Node24 CI | 待执行 |
-| Windows Server Node24 原生 SQLite | 待 CI 实测 |
-| 实际正式 npm 包体积、不包含实验脚本 | 待完整构建审核 |
-| Windows 私有 DACL、当前用户/跨账号 ACL、junction/reparse point | **未实现 / NO-GO** |
+| Ubuntu Node22.19 / Node24 CI | **4/4 GitHub CI 中两项 PASS** |
+| Windows Server Node24 原生 SQLite：唯一事件、重开、真实强制结束子进程及未提交事务回滚 | **原生 PASS；Actions #38427759110** |
+| 实际正式 npm 包体积、不包含实验脚本 | 229,988 bytes；无实验代码进安装包 |
+| Windows 私有 DACL、当前用户/跨账号 ACL、junction/reparse point | 实验已新增私有 DACL 校验（CI 待复验）；生产 NO-GO |
 | 生产 DurableStats 全事件语义、可信失败降级、迁移旧 JSON/WAL | **未实现 / NO-GO** |
 | 单独防篡改/防回滚 witness 与可信时间来源 | **未实现 / NO-GO** |
 | 真实 Windows DSH Goal 授权→低于八小时不阻断→达到阈值阻断→人工复工 | **未测试 / NO-GO** |
