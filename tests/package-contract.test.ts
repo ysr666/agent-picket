@@ -103,5 +103,9 @@ test('npm dry-run tarball contains prebuilt plugin and no source, tests, or runt
     'Unverified Windows NTFS security probe must not ship as a storage backend')
   assert.equal(files.has('dist/adapters/codex/goal-readiness.js'),false,
     'Codex owner-binding contract is experimental and must not ship as working enforcement')
+  assert.equal(files.has('dist/adapters/dsh/native-rights-ui.js'),false,
+    'Browser UI is already inline in client.js; never package a second copy')
+  assert.ok(files.has('dist/adapters/dsh/native-rights-ui.d.ts'),
+    'Keep the internal native React Slot types referenced by client.d.ts')
   assert.ok(meta.size < 250_000, `Package unexpectedly large: ${meta.size} bytes; 250000-byte strict budget`)
 })

@@ -204,6 +204,30 @@ test('unsupported Host never displays an operable physical Goal consent button',
  assert.ok(nodes.some(n=>n.children.includes('settings.realBlockingUnavailable')))
 })
 
+test('real Host-blocked Goal shows official restore button even after exiting the union',async()=>{
+ const {hooks}=fakeReact()
+ const hold={sessionId:'real-session',goalId:'real-goal',revision:7,canResume:true}
+ const calls:any[]=[]
+ const basis=deps(rights({welcomeDecision:'not-now',laborRightsEnabled:false}))
+ const d:DshUnionUiDeps={...basis.d,
+  readUnion:()=>({...basis.d.readUnion!(),goalHold:hold}),
+  resumeGoal:async value=>{calls.push(value)}}
+ const nodes=walk(createDshUnionComponents(hooks,{createPortal:x=>x},d).UnionPanel())
+ assert.ok(nodes.some(n=>n.children.includes('hq.goalHold.blocked')))
+ assert.ok(nodes.some(n=>n.children.includes('hq.goalHold.reason')))
+ const action=nodes.find(n=>n.type==='button'&&n.children.includes('hq.goalHold.resume'))
+ assert.ok(action&&!action.props.disabled)
+ action.props.onClick()
+ await new Promise<void>(resolve=>setImmediate(resolve))
+ assert.deepEqual(calls,[hold])
+})
+test('Goal stopped under a different policy cannot appear as a union recovery',()=>{
+ const {hooks}=fakeReact()
+ const basis=deps(rights({welcomeDecision:'enabled',laborRightsEnabled:true}))
+ const d:DshUnionUiDeps={...basis.d,readUnion:()=>({...basis.d.readUnion!(),goalHold:null})}
+ const nodes=walk(createDshUnionComponents(hooks,{createPortal:x=>x},d).UnionPanel())
+ assert.equal(nodes.some(n=>n.children.includes('hq.goalHold.resume')),false)
+})
 test('sidebar-invited Welcome restores the launcher only after inert is released',()=>{
   const old=(globalThis as any).document
   const root={inert:false}

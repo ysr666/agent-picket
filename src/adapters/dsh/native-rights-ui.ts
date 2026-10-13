@@ -43,7 +43,14 @@ export interface PendingUnionDemand {
   readonly stage: 'open' | 'countered'
   readonly counterOfferMs?: number | null
 }
+export interface UnionGoalHold {
+  readonly sessionId:string
+  readonly goalId:string
+  readonly revision:number
+  readonly canResume:boolean
+}
 export interface UnionPanelData {
+  readonly goalHold?:UnionGoalHold|null
   readonly pending: PendingUnionDemand | null
   readonly available?: boolean
   readonly state?: LaborStateV1 | null
@@ -73,6 +80,7 @@ export interface DshUnionUiDeps {
   readonly subscribeLocale?: (listener: () => void) => () => void
   readonly getLocale?: () => string
   readonly readUnion?: () => UnionPanelData
+  readonly resumeGoal?: (hold:UnionGoalHold)=>Promise<void>
   readonly subscribeUnion?: (listener: () => void) => () => void
   readonly refreshLifetime?: (windowDays:7|30)=>Promise<void>|undefined
   readonly shouldAutoWelcome?: () => boolean
@@ -393,6 +401,7 @@ export function createDshUnionComponents(
     const [data, setData] = react.useState(() => safeUnion(deps))
     const [error, setError] = react.useState(false)
     const [busy, setBusy] = react.useState(false)
+    const [resumeRequested,setResumeRequested]=react.useState<string|null>(null)
     const [counterMinutes, setCounterMinutes] = react.useState(60)
     const lastActionNeedsFocus=react.useRef(false)
     const [showArchive,setShowArchive]=react.useState(false)
@@ -428,6 +437,19 @@ export function createDshUnionComponents(
       setEraseUnionConfirmation(null)
     },[data.committeeScopeKey,rights.laborRightsEnabled])
     const enabled = rightsIsActive(rights)
+    const held=data.goalHold??null
+    const holdKey=held?[held.sessionId,held.goalId,held.revision].join(':'):null
+    const resumeHeldGoal=async()=>{
+      if(!held||!held.canResume||busy||holdKey===resumeRequested
+        ||!deps.resumeGoal)return
+      setBusy(true);setError(false)
+      try{
+        await deps.resumeGoal(held)
+        // RPC acceptance is not proof of completed resumed work.
+        setResumeRequested(holdKey)
+        setData(safeUnion(deps))
+      }catch{setError(true)}finally{setBusy(false)}
+    }
     const storyQuiet=data.gazetteMode==='quiet'
     const story = projectUnionStory({enabled, state:data.state, picket:data.picket,
       completedTurnMs:data.completedTurnMs,coverage:data.coverage})
@@ -522,6 +544,26 @@ export function createDshUnionComponents(
       finally {setBusy(false)}
     }
     return h('section',{style:{display:'grid',gap:'14px',width:'100%',maxWidth:'860px',padding:'10px 0'}},
+      held?h('section',{'aria-label':label('hq.goalHold.title'),
+        style:{...card,borderLeft:'5px solid #c76e42'}},
+        h('h3',{style:{margin:'0 0 7px'}},label('hq.goalHold.title')),
+        h('p',{role:'status','aria-live':'polite',
+          style:{margin:'0 0 8px',fontWeight:700}},label('hq.goalHold.blocked')),
+        h('p',{style:{...secondary,lineHeight:1.6,margin:'0 0 12px'}},
+          label('hq.goalHold.reason')),
+        held.canResume&&deps.resumeGoal?
+          h('button',{type:'button',style:primary,
+            disabled:busy||resumeRequested===holdKey,
+            onClick:()=>{void resumeHeldGoal()}},
+            label('hq.goalHold.resume')):null,
+        h('p',{role:'status','aria-live':'polite',
+          style:{...secondary,margin:'9px 0 0'}},
+          label(resumeRequested===holdKey?'hq.goalHold.accepted':
+            held.canResume?'hq.goalHold.caveat':'hq.goalHold.unavailable')),
+        error?h('p',{role:'alert',
+          style:{color:'var(--dsw-alias-state-error-primary, #b91c1c)',margin:'8px 0'}},
+          label('hq.goalHold.error')):null
+      ):null,
       h('div',{style:{...card,
         position:'relative',background:'#19342d',color:'#f8f1df',
         border:'1px solid #315449',borderLeft:'6px solid #d7ae68',
