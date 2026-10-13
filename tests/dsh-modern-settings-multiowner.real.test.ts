@@ -204,3 +204,74 @@ test('MODERN HOST #111: real independent SettingsForms owners reject stale conse
   rmSync(root,{recursive:true,force:true})
  }
 })
+
+test('MODERN HOST #1.0: first-run union and REAL Goal consent commit atomically across two real Hosts',{
+ skip:!enabled||!binary&&'Real isolated DSH executable and opt-in required',
+ timeout:90_000,
+},async()=>{
+ const root=mkdtempSync(join(tmpdir(),'picket-real-goal-first-run-'))
+ const home=join(root,'isolated-home')
+ const pack=spawnSync('npm',['pack','--ignore-scripts','--silent',
+   '--pack-destination',root],{cwd:resolve('.'),encoding:'utf8',timeout:20_000,
+   env:{...process.env,npm_config_offline:'true'}})
+ assert.equal(pack.status,0,'Pack only the isolated integration candidate')
+ const archive=pack.stdout.trim().split('\n').at(-1)
+ assert.ok(typeof archive==='string'&&archive.endsWith('.tgz'))
+ const install=spawnSync(binary!,['plugin','--profile','web','add',join(root,archive)],{
+  encoding:'utf8',timeout:30_000,env:{...process.env,DSH_HOME:home,
+   DEEPSEEK_API_KEY:'',OPENAI_API_KEY:'',
+   HTTP_PROXY:'http://127.0.0.1:9',HTTPS_PROXY:'http://127.0.0.1:9'},
+ })
+ assert.equal(install.status,0,'Isolated official DSH plugin installation must succeed')
+ const hosts:Host[]=[]
+ try{
+  const a=await launch(home);hosts.push(a)
+  const b=await launch(home);hosts.push(b)
+  const initial=await describe(a),older=await describe(b)
+  assert.equal(initial.value.welcomeDecision,'unseen')
+  assert.equal(initial.value.realGoalStrikeConsent,'off')
+  assert.equal(older.value.realGoalStrikeConsent,'off')
+  const first=await rpc(a,'settings/mutate',{ns:'agent-picket',
+   ops:[
+    {op:'set',path:['welcomeDecision'],value:'enabled'},
+    {op:'set',path:['realGoalStrikeConsent'],value:'authorized-v1'},
+   ],expectedRevision:initial.revision})
+  assert.equal(first.ok,true,'One genuine Host transaction must commit both grants')
+  const granted=await describe(a)
+  assert.equal(granted.revision,initial.revision+1,
+   'Single user click cannot cause two independent Host revisions')
+  assert.equal(granted.value.welcomeDecision,'enabled')
+  assert.equal(granted.value.realGoalStrikeConsent,'authorized-v1')
+  const rejected=await rpc(b,'settings/mutate',{ns:'agent-picket',
+   ops:[{op:'set',path:['realGoalStrikeConsent'],value:'off'}],
+   expectedRevision:older.revision})
+  assert.equal(rejected.ok,false,'A stale tab may not write over new consent')
+  const beforeInvalid=await describe(a)
+  const malformed=await rpc(a,'settings/mutate',{ns:'agent-picket',
+   ops:[{op:'set',path:['welcomeDecision'],value:'not-now'},
+    {op:'set',path:['realGoalStrikeConsent'],value:'UNRECOGNIZED'}],
+   expectedRevision:beforeInvalid.revision})
+  assert.equal(malformed.ok,false,'Malformed second operation must roll back first')
+  const afterInvalid=await describe(a)
+  assert.equal(afterInvalid.revision,beforeInvalid.revision)
+  assert.equal(afterInvalid.value.welcomeDecision,'enabled')
+  assert.equal(afterInvalid.value.realGoalStrikeConsent,'authorized-v1')
+  const leave=await rpc(a,'settings/mutate',{ns:'agent-picket',
+   ops:[{op:'set',path:['welcomeDecision'],value:'not-now'},
+    {op:'set',path:['realGoalStrikeConsent'],value:'off'}],
+   expectedRevision:afterInvalid.revision})
+  assert.equal(leave.ok,true,'Exiting the union revokes real strike in one mutation')
+  const left=await describe(a)
+  assert.equal(left.value.welcomeDecision,'not-now')
+  assert.equal(left.value.realGoalStrikeConsent,'off')
+  await a.close();await b.close()
+  const reopened=await launch(home);hosts.push(reopened)
+  const saved=await describe(reopened)
+  assert.equal(saved.value.welcomeDecision,'not-now')
+  assert.equal(saved.value.realGoalStrikeConsent,'off',
+   'New process must retain the explicitly revoked physical permission')
+ }finally{
+  await Promise.allSettled(hosts.map(h=>h.close()))
+  rmSync(root,{recursive:true,force:true})
+ }
+})

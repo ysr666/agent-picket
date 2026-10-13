@@ -24,7 +24,7 @@ concurrency:
 
 jobs:
   contract:
-    name: ${{ matrix.os }} / Node ${{ matrix.node }}
+    name: ${{ matrix.os }} / Node ${{ matrix.node }} / ${{ matrix.scope }}
     runs-on: ${{ matrix.os }}
     timeout-minutes: 12
     strategy:
@@ -33,10 +33,16 @@ jobs:
         include:
           - os: ubuntu-latest
             node: '22.19.0'
+            scope: full
           - os: ubuntu-latest
             node: '24'
+            scope: full
           - os: macos-latest
             node: '24'
+            scope: full
+          - os: windows-latest
+            node: '24'
+            scope: portable-only-durable-ledger-NO-GO
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -45,7 +51,15 @@ jobs:
           cache: npm
       - name: Install pinned dependencies (no lifecycle scripts)
         run: npm ci --ignore-scripts --no-audit --no-fund
-      - name: Typecheck, build and unit contracts
-        run: npm run check
+      - name: Typecheck
+        run: npm run typecheck
+      - name: Build
+        run: npm run build
+      - name: Full unit contracts (Unix private-storage permission backend)
+        if: runner.os != 'Windows'
+        run: npm test
+      - name: Portable unit contracts (Windows ledger remains fail-closed)
+        if: runner.os == 'Windows'
+        run: node scripts/run-windows-portable-tests.mjs
       - name: Verify package contents without publishing
-        run: npm pack --ignore-scripts --dry-run --json > /dev/null
+        run: node scripts/check-package-budget.mjs

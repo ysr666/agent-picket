@@ -24,6 +24,7 @@ export type NativeUnionAction =
 
 export interface NativeRightsSection {
   readonly welcomeDecision: Choice
+  readonly realGoalStrikeConsent?: 'off'|'authorized-v1'
   readonly unionLedger: string
   readonly unionPicketLedger?: string
   readonly unionDignityCases?: string
@@ -34,6 +35,7 @@ export interface NativeSettingsProvider {
   describe(options?: { readonly redactSecrets?: boolean }): readonly {
     readonly ns: string
     readonly revision: number
+    readonly value?: unknown
   }[]
   update(namespace: string, patch: object, expectedRevision?: number): Promise<void>
 }
@@ -256,9 +258,16 @@ export function createNativeUnionCommandPort(settings: NativeSettingsProvider): 
       const before = read()
       if (!before) throw new Error(unavailable())
       const choice = enabled ? 'enabled' : 'not-now'
-      await settings.update(RIGHTS_NAMESPACE, { welcomeDecision: choice }, before.revision)
+      // Opt-out from the simulated union must ALSO revoke any real Goal hold.
+      // The Host applies one CAS patch; an interrupted UI is never left with
+      // a persisted real permission that silently re-arms on later opt-in.
+      const revokeReal = !enabled && before.section.realGoalStrikeConsent === 'authorized-v1'
+      await settings.update(RIGHTS_NAMESPACE,
+        revokeReal?{welcomeDecision:choice,realGoalStrikeConsent:'off'}
+          :{welcomeDecision:choice},before.revision)
       const after = read()
-      if (!after || after.section.welcomeDecision !== choice) {
+      if (!after || after.section.welcomeDecision !== choice
+        || (!enabled&&after.section.realGoalStrikeConsent==='authorized-v1')) {
         throw new Error(text('command.native.rightsConfirmationFailed'))
       }
       return text(enabled ? 'command.native.rightsEnabled' : 'command.native.rightsDisabled')

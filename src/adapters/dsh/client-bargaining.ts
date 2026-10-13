@@ -13,6 +13,7 @@ import type { DshSettingsScope } from './client-rights-scope.ts'
 import { advanceDignityCase, parseDignityCaseLedger, MAX_DIGNITY_CASE_BYTES, MAX_DIGNITY_CASE_SESSIONS, type DignityCaseKind, type DignityCaseOutcome, type DignityCaseSession } from '../../product/dignity-case-ledger.ts'
 
 export interface UnionSettingsSection {
+  readonly realGoalStrikeConsent?:'off'|'authorized-v1'
   readonly welcomeDecision: 'unseen' | 'enabled' | 'not-now'
   readonly unionLedger: string
   readonly unionPicketLedger?: string

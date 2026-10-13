@@ -129,6 +129,12 @@ export class DurableStats {
   constructor(directory: string, options: { classificationEnabled?: boolean } = {}) {
     this.#classificationEnabled = options.classificationEnabled === true
     if (typeof directory !== 'string' || !directory.trim()) throw new Error('Stats directory required')
+    // On NTFS, POSIX mode bits do not prove private access. Until we have a
+    // handle-bound DACL + WAL/lock backend, fail BEFORE mkdir or file I/O;
+    // never leave behind a potentially world-readable statistics folder.
+    if (process.platform === 'win32') {
+      throw new Error('Windows DurableStats disabled: verified private NTFS ledger backend required')
+    }
     this.#dir = directory
     mkdirSync(directory, { recursive: true, mode: 0o700 })
     const info = lstatSync(directory)
@@ -323,8 +329,16 @@ export class DurableStats {
       fsyncSync(fd)
       closeSync(fd)
       fd = undefined
+      // Windows NTFS cannot reliably replace a journal still open by THIS
+      // writer. Close only after the checkpoint snapshot is durable, but
+      // BEFORE replacing the old WAL. If rename fails we fault the ledger;
+      // the old journal remains replayable on a later safe restart.
+      if (this.#journalFd !== undefined) {
+        const old = this.#journalFd
+        this.#journalFd = undefined
+        closeSync(old)
+      }
       renameSync(tmp, journal)
-      if (this.#journalFd !== undefined) closeSync(this.#journalFd)
       this.#journalFd = openSync(journal, 'a', 0o600)
       this.#sinceCheckpoint = 0
     } finally {

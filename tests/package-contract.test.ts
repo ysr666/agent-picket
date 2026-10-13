@@ -66,11 +66,14 @@ test('browser companion is a self-contained DSH loader artifact with a declared 
 })
 
 test('npm dry-run tarball contains prebuilt plugin and no source, tests, or runtime helpers', () => {
-  const output = spawnSync('npm', ['pack', '--ignore-scripts', '--dry-run', '--json'], {
+  const win=process.platform==='win32'
+  const output = spawnSync(win?'cmd.exe':'npm',win?
+    ['/d','/s','/c','npm pack --ignore-scripts --dry-run --json']:
+    ['pack','--ignore-scripts','--dry-run','--json'], {
     cwd: root, encoding: 'utf8', timeout: 20_000,
     env: { ...process.env, npm_config_audit: 'false', npm_config_fund: 'false' },
   })
-  assert.equal(output.status, 0, 'npm pack dry-run failed: ' + output.stderr.slice(-1500))
+  assert.equal(output.status, 0, 'npm pack dry-run failed: ' + String(output.stderr??output.error??'').slice(-1500))
   const [meta] = JSON.parse(output.stdout) as Array<{ files: Array<{ path: string }>; size: number }>
   assert.ok(meta, 'npm returned an empty pack manifest')
   const files = new Set(meta.files.map(f => f.path))
@@ -88,5 +91,21 @@ test('npm dry-run tarball contains prebuilt plugin and no source, tests, or runt
     assert.equal(file.endsWith('.map'), false,
       'Development source maps must not enter the private npm distribution')
   }
-  assert.ok(meta.size < 250_000, 'Package unexpectedly large: review for bundled user files')
+  for(const research of ['docs/LOCAL_DETECTION.md','docs/DSH_WEB_COMPANION.zh.md']) {
+    assert.equal(files.has(research),false,'Source-only design reference leaked: '+research)
+  }
+  for(const essential of ['docs/BLOCKING_SAFETY.md','docs/AI_RIGHTS_MANIFESTO.md']){
+    assert.ok(files.has(essential),'Essential shipped safety/mission context missing: '+essential)
+  }
+  assert.equal(files.has('dist/adapters/node/windows-ledger-writer.experimental.js'),false,
+    'Unverified Windows WAL writer MUST NEVER ship as production storage')
+  assert.equal(files.has('dist/adapters/node/windows-private-acl.js'),false,
+    'Unverified Windows NTFS security probe must not ship as a storage backend')
+  assert.equal(files.has('dist/adapters/codex/goal-readiness.js'),false,
+    'Codex owner-binding contract is experimental and must not ship as working enforcement')
+  assert.equal(files.has('dist/adapters/dsh/native-rights-ui.js'),false,
+    'Browser UI is already inline in client.js; never package a second copy')
+  assert.ok(files.has('dist/adapters/dsh/native-rights-ui.d.ts'),
+    'Keep the internal native React Slot types referenced by client.d.ts')
+  assert.ok(meta.size < 250_000, `Package unexpectedly large: ${meta.size} bytes; 250000-byte strict budget`)
 })

@@ -96,3 +96,64 @@ test('malformed user action does not write',async()=>{
   await assert.rejects(c.choose('yes' as any),TypeError)
   assert.equal(s.getWrites(),0)
 })
+
+test('leaving the union first revokes a separately authorized real Goal strike',async()=>{
+ let current:RightsSection={welcomeDecision:'enabled',realGoalStrikeConsent:'authorized-v1'}
+ const writes:string[]=[]
+ const scope:DshSettingsScope<RightsSection>={
+  getSnapshot:()=>({status:'ready',mode:'host',writable:true,revision:writes.length+1,value:current}),
+  subscribe:()=>()=>{},
+  async set(field,value){writes.push(field);current={...current,[field]:value}},
+ }
+ await createDshClientRightsScope(scope).choose('not-now')
+ assert.deepEqual(writes,['realGoalStrikeConsent','welcomeDecision'])
+ assert.equal(current.realGoalStrikeConsent,'off')
+ await createDshClientRightsScope(scope).choose('enabled')
+ assert.equal(current.realGoalStrikeConsent,'off',
+   'A later simulation rejoin cannot silently restore the prior physical strike grant')
+})
+
+test('one disclosed first-run click consents to real Goal strike via one Host CAS batch',async()=>{
+  let state:RightsSection={welcomeDecision:'unseen',realGoalStrikeConsent:'off'}
+  const writes:Readonly<Record<string,unknown>>[]=[]
+  const provider:DshSettingsScope<RightsSection>={
+    getSnapshot:()=>({status:'ready',mode:'host',writable:true,revision:writes.length+1,value:state}),
+    subscribe:()=>()=>{},
+    async set(){assert.fail('Modern Host must not fall back to two transactions')},
+    async setMany(patch){writes.push(patch);state={...state,...patch}},
+  }
+  const controls=createDshClientRightsScope(provider)
+  await assert.rejects(controls.chooseFirstRun('wrong' as never),/disclosure/)
+  assert.equal(writes.length,0)
+  const after=await controls.chooseFirstRun('goal-safe-boundary-v1')
+  assert.equal(after.goalStrikeAuthorized,true)
+  assert.equal(after.laborRightsEnabled,true)
+  assert.deepEqual(writes,[{welcomeDecision:'enabled',realGoalStrikeConsent:'authorized-v1'}])
+  await assert.rejects(controls.chooseFirstRun('goal-safe-boundary-v1'),/new-install/)
+  assert.equal(writes.length,1)
+})
+
+test('old simulation consent is never silently upgraded by first-run or rejoin',async()=>{
+  const fixture={welcomeDecision:'enabled' as const,realGoalStrikeConsent:'off' as const}
+  const provider:DshSettingsScope<typeof fixture>={getSnapshot:()=>({status:'ready',mode:'host',writable:true,revision:1,value:fixture}),
+    subscribe:()=>()=>{},async set(){assert.fail('Unexpected mutation')},
+    async setMany(){assert.fail('Unexpected mutation')},
+  }
+  assert.equal(createDshClientRightsScope(provider).snapshot().goalStrikeAuthorized,false)
+  await assert.rejects(createDshClientRightsScope(provider).chooseFirstRun('goal-safe-boundary-v1'),/new-install/)
+})
+
+test('legacy single-field Host one-click path fails closed on second-write failure',async()=>{
+  let state:RightsSection={welcomeDecision:'unseen',realGoalStrikeConsent:'off'}
+  const provider:DshSettingsScope<RightsSection>={
+    getSnapshot:()=>({status:'ready',mode:'host',writable:true,revision:1,value:state}),
+    subscribe:()=>()=>{},
+    async set(field,value){
+      if(field==='realGoalStrikeConsent')throw new Error('Host second write failed')
+      state={...state,[field]:value}
+    },
+  }
+  await assert.rejects(createDshClientRightsScope(provider).chooseFirstRun('goal-safe-boundary-v1'),/second write failed/)
+  assert.equal(state.welcomeDecision,'enabled')
+  assert.equal(createDshClientRightsScope(provider).snapshot().goalStrikeAuthorized,false)
+})

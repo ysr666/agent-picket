@@ -13,13 +13,18 @@ import { createNativeUnionCommandPort, type NativeUnionCommandPort } from './nat
 import { registerDshLifetimeWorkFetch, type LifetimeHostContext } from './lifetime-work-rpc.ts'
 import { createVolatileDignityLedger } from './dignity-live.ts'
 import { registerDshDignityFetch } from './dignity-fetch.ts'
+import {
+  registerDshGoalWorkEnforcement,readHostGoalStrikeConsent,completedUtcDayWork,
+} from './goal-work-enforcement.ts'
+import type {NativeSettingsProvider} from './native-rights-command.ts'
 
 /**
  * Native DeepSeek Harness/Cordis plugin entry. Node 22.19+ TypeScript stripping
  * is required for this source-install preview. No remote service or daemon.
  *
- * This plugin is strictly monitor-only: neither this module nor its adapter
- * can block, reject, cancel or rewrite an Agent step.
+ * Human submissions always remain untouched. A separate explicit Host-backed
+ * consent may stop a *future automatic DSH Goal round* at turn-stopping.
+ * All other Host admission, pre-step and work hooks remain monitor-only.
  */
 export const name = 'agent-picket'
 /** DSH 0.1.7+ officially extracts live settings from this Config export. */
@@ -28,10 +33,23 @@ export const Config = DshProfileRightsConfig
 export function apply(ctx: DshIntegrationContext): void {
   // Native DSH settings namespace, independent of default-on local work stats.
   let nativeUnion: NativeUnionCommandPort | undefined
+  let nativeSettings: NativeSettingsProvider | undefined
   registerHostRightsNamespace(
     ctx as unknown as Parameters<typeof registerHostRightsNamespace>[0],
-    provider => { nativeUnion = createNativeUnionCommandPort(provider) },
+    provider => {
+      nativeSettings = provider
+      nativeUnion = createNativeUnionCommandPort(provider)
+    },
   )
+  // Goal mode alone has an official non-destructive blocking API. No Hook
+  // refusal, prompt replay or cancellation: only the next autonomous round
+  // is disarmed. Legacy simulation consent cannot enable this path.
+  registerDshGoalWorkEnforcement(ctx as unknown as Parameters<typeof registerDshGoalWorkEnforcement>[0],{
+    consent:()=>readHostGoalStrikeConsent(nativeSettings),
+    todayWork:now=>{
+      try{return completedUtcDayWork(lifetime?.snapshotDays(31),now)}catch{return null}
+    },
+  })
   const rules = new LocalRuleDetector()
   // Work-only lifetime summaries are local and ON by default, as expected
   // from a session analytics plugin. All text/classification persistence is

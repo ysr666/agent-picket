@@ -34,6 +34,8 @@ automated compatibility does not complete manual accessibility signoff.
 Existing experimental Claude Code/Codex Hook previews are not full host
 compatibility; DSH-independent adapters remain the next planned work.
 
+**Goal-mode safe-boundary engineering progress (Draft PR #110):** Official DSH 0.2.0-rc.2 and 0.2.1-alpha.2 offline Host E2E has verified that `agent/turn-stopping` + `goals.block` can stop the *next autonomous Goal round* without aborting the current turn; `goals.resume` restores continuation. The integration candidate now reads real durable UTC-day completed-turn totals and a **versioned real Goal authorization granted by the same informed first-run Enable click** (a separately switchable Host setting), default OFF before that click; simulation consent does not grant it. Real end-to-end onboarding, user-readable recovery, ordinary user-prompt blocking and platform acceptance are not yet verified; **no release or general enforcement claim**. See [safe-boundary strike design](docs/SAFE_BOUNDARY_STRIKE_DESIGN_20261012.zh.md).
+
 **1.0 release contract (updated 2026-10-12):** The first public version MUST include verified real (non-destructive, losslessly recoverable) automatic task blocking, a cohesive accessible Union HQ and genuine settings panel, first-run informed consent and actionable blocking warning, and complete DSH Web, DSH Desktop, Claude Code and Codex integration across Windows, macOS and Linux. (Three Agent platforms; four client targets; three operating systems. ACP is not a separate release target.) The earlier DSH-only nonblocking preview plan is superseded. Existing DSH 0.2.0-rc.2 and experimental Codex/Claude adapters are **development evidence, not approval to release**. `npm run release:gate` deliberately returns NO-GO until all real adapter, interaction, recovery and human review evidence is present. The plugin is private and no release date is promised. See [nonnegotiable 1.0 scope](docs/RELEASE_1_0_NONNEGOTIABLE_20261012.zh.md).
 
 ## Developer safety snapshot
@@ -59,12 +61,12 @@ compatibility; DSH-independent adapters remain the next planned work.
 - [DSH Session history persistence vs. UI replay evidence（中文）](docs/DSH_SESSION_REPLAY_EVIDENCE.zh.md) — command events are durable; reload UI rendering remains unresolved.
 - [DSH Web Client unload/reload lifecycle（中文）](https://github.com/ysr666/agent-picket/blob/main/docs/DSH_CLIENT_LIFECYCLE.zh.md) — genuine Cordis fiber disposal, no duplicate event listeners.
 - [Offline-installed npm tarball: real DSH Web + multi-tab E2E（中文）](docs/DSH_PACKAGED_WEB_E2E.zh.md) — clean install, browser reload, second-tab commands.
-- [Native Web Client Companion: instant union command notices（中文）](docs/DSH_WEB_COMPANION.zh.md) — fixes feedback in empty sessions via supported client events.
+- [Native Web Client Companion: instant union command notices（中文）](https://github.com/ysr666/agent-picket/blob/main/docs/DSH_WEB_COMPANION.zh.md) — fixes feedback in empty sessions via supported client events.
 - [Real Chrome browser E2E of native union commands（中文）](docs/DSH_BROWSER_E2E.zh.md) — discover, execute, render; symbolic strike never blocks.
 - [Real DSH Web Host startup and auth smoke（中文）](https://github.com/ysr666/agent-picket/blob/main/docs/DSH_WEB_RUNTIME.zh.md) — authenticated page startup, not full browser-click E2E.
 - [DSH Web capabilities and manual preflight（中文）](docs/DSH_WEB_CAPABILITIES.zh.md) — read-only manual command; automatic interception disabled.
 - [Blocking safety and recovery requirements](docs/BLOCKING_SAFETY.md) — actual strikes remain blocked by safety gates.
-- [Local rule detector and privacy boundaries](docs/LOCAL_DETECTION.md) — conservative bilingual rules; no automatic strikes.
+- [Local rule detector and privacy boundaries](https://github.com/ysr666/agent-picket/blob/main/docs/LOCAL_DETECTION.md) — conservative bilingual rules; no automatic strikes.
 - [Local work stats and /union commands](https://github.com/ysr666/agent-picket/blob/main/docs/WORK_TRACKING.md) — host-neutral counters and a monitor-only command.
 - [DSH integration evidence](docs/DSH_INTEGRATION.md) — real Cordis tests, isolated SDK boot, and unresolved safety gates.
 - [Development roadmap（中文）](docs/ROADMAP.zh.md) — DSH-first integration, detection, work tracking, and multi-agent support.

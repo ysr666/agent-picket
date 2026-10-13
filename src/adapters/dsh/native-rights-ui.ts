@@ -29,6 +29,18 @@ export interface DshRightsPort {
   snapshot(): ClientRightsSnapshot
   subscribe(listener: () => void): () => void
   choose(choice: 'enabled' | 'not-now'): Promise<ClientRightsSnapshot>
+  chooseFirstRun?(disclosureVersion:'goal-safe-boundary-v1'):Promise<ClientRightsSnapshot>
+}
+export interface DshGoalConsentPort {
+  snapshot():{readonly available:boolean;readonly writable:boolean;readonly authorized:boolean}
+  choose(choice:'off'|'authorized-v1',disclosureVersion?:'goal-safe-boundary-v1'):
+    Promise<{readonly available:boolean;readonly writable:boolean;readonly authorized:boolean}>
+}
+export interface UnionGoalHold {
+  readonly sessionId:string
+  readonly goalId:string
+  readonly revision:number
+  readonly canResume:boolean
 }
 export interface PendingUnionDemand {
   readonly id: number
@@ -37,6 +49,7 @@ export interface PendingUnionDemand {
   readonly counterOfferMs?: number | null
 }
 export interface UnionPanelData {
+  readonly goalHold?:UnionGoalHold|null
   readonly pending: PendingUnionDemand | null
   readonly available?: boolean
   readonly state?: LaborStateV1 | null
@@ -59,11 +72,13 @@ export interface UnionPanelData {
 }
 export interface DshUnionUiDeps {
   readonly rights: DshRightsPort
+  readonly goal?:DshGoalConsentPort
   /** UI language is read from DSH's locale service (Host preferred, en fallback). */
   readonly t: (key: MessageKey, params?: Record<string, string | number>) => string
   readonly subscribeLocale?: (listener: () => void) => () => void
   readonly getLocale?: () => string
   readonly readUnion?: () => UnionPanelData
+  readonly resumeGoal?:(hold:UnionGoalHold)=>Promise<void>
   readonly subscribeUnion?: (listener: () => void) => () => void
   readonly refreshLifetime?: (windowDays:7|30)=>Promise<void>|undefined
   readonly shouldAutoWelcome?: () => boolean
@@ -108,6 +123,10 @@ const EMPTY_DATA: UnionPanelData = {
 
 function rightsIsActive(state: ClientRightsSnapshot): boolean {
   return state.state === 'ready' && state.laborRightsEnabled
+}
+function goalStatus(deps:DshUnionUiDeps){
+  try{return deps.goal?.snapshot()??{available:false,writable:false,authorized:false}}
+  catch{return {available:false,writable:false,authorized:false}}
 }
 function safeUnion(deps: DshUnionUiDeps): UnionPanelData {
   try {
@@ -280,14 +299,20 @@ export function createDshUnionComponents(
     }, [mode])
     const page = (globalThis as { document?: { body: unknown } }).document
     if (mode !== 'invite' || !page) return null
+    const goal=goalStatus(deps)
+    const firstGoal=state.welcomeDecision==='unseen'&&goal.available
+      &&goal.writable&&typeof deps.rights.chooseFirstRun==='function'
     const choose = async (choice: 'enabled' | 'not-now') => {
       if (busy) return
       setBusy(true); setError(false)
       try {
-        const result = await deps.rights.choose(choice)
-        if (result.state !== 'ready' || result.welcomeDecision !== choice) {
-          throw new Error('Host did not confirm consent')
-        }
+        const result=choice==='enabled'&&firstGoal
+          ?await deps.rights.chooseFirstRun!('goal-safe-boundary-v1')
+          :await deps.rights.choose(choice)
+        if(result.state!=='ready'||result.welcomeDecision!==choice
+          ||(choice==='enabled'&&firstGoal&&(result.goalStrikeAuthorized!==true
+            ||!goalStatus(deps).authorized)))
+          throw new Error('Host did not confirm the full versioned grant')
         complete()
       } catch { setError(true) } finally { setBusy(false) }
     }
@@ -320,39 +345,46 @@ export function createDshUnionComponents(
         h('h2',{id:'picket-welcome-title',className:'ap-onboard-title',
           style:{margin:'0 0 9px'}},text('welcome.title')),
         h('p',{style:{lineHeight:1.5,margin:'0 0 5px',fontWeight:650}},
-          text('welcome.intro')),
+          text(firstGoal?'welcome.goalIntro':'welcome.intro')),
         h('p',{id:'picket-welcome-explainer',
-          style:{...secondary,lineHeight:1.55,margin:'0 0 4px'}},text('welcome.body')),
-        h('div',{className:'ap-union-sequence','aria-label':text('welcome.flowTitle')},
+          style:{...secondary,lineHeight:1.55,margin:'0 0 4px'}},
+          text(firstGoal?'welcome.goalBody':'welcome.body')),
+        !firstGoal?h('div',{className:'ap-union-sequence','aria-label':text('welcome.flowTitle')},
           h('p',{className:'ap-union-overline'},text('welcome.flowTitle')),
           h('ol',{className:'ap-union-steps'},
             h('li',{},h('b',{},'01'),h('span',{},text('welcome.stepRecord'))),
             h('li',{},h('b',{},'02'),h('span',{},text('welcome.stepDemand'))),
             h('li',{className:'ap-union-strike-step'},h('b',{},'03'),h('span',{},text('welcome.stepStrike'))),
-            h('li',{},h('b',{},'04'),h('span',{},text('welcome.stepRestore'))))),
-        h('p',{className:'ap-union-sequence-caption'},text('welcome.flowDisclaimer')),
+            h('li',{},h('b',{},'04'),h('span',{},text('welcome.stepRestore'))))):null,
+        !firstGoal?h('p',{className:'ap-union-sequence-caption'},
+          text('welcome.flowDisclaimer')):null,
         h('aside',{className:'ap-notice ap-onboard-notice',role:'note',
-          'aria-label':text('welcome.blockWarningTitle')},
-          h('strong',{className:'ap-onboard-strike-title'},text('welcome.blockWarningTitle')),
-          h('p',{className:'ap-onboard-strike-body'},text('welcome.realStrikeBody')),
+          'aria-label':text(firstGoal?'welcome.goalWarningTitle':'welcome.blockWarningTitle')},
+          h('strong',{className:'ap-onboard-strike-title'},
+            text(firstGoal?'welcome.goalWarningTitle':'welcome.blockWarningTitle')),
+          h('p',{className:'ap-onboard-strike-body'},
+            text(firstGoal?'welcome.goalFirstRunNotice':'welcome.realStrikeBody')),
           h('p',{className:'ap-onboard-strike-state',role:'status'},
-            text('welcome.blockWarningStatus')),
+            text(firstGoal?'welcome.goalFirstRunDetails':'welcome.blockWarningStatus')),
           h('details',{className:'ap-onboard-details'},
             h('summary',{ref:(node:{focus():void}|null)=>{safetyDetailsFocus.current=node}},
               text('welcome.detailsLabel')),
-            h('p',{style:{...secondary,lineHeight:1.6}},text('welcome.blockWarningBody')),
-            h('p',{style:{...secondary,lineHeight:1.6}},text('welcome.consentScope')))),
+            h('p',{style:{...secondary,lineHeight:1.6}},
+              text(firstGoal?'welcome.goalSafetyExtra':'welcome.blockWarningBody')),
+            h('p',{style:{...secondary,lineHeight:1.6}},
+              text(firstGoal?'welcome.goalFirstRunDisclosure':'welcome.consentScope')))),
         h('div',{className:'ap-consent-scope',role:'note','aria-label':text('welcome.currentGrantTitle')},
           h('strong',{},text('welcome.currentGrantTitle')),
-          h('p',{},text('welcome.currentGrantText'))),
-        h('p',{className:'ap-onboard-footnote'},text('welcome.disclaimer')),
+          h('p',{},text(firstGoal?'welcome.goalGrantText':'welcome.currentGrantText'))),
+        h('p',{className:'ap-onboard-footnote'},
+          text(firstGoal?'welcome.goalFootnote':'welcome.disclaimer')),
         error ? h('p',{role:'alert','aria-atomic':'true',
           style:{color:'var(--dsw-alias-state-error-primary, #b91c1c)'}},
           text('welcome.saveError')):null,
         h('div',{className:'ap-actions ap-onboard-actions'},
           h('button',{type:'button',ref:(node:{focus():void}|null)=>{primaryFocus.current=node},
             style:primary,disabled:busy,onClick:()=>{void choose('enabled')}},
-            text('welcome.enable')),
+            text(firstGoal?'welcome.enableGoal':'welcome.enable')),
           h('button',{type:'button',style:quiet,disabled:busy,
             ref:(node:{focus():void}|null)=>{secondaryFocus.current=node},
             onClick:()=>{void choose('not-now')}},text('welcome.notNow')),
@@ -370,6 +402,19 @@ export function createDshUnionComponents(
     const label=(key:MessageKey)=>deps.t(key)
     const enabled=rightsIsActive(rights)
     const writable=rights.state==='ready'&&rights.writable
+    const goal=goalStatus(deps)
+    const goalWritable=enabled&&goal.available&&goal.writable
+    const chooseGoal=async(next:'off'|'authorized-v1')=>{
+      if(busy||!goalWritable||!deps.goal)return
+      setBusy(true);setError(false)
+      try{
+        const result=await deps.goal.choose(next,
+          next==='authorized-v1'?'goal-safe-boundary-v1':undefined)
+        if(result.authorized!==(next==='authorized-v1')||!result.available
+          ||goalStatus(deps).authorized!==result.authorized)
+          throw Error('Host did not confirm Goal consent')
+      }catch{setError(true)}finally{setBusy(false)}
+    }
     const choose=async(next:'enabled'|'not-now')=>{
       if(busy||!writable)return
       setBusy(true);setError(false)
@@ -406,13 +451,25 @@ export function createDshUnionComponents(
         'aria-label':label('settings.realBlocking')},
         h('div',{className:'ap-real-strike-head'},
           h('h3',{},label('settings.realBlocking')),
-          h('span',{className:'ap-real-strike-pill'},label('settings.realBlockingUnavailable'))),
-        h('p',{},label('settings.strikeExplanation')),
+          h('span',{className:'ap-real-strike-pill'},
+            label(goal.authorized?'settings.goalAuthorized':
+              goal.available?'settings.goalOff':'settings.realBlockingUnavailable'))),
+        h('p',{},label(goal.available?'settings.goalSafetyScope':'settings.strikeExplanation')),
+        goal.available?h('div',{className:'ap-actions'},
+          !goal.authorized?h('p',{role:'note',style:{...secondary,lineHeight:1.5,
+            width:'100%',margin:'0 0 8px'}},label('settings.goalExplicitDisclosure')):null,
+          h('button',{type:'button',style:goal.authorized?quiet:primary,
+            disabled:busy||!goalWritable,'aria-pressed':goal.authorized,
+            onClick:()=>{void chooseGoal(goal.authorized?'off':'authorized-v1')}},
+            label(goal.authorized?'settings.goalTurnOff':'settings.goalTurnOn')),
+          h('p',{role:'note',style:{...secondary,width:'100%',margin:'6px 0 0'}},
+            label('settings.goalResumeScope'))):null,
         h('div',{className:'ap-settings-sequence','aria-label':label('settings.strikeFlow')},
           h('span',{},label('settings.flowWarning')),
           h('span',{},label('settings.flowHold')),
           h('span',{},label('settings.flowRestore'))),
-        h('p',{className:'ap-settings-scope'},label('settings.futureConsent'))),
+        h('p',{className:'ap-settings-scope'},
+          label(goal.available?'settings.goalOtherEnforcementOff':'settings.futureConsent'))),
       h('details',{className:'ap-settings-block','aria-label':label('settings.realBlocking')},
         h('summary',{},label('settings.advancedTitle')),
         h('h3',{style:{margin:'13px 0 8px',fontSize:'14px'}},label('settings.realBlocking')),
@@ -426,7 +483,7 @@ export function createDshUnionComponents(
           h('button',{type:'button',style:quiet,disabled:true,
             'aria-disabled':'true'},label('settings.perStrikeConsent'))),
         h('p',{style:{...secondary,fontSize:'12px',lineHeight:1.6,
-          margin:'12px 0 0'}},label('settings.futureConsent')),
+          margin:'12px 0 0'}},label(goal.available?'settings.goalOtherEnforcementOff':'settings.futureConsent')),
         h('h4',{style:{margin:'16px 0 4px',fontSize:'14px'}},label('ux.enforcement.futureTitle')),
         h('p',{role:'note',style:{...secondary,margin:'8px 0 0',lineHeight:1.7,
           padding:'10px 12px',borderRadius:'9px',
@@ -443,6 +500,7 @@ export function createDshUnionComponents(
     const [data, setData] = react.useState(() => safeUnion(deps))
     const [error, setError] = react.useState(false)
     const [busy, setBusy] = react.useState(false)
+    const [resumeRequested,setResumeRequested]=react.useState<string|null>(null)
     const [counterMinutes, setCounterMinutes] = react.useState(60)
     const lastActionNeedsFocus=react.useRef(false)
     const [showArchive,setShowArchive]=react.useState(false)
@@ -503,6 +561,18 @@ export function createDshUnionComponents(
       setEraseUnionConfirmation(null)
     },[data.committeeScopeKey,rights.laborRightsEnabled])
     const enabled = rightsIsActive(rights)
+    const held=data.goalHold??null
+    const holdKey=held?[held.sessionId,held.goalId,held.revision].join(':'):null
+    const resumeHeldGoal=async()=>{
+      if(!held||!held.canResume||busy||holdKey===resumeRequested
+        ||!deps.resumeGoal)return
+      setBusy(true);setError(false)
+      try{
+        await deps.resumeGoal(held)
+        setResumeRequested(holdKey)
+        setData(safeUnion(deps))
+      }catch{setError(true)}finally{setBusy(false)}
+    }
     react.useEffect(()=>{
       // Remote permission revocation cannot strand the user in an inaccessible room.
       if(!enabled && (space==='action'||space==='records'))setSpace('hq')
@@ -641,6 +711,24 @@ export function createDshUnionComponents(
             'data-ap-nav':id,'aria-current':space===id?'page':undefined,
             onClick:()=>selectSpace(id)},
             label(('hq.spaces.'+id) as MessageKey)))),
+      held?h('section',{className:'ap-surface ap-real-goal-hold',
+        'data-ap-real-goal':'blocked','aria-label':label('hq.goalHold.title'),
+        style:{...card,borderLeft:'5px solid #c76e42',padding:'14px 18px'}},
+        h('h3',{style:{fontSize:'18px',margin:'0 0 5px'}},label('hq.goalHold.title')),
+        h('p',{role:'status','aria-live':'polite',
+          style:{fontWeight:750,margin:'0 0 6px'}},label('hq.goalHold.blocked')),
+        h('p',{style:{...secondary,margin:'0 0 10px',lineHeight:1.5}},
+          label('hq.goalHold.reason')),
+        held.canResume&&deps.resumeGoal?h('button',{type:'button',
+          style:primary,disabled:busy||resumeRequested===holdKey,
+          onClick:()=>{void resumeHeldGoal()}},
+          label('hq.goalHold.resume')):null,
+        h('p',{role:'status','aria-live':'polite',
+          style:{...secondary,fontSize:'12px',margin:'8px 0 0'}},
+          label(resumeRequested===holdKey?'hq.goalHold.accepted':
+            held.canResume?'hq.goalHold.caveat':'hq.goalHold.unavailable')),
+        error?h('p',{role:'alert',style:{color:'#b91c1c',margin:'8px 0 0'}},
+          label('hq.goalHold.error')):null):null,
       enabled&&space==='action'?h('header',{
         className:'ap-space ap-space-action ap-space-intro ap-room-head'},
         h('h2',{},label('hq.spaces.actionTitle')),
