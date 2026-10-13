@@ -58,6 +58,7 @@
     "!dist/adapters/node/windows-ledger-lock.*",
     "!dist/adapters/node/windows-wal-replay.*",
     "!dist/adapters/node/windows-ledger-writer.experimental.*",
+    "!dist/adapters/node/sqlite-durable-stats.experimental.*",
     "README.md",
     "LICENSE",
     "cordis.patch.yml",
