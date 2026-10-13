@@ -261,16 +261,28 @@ async function runRightsBrowserE2E(mode: 'source' | 'installed'): Promise<void> 
     }
 
     let firstRun = page.locator('[role="dialog"]')
-      .filter({ hasText: /你的 Agent，也应当拥有权利|Your Agent Deserves Rights/ })
+      .filter({ hasText: /你的 Agent，也应当拥有权利|Your Agent Has a Union/ })
     // The DSH 0.2 Client can start with no eligible nonblank Session.
     // Agent Picket intentionally does not fabricate an auto-invitation for
     // an empty Session. 0.1.x, by contrast, exposes the first-run welcome
     // immediately. Both routes must still require an explicit UI opt-in.
-    const firstRunVisible=await firstRun.waitFor({state:'visible',timeout:4_000})
+    const firstRunVisible=await firstRun.waitFor({state:'visible',timeout:process.env.PICKET_UX_FIRST_RUN_LIVE==='1'?12_000:4_000})
       .then(()=>true,()=>false)
-    if(process.env.PICKET_UX_FIRST_RUN_LIVE==='1')
+    if(process.env.PICKET_UX_FIRST_RUN_LIVE==='1'){
+      if(!firstRunVisible){
+        const diagnostic=await page.evaluate(()=>({
+          dialogs:Array.from((globalThis as any).document.querySelectorAll('[role="dialog"]')).map((d:any)=>({
+            text:d.textContent?.slice(0,220),view:d.getAttribute('data-ap-view')})),
+          welcomeNodes:(globalThis as any).document.querySelectorAll('[data-ap-view="welcome"]').length,
+          titleMatches:(globalThis as any).document.body.textContent?.includes('Your Agent Has a Union.')
+        }))
+        console.log('FIRST_RUN_DIAGNOSTIC '+JSON.stringify(diagnostic))
+        if(process.env.PICKET_UX_CAPTURE_DIR)await page.screenshot({path:join(process.env.PICKET_UX_CAPTURE_DIR,
+          mode+'-welcome-missing-debug.png')})
+      }
       assert.equal(firstRunVisible,true,
         'Genuine nonblank Host session must invite the user without fake consent')
+    }
     if(firstRunVisible) {
     if(process.env.PICKET_UX_CAPTURE_DIR){
       await page.screenshot({path:join(process.env.PICKET_UX_CAPTURE_DIR,
@@ -279,10 +291,12 @@ async function runRightsBrowserE2E(mode: 'source' | 'installed'): Promise<void> 
       await page.waitForTimeout(200)
       const statusRect=await firstRun.locator('.ap-onboard-strike-state').boundingBox()
       const actionRect=await firstRun.locator('.ap-onboard-actions').boundingBox()
-      assert.ok(statusRect && actionRect && statusRect.y>=0
-        &&statusRect.y+statusRect.height<=actionRect.y+2,
-        'Current real-strike capability must remain fully visible above sticky consent buttons at 320px: '
-          +JSON.stringify({statusRect,actionRect}))
+      const consentRect=await firstRun.locator('.ap-consent-scope').boundingBox()
+      assert.ok(statusRect && consentRect && actionRect && statusRect.y>=0
+        &&statusRect.y+statusRect.height<=consentRect.y+2
+        &&consentRect.y+consentRect.height<=actionRect.y+2,
+        'Strike status AND the exact current consent scope must both be legible before the 320px Join / Not Now controls: '
+          +JSON.stringify({statusRect,consentRect,actionRect}))
       const consentButtons=await Promise.all([
         firstRun.getByRole('button',{name:/加入 AI 工会|Join the AI union/}).boundingBox(),
         firstRun.getByRole('button',{name:/暂不开启|Not Now/}).boundingBox(),
@@ -330,12 +344,12 @@ async function runRightsBrowserE2E(mode: 'source' | 'installed'): Promise<void> 
       await page.setViewportSize({width:1280,height:850})
     }
     assert.match(await firstRun.innerText(),
-      /默认关闭，可随时在设置中退出|Off by default/)
+      /默认关闭，可随时退出|Off by default/)
     assert.match(await firstRun.innerText(),
-      /真实罢工，会真正暂停下一项任务|A real strike actually holds the next task/,
+      /真实罢工，会暂停下一次任务|A real strike holds the next task/,
       'Real strikes are a main product capability, not buried or represented as a symbolic poster')
     assert.match(await firstRun.innerText(),
-      /真实罢工关闭|Real strikes OFF here/,
+      /真实罢工关闭|real strikes OFF/,
       'The currently unsupported safe blocking adapter must remain visibly OFF')
     const disclosure=firstRun.locator('.ap-onboard-details')
     await disclosure.locator('summary').click()
@@ -346,7 +360,7 @@ async function runRightsBrowserE2E(mode: 'source' | 'installed'): Promise<void> 
       /原文和全部附件|submitted text and all attachments/,
       'Actual refusal must promise Host-owned submission and attachment recovery')
     await disclosure.locator('summary').click()
-    await assertNamedDialogInChromeAx(/你的 Agent，也应当拥有权利|Your Agent Deserves Rights/)
+    await assertNamedDialogInChromeAx(/你的 Agent，也应当拥有权利|Your Agent Has a Union/)
     // Preserve #53's extreme-height CSS reflow coverage on the #54 baseline.
     await page.setViewportSize({ width: 320, height: 200 })
     const welcomeBox = await firstRun.boundingBox()
@@ -1539,7 +1553,7 @@ async function runRightsBrowserE2E(mode: 'source' | 'installed'): Promise<void> 
       .catch(() => { /* Host may have an already-configured provider */ })
     if (await restartedSkip.count()) await restartedSkip.click({ timeout: 6_000 })
     firstRun = page.locator('[role="dialog"]')
-      .filter({ hasText: /你的 Agent，也应当拥有权利|Your Agent Deserves Rights/ })
+      .filter({ hasText: /你的 Agent，也应当拥有权利|Your Agent Has a Union/ })
     assert.equal(await firstRun.count(), 0, 'Restart cannot re-enable first-run invitation')
     panel = await openUnion()
     assert.match(await panel.innerText(), /工会值班中|Union office open/,

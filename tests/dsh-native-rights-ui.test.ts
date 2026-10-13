@@ -1347,10 +1347,14 @@ test('onboarding is a product intro with explicit visible nonblocking consent wa
    .Welcome({complete:()=>{}}))
   const dialog=tree.find(x=>x.props['data-ap-view']==='welcome')!
   assert.ok(dialog.props.className.includes('ap-onboarding'))
-  assert.ok(tree.some(n=>n.props.className==='ap-onboard-features'))
-  assert.ok(tree.some(n=>n.children.includes('welcome.featureWork')))
-  assert.ok(tree.some(n=>n.children.includes('welcome.featureRights')))
-  assert.ok(tree.some(n=>n.children.includes('welcome.featurePicket')))
+  assert.ok(tree.some(n=>n.props.className==='ap-union-sequence'))
+  assert.ok(tree.some(n=>n.type==='li'&&n.props.className==='ap-union-strike-step'))
+  assert.ok(tree.some(n=>n.children.includes('welcome.stepStrike')))
+  assert.ok(tree.some(n=>n.children.includes('welcome.stepRecord')))
+  assert.ok(tree.some(n=>n.children.includes('welcome.stepDemand')))
+  assert.ok(tree.some(n=>n.children.includes('welcome.stepRestore')))
+  assert.ok(tree.some(n=>n.props['aria-label']==='welcome.currentGrantTitle'))
+  assert.ok(tree.some(n=>n.children.includes('welcome.currentGrantText')))
   assert.ok(tree.some(n=>n.children.includes('welcome.realStrikeBody')),
    'First run must explain actual future held model submissions on its visible front page')
   assert.ok(tree.some(n=>n.children.includes('welcome.consentScope')),
@@ -1370,6 +1374,9 @@ test('settings prioritize membership; future real-strike controls are disclosure
  const {d}=deps(rights({welcomeDecision:'not-now',laborRightsEnabled:false}))
  const tree=walk(createDshUnionComponents(hooks,{createPortal:child=>child},d)
   .SettingsPanel())
+ assert.ok(tree.some(n=>String(n.props.className??'').includes('ap-real-strike-status')&&n.type==='section'))
+ assert.ok(tree.some(n=>n.children.includes('settings.strikeExplanation')))
+ assert.ok(tree.some(n=>n.props.className==='ap-settings-sequence'))
  assert.ok(tree.some(n=>n.props.className==='ap-settings-block'&&n.type==='details'))
  assert.ok(tree.some(n=>n.type==='summary'&&n.children.includes('settings.advancedTitle')))
  assert.ok(tree.some(n=>n.type==='button'&&n.children.includes('settings.turnOn')&&!n.props.disabled))
