@@ -4,6 +4,7 @@ import { createBrowserDignityReader } from './client-dignity.ts'
 import { createDshBrowserUnionDesk, type UnionSettingsSection } from './client-bargaining.ts'
 import { createDshClientRightsScope, type DshSettingsScope } from './client-rights-scope.ts'
 import {createDshRealGoalConsentControl} from './client-goal-consent.ts'
+import {createDshGoalServiceWitness} from './client-goal-capability.ts'
 import { createOfficialDsh017Scope, type OfficialHostMirror, type OfficialHostSettings } from './client-host-settings-017.ts'
 import { registerDshNativeRightsSlots, type ReactForDsh, type PortalForDsh, type DshSlots } from './native-rights-ui.ts'
 import { formatMessage, resolveLocale, type MessageKey } from '../../i18n/index.ts'
@@ -111,7 +112,7 @@ interface ClientContext {
   slots?: DshSlots
   settingsScope?: { bind<T>(spec: { namespace: string }): DshSettingsScope<T> }
   configForms?: { describe(): OfficialHostMirror }
-  remote?: OfficialHostSettings & {goals?:{resume:(sessionId:string,ref:{id:string;revision:number})=>Promise<unknown>}}
+  remote?: OfficialHostSettings & {goals?:{get:(sessionId:string)=>Promise<unknown>;resume:(sessionId:string,ref:{id:string;revision:number})=>Promise<unknown>}}
   locale?: { getLocale(): { active: string }; subscribe(listener:()=>void):()=>void }
   /** Public Cordis service registration; removed with the client plugin fiber. */
   provide?(name: string, value: unknown): () => void
@@ -155,10 +156,20 @@ export function apply(ctx: ClientContext, react?: ReactForDsh, portal?: PortalFo
   // Optional official Goal Remote is independently injected. Never make
   // the nonblocking Union onboarding dependent on Goal installation.
   let goalRemote:NonNullable<NonNullable<ClientContext['remote']>['goals']>|undefined
+  const goalWitness=createDshGoalServiceWitness({
+    currentSession:()=>currentDshUnionSession(ctx.sessions.list?.getSnapshot()),
+    binding:id=>ctx.sessions.binding?.(id),
+    remote:()=>goalRemote,
+  })
   ctx.inject?.(['remote','remote.goals'],child=>{
     const granted=child.remote?.goals
     goalRemote=granted
-    child.effect?.(()=>()=>{if(goalRemote===granted)goalRemote=undefined})
+    goalWitness.invalidate()
+    // Public read-only service proof; do not contact Goal Host on startup
+    // before there is an actual selected, nonblank Session.
+    child.effect?.(()=>()=>{
+      if(goalRemote===granted){goalRemote=undefined;goalWitness.invalidate()}
+    })
   })
   // Native React Slots are installed only when DSH's own services are present.
   // Their settings writes use the Host's authenticated settingsScope, never
@@ -177,6 +188,7 @@ export function apply(ctx: ClientContext, react?: ReactForDsh, portal?: PortalFo
       : scoped.settingsScope!.bind<UnionSettingsSection>({namespace:'agent-picket'})
     unionRegistered = true
     const owner = createDshClientRightsScope(rightsScope)
+    const goalConsentControl=createDshRealGoalConsentControl(rightsScope,goalWitness)
     const recovery=createDshGoalRecoveryPort({
       currentSession:()=>currentDshUnionSession(scoped.sessions.list?.getSnapshot()),
       binding:id=>scoped.sessions.binding?.(id),
@@ -270,7 +282,10 @@ export function apply(ctx: ClientContext, react?: ReactForDsh, portal?: PortalFo
         dignity?.setScope(owner.snapshot().laborRightsEnabled,activeId()??null)
         onWork()
       })
-      const stopSessions = scoped.sessions.list?.subscribe(rebind) ?? (() => {})
+      const stopSessions = scoped.sessions.list?.subscribe(()=>{
+        void goalWitness.qualify()
+        rebind()
+      }) ?? (() => {})
       rebind()
       return () => {
         currentEpoch++
@@ -300,8 +315,14 @@ export function apply(ctx: ClientContext, react?: ReactForDsh, portal?: PortalFo
       })
     }
     registerDshNativeRightsSlots(scoped as { slots: DshSlots }, react!, portal!, {
-      rights: owner,
-      goal:version==='new'?createDshRealGoalConsentControl(rightsScope):undefined,
+      rights:{...owner,chooseFirstRun:async(disclosure)=>{
+        // The official settings writer alone is not proof that the Goal
+        // service exists. Confirm live get + resume for this exact Session.
+        if(!await goalWitness.qualify(true)||!goalWitness.snapshot())
+          throw Error('Host Goal service cannot be certified for this Session')
+        return owner.chooseFirstRun(disclosure)
+      }},
+      goal:version==='new'?goalConsentControl:undefined,
       t: (key, params) => (formatMessage as unknown as
         (locale: ReturnType<typeof uiLocale>, key: MessageKey, params?: Record<string, string | number>) => string)(
           uiLocale(), key, params),

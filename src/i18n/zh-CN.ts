@@ -175,6 +175,8 @@ export const zhCN: Readonly<Record<keyof typeof en, string>> = {
   'welcome.goalGrantText': '工会参与与有限的真实 Goal 停工；不授权普通聊天阻断。',
   'welcome.goalFootnote': '默认关闭，授权后可在设置里撤销。工时含等待，并非连续推理时间。',
   'welcome.enableGoal': '加入并授权 Goal 安全停工',
+  'settings.goalServiceLost': '已保存 Goal 授权 · 官方服务当前不可用',
+  'settings.goalServiceLostScope': '当前会话尚未验证官方 Goal 服务，不能保证执行真实停工。你仍可在下方撤销已存储的授权；此前停工的 Goal 仍须经官方 /goal resume 恢复。',
   'settings.goalAuthorized': 'Goal 安全工作边界停工：已授权',
   'settings.goalOff': 'Goal 安全工作边界停工：关闭',
   'settings.goalSafetyScope': '经核实的 UTC 当日工时满 8 小时，只能阻断 Goal 后续自动续轮；当前轮次、普通消息和工具照常。',

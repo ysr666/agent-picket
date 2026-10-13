@@ -35,6 +35,8 @@ export interface DshGoalConsentPort {
   snapshot():{readonly available:boolean;readonly writable:boolean;readonly authorized:boolean}
   choose(choice:'off'|'authorized-v1',disclosureVersion?:'goal-safe-boundary-v1'):
     Promise<{readonly available:boolean;readonly writable:boolean;readonly authorized:boolean}>
+  qualify?(fresh?:boolean):Promise<boolean>
+  subscribe?(listener:()=>void):()=>void
 }
 export interface UnionGoalHold {
   readonly sessionId:string
@@ -254,6 +256,16 @@ export function createDshUnionComponents(
     react.useEffect(() => deps.rights.subscribe(() => setState(deps.rights.snapshot())), [])
     return state
   }
+  const useGoal = () => {
+    const [,bump]=react.useState(0)
+    react.useEffect(()=>{
+      const stop=deps.goal?.subscribe?.(()=>bump(n=>n+1))
+      // A read-only official service probe, never creates/blocks a Goal.
+      void deps.goal?.qualify?.().catch(()=>{})
+      return stop
+    },[])
+    return goalStatus(deps)
+  }
   const useLanguage = () => {
     const [version, changeVersion] = react.useState(0)
     react.useEffect(() => deps.subscribeLocale?.(() => changeVersion(n => n + 1)), [])
@@ -262,6 +274,7 @@ export function createDshUnionComponents(
 
   function Welcome(props: {complete: () => void; restoreFocus?: () => void}): unknown {
     const state = useRight()
+    const goal=useGoal()
     useLanguage()
     const [busy, setBusy] = react.useState(false)
     const [error, setError] = react.useState(false)
@@ -299,13 +312,15 @@ export function createDshUnionComponents(
     }, [mode])
     const page = (globalThis as { document?: { body: unknown } }).document
     if (mode !== 'invite' || !page) return null
-    const goal=goalStatus(deps)
     const firstGoal=state.welcomeDecision==='unseen'&&goal.available
       &&goal.writable&&typeof deps.rights.chooseFirstRun==='function'
     const choose = async (choice: 'enabled' | 'not-now') => {
       if (busy) return
       setBusy(true); setError(false)
       try {
+        if(choice==='enabled'&&firstGoal
+          &&(!await deps.goal?.qualify?.(true)||!goalStatus(deps).available))
+          throw Error('Official Goal service is unavailable or Session changed')
         const result=choice==='enabled'&&firstGoal
           ?await deps.rights.chooseFirstRun!('goal-safe-boundary-v1')
           :await deps.rights.choose(choice)
@@ -396,6 +411,7 @@ export function createDshUnionComponents(
   /** Dedicated Host-owned permissions screen, not an enormous duplicate HQ. */
   function SettingsPanel(): unknown {
     const rights=useRight()
+    useGoal()
     useLanguage()
     const [busy,setBusy]=react.useState(false)
     const [error,setError]=react.useState(false)
@@ -403,7 +419,7 @@ export function createDshUnionComponents(
     const enabled=rightsIsActive(rights)
     const writable=rights.state==='ready'&&rights.writable
     const goal=goalStatus(deps)
-    const goalWritable=enabled&&goal.available&&goal.writable
+    const goalWritable=enabled&&goal.writable&&(goal.available||goal.authorized)
     const chooseGoal=async(next:'off'|'authorized-v1')=>{
       if(busy||!goalWritable||!deps.goal)return
       setBusy(true);setError(false)
@@ -452,10 +468,12 @@ export function createDshUnionComponents(
         h('div',{className:'ap-real-strike-head'},
           h('h3',{},label('settings.realBlocking')),
           h('span',{className:'ap-real-strike-pill'},
-            label(goal.authorized?'settings.goalAuthorized':
-              goal.available?'settings.goalOff':'settings.realBlockingUnavailable'))),
-        h('p',{},label(goal.available?'settings.goalSafetyScope':'settings.strikeExplanation')),
-        goal.available?h('div',{className:'ap-actions'},
+            label(goal.authorized
+              ?goal.available?'settings.goalAuthorized':'settings.goalServiceLost'
+              :goal.available?'settings.goalOff':'settings.realBlockingUnavailable'))),
+        h('p',{},label(goal.available?'settings.goalSafetyScope':
+          goal.authorized?'settings.goalServiceLostScope':'settings.strikeExplanation')),
+        (goal.available||goal.authorized)?h('div',{className:'ap-actions'},
           !goal.authorized?h('p',{role:'note',style:{...secondary,lineHeight:1.5,
             width:'100%',margin:'0 0 8px'}},label('settings.goalExplicitDisclosure')):null,
           h('button',{type:'button',style:goal.authorized?quiet:primary,

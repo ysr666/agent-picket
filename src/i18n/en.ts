@@ -178,6 +178,8 @@ export const en = defineEnglish({
   'welcome.goalGrantText': 'Membership and limited, real autonomous Goal stoppage. No ordinary-chat task blocking.',
   'welcome.goalFootnote': 'OFF until you agree; revoke later in Settings. Work-time includes waiting, not continuous model compute.',
   'welcome.enableGoal': 'Join · authorize safe Goal stoppage',
+  'settings.goalServiceLost': 'Stored Goal permission · official service unavailable',
+  'settings.goalServiceLostScope': 'This Session has no verified official Goal service. You can revoke the stored permission below; no real stoppage capability is promised. Previously blocked Goals still require official /goal resume.',
   'settings.goalAuthorized': 'Safe-boundary Goal stoppage: authorized',
   'settings.goalOff': 'Safe-boundary Goal stoppage: OFF',
   'settings.goalSafetyScope': 'Only later autonomous Goal rounds can stop after 8h UTC-day verified work; current turn finishes, normal messages and running tools continue.',
