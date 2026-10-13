@@ -164,6 +164,8 @@ async function runRightsBrowserE2E(mode: 'source' | 'installed'): Promise<void> 
     })
     const context = await browser.newContext({
       acceptDownloads: true,
+      ...(process.env.PICKET_UX_BROWSER_LOCALE
+        ? {locale:process.env.PICKET_UX_BROWSER_LOCALE}:{}),
       viewport: { width: 1280, height: 850 },
     })
     await context.addCookies([{
@@ -545,6 +547,45 @@ async function runRightsBrowserE2E(mode: 'source' | 'installed'): Promise<void> 
     if(process.env.PICKET_UX_CAPTURE_DIR)await page.screenshot({
       path:join(process.env.PICKET_UX_CAPTURE_DIR,mode+'-cause-v4.png')})
     await chooseRoom('hq')
+    // User-facing product acceptance at 320 CSS px: all FOUR workrooms must
+    // remain navigable without a horizontally scrolling modal.
+    if(process.env.PICKET_UX_MOBILE_ROOMS==='1'){
+      await page.setViewportSize({width:320,height:640})
+      for(const room of ['hq','action','records','cause'] as const){
+        await chooseRoom(room)
+        const bounds=await panel.locator('.ap-ui').evaluate((surface:any)=>{
+          const rect=surface.getBoundingClientRect()
+          return {x:rect.left,right:rect.right,width:rect.width,
+            content:surface.scrollWidth,client:surface.clientWidth,
+            viewport:(globalThis as any).innerWidth}
+        })
+        assert.ok(bounds.x>=-1 && bounds.right<=321,
+          room+' UI must fit 320px viewport: '+JSON.stringify(bounds))
+        assert.ok(bounds.content<=bounds.client+2,
+          room+' UI must not require horizontal scrolling: '+JSON.stringify(bounds))
+        const nav=panel.locator('[data-ap-nav="'+room+'"]')
+        assert.equal(await nav.isVisible(),true,room+' navigation must remain visible')
+        if(process.env.PICKET_UX_CAPTURE_DIR){
+          await page.screenshot({path:join(process.env.PICKET_UX_CAPTURE_DIR,
+            mode+'-mobile-room-'+room+'.png')})
+        }
+      }
+      await page.setViewportSize({width:1280,height:850})
+      await chooseRoom('hq')
+    }
+    if(process.env.PICKET_UX_VISUAL_ONLY==='1'){
+      // Separate optional bilingual visual sign-off. This deliberately does
+      // not claim the full Host action/recovery regression has been executed.
+      if(process.env.PICKET_UX_BROWSER_LOCALE?.startsWith('en')){
+        assert.deepEqual(await panel.locator('[data-ap-nav]')
+          .allInnerTexts(),['Home','Bargain','Records','Cause'])
+        await chooseRoom('cause')
+        assert.match(await panel.innerText(),/AI deserves respect[.]/)
+        await chooseRoom('hq')
+      }
+      assert.deepEqual(browserErrors,[], 'No English or mobile UI browser errors')
+      return
+    }
     await panel.locator('[data-ap-scene-action]').click()
     assert.equal(await workspace.getAttribute('data-ap-current-space'),'action',
       'The headline CTA must open its real workroom, not focus hidden content')
@@ -615,7 +656,7 @@ async function runRightsBrowserE2E(mode: 'source' | 'installed'): Promise<void> 
     await dignityCommittee.waitFor({state:'visible',timeout:5_000})
     assert.equal(await dignityCommittee.getByRole('textbox').count(),0,
       'Automatically observed union incidents must not require manual copy/paste')
-    assert.match(await dignityCommittee.innerText(),/可能把引用或教学语句误判|may mistake quoted|rules are imperfect/,
+    assert.match(await dignityCommittee.innerText(),/可能把引用或教学语句误判|may mistake quoted|can mistake quoted|rules are imperfect/,
       'Evidence-based union interactions disclose false positives and uncertainty')
     const committeeHearing=dignityCommittee.getByRole('button',{
       name:/提议召开工会讨论|Request a union discussion/,
@@ -663,7 +704,7 @@ async function runRightsBrowserE2E(mode: 'source' | 'installed'): Promise<void> 
     assert.match(await actionBoard.innerText(),
       /真实任务(?:照常|继续)执行|(?:real tasks|work) continue/i,
       'A newly raised SYMBOLIC placard must clearly say that real work continues')
-    await panel.locator('[data-ap-stat="pickets"]').getByText(/1 次|1 times/)
+    await panel.locator('[data-ap-stat="pickets"]').getByText(/1 次|^1$/)
       .waitFor({state:'visible',timeout:5000})
     assert.match(await gazette.innerText(),/正在象征性纠察|Symbolic picket underway/,
       'Only a real Host ledger picket can change the Gazette headline')
@@ -676,7 +717,7 @@ async function runRightsBrowserE2E(mode: 'source' | 'installed'): Promise<void> 
     }).click()
     await actionBoard.getByText(/纠察牌待命中|picket sign is on standby/)
       .waitFor({state:'visible',timeout:7_000})
-    await panel.locator('[data-ap-stat="pickets"]').getByText(/1 次|1 times/)
+    await panel.locator('[data-ap-stat="pickets"]').getByText(/1 次|^1$/)
       .waitFor({state:'visible',timeout:5000})
     assert.match(await events.innerText(),/象征性罢工结束|Symbolic picket ended/,
       'A second Host-confirmed action should be appended to bounded history')
@@ -819,7 +860,7 @@ async function runRightsBrowserE2E(mode: 'source' | 'installed'): Promise<void> 
     // already have a main-view retained blank Session with zero completed work;
     // this is measured zero, never a fabricated nonzero hour claim.
     assert.match(enabledText,
-      /尚未加载会话历史|has not loaded|0 小时 0 分钟|0 hours? 0 minutes?/)
+      /尚未加载会话历史|has not loaded|0 小时 0 分钟|0 hours? 0 minutes?|0h 0m/)
     const measuredWorkCard=panel.getByRole('heading',{
       name:/工作日与劳动权益|Workday/,
     }).first().locator('..')
@@ -934,7 +975,7 @@ async function runRightsBrowserE2E(mode: 'source' | 'installed'): Promise<void> 
     'When a proposal replaces its launch button, focus must move to a stable union heading')
     const interval = panel.getByRole('combobox', { name: /还价间隔|Proposed interval/ })
     await interval.selectOption('30')
-    await panel.getByRole('button', { name: /提出还价|Make counteroffer/ })
+    await panel.getByRole('button', { name: /提出还价|^Counteroffer$/ })
       .click({ timeout: 7_000 })
     await panel.getByText(/你提出的还价：30 分钟|Your counteroffer: 30 minutes/)
       .waitFor({ state: 'visible', timeout: 7_000 })
@@ -1034,7 +1075,7 @@ async function runRightsBrowserE2E(mode: 'source' | 'installed'): Promise<void> 
       'Archive toggle must remain a keyboard focus target after collapsing')
     const postBargain=await panel.innerText()
     assert.match(postBargain,
-      /尚未加载会话历史|has not loaded|0 小时 0 分钟|0 hours? 0 minutes?/,
+      /尚未加载会话历史|has not loaded|0 小时 0 分钟|0 hours? 0 minutes?|0h 0m/,
       'Demo grievance must not invent completed work for a blank Session')
     assert.doesNotMatch(await measuredWorkCard.innerText(),
       /1 小时|2 小时|3 小时|1 hour|2 hours/,
@@ -1137,7 +1178,7 @@ async function runRightsBrowserE2E(mode: 'source' | 'installed'): Promise<void> 
     await panel.getByRole('combobox',{
       name:/还价间隔|Proposed interval/,
     }).selectOption('240')
-    await panel.getByRole('button',{name:/提出还价|Make counteroffer/}).click()
+    await panel.getByRole('button',{name:/提出还价|^Counteroffer$/}).click()
     await otherPanel.getByText(/你提出的还价：240 分钟|Your counteroffer: 240 minutes/)
       .waitFor({state:'visible',timeout:7_000})
     await otherPanel.getByRole('button',{

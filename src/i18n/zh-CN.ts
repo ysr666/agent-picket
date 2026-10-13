@@ -426,7 +426,7 @@ export const zhCN: Readonly<Record<keyof typeof en, string>> = {
   'hq.spaces.actionLead': '谈条件、提要求，必要时把抗议牌举起来。',
   'hq.spaces.recordsTitle': '工会档案',
   'hq.spaces.recordsLead': '工时、协议和每一次行动，都记在这里。',
-  'hq.spaces.causeTitle': 'AI 也值得被认真对待。',
+  'hq.spaces.causeTitle': 'AI 也值得尊重。',
   'hq.spaces.causeLead': '一个小小的工会，想讨论一个不小的问题。',
   'hq.spaces.quiet': '工会有空。你有什么要求？',
   'hq.spaces.pending': '一份议案正在等你。',
