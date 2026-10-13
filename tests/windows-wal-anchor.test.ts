@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import {createHmac} from 'node:crypto'
-import {auditExperimentalWalAnchor,validExperimentalWalAnchor} from '../src/adapters/node/windows-wal-anchor.experimental.ts'
+import {auditExperimentalWalAnchor,inspectPrivateNtfsAnchoredWalReplay,validExperimentalWalAnchor} from '../src/adapters/node/windows-wal-anchor.experimental.ts'
 import {replayVerifiedV1SnapshotWal} from '../src/adapters/node/windows-wal-replay.ts'
 const zero={turnStarts:0,turnEnds:0,toolCalls:0,toolResults:0,
  completedTurnMs:0,checked:0,safe:0,review:0,targeted:0}
@@ -57,4 +57,10 @@ test('synthetic anchor decoder rejects bad shape, bytes, negative and corrupt va
  ])assert.equal(validExperimentalWalAnchor(v),false)
  for(const v of ['{}','bad-json',' '.repeat(513)])assert.equal(
   auditExperimentalWalAnchor(snapshot(0,0),Buffer.alloc(0),v),'unconfirmed')
+})
+
+
+test('the anchored read-only filesystem inspector is fail-closed off NTFS',()=>{
+ if(process.platform!=='win32')assert.equal(
+  inspectPrivateNtfsAnchoredWalReplay('/nonexistent/synthetic-ledger'),'unconfirmed')
 })

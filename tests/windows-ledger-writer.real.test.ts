@@ -8,7 +8,7 @@ import {join,resolve} from 'node:path'
 import {pathToFileURL} from 'node:url'
 import {ExperimentalNtfsWalWriter,verifyNtfsOpenFileIdentity} from '../src/adapters/node/windows-ledger-writer.experimental.ts'
 import {inspectPrivateNtfsWalReplay,replayVerifiedV1SnapshotWal} from '../src/adapters/node/windows-wal-replay.ts'
-import {auditExperimentalWalAnchor} from '../src/adapters/node/windows-wal-anchor.experimental.ts'
+import {auditExperimentalWalAnchor,inspectPrivateNtfsAnchoredWalReplay} from '../src/adapters/node/windows-wal-anchor.experimental.ts'
 import {createProtectedNtfsDirectory} from '../src/adapters/node/windows-private-acl.ts'
 
 const now=1_760_000_000_000
@@ -505,21 +505,28 @@ test('native NTFS external high-water mark refuses syntactically valid WAL suffi
   const original=readFileSync(wal)
   const anchor=readFileSync(join(dir,'aggregate.v1.anchor'),'utf8')
   assert.equal(auditExperimentalWalAnchor(snap,original,anchor),'verified')
+  assert.equal(inspectPrivateNtfsAnchoredWalReplay(dir),'verified')
   const truncated=Buffer.from(original.toString('utf8').split('\n')[0]+'\n')
   writeFileSync(wal,truncated)
   assert.equal(replayVerifiedV1SnapshotWal(snap,truncated).status,'verified',
    'Existing signed v1 verification CANNOT detect a removed complete tail')
   assert.equal(replayVerifiedV1SnapshotWal(snap,truncated).sequence,1)
   assert.equal(auditExperimentalWalAnchor(snap,truncated,anchor),'unconfirmed')
+  assert.equal(inspectPrivateNtfsWalReplay(dir).status,'verified',
+   'Legacy v1-only reader cannot prove the missing valid suffix')
+  assert.equal(inspectPrivateNtfsAnchoredWalReplay(dir),'unconfirmed',
+   'New research profile reader MUST reject the missing acknowledged suffix')
   assert.throws(()=>new ExperimentalNtfsWalWriter(dir),/WAL anchor mismatch/)
   assert.deepEqual(readFileSync(wal),truncated,
    'Failed owner must not repair, truncate or replace any suspect WAL bytes')
   assert.equal(existsSync(join(dir,'aggregate.v1.lock')),false)
   writeFileSync(wal,original)
+  assert.equal(inspectPrivateNtfsAnchoredWalReplay(dir),'verified')
   writer=new ExperimentalNtfsWalWriter(dir)
   assert.deepEqual(writer.snapshot,{sequence:2,toolCalls:2})
   writer.close();writer=undefined
   unlinkSync(join(dir,'aggregate.v1.anchor'))
+  assert.equal(inspectPrivateNtfsAnchoredWalReplay(dir),'unconfirmed')
   assert.throws(()=>new ExperimentalNtfsWalWriter(dir),/Missing independent WAL anchor/)
   assert.deepEqual(readFileSync(wal),original,
    'A disappeared witness is not permission to retroactively certify legacy data')
@@ -548,7 +555,63 @@ test('native NTFS failed watermark commit never acknowledges a stranded fsynced 
    'Watermark was NOT durably advanced, so we cannot acknowledge event two')
   assert.equal(auditExperimentalWalAnchor(snap,journal,oldAnchor.toString('utf8')),
    'unconfirmed','No automatic recovery from ambiguous partially committed I/O')
+  assert.equal(inspectPrivateNtfsAnchoredWalReplay(dir),'unconfirmed')
   assert.throws(()=>new ExperimentalNtfsWalWriter(dir),/WAL anchor mismatch/)
   assert.deepEqual(readFileSync(join(dir,'aggregate.v1.journal')),journal)
  }finally{writer?.close();rmSync(parent,{recursive:true,force:true})}
+})
+
+test('native NTFS OS-killed writer after WAL fsync does not certify an older independent witness',{
+ skip:process.platform!=='win32'&&'Native OS process kill between WAL and anchor fsync only',
+ timeout:100_000,
+},async()=>{
+ const parent=mkdtempSync(join(tmpdir(),'ap-witness-killed-'))
+ const dir=join(parent,'new-private-ledger')
+ const program=`import {ExperimentalNtfsWalWriter} from ${JSON.stringify(source)};\n`+
+  `const w=new ExperimentalNtfsWalWriter(process.env.PICKET_TEST_DIR);\n`+
+  `w.recordSyntheticToolCall('witnessed','synthetic-agent','synthetic-session',${now});\n`+
+  `w.recordSyntheticToolCall('wal-only','synthetic-agent','synthetic-session',${now+1},`+
+   `()=>{process.stdout.write('WAL_ONLY_FSYNCED\\n');setInterval(()=>{},1000)});\n`
+ let child:ChildProcess|undefined
+ try{
+  child=spawn(process.execPath,['--experimental-strip-types','--input-type=module','-e',program],{
+   env:{...process.env,PICKET_TEST_DIR:dir},stdio:['ignore','pipe','pipe'],windowsHide:true,
+  })
+  await Promise.race([
+   new Promise<void>((resolve,reject)=>{
+    let output=''
+    child!.stdout!.on('data',bytes=>{
+     output+=String(bytes)
+     if(output.includes('WAL_ONLY_FSYNCED'))resolve()
+    })
+    child!.once('error',reject)
+    child!.once('exit',()=>reject(Error('Native child exited before WAL sync evidence')))
+   }),
+   new Promise<never>((_,reject)=>setTimeout(()=>reject(Error('Timed out before WAL sync')),30_000)),
+  ])
+  const exited=new Promise<void>(resolve=>{
+   if(child!.exitCode!==null||child!.signalCode!==null)resolve()
+   else child!.once('exit',()=>resolve())
+  })
+  child.kill('SIGKILL')
+  await Promise.race([exited,new Promise<never>((_,reject)=>
+   setTimeout(()=>reject(Error('Terminated child did not exit')),15_000))])
+  child=undefined
+  const snap=readFileSync(join(dir,'aggregate.v1.json'),'utf8')
+  const wal=readFileSync(join(dir,'aggregate.v1.journal'))
+  const anchor=readFileSync(join(dir,'aggregate.v1.anchor'),'utf8')
+  const v1=replayVerifiedV1SnapshotWal(snap,wal)
+  assert.equal(v1.status,'verified')
+  assert.equal(v1.sequence,2)
+  assert.equal(v1.totals?.toolCalls,2)
+  assert.equal(JSON.parse(anchor).sequence,1,
+   'Independent witness must not pretend unacknowledged record was committed')
+  assert.equal(auditExperimentalWalAnchor(snap,wal,anchor),'unconfirmed')
+  assert.equal(inspectPrivateNtfsAnchoredWalReplay(dir),'unconfirmed')
+  assert.equal(existsSync(join(dir,'aggregate.v1.lock')),true,
+   'Crashed owner lock cannot be silently deleted')
+  assert.throws(()=>new ExperimentalNtfsWalWriter(dir),/existing lock or recovery/)
+  assert.deepEqual(readFileSync(join(dir,'aggregate.v1.journal')),wal,
+   'Neither failure nor observer may truncate the unconfirmed work')
+ }finally{child?.kill('SIGKILL');rmSync(parent,{recursive:true,force:true})}
 })
