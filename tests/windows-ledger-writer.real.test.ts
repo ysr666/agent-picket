@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 import {spawn, type ChildProcess} from 'node:child_process'
 import {createHmac} from 'node:crypto'
-import {mkdtempSync,readFileSync,writeFileSync,existsSync,rmSync,openSync,closeSync} from 'node:fs'
+import {mkdtempSync,readFileSync,writeFileSync,existsSync,rmSync,openSync,closeSync,unlinkSync} from 'node:fs'
 import {tmpdir} from 'node:os'
 import {join,resolve} from 'node:path'
 import {pathToFileURL} from 'node:url'
@@ -366,5 +366,91 @@ test('native NTFS checkpoint preserves mixed v1 counter families from already co
   writer=new ExperimentalNtfsWalWriter(dir)
   assert.equal(writer.recordSyntheticToolCall('followup','sandbox-agent','sandbox-session',now+1),false,
    'Repeated work event after mixed-family recovery and checkpoint must be deduplicated')
+ }finally{writer?.close();rmSync(parent,{recursive:true,force:true})}
+})
+
+
+test('native NTFS missing existing WAL is a data-loss ambiguity, never recreated',{
+ skip:process.platform!=='win32'&&'Native NTFS existing-ledger WAL absence only',timeout:105_000,
+},()=>{
+ const parent=mkdtempSync(join(tmpdir(),'ap-writer-missing-wal-'))
+ const dir=join(parent,'fresh-protected-ledger')
+ let writer:ExperimentalNtfsWalWriter|undefined
+ try{
+  writer=new ExperimentalNtfsWalWriter(dir)
+  const snap=join(dir,'aggregate.v1.json')
+  const wal=join(dir,'aggregate.v1.journal')
+  assert.equal(existsSync(wal),true,'Fresh ledger MUST include a private WAL')
+  assert.equal(writer.recordSyntheticToolCall('committed-not-checkpointed',
+   'sandbox-agent','sandbox-session',now),true)
+  writer.close();writer=undefined
+  const savedSnapshot=readFileSync(snap)
+  const signedWal=readFileSync(wal)
+  assert.notEqual(signedWal.length,0,'Fixture proves acknowledged work not in snapshot')
+  assert.equal(replayVerifiedV1SnapshotWal(savedSnapshot.toString('utf8'),signedWal).totals?.toolCalls,1)
+  // Synthetic external deletion: refuse reinitialization and preserve every
+  // remaining byte. A fresh WAL would make work vanish on normal readback.
+  unlinkSync(wal)
+  assert.equal(inspectPrivateNtfsWalReplay(dir).status,'unconfirmed',
+   'Read-only observer cannot certify missing WAL as intact storage')
+  assert.throws(()=>new ExperimentalNtfsWalWriter(dir),
+   /Missing existing WAL|Incomplete ledger/)
+  assert.equal(existsSync(wal),false,'No empty replacement WAL is allowed')
+  assert.deepEqual(readFileSync(snap),savedSnapshot,'Existing snapshot must not change')
+  assert.equal(existsSync(join(dir,'aggregate.v1.lock')),false,
+   'Owner may release only the lock acquired for its own failed open')
+  // Even an apparently current (checkpointed) snapshot must be refused:
+  // without external proof we cannot distinguish a legitimate empty WAL
+  // from a deleted WAL containing newly committed events.
+  const snapshot=JSON.parse(savedSnapshot.toString('utf8'))
+  snapshot.sequence=17
+  writeFileSync(snap,JSON.stringify(snapshot))
+  assert.throws(()=>new ExperimentalNtfsWalWriter(dir),/Missing existing WAL/)
+  assert.equal(existsSync(wal),false)
+ }finally{writer?.close();rmSync(parent,{recursive:true,force:true})}
+})
+
+
+test('native NTFS v1 snapshot full dedup window rolls safely during WAL replay and checkpoint',{
+ skip:process.platform!=='win32'&&'Native NTFS rolling v1 dedup capacity only',timeout:110_000,
+},()=>{
+ const parent=mkdtempSync(join(tmpdir(),'ap-writer-rolling-dedup-'))
+ const dir=join(parent,'private-v1-ledger')
+ let writer:ExperimentalNtfsWalWriter|undefined
+ try{
+  assert.equal(createProtectedNtfsDirectory(dir),true)
+  const secret='6b'.repeat(32),day=new Date(now).toISOString().slice(0,10)
+  const seen=Array.from({length:16_384},(_,i)=>
+   'A'.repeat(38)+i.toString(36).padStart(5,'0'))
+  const original={turnStarts:2,turnEnds:2,toolCalls:4,toolResults:2,
+   completedTurnMs:8_000,checked:2,safe:1,review:0,targeted:1}
+  const snap=join(dir,'aggregate.v1.json'),wal=join(dir,'aggregate.v1.journal')
+  writeFileSync(snap,JSON.stringify({version:1,secret,sequence:6,
+   totals:original,daily:{[day]:{...original}},seen}),{mode:0o600,flag:'wx'})
+  const fp='Z'.repeat(43),changes={toolCalls:1},atMs=now,seq=7
+  const mac=createHmac('sha256',Buffer.from(secret,'hex'))
+   .update(JSON.stringify([seq,fp,changes,atMs])).digest('base64url')
+  writeFileSync(wal,JSON.stringify({seq,fp,changes,atMs,mac})+'\n',{
+   mode:0o600,flag:'wx'})
+  writer=new ExperimentalNtfsWalWriter(dir)
+  assert.deepEqual(writer.snapshot,{sequence:7,toolCalls:5})
+  assert.equal(writer.recordSyntheticToolCall('new-rolling-event',
+   'synthetic-agent','synthetic-session',now+1),true,
+   'A valid full dedup window must rotate, not freeze the writer')
+  writer.checkpointForTest()
+  writer.close();writer=undefined
+  const saved=JSON.parse(readFileSync(snap,'utf8'))
+  assert.equal(saved.seen.length,16_384,'Checkpoint never exceeds v1 seen limit')
+  assert.equal(saved.seen.includes(seen[0]),false,'Oldest fp evicted by signed WAL')
+  assert.equal(saved.seen.includes(seen[1]),false,'Second-oldest fp evicted by new append')
+  assert.equal(saved.seen.includes(seen[2]),true)
+  assert.equal(saved.seen.includes(fp),true)
+  assert.equal(saved.totals.toolCalls,6)
+  assert.equal(saved.totals.completedTurnMs,original.completedTurnMs)
+  assert.equal(saved.daily[day].toolCalls,6)
+  assert.equal(inspectPrivateNtfsWalReplay(dir).status,'verified')
+  writer=new ExperimentalNtfsWalWriter(dir)
+  assert.equal(writer.recordSyntheticToolCall('new-rolling-event',
+   'synthetic-agent','synthetic-session',now+1),false)
  }finally{writer?.close();rmSync(parent,{recursive:true,force:true})}
 })

@@ -124,3 +124,27 @@ test('native Windows disk layout WAL recovery reads signed records and refuses u
   assert.equal(inspectPrivateNtfsWalReplay(dir).status,'unconfirmed')
  }finally{rmSync(parent,{recursive:true,force:true})}
 })
+
+
+test('v1 HMAC replay follows the production rolling 16,384-fingerprint dedup window',()=>{
+ const historical=Array.from({length:16_384},(_,i)=>
+  'A'.repeat(38)+i.toString(36).padStart(5,'0'))
+ const initial=JSON.stringify({version:1,secret,sequence:0,
+  totals:{...emptyTotals},daily:{},seen:historical})
+ const incoming=(seq:number,fingerprint:string)=>{
+  const atMs=1_760_000_000_000,changes={toolCalls:1}
+  const mac=createHmac('sha256',Buffer.from(secret,'hex'))
+   .update(JSON.stringify([seq,fingerprint,changes,atMs])).digest('base64url')
+  return JSON.stringify({seq,fp:fingerprint,changes,atMs,mac})+'\n'
+ }
+ const firstNew='Z'.repeat(43)
+ const result=replayVerifiedV1SnapshotWal(initial,journal(
+  incoming(1,firstNew),incoming(2,historical[0]!)))
+ assert.equal(result.status,'verified',
+  'An evicted old fingerprint may be accepted again just as in DurableStats v1')
+ assert.equal(result.sequence,2)
+ assert.equal(result.totals?.toolCalls,2)
+ assert.equal(replayVerifiedV1SnapshotWal(initial,journal(
+  incoming(1,firstNew),incoming(2,historical[1]!))).status,'unconfirmed',
+  'The second-oldest fingerprint has NOT yet left the dedup window')
+})

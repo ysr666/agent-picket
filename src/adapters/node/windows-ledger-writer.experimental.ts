@@ -4,7 +4,7 @@
  * no torn-tail repair; checkpoint requires manual test invocation.
  */
 import {createHmac,randomBytes} from 'node:crypto'
-import {closeSync,existsSync,fstatSync,fsyncSync,lstatSync,openSync,
+import {constants as fsConstants,closeSync,existsSync,fstatSync,fsyncSync,lstatSync,openSync,
  readFileSync,renameSync,unlinkSync,writeFileSync,writeSync} from 'node:fs'
 import {hostname} from 'node:os'
 import {isAbsolute,join} from 'node:path'
@@ -78,7 +78,9 @@ export class ExperimentalNtfsWalWriter {
    if(!verifyPrivateNtfsAcl(lock,'file'))throw Error('Lock ACL unverified')
    this.#initialize(existing)
    const journal=join(directory,journalName)
-   this.#fd=openSync(journal,'a',0o600)
+   // O_APPEND without O_CREAT: a missing pre-existing WAL must NEVER be
+   // silently recreated (this would discard uncheckpointed acknowledged work).
+   this.#fd=openSync(journal,fsConstants.O_WRONLY|fsConstants.O_APPEND)
    if(!verifyPrivateNtfsAcl(journal,'file')
     ||!verifyNtfsOpenFileIdentity(this.#fd,journal))
     throw Error('Journal ACL or file handle identity unverified')
@@ -100,11 +102,17 @@ export class ExperimentalNtfsWalWriter {
    if(!verifyPrivateNtfsAcl(temp,'file'))throw Error('Snapshot temp ACL unverified')
    renameSync(temp,snap)
    if(!verifyPrivateNtfsAcl(snap,'file'))throw Error('Snapshot ACL unverified')
+   // New ledgers get an explicitly created empty WAL. A later open may
+   // append only to THIS existing private WAL; never reinitialize one.
+   const journalFd=openSync(wal,'wx',0o600)
+   try{fsyncSync(journalFd)}finally{closeSync(journalFd)}
+   if(!verifyPrivateNtfsAcl(wal,'file'))throw Error('Initial WAL ACL unverified')
    return
   }
+  if(!existsSync(wal))throw Error('Missing existing WAL; cannot prove no data loss')
   const snapText=readFileSync(snap,'utf8')
   const raw=JSON.parse(snapText) as {secret?:string;seen?:string[];sequence?:number}
-  const bytes=existsSync(wal)?readFileSync(wal):Buffer.alloc(0)
+  const bytes=readFileSync(wal)
   if(bytes.length>MAX_BYTES)throw Error('Oversized WAL')
   const recovered=replayVerifiedV1SnapshotWal(snapText,bytes)
   if(recovered.status!=='verified'||recovered.tornTail)
@@ -123,7 +131,13 @@ export class ExperimentalNtfsWalWriter {
   for(const line of bytes.toString('utf8').split('\n').filter(Boolean)){
    const v=JSON.parse(line) as {seq:number;fp:string;atMs:number;changes:Partial<typeof totalsZero>}
    if(v.seq<=committedSequence)continue
-   if(FP.test(v.fp))this.#seen.add(v.fp)
+   // Match DurableStats v1 bounded FIFO dedup across snapshot + WAL.
+   // Keep the latest 16,384 event fingerprints in original insertion order.
+   if(FP.test(v.fp)){
+    this.#seen.add(v.fp)
+    if(this.#seen.size>MAX_FINGERPRINTS)
+     this.#seen.delete(this.#seen.values().next().value!)
+   }
    const day=new Date(v.atMs).toISOString().slice(0,10)
    const base=this.#daily[day]??{...totalsZero}
    const updated={...base}
@@ -153,8 +167,8 @@ export class ExperimentalNtfsWalWriter {
   // becomes permanently unopenable even though the event was unacknowledged.
   if(!Number.isSafeInteger(this.#sequence+1))
    throw Error('Experimental WAL sequence exhausted')
-  if(this.#sinceCheckpoint>=MAX_RECORDS_BETWEEN_CHECKPOINTS
-   ||this.#seen.size>=MAX_FINGERPRINTS)throw Error('Experimental WAL checkpoint or dedup capacity exceeded')
+  if(this.#sinceCheckpoint>=MAX_RECORDS_BETWEEN_CHECKPOINTS)
+   throw Error('Experimental WAL checkpoint required')
   const day=new Date(atMs).toISOString().slice(0,10)
   if(!Number.isSafeInteger(this.#totals.toolCalls+1)
    ||!Number.isSafeInteger((this.#daily[day]?.toolCalls??0)+1))
@@ -172,6 +186,8 @@ export class ExperimentalNtfsWalWriter {
    if(writeSync(this.#fd,bytes)!==bytes.length)throw Error('Short WAL write')
    fsyncSync(this.#fd)
    this.#sequence=seq;this.#toolCalls++;this.#totals.toolCalls++;this.#seen.add(fp)
+   if(this.#seen.size>MAX_FINGERPRINTS)
+    this.#seen.delete(this.#seen.values().next().value!)
    const date=day
    const base=this.#daily[date]??{...totalsZero}
    this.#daily[date]={...base,toolCalls:base.toolCalls+1}
@@ -218,7 +234,9 @@ export class ExperimentalNtfsWalWriter {
    closeSync(old)
    renameSync(name,wal);name=undefined
    if(!verifyPrivateNtfsAcl(wal,'file'))throw Error('New WAL ACL unverified')
-   this.#fd=openSync(wal,'a',0o600)
+   // Also disallow creation after the checkpoint's WAL rename: a competing
+   // pathname removal must fault this writer, never manufacture an empty log.
+   this.#fd=openSync(wal,fsConstants.O_WRONLY|fsConstants.O_APPEND)
    if(!verifyNtfsOpenFileIdentity(this.#fd,wal))
     throw Error('Post-checkpoint WAL handle identity unverified')
    this.#sinceCheckpoint=0

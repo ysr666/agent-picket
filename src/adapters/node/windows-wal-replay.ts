@@ -109,7 +109,10 @@ export function replayVerifiedV1SnapshotWal(snapshotText:string,bytes:Buffer):Wi
    daily[date]=next
    for(const old of Object.keys(daily).sort().slice(0,Math.max(0,Object.keys(daily).length-maxDay)))
      delete daily[old]
+   // DurableStats v1 stores only its latest 16,384 fingerprints; older
+   // entries leave the dedup window in insertion order during WAL replay.
    seen.add(record.fp)
+   if(seen.size>maxSeen)seen.delete(seen.values().next().value!)
    sequence=record.seq;applied++
   }
   return {status:'verified',sequence,applied,tornTail,totals}
@@ -129,7 +132,10 @@ export function inspectPrivateNtfsWalReplay(directory:string):WindowsWalReadback
   const snapStat=lstatSync(snap)
   if(!snapStat.isFile()||snapStat.size>maxSnapshotBytes)return unconfirmed
   if(existsSync(wal) && lstatSync(wal).size>maxWalBytes)return unconfirmed
-  const journal=existsSync(wal)?readFileSync(wal):Buffer.alloc(0)
+  // An existing snapshot without its journal is not a proven empty log:
+  // an attacker/crash could have removed post-checkpoint acknowledged rows.
+  if(!existsSync(wal))return unconfirmed
+  const journal=readFileSync(wal)
   // Layout preflight checked each DACL. TOCTOU still prevents this from being
   // authorization for mutation or production enforcement.
   return replayVerifiedV1SnapshotWal(readFileSync(snap,'utf8'),journal)
