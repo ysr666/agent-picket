@@ -29,6 +29,13 @@ export interface DshRightsPort {
   snapshot(): ClientRightsSnapshot
   subscribe(listener: () => void): () => void
   choose(choice: 'enabled' | 'not-now'): Promise<ClientRightsSnapshot>
+  /** Only a real first-run, with explicit Goal safety disclosure. */
+  chooseFirstRun?(disclosureVersion:'goal-safe-boundary-v1'):Promise<ClientRightsSnapshot>
+}
+export interface DshGoalConsentPort {
+  snapshot():{readonly available:boolean;readonly writable:boolean;readonly authorized:boolean}
+  choose(choice:'off'|'authorized-v1',disclosureVersion?:'goal-safe-boundary-v1'):
+    Promise<{readonly available:boolean;readonly writable:boolean;readonly authorized:boolean}>
 }
 export interface PendingUnionDemand {
   readonly id: number
@@ -59,6 +66,8 @@ export interface UnionPanelData {
 }
 export interface DshUnionUiDeps {
   readonly rights: DshRightsPort
+  /** Host-owned, versioned Goal permission; never infer from the union toggle. */
+  readonly goal?: DshGoalConsentPort
   /** UI language is read from DSH's locale service (Host preferred, en fallback). */
   readonly t: (key: MessageKey, params?: Record<string, string | number>) => string
   readonly subscribeLocale?: (listener: () => void) => () => void
@@ -108,6 +117,11 @@ const EMPTY_DATA: UnionPanelData = {
 
 function rightsIsActive(state: ClientRightsSnapshot): boolean {
   return state.state === 'ready' && state.laborRightsEnabled
+}
+function goalStatus(deps:DshUnionUiDeps){
+  try{
+    return deps.goal?.snapshot()??{available:false,writable:false,authorized:false}
+  }catch{return {available:false,writable:false,authorized:false}}
 }
 function safeUnion(deps: DshUnionUiDeps): UnionPanelData {
   try {
@@ -221,14 +235,22 @@ export function createDshUnionComponents(
     }, [mode])
     const page = (globalThis as { document?: { body: unknown } }).document
     if (mode !== 'invite' || !page) return null
+    const qualifiedGoal=goalStatus(deps)
+    const realGoalFirstRun=qualifiedGoal.available&&qualifiedGoal.writable
+      &&!!deps.rights.chooseFirstRun && state.welcomeDecision==='unseen'
     const choose = async (choice: 'enabled' | 'not-now') => {
       if (busy) return
       setBusy(true); setError(false)
       try {
-        const result = await deps.rights.choose(choice)
-        if (result.state !== 'ready' || result.welcomeDecision !== choice) {
-          throw new Error('Host did not confirm consent')
-        }
+        // A SINGLE, fully disclosed first-run user gesture may authorize a
+        // safe Goal boundary, never a generic message-rejection hook.
+        const result=choice==='enabled'&&realGoalFirstRun
+          ?await deps.rights.chooseFirstRun!('goal-safe-boundary-v1')
+          :await deps.rights.choose(choice)
+        if(result.state!=='ready'||result.welcomeDecision!==choice
+          ||(choice==='enabled'&&realGoalFirstRun&&(
+            result.goalStrikeAuthorized!==true||!goalStatus(deps).authorized)))
+          throw new Error('Host did not confirm complete versioned consent')
         complete()
       } catch { setError(true) } finally { setBusy(false) }
     }
@@ -254,27 +276,29 @@ export function createDshUnionComponents(
         h('h2',{id:'picket-welcome-title',style:{fontSize:'26px',margin:'0 0 12px'}},
           text('welcome.title')),
         h('p',{style:{lineHeight:1.7,margin:'0 0 10px'}},text('welcome.intro')),
-        h('p',{style:{...secondary,lineHeight:1.65,margin:'0 0 25px'}},
-          text('welcome.body')),
-        h('aside',{role:'note','aria-label':text('welcome.blockWarningTitle'),
-          style:{padding:'13px 16px',margin:'0 0 15px',borderRadius:'9px',
-            borderLeft:'4px solid #b97942',lineHeight:1.55,
+        !realGoalFirstRun?h('p',{style:{...secondary,lineHeight:1.65,margin:'0 0 25px'}},
+          text('welcome.body')):null,
+        h('aside',{role:'note','aria-label':text(realGoalFirstRun?'welcome.goalWarningTitle':'welcome.blockWarningTitle'),
+          style:{padding:realGoalFirstRun?'9px 12px':'13px 16px',margin:'0 0 12px',borderRadius:'9px',
+            borderLeft:'4px solid #b97942',lineHeight:1.45,
             background:'var(--dsw-alias-bg-layer-2, #f6f8fb)'}},
           h('strong',{style:{display:'block',fontSize:'13px',marginBottom:'4px'}},
-            text('welcome.blockWarningTitle')),
-          h('p',{style:{...secondary,fontSize:'12px',margin:'0 0 6px'}},
-            text('welcome.blockWarningBody')),
+            text(realGoalFirstRun?'welcome.goalWarningTitle':'welcome.blockWarningTitle')),
+          !realGoalFirstRun?h('p',{style:{...secondary,fontSize:'12px',margin:'0 0 6px'}},
+            text('welcome.blockWarningBody')):null,
           h('p',{style:{...secondary,fontSize:'12px',margin:0}},
-            text('welcome.blockWarningStatus'))),
-        h('p',{style:{...secondary,fontSize:'12px',margin:'0 0 20px'}},
-          text('welcome.disclaimer')),
+            text(realGoalFirstRun?'welcome.goalFirstRunNotice':'welcome.blockWarningStatus')),
+          realGoalFirstRun?h('p',{style:{...secondary,fontSize:'12px',margin:'7px 0 0'}},
+            text('welcome.goalFirstRunDetails')):null),
+        h('p',{style:{...secondary,fontSize:'12px',margin:'0 0 12px'}},
+          text(realGoalFirstRun?'welcome.goalFirstRunDisclosure':'welcome.disclaimer')),
         error ? h('p',{role:'alert','aria-atomic':'true',
           style:{color:'var(--dsw-alias-state-error-primary, #b91c1c)'}},
           text('welcome.saveError')):null,
-        h('div',{style:{display:'flex',flexWrap:'wrap',gap:'10px'}},
+        h('div',{style:{display:'flex',flexWrap:'wrap',gap:'8px'}},
           h('button',{type:'button',ref:(node:{focus():void}|null)=>{primaryFocus.current=node},
             style:primary,disabled:busy,onClick:()=>{void choose('enabled')}},
-            text('welcome.enable')),
+            text(realGoalFirstRun?'welcome.enableGoal':'welcome.enable')),
           h('button',{type:'button',style:quiet,disabled:busy,
             ref:(node:{focus():void}|null)=>{secondaryFocus.current=node},
             onClick:()=>{void choose('not-now')}},text('welcome.notNow')),
@@ -292,6 +316,19 @@ export function createDshUnionComponents(
     const label=(key:MessageKey)=>deps.t(key)
     const enabled=rightsIsActive(rights)
     const writable=rights.state==='ready'&&rights.writable
+    const goal=goalStatus(deps)
+    const goalWritable=enabled&&goal.available&&goal.writable
+    const chooseGoal=async(next:'off'|'authorized-v1')=>{
+      if(busy||!goalWritable||!deps.goal)return
+      setBusy(true);setError(false)
+      try{
+        const result=await deps.goal.choose(next,
+          next==='authorized-v1'?'goal-safe-boundary-v1':undefined)
+        if(result.authorized!==(next==='authorized-v1')||!result.available
+          ||goalStatus(deps).authorized!==result.authorized)
+          throw Error('Host did not confirm real Goal consent')
+      }catch{setError(true)}finally{setBusy(false)}
+    }
     const choose=async(next:'enabled'|'not-now')=>{
       if(busy||!writable)return
       setBusy(true);setError(false)
@@ -324,17 +361,27 @@ export function createDshUnionComponents(
       h('section',{'aria-label':label('settings.realBlocking'),style:{...card,
         borderLeft:'4px solid #b97942'}},
         h('h3',{style:{margin:'0 0 8px'}},label('settings.realBlocking')),
-        h('p',{role:'status',style:{fontWeight:750,margin:'0 0 8px'}},
-          label('settings.realBlockingUnavailable')),
+        h('p',{role:'status','aria-live':'polite',
+          style:{fontWeight:750,margin:'0 0 8px'}},
+          label(goal.authorized?'settings.goalAuthorized':
+            goal.available?'settings.goalOff':'settings.realBlockingUnavailable')),
         h('p',{style:{...secondary,lineHeight:1.6,margin:'0 0 12px'}},
-          label('settings.realBlockingReason')),
-        h('div',{style:{display:'flex',gap:'9px',flexWrap:'wrap'}},
+          label(goal.available?'settings.goalSafetyScope':'settings.realBlockingReason')),
+        goal.available?h('div',{},
+          !goal.authorized?h('p',{role:'note',
+            style:{...secondary,fontSize:'12px',margin:'8px 0'}},
+            label('settings.goalExplicitDisclosure')):null,
+          h('button',{type:'button',style:goal.authorized?quiet:primary,
+            disabled:busy||!goalWritable,'aria-pressed':goal.authorized,
+            onClick:()=>{void chooseGoal(goal.authorized?'off':'authorized-v1')}},
+            label(goal.authorized?'settings.goalTurnOff':'settings.goalTurnOn'))):
           h('button',{type:'button',style:quiet,disabled:true,
             'aria-disabled':'true'},label('settings.realBlockingControl')),
-          h('button',{type:'button',style:quiet,disabled:true,
-            'aria-disabled':'true'},label('settings.perStrikeConsent'))),
+        h('button',{type:'button',style:quiet,disabled:true,
+          'aria-disabled':'true'},label('settings.perStrikeConsent')),
         h('p',{style:{...secondary,fontSize:'12px',lineHeight:1.6,
-          margin:'12px 0 0'}},label('settings.futureConsent'))),
+          margin:'12px 0 0'}},
+          label(goal.available?'settings.goalResumeScope':'settings.futureConsent'))),
       error?h('p',{role:'alert',style:{color:'var(--dsw-alias-state-error-primary, #b91c1c)'}},
         label('settings.saveError')):null,
     )

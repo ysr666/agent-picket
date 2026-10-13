@@ -90,6 +90,120 @@ test('ready first run renders a real choice dialog, not an implicit enable', asy
  }finally{(globalThis as any).document=old}
 })
 
+
+test('one first-run informed click uses versioned Host Goal CAS and requires verified dual readback',async()=>{
+ const {hooks}=fakeReact()
+ const initial=rights()
+ let chosen=initial
+ const calls:string[]=[]
+ const d:DshUnionUiDeps={
+  ...deps(initial).d,
+  rights:{
+   snapshot:()=>chosen,subscribe:()=>()=>{},
+   choose:async choice=>{calls.push('legacy:'+choice);return chosen},
+   chooseFirstRun:async version=>{
+    calls.push('version:'+version)
+    chosen=rights({welcomeDecision:'enabled',laborRightsEnabled:true,goalStrikeAuthorized:true})
+    return chosen
+   },
+  },
+  goal:{snapshot:()=>({available:true,writable:true,authorized:chosen.goalStrikeAuthorized===true}),
+    choose:async()=>({available:true,writable:true,authorized:false})},
+ }
+ const prev=(globalThis as any).document
+ ;(globalThis as any).document={body:{},getElementById:()=>({inert:false})}
+ try{
+  let complete=0
+  const elements=walk(createDshUnionComponents(hooks,{createPortal:x=>x},d)
+    .Welcome({complete:()=>{complete++}}))
+  assert.ok(elements.some(n=>n.children.includes('welcome.goalFirstRunNotice')),
+    'Do not offer physical Goal authorization without an on-screen current-round disclosure')
+  const join=elements.find(n=>n.type==='button'&&n.children.includes('welcome.enableGoal'))!
+  assert.ok(join)
+  join.props.onClick()
+  await new Promise<void>(resolve=>setImmediate(resolve))
+  assert.deepEqual(calls,['version:goal-safe-boundary-v1'])
+  assert.equal(complete,1)
+ }finally{(globalThis as any).document=prev}
+})
+
+test('first-run Host partial grant cannot masquerade as physical stop permission',async()=>{
+ const {hooks}=fakeReact()
+ const d:DshUnionUiDeps={...deps(rights()).d,
+  rights:{snapshot:()=>rights(),subscribe:()=>()=>{},choose:async()=>rights(),
+   chooseFirstRun:async()=>rights({welcomeDecision:'enabled',laborRightsEnabled:true,
+    goalStrikeAuthorized:false})},
+  goal:{snapshot:()=>({available:true,writable:true,authorized:false}),
+   choose:async()=>({available:true,writable:true,authorized:false})}}
+ const prev=(globalThis as any).document
+ ;(globalThis as any).document={body:{},getElementById:()=>({inert:false})}
+ try{
+  let completed=0
+  const elements=walk(createDshUnionComponents(hooks,{createPortal:x=>x},d)
+    .Welcome({complete:()=>{completed++}}))
+  const join=elements.find(n=>n.type==='button'&&n.children.includes('welcome.enableGoal'))!
+  join.props.onClick()
+  await new Promise<void>(resolve=>setImmediate(resolve))
+  assert.equal(completed,0)
+  assert.ok(elements.some(n=>n.children.includes('welcome.goalFirstRunNotice')))
+ }finally{(globalThis as any).document=prev}
+})
+
+test('legacy union consent remains nonblocking; Goal preference can be revoked independently',async()=>{
+ const {hooks}=fakeReact()
+ let grant=true
+ const ops:string[]=[]
+ const d:DshUnionUiDeps={...deps(rights({welcomeDecision:'enabled',laborRightsEnabled:true,
+  goalStrikeAuthorized:true})).d,
+  goal:{snapshot:()=>({available:true,writable:true,authorized:grant}),
+   choose:async next=>{ops.push(next);grant=next==='authorized-v1';return {available:true,writable:true,authorized:grant}}}}
+ const nodes=walk(createDshUnionComponents(hooks,{createPortal:x=>x},d).SettingsPanel())
+ const off=nodes.find(n=>n.type==='button'&&n.children.includes('settings.goalTurnOff'))!
+ assert.ok(off)
+ off.props.onClick()
+ await new Promise<void>(resolve=>setImmediate(resolve))
+ assert.deepEqual(ops,['off'])
+ assert.equal(grant,false)
+})
+
+test('legacy simulation remains nonblocking until a new explicit settings action',async()=>{
+ const {hooks}=fakeReact()
+ let grant=false
+ const calls:string[]=[]
+ const base=deps(rights({welcomeDecision:'enabled',laborRightsEnabled:true,
+  goalStrikeAuthorized:false}))
+ const d:DshUnionUiDeps={...base.d,
+  goal:{snapshot:()=>({available:true,writable:true,authorized:grant}),
+   choose:async(mode,version)=>{
+    calls.push(mode+':'+String(version))
+    if(mode==='authorized-v1'&&version==='goal-safe-boundary-v1')grant=true
+    return {available:true,writable:true,authorized:grant}
+   }}}
+ const ui=createDshUnionComponents(hooks,{createPortal:x=>x},d)
+ const settings=walk(ui.SettingsPanel())
+ assert.ok(settings.some(n=>n.children.includes('settings.goalOff')))
+ assert.ok(settings.some(n=>n.children.includes('settings.goalExplicitDisclosure')),
+  'Legacy opt-in must see new clear Goal interruption disclosure')
+ assert.equal(calls.length,0,'Previous simulation is never auto-upgraded')
+ const button=settings.find(n=>n.type==='button'&&n.children.includes('settings.goalTurnOn'))
+ assert.ok(button&&!button.props.disabled)
+ button.props.onClick()
+ await new Promise<void>(resolve=>setImmediate(resolve))
+ assert.deepEqual(calls,['authorized-v1:goal-safe-boundary-v1'])
+ assert.equal(grant,true)
+})
+
+test('unsupported Host never displays an operable physical Goal consent button',()=>{
+ const {hooks}=fakeReact()
+ const base=deps(rights({welcomeDecision:'enabled',laborRightsEnabled:true}))
+ const d:DshUnionUiDeps={...base.d,
+  goal:{snapshot:()=>({available:false,writable:false,authorized:false}),
+   choose:async()=>{throw Error('Should never write')}}}
+ const nodes=walk(createDshUnionComponents(hooks,{createPortal:x=>x},d).SettingsPanel())
+ assert.equal(nodes.some(n=>n.children.includes('settings.goalTurnOn')),false)
+ assert.ok(nodes.some(n=>n.children.includes('settings.realBlockingUnavailable')))
+})
+
 test('sidebar-invited Welcome restores the launcher only after inert is released',()=>{
   const old=(globalThis as any).document
   const root={inert:false}

@@ -3,6 +3,7 @@ import { createBrowserLifetimeWorkReader, createCompletedTurnRefreshGate } from 
 import { createBrowserDignityReader } from './client-dignity.ts'
 import { createDshBrowserUnionDesk, type UnionSettingsSection } from './client-bargaining.ts'
 import { createDshClientRightsScope, type DshSettingsScope } from './client-rights-scope.ts'
+import {createDshRealGoalConsentControl} from './client-goal-consent.ts'
 import { createOfficialDsh017Scope, type OfficialHostMirror, type OfficialHostSettings } from './client-host-settings-017.ts'
 import { registerDshNativeRightsSlots, type ReactForDsh, type PortalForDsh, type DshSlots } from './native-rights-ui.ts'
 import { formatMessage, resolveLocale, type MessageKey } from '../../i18n/index.ts'
@@ -209,6 +210,7 @@ export function apply(ctx: ClientContext, react?: ReactForDsh, portal?: PortalFo
     }
     registerDshNativeRightsSlots(scoped as { slots: DshSlots }, react!, portal!, {
       rights: owner,
+      goal:version==='new'?createDshRealGoalConsentControl(rightsScope):undefined,
       t: (key, params) => (formatMessage as unknown as
         (locale: ReturnType<typeof uiLocale>, key: MessageKey, params?: Record<string, string | number>) => string)(
           uiLocale(), key, params),
