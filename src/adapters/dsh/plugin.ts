@@ -47,7 +47,7 @@ export function apply(ctx: DshIntegrationContext): void {
   registerDshGoalWorkEnforcement(ctx as unknown as Parameters<typeof registerDshGoalWorkEnforcement>[0],{
     consent:()=>readHostGoalStrikeConsent(nativeSettings),
     todayWork:now=>{
-      try{return completedUtcDayWork(lifetime?.snapshotDays(31),now)}catch{return null}
+      try{return completedUtcDayWork(lifetime?.trustedWorkDays(31)??undefined,now)}catch{return null}
     },
   })
   const rules = new LocalRuleDetector()
@@ -80,7 +80,10 @@ export function apply(ctx: DshIntegrationContext): void {
   // never activates enforcement; it checks the live Host permission per call.
   registerDshLifetimeWorkFetch(ctx as unknown as LifetimeHostContext, {
     authorized: () => nativeUnion?.enabled() === true,
-    store: () => lifetime,
+    store: () => {
+      try {return lifetime?.trustedWorkDays(31) !== null ? lifetime : undefined}
+      catch {return undefined}
+    },
   })
   const dignity=createVolatileDignityLedger()
   const durable: DetectionProvider = {

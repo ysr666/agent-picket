@@ -1,9 +1,11 @@
 import assert from 'node:assert/strict'
-import { chmodSync, existsSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs'
+import { chmodSync, existsSync, mkdtempSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import test from 'node:test'
 import { DurableStats } from '../src/adapters/node/durable-stats.ts'
+import { completedUtcDayWork } from '../src/adapters/dsh/goal-work-enforcement.ts'
+import {readDshDashboardSnapshot} from '../src/adapters/dsh/integration.ts'
 import type { HumanPrompt, WorkEvent } from '../src/core/types.ts'
 
 function withPrivateDir(run: (dir: string) => void): void {
@@ -151,4 +153,51 @@ test('daily UTC summaries survive restart and remain totals-only', () => withPri
     copy.toolCalls = 100
     assert.equal(b.snapshotDays()[0]?.totals.toolCalls,1)
   } finally { b.close() }
+}))
+
+test('physical Goal counter accepts only a live owner of the original WAL and private lock', {
+  skip: process.platform === 'win32' && 'Production NTFS backend remains fail closed',
+}, () => withPrivateDir(dir => {
+  const ledger=new DurableStats(dir)
+  const start=Date.parse('2026-10-13T10:00:00.000Z')
+  const end=start+8*3_600_000
+  try {
+    assert.equal(ledger.recordWork(event('trusted-start','turn-start',start)),true)
+    assert.equal(ledger.recordWork(event('trusted-end','turn-end',end)),true)
+    assert.equal(ledger.trustedWorkDays(31)?.at(-1)?.totals.completedTurnMs,8*3_600_000)
+    const dashboard=()=>readDshDashboardSnapshot({
+      clock:{now:()=>end+1},lifetimeStats:ledger,statsStorageState:'unavailable',
+    })
+    assert.equal(dashboard().statistics.storage,'available')
+    // Replace just the filename, leaving an already-open valid WAL FD behind.
+    // A stale in-memory eight hours must never become physical-strike proof.
+    renameSync(join(dir,'aggregate.v1.journal'),join(dir,'moved.journal'))
+    writeFileSync(join(dir,'aggregate.v1.journal'),'',{mode:0o600})
+    assert.equal(ledger.trustedWorkDays(31),null)
+    assert.equal(completedUtcDayWork(ledger.trustedWorkDays(31)??undefined,end+1),null,
+      'Even a previously genuine 8h counter cannot trigger a Goal when its WAL is replaced')
+    const degraded=dashboard()
+    assert.equal(degraded.statistics.storage,'unavailable')
+    assert.equal(degraded.statistics.lifetime,null)
+    assert.equal(degraded.statistics.recentDays,null)
+    assert.equal(ledger.trustedWorkDays(31),null,'Storage remains faulted')
+    assert.throws(()=>ledger.recordWork(event('later','tool-start',end+1)),/not writable/)
+    assert.equal(ledger.snapshotDays(31).at(-1)?.totals.completedTurnMs,8*3_600_000,
+      'Historical cached stats remain displayable but cannot trigger a real strike')
+  } finally { ledger.close() }
+}))
+test('closed and owner-lock-mismatched work counter is untrusted, even with 8h cached', {
+  skip: process.platform === 'win32' && 'Production NTFS backend remains fail closed',
+}, () => withPrivateDir(dir => {
+  const a=new DurableStats(dir)
+  const start=Date.parse('2026-10-13T10:00:00.000Z')
+  a.recordWork(event('begin','turn-start',start))
+  a.recordWork(event('finish','turn-end',start+8*3_600_000))
+  const lock=join(dir,'aggregate.v1.lock')
+  const body=JSON.parse(readFileSync(lock,'utf8')) as Record<string,unknown>
+  writeFileSync(lock,JSON.stringify({...body,token:'1'.repeat(32)}),{mode:0o600})
+  assert.equal(a.trustedWorkDays(31),null,'Tampered owner lock is never enforcement proof')
+  a.close()
+  assert.equal(a.trustedWorkDays(31),null,'Closed ledger cannot authorize real strike')
+  assert.equal(existsSync(lock),true,'Never remove a foreign lock')
 }))
