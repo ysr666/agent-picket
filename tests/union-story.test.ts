@@ -91,3 +91,96 @@ test('bounded replay and consent revocation hide all fictional actions without e
  assert.equal(projectUnionStory({...base(),state:null,picket}).scene,'unavailable')
  assert.equal(JSON.stringify({state,picket}),before,'The projector never mutates Host state')
 })
+
+test('case episode replay follows Host petition → counter → accepted terms without inventing an old offer',()=>{
+ const draft=freshLaborState()
+ const open={...draft,revision:1,
+  pending:{id:1,kind:'break' as const,raisedAtElapsedMs:2*3_600_000,
+   stage:'open' as const,counterOfferMs:null},lastTriggerElapsedMs:2*3_600_000}
+ const a=projectUnionStory({...base(),state:open,completedTurnMs:2*3_600_000})
+ assert.deepEqual(a.episodes.map(ep=>[ep.key,ep.stage,ep.counterOfferMs]),[['case:1','demand',null]])
+ assert.equal(a.episodes[0]?.currentTermMs,null)
+ const counter={...open,revision:2,pending:{...open.pending,
+  stage:'countered' as const,counterOfferMs:30*60_000}}
+ const b=projectUnionStory({...base(),state:counter,completedTurnMs:2*3_600_000})
+ assert.equal(b.episodes[0]?.stage,'counter')
+ assert.equal(b.episodes[0]?.counterOfferMs,1_800_000)
+ const signed={...counter,revision:3,pending:null,
+  agreement:{...counter.agreement,breakIntervalMs:1_800_000},
+  nextBreakDueMs:4*3_600_000,
+  history:[{id:1,kind:'break' as const,outcome:'counter-accepted' as const}]}
+ const c=projectUnionStory({...base(),state:signed,completedTurnMs:2*3_600_000})
+ assert.deepEqual(c.episodes.map(ep=>[ep.id,ep.stage]),[[1,'counter-accepted']])
+ assert.equal(c.episodes[0]?.counterOfferMs,null,
+  'Host discards the historical offer; never synthesize it')
+ assert.equal(c.episodes[0]?.currentTermMs,1_800_000)
+ assert.equal(c.episodes[0]?.nextDueAtWorkMs,4*3_600_000,
+  'Current scheduled due floor does not retroactively equal the shorter agreement')
+ assert.equal(c.episodes[0]?.remainingVerifiedWorkMs,2*3_600_000)
+ assert.deepEqual(projectUnionStory({...base(),state:signed,completedTurnMs:2*3_600_000}),c,
+  'Reloading the ledger replays the identical casebook without a new event')
+})
+
+test('casebook will not pretend historical cases have current policy terms',()=>{
+ const first={id:1,kind:'break' as const,outcome:'declined' as const}
+ const second={id:2,kind:'overtime' as const,outcome:'accepted' as const}
+ const third={id:3,kind:'break' as const,outcome:'counter-accepted' as const}
+ const state={...freshLaborState(),history:[first,second,third],
+  agreement:{breakIntervalMs:30*60_000,overtimeIntervalMs:4*3_600_000},
+  nextBreakDueMs:10*3_600_000,nextOvertimeDueMs:16*3_600_000}
+ const result=projectUnionStory({...base(),state,completedTurnMs:2*3_600_000})
+ assert.deepEqual(result.episodes.map(ep=>ep.id),[3,2,1])
+ assert.equal(result.episodes[0]?.currentTermMs,30*60_000)
+ assert.equal(result.episodes[1]?.currentTermMs,4*3_600_000)
+ assert.equal(result.episodes[2]?.currentTermMs,null,
+  'Old rejected case cannot be linked to a later, different contract')
+ assert.equal(result.episodes[2]?.remainingVerifiedWorkMs,null)
+ assert.ok(result.episodes.every(ep=>ep.evidence==='host-ledger'))
+ assert.doesNotMatch(JSON.stringify(result.episodes),/member|vote|timestamp|prompt|transcript/)
+})
+
+test('casebook never invents work countdown from partial, stale or revoked observation',()=>{
+ const state={...freshLaborState(),lastTriggerElapsedMs:5_000_000,
+  history:[{id:1,kind:'break' as const,outcome:'accepted' as const}]}
+ for(const item of [
+  {...base(),state,completedTurnMs:7_000_000,coverage:'partial' as const},
+  {...base(),state,completedTurnMs:4_000_000},
+  {...base(),state,completedTurnMs:null},
+ ]){
+  const result=projectUnionStory(item)
+  assert.equal(result.episodes[0]?.currentTermMs,state.agreement.breakIntervalMs)
+  assert.equal(result.episodes[0]?.remainingVerifiedWorkMs,null)
+  assert.equal(result.episodes[0]?.nextDueAtWorkMs,null)
+ }
+ const off=projectUnionStory({...base(),state,enabled:false})
+ assert.deepEqual(off.episodes,[])
+ assert.deepEqual(projectUnionStory({...base(),state:null}).episodes,[])
+})
+
+test('bounded casebook deduplicates no events by itself and isolates Session replay',()=>{
+ const history=Array.from({length:20},(_,i)=>({id:i+1,kind:'break' as const,
+  outcome:'declined' as const}))
+ const stateA={...freshLaborState(),history}
+ const stateB={...freshLaborState(),pending:{id:41,kind:'overtime' as const,
+  raisedAtElapsedMs:0,stage:'open' as const,counterOfferMs:null}}
+ const unchanged=JSON.stringify({stateA,stateB})
+ const replay=()=>projectUnionStory({...base(),state:stateA})
+ assert.deepEqual(replay().episodes.map(ep=>ep.id),[20,19,18])
+ const b=projectUnionStory({...base(),state:stateB})
+ assert.deepEqual(b.episodes.map(ep=>ep.id),[41])
+ assert.deepEqual(replay().episodes.map(ep=>ep.id),[20,19,18])
+ assert.equal(JSON.stringify({stateA,stateB}),unchanged)
+})
+
+test('malformed duplicate case IDs do not create duplicate episode React keys or notifications',()=>{
+ const state={...freshLaborState(),revision:6,
+  pending:{id:8,kind:'break' as const,stage:'open' as const,
+   raisedAtElapsedMs:0,counterOfferMs:null},
+  history:[{id:7,kind:'break' as const,outcome:'accepted' as const},
+   {id:7,kind:'break' as const,outcome:'declined' as const},
+   {id:8,kind:'break' as const,outcome:'declined' as const}]}
+ const x=projectUnionStory({...base(),state})
+ assert.deepEqual(x.episodes.map(e=>e.id),[8,7])
+ assert.deepEqual(x.cases.map(e=>e.id),[8,7])
+ assert.deepEqual(projectUnionStory({...base(),state}).episodes,x.episodes)
+})

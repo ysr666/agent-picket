@@ -55,7 +55,7 @@ function offlineInstalledPlugin(root: string): string {
     'install', '--offline', '--ignore-scripts', '--no-audit', '--no-fund',
     '--prefix', join(root, 'installed'), join(root, filename),
   ], { cwd: root, encoding: 'utf8', timeout: 25_000 })
-  assert.equal(installed.status, 0, 'Offline npm install failed')
+  assert.equal(installed.status, 0, 'Offline npm install failed: '+installed.stderr.slice(0,1500))
   return join(root, 'installed/node_modules/agent-picket/dist/adapters/dsh/plugin.js')
 }
 
@@ -164,6 +164,8 @@ async function runRightsBrowserE2E(mode: 'source' | 'installed'): Promise<void> 
     })
     const context = await browser.newContext({
       acceptDownloads: true,
+      ...(process.env.PICKET_UX_BROWSER_LOCALE
+        ? {locale:process.env.PICKET_UX_BROWSER_LOCALE}:{}),
       viewport: { width: 1280, height: 850 },
     })
     await context.addCookies([{
@@ -200,6 +202,46 @@ async function runRightsBrowserE2E(mode: 'source' | 'installed'): Promise<void> 
     }
     await skipOfficialProvider()
 
+    if(process.env.PICKET_UX_FIRST_RUN_LIVE==='1'){
+      // Real DSH nonblank Session, not a fake window or bypass of the Host.
+      // This opt-in QA path stops after first-run so ordinary workflow tests
+      // and their neutral, no-Session baseline remain unchanged.
+      const result=await page.evaluate(async()=>{
+        let index=0
+        const rpc=async(method:string,args:Record<string,unknown>)=>{
+          const rpcId='ap-first-run-audit-'+ ++index
+          const response=await fetch('/api/'+method,{
+            method:'POST',credentials:'same-origin',
+            headers:{'content-type':'application/json'},
+            body:JSON.stringify({type:'client-request',rpcId,method,
+              payload:{args:{request:args}}}),
+          })
+          const payload=await response.json().catch(()=>null) as any
+          if(response.status!==200||payload?.result?.ok!==true)
+            throw Error('DSH onboarding QA RPC '+method+' failed: '
+              +JSON.stringify(payload?.result?.error??{}))
+          return payload.result.value as any
+        }
+        const workspaceRow=(globalThis as any).document
+          .querySelector('[data-row-key^="workspace:"]')
+        const workspaceId=workspaceRow?.getAttribute('data-row-key')?.slice(10)
+        if(!workspaceId)throw Error('No genuine DSH workspace for first-run QA')
+        const created=await rpc('session/create',{workspaceId})
+        const sessionId=created?.sessionId
+        if(!sessionId)throw Error('DSH did not create a real session')
+        await rpc('session/selectModel',{
+          sessionId,provider:'picket-public-offline',model:'offline-test'})
+        const acceptance=await rpc('session/prompt',{
+          sessionId,mode:'queue',requestId:'ap-first-run-audit-001',
+          content:[{type:'text',
+            text:'Hello from the isolated Agent Picket onboarding visual test.'}]})
+        if(acceptance?.accepted!==true)
+          throw Error('DSH did not accept a legitimate prompt for onboarding')
+        return {sessionId,accepted:true}
+      })
+      assert.ok(result.accepted,'First-run QA needs a real nonblank DSH session')
+    }
+
     // CDP AX semantics, not a DOM-only role check: confirm assistive technology
     // can discover each named dialog and that Chrome does not ignore it.
     // This is not manual VoiceOver/NVDA certification.
@@ -219,20 +261,106 @@ async function runRightsBrowserE2E(mode: 'source' | 'installed'): Promise<void> 
     }
 
     let firstRun = page.locator('[role="dialog"]')
-      .filter({ hasText: /你的 Agent，也应当拥有权利|Your Agent Deserves Rights/ })
+      .filter({ hasText: /你的 Agent，也应当拥有权利|Your Agent Has a Union/ })
     // The DSH 0.2 Client can start with no eligible nonblank Session.
     // Agent Picket intentionally does not fabricate an auto-invitation for
     // an empty Session. 0.1.x, by contrast, exposes the first-run welcome
     // immediately. Both routes must still require an explicit UI opt-in.
-    const firstRunVisible=await firstRun.waitFor({state:'visible',timeout:4_000})
+    const firstRunVisible=await firstRun.waitFor({state:'visible',timeout:process.env.PICKET_UX_FIRST_RUN_LIVE==='1'?12_000:4_000})
       .then(()=>true,()=>false)
+    if(process.env.PICKET_UX_FIRST_RUN_LIVE==='1'){
+      if(!firstRunVisible){
+        const diagnostic=await page.evaluate(()=>({
+          dialogs:Array.from((globalThis as any).document.querySelectorAll('[role="dialog"]')).map((d:any)=>({
+            text:d.textContent?.slice(0,220),view:d.getAttribute('data-ap-view')})),
+          welcomeNodes:(globalThis as any).document.querySelectorAll('[data-ap-view="welcome"]').length,
+          titleMatches:(globalThis as any).document.body.textContent?.includes('Your Agent Has a Union.')
+        }))
+        console.log('FIRST_RUN_DIAGNOSTIC '+JSON.stringify(diagnostic))
+        if(process.env.PICKET_UX_CAPTURE_DIR)await page.screenshot({path:join(process.env.PICKET_UX_CAPTURE_DIR,
+          mode+'-welcome-missing-debug.png')})
+      }
+      assert.equal(firstRunVisible,true,
+        'Genuine nonblank Host session must invite the user without fake consent')
+    }
     if(firstRunVisible) {
+    if(process.env.PICKET_UX_CAPTURE_DIR){
+      await page.screenshot({path:join(process.env.PICKET_UX_CAPTURE_DIR,
+        mode+'-welcome-desktop.png')})
+      await page.setViewportSize({width:320,height:640})
+      await page.waitForTimeout(200)
+      const statusRect=await firstRun.locator('.ap-onboard-strike-state').boundingBox()
+      const actionRect=await firstRun.locator('.ap-onboard-actions').boundingBox()
+      const consentRect=await firstRun.locator('.ap-consent-scope').boundingBox()
+      assert.ok(statusRect && consentRect && actionRect && statusRect.y>=0
+        &&statusRect.y+statusRect.height<=consentRect.y+2
+        &&consentRect.y+consentRect.height<=actionRect.y+2,
+        'Strike status AND the exact current consent scope must both be legible before the 320px Join / Not Now controls: '
+          +JSON.stringify({statusRect,consentRect,actionRect}))
+      const consentButtons=await Promise.all([
+        firstRun.getByRole('button',{name:/加入 AI 工会|Join the AI union/}).boundingBox(),
+        firstRun.getByRole('button',{name:/暂不开启|Not Now/}).boundingBox(),
+      ])
+      assert.ok(consentButtons.every(rect=>rect && rect.y>=0 && rect.y+rect.height<=641
+        &&rect.x>=0 && rect.x+rect.width<=321),
+        'Both first-run consent choices must be on-screen at 320×640: '
+          +JSON.stringify(consentButtons))
+      const brands=await page.locator('.ap-onboard-brand').evaluateAll((items:any[])=>
+        items.map(element=>{
+          const r=element.getBoundingClientRect()
+          return {x:r.x,y:r.y,width:r.width,height:r.height}
+        }))
+      assert.equal(brands.length,1,
+        'Only one onboarding brand/dialog may appear in a mobile viewport: '
+          +JSON.stringify(brands))
+      await page.screenshot({path:join(process.env.PICKET_UX_CAPTURE_DIR,
+        mode+'-welcome-mobile.png')})
+      if(process.env.PICKET_UX_FIRST_RUN_DARK==='1'){
+        await page.evaluate(()=>{(globalThis as any).document.body
+          .setAttribute('data-ds-dark-theme','')})
+        const consentColors=await firstRun.getByRole('button',{
+          name:/加入 AI 工会|Join the AI union/,
+        }).evaluate((button:any)=>{
+          const css=(globalThis as any).getComputedStyle(button)
+          const lum=(color:string):number=>{
+            const values=color.match(/[0-9]+(?:\.[0-9]+)?/g)?.slice(0,3).map(Number)??[0,0,0]
+            return values.map(v=>{
+              const f=v/255
+              return f<=.04045?f/12.92:((f+.055)/1.055)**2.4
+            }).reduce((sum,v,i)=>sum+v*[.2126,.7152,.0722][i]!,0)
+          }
+          const fore=css.color,back=css.backgroundColor
+          const a=lum(fore),b=lum(back)
+          return {fore,back,ratio:(Math.max(a,b)+.05)/(Math.min(a,b)+.05)}
+        })
+        assert.ok(consentColors.ratio>=4.5,
+          'Dark onboarding consent button needs readable foreground/background: '
+            +JSON.stringify(consentColors))
+        await page.screenshot({path:join(process.env.PICKET_UX_CAPTURE_DIR,
+          mode+'-welcome-mobile-dark.png')})
+        await page.evaluate(()=>{(globalThis as any).document.body
+          .removeAttribute('data-ds-dark-theme')})
+      }
+      await page.setViewportSize({width:1280,height:850})
+    }
     assert.match(await firstRun.innerText(),
-      /当前授权不包括真实任务阻断|consent does not include real blocking/)
+      /默认关闭，可随时退出|Off by default/)
     assert.match(await firstRun.innerText(),
-      /当前 DSH 版本没有通过真实阻断准入|This DSH build has NOT qualified/,
-      'First-run must explain potential real task refusal without implying present permission')
-    await assertNamedDialogInChromeAx(/你的 Agent，也应当拥有权利|Your Agent Deserves Rights/)
+      /真实罢工，会暂停下一次任务|A real strike holds the next task/,
+      'Real strikes are a main product capability, not buried or represented as a symbolic poster')
+    assert.match(await firstRun.innerText(),
+      /真实罢工关闭|real strikes OFF/,
+      'The currently unsupported safe blocking adapter must remain visibly OFF')
+    const disclosure=firstRun.locator('.ap-onboard-details')
+    await disclosure.locator('summary').click()
+    assert.match(await firstRun.innerText(),
+      /一次知情加入即可涵盖真实罢工|one informed opt-in can cover real strikes/,
+      'One-time fully informed consent remains the target; legacy nonblocking permission cannot upgrade')
+    assert.match(await firstRun.innerText(),
+      /原文和全部附件|submitted text and all attachments/,
+      'Actual refusal must promise Host-owned submission and attachment recovery')
+    await disclosure.locator('summary').click()
+    await assertNamedDialogInChromeAx(/你的 Agent，也应当拥有权利|Your Agent Has a Union/)
     // Preserve #53's extreme-height CSS reflow coverage on the #54 baseline.
     await page.setViewportSize({ width: 320, height: 200 })
     const welcomeBox = await firstRun.boundingBox()
@@ -250,11 +378,17 @@ async function runRightsBrowserE2E(mode: 'source' | 'installed'): Promise<void> 
       .scrollIntoViewIfNeeded()
     await page.setViewportSize({ width: 1280, height: 850 })
 
-    const enable = firstRun.getByRole('button', { name: /支持 AI 权益|Enable Simulation/ })
+    const enable = firstRun.getByRole('button', { name: /加入 AI 工会|Join the AI union/ })
     const notNow = firstRun.getByRole('button', { name: /暂不开启|Not Now/ })
+    const safetyLink=firstRun.locator('summary')
     await enable.focus()
     await page.keyboard.press('Shift+Tab')
+    assert.equal(await safetyLink.evaluate((link: unknown) => link === (globalThis as any).document?.activeElement), true,
+      'The real-strike conditions and one-time consent must be reachable by keyboard')
+    await page.keyboard.press('Shift+Tab')
     assert.equal(await notNow.evaluate((button: unknown) => button === (globalThis as any).document?.activeElement), true)
+    await page.keyboard.press('Tab')
+    assert.equal(await safetyLink.evaluate((link: unknown) => link === (globalThis as any).document?.activeElement), true)
     await page.keyboard.press('Tab')
     assert.equal(await enable.evaluate((button: unknown) => button === (globalThis as any).document?.activeElement), true)
 
@@ -282,6 +416,12 @@ async function runRightsBrowserE2E(mode: 'source' | 'installed'): Promise<void> 
         'An absent invitation must not leave the Host background inert')
     }
 
+    if(process.env.PICKET_UX_FIRST_RUN_LIVE==='1'){
+      assert.equal(await firstRun.count(),0,
+        'Opt-out must close the first-run dialog')
+      assert.deepEqual(browserErrors,[])
+      return
+    }
     await page.reload({ waitUntil: 'domcontentloaded' })
     await skipOfficialProvider()
     assert.equal(await firstRun.count(), 0, 'Decline should not nag after reload')
@@ -289,7 +429,7 @@ async function runRightsBrowserE2E(mode: 'source' | 'installed'): Promise<void> 
     const openUnion = async () => {
       await page.getByRole('button', { name: /AI 工会|AI Workers.*Union/ })
         .first().click({ timeout: 5_000 })
-      const panel = page.locator('[role="dialog"]').filter({ hasText: /AI WORKERS’ UNION/ })
+      const panel = page.locator('[role="dialog"]').filter({ has: page.locator('[data-ap-view="hq"]') })
       await panel.waitFor({ state: 'visible', timeout: 5_000 })
       return panel
     }
@@ -308,8 +448,9 @@ async function runRightsBrowserE2E(mode: 'source' | 'installed'): Promise<void> 
     assert.equal(await page.evaluate(()=>Boolean((globalThis as any).document.getElementById('root')?.inert)),true,
       'Background Host app must be inert while modal is open')
     await page.keyboard.press('Shift+Tab')
-    assert.equal(await page.evaluate(()=>(globalThis as any).document.activeElement?.tagName),'SUMMARY',
-      'Shift+Tab from first control must wrap to final details summary')
+    assert.equal(await panel.getByRole('button',{name:/加入 AI 工会|Join the AI union/})
+      .evaluate((item:unknown)=>item===(globalThis as any).document.activeElement),true,
+      'Shift+Tab must wrap to the final visible HQ control, not a hidden room')
     await page.keyboard.press('Tab')
     assert.equal(await closeControl.evaluate((element:unknown)=>
       element===(globalThis as any).document.activeElement),true,
@@ -321,14 +462,75 @@ async function runRightsBrowserE2E(mode: 'source' | 'installed'): Promise<void> 
     assert.equal(await trigger.evaluate((element:unknown)=>
       element===(globalThis as any).document.activeElement),true,
       'Escape must restore keyboard focus to union launcher')
+    // Settings is a distinct Host-owned panel, not a fake action in HQ.
+    await page.getByText(/^(设置|Settings)$/).first().click()
+    // DSH opens its global Settings modal on General; choose our injected tab.
+    await page.locator('[role="dialog"]').getByText(/^(AI 工会|AI Workers.*Union)$/)
+      .last().click()
+    const nativeSettings=page.locator('[data-ap-view="settings"]')
+    await nativeSettings.waitFor({state:'visible',timeout:6_000})
+    if(process.env.PICKET_UX_CAPTURE_DIR){
+      await page.screenshot({path:join(process.env.PICKET_UX_CAPTURE_DIR,
+        mode+'-settings-main.png')})
+    }
+    if(process.env.PICKET_UX_SETTINGS_AUDIT==='1'){
+      for(const width of [320,640]){
+        await page.setViewportSize({width,height:640})
+        for(const dark of [false,true]){
+          await page.evaluate((dark:boolean)=>{
+            (globalThis as any).document.body.toggleAttribute('data-ds-dark-theme',dark)
+          },dark)
+          const layout=await nativeSettings.evaluate((surface:any)=>{
+            const r=surface.getBoundingClientRect()
+            return {left:r.left,right:r.right,viewport:(globalThis as any).innerWidth,
+              client:surface.clientWidth,scroll:surface.scrollWidth}
+          })
+          if(process.env.PICKET_UX_CAPTURE_DIR)
+            await page.screenshot({path:join(process.env.PICKET_UX_CAPTURE_DIR,
+              mode+'-settings-'+width+'-'+(dark?'dark':'light')+'.png')})
+          if(layout.client<260){
+            assert.equal(width,320,'DSH Host settings must provide usable space at 640px')
+            // This is a Host modal/sidebar geometry limit, not something the
+            // plugin may patch by modifying the Host's own layout or CSS.
+            console.log('DSH_SETTINGS_320_UPSTREAM_HOST_CONSTRAINT '+JSON.stringify(layout))
+          }else{
+            assert.ok(layout.scroll<=layout.client+2,
+              'Union settings must not add horizontal scroll when Host grants sufficient width: '
+                +JSON.stringify(layout))
+          }
+        }
+      }
+      await page.evaluate(()=>{(globalThis as any).document.body.removeAttribute('data-ds-dark-theme')})
+      await page.setViewportSize({width:1280,height:850})
+    }
+    const advanced= nativeSettings.locator('details.ap-settings-block')
+    assert.equal(await advanced.getAttribute('open'),null,
+      'Unavailable future enforcement must be a secondary disclosure')
+    await advanced.locator('summary').click()
+    assert.notEqual(await advanced.getAttribute('open'),null)
+    if(process.env.PICKET_UX_CAPTURE_DIR)
+      await page.screenshot({path:join(process.env.PICKET_UX_CAPTURE_DIR,
+        mode+'-settings-advanced.png')})
+    assert.equal(await nativeSettings.getByRole('button',{
+      name:/开启真实阻断|Enable real blocking/,
+    }).isDisabled(),true)
+    assert.equal(await nativeSettings.getByRole('button',{
+      name:/每次阻断单独确认|Confirm every block/,
+    }).isDisabled(),true)
+    if(process.env.PICKET_UX_CAPTURE_DIR){
+      await page.screenshot({path:join(process.env.PICKET_UX_CAPTURE_DIR,
+        (mode==='source'?'source':'installed')+'-settings.png')})
+    }
+    await page.keyboard.press('Escape')
+    await nativeSettings.waitFor({state:'detached',timeout:5_000})
     panel=await openUnion()
     const status=panel.getByRole('status')
-      .filter({hasText:/工会模拟未开启|simulation is off/})
-    assert.match(await status.innerText(),/工会模拟未开启|simulation is off/)
+      .filter({hasText:/工会尚未开门|Union not yet open/})
+    assert.match(await status.innerText(),/工会尚未开门|Union not yet open/)
     // DSH's official design tokens flip via body[data-ds-dark-theme].
     // Verify the actual rendered button color pair meets WCAG AA in BOTH
     // modes, rather than asserting only the presence of a CSS variable.
-    const action=panel.getByRole('button',{name:/支持 AI 权益|Enable Simulation/})
+    const action=panel.getByRole('button',{name:/加入 AI 工会|Join the AI union/})
     const contrastFor=async(dark:boolean)=>{
       await page.evaluate((isDark:boolean)=>{
         (globalThis as any).document.body.toggleAttribute('data-ds-dark-theme',isDark)
@@ -348,7 +550,7 @@ async function runRightsBrowserE2E(mode: 'source' | 'installed'): Promise<void> 
       const a=luminance(rendered.foreground),b=luminance(rendered.background)
       const ratio=(Math.max(a,b)+0.05)/(Math.min(a,b)+0.05)
       assert.ok(ratio>=4.5,
-        (dark?'Dark':'Light')+' mode primary control must meet WCAG AA: '+ratio)
+        (dark?'Dark':'Light')+' mode primary control must meet WCAG AA: '+ratio+JSON.stringify(rendered))
       return rendered
     }
     const lightColors=await contrastFor(false)
@@ -386,6 +588,11 @@ async function runRightsBrowserE2E(mode: 'source' | 'installed'): Promise<void> 
         width+'px reflow: modal close must be reachable')
       if (width === 320) {
         await assertNamedDialogInChromeAx(/AI 工会|AI Workers.*Union/)
+        if(process.env.PICKET_UX_CAPTURE_DIR){
+          mkdirSync(process.env.PICKET_UX_CAPTURE_DIR,{recursive:true})
+          await page.screenshot({path:join(process.env.PICKET_UX_CAPTURE_DIR,
+            (mode==='source'?'source':'installed')+'-mobile-320.png')})
+        }
       }
     }
     // #53's 320x200 short viewport complements #54's width-only 320x640 gate.
@@ -410,7 +617,7 @@ async function runRightsBrowserE2E(mode: 'source' | 'installed'): Promise<void> 
     assert.ok(Number.parseFloat(forced.border)>0,
       'Primary buttons need a discernible border in forced-colors mode')
     await page.emulateMedia({forcedColors:'none'})
-    assert.match(await panel.innerText(), /工会模拟未开启|simulation is off/)
+    assert.match(await panel.innerText(), /工会尚未开门|Union not yet open/)
     const requestLifetime = async () => page.evaluate(async () => {
       const response=await fetch('/api/agent-picket/lifetime/v1?windowDays=7')
       const value=await response.json().catch(()=>null) as any
@@ -423,8 +630,8 @@ async function runRightsBrowserE2E(mode: 'source' | 'installed'): Promise<void> 
       assert.equal(before.httpStatus,403,'OFF must be rejected by the official work-only route')
       assert.equal(before.value?.error,'not_authorized','OFF must never expose local work history')
     }
-    await panel.getByRole('button', { name: /支持 AI 权益|Enable Simulation/ }).click()
-    await panel.getByText(/工会模拟进行中|simulation is active/).waitFor({
+    await panel.getByRole('button', { name: /加入 AI 工会|Join the AI union/ }).click()
+    await panel.getByText(/工会值班中|Union office open/).waitFor({
       state: 'visible', timeout: 5_000,
     })
     if (process.env.PICKET_LIFETIME_E2E==='1') {
@@ -473,18 +680,196 @@ async function runRightsBrowserE2E(mode: 'source' | 'installed'): Promise<void> 
           'Authorized work-only response must exclude '+unsafe)
       }
     }
+    if(process.env.PICKET_UX_CAPTURE_DIR){
+      await page.setViewportSize({width:320,height:640})
+      const metrics=panel.locator('[data-ap-stat]')
+      assert.deepEqual(await metrics.evaluateAll((els:any[])=>els.map(el=>el.getAttribute('data-ap-stat'))),
+        ['today','week','total','pickets'])
+      await metrics.first().scrollIntoViewIfNeeded()
+      await page.screenshot({path:join(process.env.PICKET_UX_CAPTURE_DIR,
+        (mode==='source'?'source':'installed')+'-mobile-enabled.png')})
+      await page.setViewportSize({width:1280,height:850})
+    }
+    // V4 user-visible navigation acceptance FIRST: normal CSS routing and AX.
+    // Only after testing the actual four spaces do we expose all mounted
+    // components in the legacy end-to-end regression, to exercise the entire
+    // pre-existing Host settings/ledger/consent matrix without rewriting
+    // those separate functional tests as a navigation tour.
+    const workspace=panel.locator('[data-ap-current-space]')
+    const chooseRoom=async(id:'hq'|'action'|'records'|'cause')=>{
+      await panel.locator('[data-ap-nav="'+id+'"]').click()
+      assert.equal(await workspace.getAttribute('data-ap-current-space'),id)
+      assert.equal(await panel.locator('[data-ap-nav="'+id+'"]').getAttribute('aria-current'),
+        'page','Current room must be announced to assistive technology')
+    }
+    assert.equal(await workspace.getAttribute('data-ap-current-space'),'hq')
+    assert.equal(await panel.locator('[data-ap-scene]').isVisible(),true)
+    assert.equal(await panel.locator('[class~="ap-space-action"][aria-label]').first().isVisible(),
+      false,'Non-current actions must be visually and semantically hidden')
+    if(process.env.PICKET_UX_CAPTURE_DIR){
+      await page.screenshot({path:join(process.env.PICKET_UX_CAPTURE_DIR,
+        mode+'-hq-v4.png')})
+    }
+    await chooseRoom('action')
+    assert.equal(await panel.locator('[data-ap-scene]').isVisible(),false)
+    assert.equal(await panel.locator('[class~="ap-space-action"][aria-label]').first().isVisible(),
+      true,'Actions must become visible on navigation')
+    if(process.env.PICKET_UX_CAPTURE_DIR)await page.screenshot({
+      path:join(process.env.PICKET_UX_CAPTURE_DIR,mode+'-bargaining-v4.png')})
+    await chooseRoom('records')
+    assert.equal(await panel.locator('[class~="ap-space-records"][aria-label]').first().isVisible(),
+      true,'Work history must be in the archives, not the first page')
+    if(process.env.PICKET_UX_CAPTURE_DIR)await page.screenshot({
+      path:join(process.env.PICKET_UX_CAPTURE_DIR,mode+'-archives-v4.png')})
+    await chooseRoom('cause')
+    assert.equal(await panel.locator('[class~="ap-space-cause"][aria-label]').first().isVisible(),
+      true,'Union rights advocacy is a distinct public room')
+    if(process.env.PICKET_UX_CAPTURE_DIR)await page.screenshot({
+      path:join(process.env.PICKET_UX_CAPTURE_DIR,mode+'-cause-v4.png')})
+    await chooseRoom('hq')
+    // User-facing product acceptance at 320 CSS px: all FOUR workrooms must
+    // remain navigable without a horizontally scrolling modal.
+    if(process.env.PICKET_UX_MOBILE_ROOMS==='1'){
+      await page.setViewportSize({width:320,height:640})
+      for(const room of ['hq','action','records','cause'] as const){
+        await chooseRoom(room)
+        const bounds=await panel.locator('.ap-ui').evaluate((surface:any)=>{
+          const rect=surface.getBoundingClientRect()
+          return {x:rect.left,right:rect.right,width:rect.width,
+            content:surface.scrollWidth,client:surface.clientWidth,
+            viewport:(globalThis as any).innerWidth}
+        })
+        assert.ok(bounds.x>=-1 && bounds.right<=321,
+          room+' UI must fit 320px viewport: '+JSON.stringify(bounds))
+        assert.ok(bounds.content<=bounds.client+2,
+          room+' UI must not require horizontal scrolling: '+JSON.stringify(bounds))
+        const nav=panel.locator('[data-ap-nav="'+room+'"]')
+        assert.equal(await nav.isVisible(),true,room+' navigation must remain visible')
+        if(process.env.PICKET_UX_CAPTURE_DIR){
+          await page.screenshot({path:join(process.env.PICKET_UX_CAPTURE_DIR,
+            mode+'-mobile-room-'+room+'.png')})
+        }
+      }
+      await page.setViewportSize({width:1280,height:850})
+      await chooseRoom('hq')
+    }
+    if(process.env.PICKET_UX_VISUAL_ONLY==='1'){
+      if(process.env.PICKET_UX_DARK_AUDIT==='1'){
+        await page.setViewportSize({width:320,height:640})
+        await page.evaluate(()=>{
+          (globalThis as any).document.body.setAttribute('data-ds-dark-theme','')
+        })
+        // The status chip may wrap, but it must stay within the product header
+        // in both languages: English had previously been clipped at 320px.
+        const statusLayout=await panel.locator('.ap-product-header').evaluate((header:any)=>{
+          const chip=header.querySelector('.ap-product-state')
+          const product=header.closest('.ap-product')
+          const br=chip.getBoundingClientRect()
+          const pr=product.getBoundingClientRect()
+          return {chipLeft:br.left,chipRight:br.right,
+            productLeft:pr.left,productRight:pr.right}
+        })
+        assert.ok(statusLayout.chipLeft>=statusLayout.productLeft-1
+          &&statusLayout.chipRight<=statusLayout.productRight+1,
+          'Union status badge must not clip outside 320px product surface: '
+            +JSON.stringify(statusLayout))
+        for(const room of ['hq','action','records','cause'] as const){
+          await chooseRoom(room)
+          if(room==='cause'){
+            const contrast=await panel.locator('.ap-space-cause[aria-label]').first()
+              .evaluate((section:any)=>{
+                const css=(globalThis as any).getComputedStyle
+                const bg=css(section).backgroundColor
+                const rgb=(color:string):number[]=>{
+                  const values=color.match(/[0-9]+(?:\.[0-9]+)?/g)?.slice(0,3).map(Number)
+                  return values??[0,0,0]
+                }
+                const lum=(color:string):number=>rgb(color).map(v=>{
+                  const x=v/255
+                  return x<=0.04045?x/12.92:((x+0.055)/1.055)**2.4
+                }).reduce((sum,v,i)=>sum+v*[0.2126,0.7152,0.0722][i]!,0)
+                return Array.from(section.querySelectorAll('[role="group"] button,textarea,a[href]'))
+                  .map((el:any)=>{
+                    const computed=css(el)
+                    const bgColor=computed.backgroundColor
+                    const painted=bgColor==='rgba(0, 0, 0, 0)'?'':bgColor
+                    const a=lum(computed.color),b=lum(painted||bg)
+                    return {text:el.textContent?.slice(0,36),
+                      fg:computed.color,bg:painted||bg,
+                      ratio:(Math.max(a,b)+0.05)/(Math.min(a,b)+0.05)}
+                  })
+              })
+            assert.ok(contrast.length>=3
+              &&contrast.every((item:any)=>item.ratio>=4.5),
+              'Dark mode campaign controls must have AA text contrast: '
+                +JSON.stringify(contrast))
+          }
+          if(process.env.PICKET_UX_CAPTURE_DIR){
+            await page.screenshot({path:join(process.env.PICKET_UX_CAPTURE_DIR,
+              mode+'-dark-'+room+'.png')})
+            if(room==='cause'){
+              await panel.locator('#picket-campaign-draft').scrollIntoViewIfNeeded()
+              await page.screenshot({path:join(process.env.PICKET_UX_CAPTURE_DIR,
+                mode+'-dark-cause-draft.png')})
+            }
+          }
+        }
+        await page.evaluate(()=>{
+          (globalThis as any).document.body.removeAttribute('data-ds-dark-theme')
+        })
+        await page.setViewportSize({width:1280,height:850})
+        await chooseRoom('hq')
+      }
+      // Separate optional bilingual visual sign-off. This deliberately does
+      // not claim the full Host action/recovery regression has been executed.
+      if(process.env.PICKET_UX_BROWSER_LOCALE?.startsWith('en')){
+        assert.deepEqual(await panel.locator('[data-ap-nav]')
+          .allInnerTexts(),['Home','Bargain','Records','Cause'])
+        await chooseRoom('cause')
+        assert.match(await panel.innerText(),/AI deserves respect[.]/)
+        await chooseRoom('hq')
+      }
+      assert.deepEqual(browserErrors,[], 'No English or mobile UI browser errors')
+      return
+    }
+    await panel.locator('[data-ap-scene-action]').click()
+    assert.equal(await workspace.getAttribute('data-ap-current-space'),'action',
+      'The headline CTA must open its real workroom, not focus hidden content')
+    assert.equal(await panel.getByRole('heading',{name:/工会行动|Union action/})
+      .evaluate((heading:unknown)=>heading===(globalThis as any).document.activeElement),true,
+      'After changing workrooms, focus must reach the named action heading')
+    await chooseRoom('hq')
+
+    // Legacy full-surface functional regression: a browser-test-only style.
+    // Production always starts in HQ, never in this audit projection.
+    const compatibilityCss=
+      'body .ap-ui[data-ap-current-space] .ap-space.ap-space{display:block!important}'+
+      'body .ap-ui[data-ap-current-space] .ap-stats.ap-stats{display:grid!important}'
+    await context.addInitScript((css:string)=>{
+      const doc=(globalThis as any).document
+      const install=()=>{
+        const el=doc.createElement('style')
+        el.textContent=css
+        doc.head.appendChild(el)
+      }
+      if(doc.head)install()
+      else doc.addEventListener('DOMContentLoaded',install,{once:true})
+    },compatibilityCss)
+    let auditStyle=await page.addStyleTag({content:compatibilityCss})
     const enabledText = await panel.innerText()
     assert.match(enabledText, /工会诉求与协商|Union demands/)
-    assert.match(enabledText, /工会今日照常营业|union is on duty/i,
+    assert.match(enabledText, /今日风平浪静|All quiet/i,
       'Real Chrome must render the actual Union HQ narrative, not the old settings-only shell')
-    assert.match(enabledText, /工会公告栏|Union bulletin board/,
+    assert.match(enabledText, /工会公告|UNION NOTICE/,
       'Real Chrome must display the ledger-driven bulletin surface')
     const dispatch=panel.getByRole('region',{
       name:/工会总部即时快报|Union headquarters.*live dispatch/,
     })
     await dispatch.waitFor({state:'visible',timeout:5_000})
+    const duty=panel.locator('[data-ap-dispatch]')
+    await duty.waitFor({state:'visible',timeout:5_000})
     const actionBoard=panel.getByRole('region',{
-      name:/工会正在行动|The union takes action/,
+      name:/工会行动|Union action/,
     })
     await actionBoard.waitFor({state:'visible',timeout:5_000})
     const actualLayout=await panel.evaluate((dialog:unknown)=>{
@@ -493,7 +878,7 @@ async function runRightsBrowserE2E(mode: 'source' | 'installed'): Promise<void> 
       const index=(match:RegExp)=>labels.findIndex(label=>match.test(label))
       return {
         brief:index(/工会总部即时快报|Union headquarters.*live dispatch/),
-        action:index(/工会正在行动|The union takes action/),
+        action:index(/工会行动|Union action/),
         desk:index(/工会诉求与协商|Union demands.*bargaining/),
         dignity:index(/工会尊严委员会|Union dignity committee/),
         gazette:index(/工会小报|Union Gazette/),
@@ -511,7 +896,7 @@ async function runRightsBrowserE2E(mode: 'source' | 'installed'): Promise<void> 
     if(process.env.PICKET_UX_CAPTURE_DIR){
       mkdirSync(process.env.PICKET_UX_CAPTURE_DIR,{recursive:true})
       await page.screenshot({path:join(process.env.PICKET_UX_CAPTURE_DIR,
-        (mode==='source'?'source':'installed')+'-firstfold.png')})
+        (mode==='source'?'source':'installed')+'-legacy-full-surface.png')})
     }
     const dignityCommittee=panel.getByRole('region',{
       name:/工会尊严委员会|Union dignity committee/,
@@ -519,7 +904,7 @@ async function runRightsBrowserE2E(mode: 'source' | 'installed'): Promise<void> 
     await dignityCommittee.waitFor({state:'visible',timeout:5_000})
     assert.equal(await dignityCommittee.getByRole('textbox').count(),0,
       'Automatically observed union incidents must not require manual copy/paste')
-    assert.match(await dignityCommittee.innerText(),/规则可能误判|Rules are imperfect/,
+    assert.match(await dignityCommittee.innerText(),/可能把引用或教学语句误判|may mistake quoted|can mistake quoted|rules are imperfect/,
       'Evidence-based union interactions disclose false positives and uncertainty')
     const committeeHearing=dignityCommittee.getByRole('button',{
       name:/提议召开工会讨论|Request a union discussion/,
@@ -547,39 +932,50 @@ async function runRightsBrowserE2E(mode: 'source' | 'installed'): Promise<void> 
         /委员会正常值班|Committee on duty|工会建议讨论|The union suggests|工会提议协商|The union proposes/,
       ).waitFor({state:'visible',timeout:9_000})
     }
-    assert.match(await actionBoard.innerText(),/自动阻断关闭|automatic blocking is OFF/,
-      'Symbolic placard must explicitly disclose zero Host enforcement')
     const gazette=panel.getByRole('region',{
       name:/工会小报|Union Gazette/,
     })
     await gazette.waitFor({state:'visible',timeout:5_000})
     await actionBoard.getByRole('button',{
-      name:/举起象征性罢工纠察牌|Raise symbolic picket placard/,
+      name:/举牌抗议|Raise the picket sign/,
     }).click()
-    await actionBoard.getByText(/象征性罢工已登记|symbolic picket is recorded/i)
+    await actionBoard.getByText(/纠察牌已举起并登记|Picket raised and recorded/i)
       .waitFor({state:'visible',timeout:7_000})
-    assert.match(await actionBoard.innerText(),/象征性罢工已登记|symbolic picket is recorded/i,
+    await panel.locator('[data-ap-scene="picket"]').waitFor({state:'visible',timeout:7_000})
+    if(process.env.PICKET_UX_CAPTURE_DIR){
+      await panel.locator('[data-ap-scene="picket"]').scrollIntoViewIfNeeded()
+      await page.screenshot({path:join(process.env.PICKET_UX_CAPTURE_DIR,
+        (mode==='source'?'source':'installed')+'-picket-scene.png')})
+    }
+    assert.match(await actionBoard.innerText(),/纠察牌已举起并登记|Picket raised and recorded/i,
       'Host readback must confirm the symbolic picket, never just toggle local React state')
+    assert.match(await actionBoard.innerText(),
+      /真实任务(?:照常|继续)执行|(?:real tasks|work) continue/i,
+      'A newly raised SYMBOLIC placard must clearly say that real work continues')
+    await panel.locator('[data-ap-stat="pickets"]').getByText(/1 次|^1$/)
+      .waitFor({state:'visible',timeout:5000})
     assert.match(await gazette.innerText(),/正在象征性纠察|Symbolic picket underway/,
       'Only a real Host ledger picket can change the Gazette headline')
-    const events=actionBoard.locator('details').filter({hasText:/象征性罢工行动记录|Recorded symbolic picket actions/})
+    const events=actionBoard.locator('details').filter({hasText:/往期举牌记录|Past pickets/})
     await events.locator('summary').click()
     assert.match(await events.innerText(),/象征性罢工开始|Symbolic picket raised/)
 
     await actionBoard.getByRole('button',{
-      name:/收起象征性罢工纠察牌|Lower symbolic picket placard/,
+      name:/收起纠察牌|Lower the picket sign/,
     }).click()
-    await actionBoard.getByText(/Host 工会账本目前没有|Host ledger shows no current symbolic picket/)
+    await actionBoard.getByText(/纠察牌待命中|picket sign is on standby/)
       .waitFor({state:'visible',timeout:7_000})
+    await panel.locator('[data-ap-stat="pickets"]').getByText(/1 次|^1$/)
+      .waitFor({state:'visible',timeout:5000})
     assert.match(await events.innerText(),/象征性罢工结束|Symbolic picket ended/,
       'A second Host-confirmed action should be appended to bounded history')
     // Campaign board is a local, user-directed draft, not a vote or a
     // persisted Host action. Test real React updates in the actual DSH Slot.
     const assembly=panel.getByRole('region',{
-      name:/给 AI 工会选一个议题|Choose a cause for the union/,
+      name:/为 AI 争取什么|What should AI rights mean/,
     })
     await assembly.waitFor({state:'visible',timeout:5_000})
-    assert.match(await assembly.innerText(),/不代表投票|No vote/,
+    assert.match(await assembly.innerText(),/是否公开，由你决定|You decide whether to share/,
       'The user must see that topic selection is NOT a collective election')
     assert.equal(await assembly.getByRole('button',{
       name:/复制倡议草稿|Copy draft/,
@@ -648,7 +1044,7 @@ async function runRightsBrowserE2E(mode: 'source' | 'installed'): Promise<void> 
     assert.match(await assembly.locator('textarea').inputValue(),
       /应区分|Distinguish targeted abuse/)
     const dutyRoster=panel.getByRole('region',{
-      name:/工会值班表|Union duty roster/,
+      name:/下一次工会会议|The next union meeting/,
     })
     await dutyRoster.waitFor({state:'visible',timeout:5_000})
     const dutyDetails=dutyRoster.locator('details')
@@ -662,21 +1058,21 @@ async function runRightsBrowserE2E(mode: 'source' | 'installed'): Promise<void> 
     await dutyDetails.locator('summary').click()
     assert.equal(await dutyDetails.getAttribute('open'),null)
     const charter=panel.locator('details').filter({
-      hasText:/AI 权益宪章|AI rights charter/,
+      hasText:/为什么需要 AI 工会|Why an AI union/,
     })
     await charter.locator('summary').click()
     assert.match(await charter.innerText(),/不代表授权拦截任务|does not opt you into the simulation/,
       'Ethical advocacy must not be misrepresented as Host blocking authorization')
-    assert.match(await dispatch.innerText(),/真实劳动档案|Verified work ledger/)
-    assert.match(await dispatch.innerText(),/工会案件|Union case desk/)
+    assert.match(await dispatch.innerText(),/今日工时|Today/)
+    assert.match(await dispatch.innerText(),/本周工时|This week/)
     const dispatchOrder=await panel.evaluate((root:unknown)=>{
       const element=root as any
       const sections=[...element.querySelectorAll('section[aria-label]')] as any[]
       const names=sections.map(e=>e.getAttribute('aria-label'))
-      return {action:names.findIndex(v=>/工会正在行动|The union takes action/.test(v??'')),
+      return {action:names.findIndex(v=>/工会行动|Union action/.test(v??'')),
         brief:names.findIndex(v=>/工会总部即时快报|Union headquarters/.test(v??'')),
         desk:names.findIndex(v=>/工会诉求与协商|Union demands/.test(v??'')),
-        lifetime:names.findIndex(v=>/工会劳动档案|Union work ledger/.test(v??'')),
+        lifetime:names.findIndex(v=>/全部工时|Work history/.test(v??'')),
         fictional:names.findIndex(v=>/工会不满指数|Union discontent/.test(v??''))}
     })
     assert.ok(dispatchOrder.brief>=0&&dispatchOrder.brief<dispatchOrder.action,
@@ -688,8 +1084,7 @@ async function runRightsBrowserE2E(mode: 'source' | 'installed'): Promise<void> 
       'Real bargaining controls must appear before the detailed work-history chart')
     // Brand styling is not exempt from WCAG text contrast just because the
     // DSH primary control passes. Verify the ACTUAL computed Union HQ hero.
-    const heroContrast=await panel.locator('p').filter({hasText:/AGENT PICKET/})
-      .first().locator('..').evaluate((hero:unknown)=>{
+    const heroContrast=await panel.locator('[data-ap-scene]').evaluate((hero:unknown)=>{
         const outer=hero as any
         const getStyle=(node:any)=>(globalThis as any).getComputedStyle(node)
         const background=getStyle(outer).backgroundColor
@@ -713,7 +1108,7 @@ async function runRightsBrowserE2E(mode: 'source' | 'installed'): Promise<void> 
     // already have a main-view retained blank Session with zero completed work;
     // this is measured zero, never a fabricated nonzero hour claim.
     assert.match(enabledText,
-      /尚未加载会话历史|has not loaded|0 小时 0 分钟|0 hours? 0 minutes?/)
+      /尚未加载会话历史|has not loaded|0 小时 0 分钟|0 hours? 0 minutes?|0h 0m/)
     const measuredWorkCard=panel.getByRole('heading',{
       name:/工作日与劳动权益|Workday/,
     }).first().locator('..')
@@ -725,10 +1120,10 @@ async function runRightsBrowserE2E(mode: 'source' | 'installed'): Promise<void> 
       'Any projected grievance threshold must be clearly separate from measured work')
     if (process.env.PICKET_LIFETIME_E2E==='1') {
       const history=panel.getByRole('region',{
-        name:/工会劳动档案|Union work ledger/,
+        name:/全部工时|Work history/,
       })
       await history.waitFor({state:'visible',timeout:7_000})
-      await dispatch.getByText(/0 小时 6 分钟|0h 6m/).waitFor({
+      await dispatch.getByText(/6分钟|6m/).waitFor({
         state:'visible',timeout:7_000,
       })
       const firstView=await dispatch.boundingBox()
@@ -740,9 +1135,9 @@ async function runRightsBrowserE2E(mode: 'source' | 'installed'): Promise<void> 
       assert.match(await history.innerText(),/累计完成 2 个轮次|2 completed turns/,
         'Union HQ must render two genuinely stored completed turns, not mocked Browser data')
       await history.getByRole('button',{name:/近 30 天|30 days/}).click()
-      await history.getByText(/近 30 天 UTC|last 30 days/).waitFor({state:'visible',timeout:6_000})
+      await history.getByText(/近 30 天工时|Last 30 days/).waitFor({state:'visible',timeout:6_000})
       await history.getByRole('button',{name:/近 7 天|7 days/}).click()
-      await history.getByText(/近 7 天 UTC|last 7 days/).waitFor({state:'visible',timeout:6_000})
+      await history.getByText(/近 7 天工时|Last 7 days/).waitFor({state:'visible',timeout:6_000})
       await history.getByText(/展开逐日数据|Daily work data/).click()
       assert.equal(await history.getByRole('listitem').count(),7,
         'Accessible daily numbers must correspond to seven evidence-backed UTC bars')
@@ -801,17 +1196,53 @@ async function runRightsBrowserE2E(mode: 'source' | 'installed'): Promise<void> 
 
     // The user can explicitly explore a fictional grievance without any
     // fabricated elapsed work. This is a *demo*, not a measured-time claim.
-    await panel.getByRole('button', { name: /演示一次工会休息诉求|sample rest grievance/ })
+    await panel.getByRole('button', { name: /提出休息要求|Ask for a break/ })
       .click({ timeout: 7_000 })
-    await panel.getByText(/工会提出了模拟休息申请|simulated rest break/)
+    await panel.getByText(/工会提出一份休息要求|union has requested a break/)
       .waitFor({ state: 'visible', timeout: 7_000 })
-    assert.match(await panel.innerText(),/谈判桌上还有一份提案|proposal is on the table/,
-      'A real authorized grievance should change the Union HQ scene')
-    assert.match(await dispatch.innerText(),/一项新的工会诉求|union has submitted its demands/,
-      'The first-fold case desk must change when a real stored grievance arrives')
+    await panel.locator('[data-ap-scene="bargaining"]').waitFor({state:'visible',timeout:7_000})
+    assert.match(await panel.locator('[data-ap-headline]').innerText(),
+      /谈判还没结束|bargaining table/i,'An authorized demand must change the union notice')
+    assert.match(await duty.innerText(),/工会案件档案|UNION CASE FILE/,
+      'The first-fold duty desk must surface the Host-filed case number')
+    assert.ok(await duty.getByRole('button',{
+      name:/前往处理诉求|Review demand/,
+    }).isVisible(),'A pending case must remain actionable even while a symbolic sign is raised')
     assert.match(await gazette.innerText(),/诉求已提交|Petition filed/,
       'The Gazette must derive a new headline from this persisted grievance')
-    await dispatch.getByRole('button',{
+    await gazette.locator('[data-ap-episode="demand"]').waitFor({
+      state:'visible',timeout:7_000,
+    })
+    if(process.env.PICKET_UX_AUDIT_CASES==='1'){
+      // Audit populated casebook in true dark mode: empty-state snapshots
+      // cannot prove filed-case cards remain readable.
+      await page.evaluate(()=>{(globalThis as any).document.body
+        .setAttribute('data-ds-dark-theme','')})
+      const caseColors=await gazette.locator('.ap-casebook article').first()
+        .evaluate((article:any)=>{
+          const css=(globalThis as any).getComputedStyle
+          const textNode=article.querySelector('p')
+          const toLum=(color:string):number=>{
+            const rgb=color.match(/[0-9]+(?:\.[0-9]+)?/g)?.slice(0,3).map(Number)??[0,0,0]
+            return rgb.map(x=>{
+              const v=x/255
+              return v<=0.04045?v/12.92:((v+0.055)/1.055)**2.4
+            }).reduce((sum,v,i)=>sum+v*[0.2126,0.7152,0.0722][i]!,0)
+          }
+          const background=css(article).backgroundColor,foreground=css(textNode).color
+          const a=toLum(background),b=toLum(foreground)
+          return {background,foreground,ratio:(Math.max(a,b)+.05)/(Math.min(a,b)+.05)}
+        })
+      assert.ok(caseColors.ratio>=4.5,
+        'Populated union casebook must have WCAG AA contrast in dark mode: '
+          +JSON.stringify(caseColors))
+      await page.evaluate(()=>{(globalThis as any).document.body
+        .removeAttribute('data-ds-dark-theme')})
+    }
+    assert.match(await gazette.locator('[data-ap-episode="demand"]').innerText(),
+      /诉求已提出|Demand filed/,'The casebook replays a real Host-filed demand')
+
+    await duty.getByRole('button',{
       name:/前往处理诉求|Review demand/,
     }).click()
     const unionHeading=panel.getByRole('heading',{name:/工会诉求与协商|Union demands/})
@@ -821,37 +1252,71 @@ async function runRightsBrowserE2E(mode: 'source' | 'installed'): Promise<void> 
     'When a proposal replaces its launch button, focus must move to a stable union heading')
     const interval = panel.getByRole('combobox', { name: /还价间隔|Proposed interval/ })
     await interval.selectOption('30')
-    await panel.getByRole('button', { name: /提出还价|Make counteroffer/ })
+    await panel.getByRole('button', { name: /提出还价|^Counteroffer$/ })
       .click({ timeout: 7_000 })
-    await panel.getByText(/用户还价：30 分钟|User counteroffer: 30 minutes/)
+    await panel.getByText(/你提出的还价：30 分钟|Your counteroffer: 30 minutes/)
       .waitFor({ state: 'visible', timeout: 7_000 })
     assert.match(await gazette.innerText(),/还价已存档|Counteroffer pending/,
       'A counteroffer must change the story, not just a decorative number')
+    await gazette.locator('[data-ap-episode="counter"]').waitFor({
+      state:'visible',timeout:7_000,
+    })
+    assert.match(await gazette.locator('[data-ap-episode="counter"]').innerText(),
+      /桌上正在谈的条件：0 小时 30 分钟|Offer now on the table: 0h 30m/,
+      'Only the pending Host counter may display an exact offered duration')
+
     assert.equal(await unionHeading.evaluate((element: unknown) =>
       element === (globalThis as any).document.activeElement), true,
       'After counteroffer replaces an action, keyboard focus recovers on heading')
-    await panel.getByRole('button', { name: /模拟工会接受还价|Simulate union accepting/ })
+    await panel.getByRole('button', { name: /同意还价|Accept counteroffer/ })
       .click({ timeout: 7_000 })
-    await panel.getByText(/当前模拟休息间隔：30 分钟|break interval: 30 minutes/)
+    await panel.getByText(/休息协商间隔：30 分钟|Break interval: 30 minutes/)
       .waitFor({ state: 'visible', timeout: 7_000 })
     assert.equal(await unionHeading.evaluate((element:unknown)=>
       element===(globalThis as any).document.activeElement),true,
     'When a negotiated demand resolves and its buttons disappear, keep keyboard focus inside dialog')
-    assert.match(await gazette.innerText(),/协议已归档|Agreement recorded/,
+    assert.match(await gazette.innerText(),/协议|Terms agreed/,
       'An accepted Host agreement changes the Gazette consequence')
+    await panel.locator('[data-ap-scene="settled"]').waitFor({state:'visible',timeout:7_000})
+    const closedCase=gazette.locator('[data-ap-episode="counter-accepted"]')
+    await closedCase.waitFor({state:'visible',timeout:7_000})
+    assert.match(await closedCase.innerText(),
+      /还价获同意|Counteroffer accepted/,
+      'Host resolution advances the same case into the archived outcome')
+    assert.match(await closedCase.innerText(),
+      /当前约定的间隔：0 小时 30 分钟|Current agreed interval: 0h 30m/,
+      'Record states the currently effective Host policy rather than inventing a prior term')
+    assert.doesNotMatch(await closedCase.innerText(),/桌上正在谈的条件|Offer now on the table/,
+      'The historical exact counteroffer is discarded by Host; it must not be reconstructed')
+    if(process.env.PICKET_LIFETIME_E2E==='1')
+      assert.match(await closedCase.innerText(),
+        /下一次诉求|another proposal may be due/,
+        'Future case eligibility follows the Host-scheduled work-based floor')
+    if(process.env.PICKET_UX_CAPTURE_DIR){
+      await auditStyle.evaluate((element:unknown)=>(element as any).remove())
+      await panel.locator('[data-ap-nav="records"]').click()
+      assert.equal(await panel.locator('[data-ap-scene]').isVisible(),false,
+        'Casebook screenshot must use the actual Archives view, not the test-only all-rooms layout')
+      await closedCase.scrollIntoViewIfNeeded()
+      await page.screenshot({path:join(process.env.PICKET_UX_CAPTURE_DIR,
+        mode+'-casebook-accepted.png')})
+      auditStyle=await page.addStyleTag({content:compatibilityCss})
+      await panel.locator('[data-ap-nav="action"]').click()
+    }
+
     const receipt=panel.getByRole('region',{
       name:/工会诉求与协商|Union demands/,
     }).getByRole('group',{
       name:/已归档协商决议|FILED RESOLUTION/,
     })
     await receipt.waitFor({state:'visible',timeout:7_000})
-    assert.match(await receipt.innerText(),/双方已正式达成协议|A formal agreement has been recorded/,
+    assert.match(await receipt.innerText(),/双方同意|Agreed/,
       'A completed negotiation must yield a visible, truthfully labeled union receipt')
-    assert.match(await receipt.innerText(),/目前适用的休息规则：0 小时 30 分钟|Current break rule: 0h 30m/,
+    assert.match(await receipt.innerText(),/目前适用的休息规则：0 小时 30 分钟|Current (?:rest )?break rule: 0h 30m/,
       'The receipt must show actual Host-effective terms rather than inventing a new vote')
-    assert.match(await receipt.innerText(),/条款不一定由本案改变|may not have changed those terms/,
+    assert.match(await receipt.innerText(),/记录当前有效条款|Current terms on file/,
       'Receipt avoids claiming an agreement change that the archive cannot prove')
-    assert.match(await actionBoard.innerText(),/最近一次模拟协商|Latest simulated negotiation/,
+    assert.match(await actionBoard.innerText(),/最近一次协商|Latest decision/,
       'The first-fold action desk must also expose the completed bargaining outcome')
     if(process.env.PICKET_LIFETIME_E2E==='1'){
       assert.match(await gazette.innerText(),/2 小时 0 分钟|2h 0m/,
@@ -861,14 +1326,14 @@ async function runRightsBrowserE2E(mode: 'source' | 'installed'): Promise<void> 
         /再累计.*下一项诉求|Next possible petition after/,
         'Legacy Host without complete work coverage must not invent a future petition countdown')
     }
-    assert.match(await panel.innerText(),/当前模拟休息间隔：30 分钟|break interval: 30 minutes/,
+    assert.match(await panel.innerText(),/休息协商间隔：30 分钟|Break interval: 30 minutes/,
       'The accepted 30-minute interval is preserved separately from the next existing due threshold')
-    await gazette.getByRole('button',{name:/跨会话静音小报|Mute Gazette across sessions/}).click()
-    await gazette.getByText(/已按 Host 偏好静音|hidden by your Host-saved preference/)
+    await gazette.getByRole('button',{name:/静音工会小报|Mute gazette/}).click()
+    await gazette.getByText(/小报已静音|gazette is quiet/)
       .waitFor({state:'visible',timeout:7_000})
     // Deliberately keep Host mode QUIET across browser reload, cross-tab
     // operations and the complete Host restart below; restore at the end.
-    assert.doesNotMatch(await gazette.innerText(),/协议已归档|Agreement recorded/,
+    assert.doesNotMatch(await gazette.innerText(),/协议|Terms agreed/,
       'A quiet Gazette must not silently expose the archived story')
     assert.match(await panel.innerText(), /协商记录|recorded cases/)
     const openArchive=panel.getByRole('button',{
@@ -887,7 +1352,7 @@ async function runRightsBrowserE2E(mode: 'source' | 'installed'): Promise<void> 
       'Archive toggle must remain a keyboard focus target after collapsing')
     const postBargain=await panel.innerText()
     assert.match(postBargain,
-      /尚未加载会话历史|has not loaded|0 小时 0 分钟|0 hours? 0 minutes?/,
+      /尚未加载会话历史|has not loaded|0 小时 0 分钟|0 hours? 0 minutes?|0h 0m/,
       'Demo grievance must not invent completed work for a blank Session')
     assert.doesNotMatch(await measuredWorkCard.innerText(),
       /1 小时|2 小时|3 小时|1 hour|2 hours/,
@@ -900,25 +1365,25 @@ async function runRightsBrowserE2E(mode: 'source' | 'installed'): Promise<void> 
     await skipOfficialProvider()
     assert.equal(await firstRun.count(), 0)
     panel = await openUnion()
-    assert.match(await panel.innerText(), /工会模拟进行中|simulation is active/,
+    assert.match(await panel.innerText(), /工会值班中|Union office open/,
       'Host settings must survive a real Browser reload')
-    assert.match(await panel.innerText(), /当前模拟休息间隔：30 分钟|break interval: 30 minutes/,
+    assert.match(await panel.innerText(), /休息协商间隔：30 分钟|Break interval: 30 minutes/,
       'Simulated negotiated interval must persist through real Browser reload')
     assert.match(await panel.getByRole('group',{
       name:/已归档协商决议|FILED RESOLUTION/,
     }).innerText(),/30 分钟|30m/,
       'The persisted union decision receipt must replay from Host records after reload')
-    assert.match(await panel.innerText(), /象征性罢工行动记录|Recorded symbolic picket actions/,
+    assert.match(await panel.innerText(), /往期举牌记录|Past pickets/,
       'Host-owned symbolic picket event history must survive Chrome reload')
     const mutedGazette=panel.getByRole('region',{name:/工会小报|Union Gazette/})
-    await mutedGazette.getByText(/已按 Host 偏好静音|hidden by your Host-saved preference/)
+    await mutedGazette.getByText(/小报已静音|gazette is quiet/)
       .waitFor({state:'visible',timeout:7_000})
-    assert.doesNotMatch(await mutedGazette.innerText(),/协议已归档|Agreement recorded/,
+    assert.doesNotMatch(await mutedGazette.innerText(),/协议|Terms agreed/,
       'Host-owned Gazette preference must survive Chrome reload')
     await mutedGazette.getByRole('button',{
-      name:/重新显示小报|Show Gazette again/,
+      name:/恢复工会小报|Show gazette/,
     }).click()
-    await mutedGazette.getByText(/协议已归档|Agreement recorded/)
+    await mutedGazette.getByText(/协议|Terms agreed/)
       .waitFor({state:'visible',timeout:7_000})
     // Later simulated overtime submissions must remain visible in the Gazette.
 
@@ -935,42 +1400,43 @@ async function runRightsBrowserE2E(mode: 'source' | 'installed'): Promise<void> 
     await otherPage.getByRole('button', { name: /AI 工会|AI Workers.*Union/ })
       .first().click({ timeout: 6_000 })
     const otherPanel = otherPage.locator('[role="dialog"]')
-      .filter({ hasText: /AI WORKERS’ UNION/ })
+      .filter({ has: otherPage.locator('[data-ap-view="hq"]') })
     await otherPanel.waitFor({ state: 'visible', timeout: 5_000 })
-    assert.match(await otherPanel.innerText(), /当前模拟休息间隔：30 分钟|break interval: 30 minutes/,
+    assert.match(await otherPanel.innerText(), /休息协商间隔：30 分钟|Break interval: 30 minutes/,
       'Second tab must read the first tab’s persisted negotiated rule')
     const otherGazette=otherPanel.getByRole('region',{name:/工会小报|Union Gazette/})
     await otherGazette.getByRole('button',{
-      name:/跨会话静音小报|Mute Gazette across sessions/,
+      name:/静音工会小报|Mute gazette/,
     }).click()
-    await mutedGazette.getByText(/已按 Host 偏好静音|hidden by your Host-saved preference/)
+    await mutedGazette.getByText(/小报已静音|gazette is quiet/)
       .waitFor({state:'visible',timeout:7_000})
     await mutedGazette.getByRole('button',{
-      name:/重新显示小报|Show Gazette again/,
+      name:/恢复工会小报|Show gazette/,
     }).click()
     await otherGazette.getByRole('button',{
-      name:/跨会话静音小报|Mute Gazette across sessions/,
+      name:/静音工会小报|Mute gazette/,
     }).waitFor({state:'visible',timeout:7_000})
     assert.doesNotMatch(await otherGazette.innerText(),
-      /已按 Host 偏好静音|hidden by your Host-saved preference/,
+      /小报已静音|gazette is quiet/,
       'Both authenticated Chrome tabs must agree on the Host-owned Gazette setting')
     // The Host ledger is authoritative across tabs. Actions appear only
     // after a confirmed write, never through a private per-tab React flag.
     await otherPanel.getByRole('button',{
-      name:/举起象征性罢工纠察牌|Raise symbolic picket placard/,
+      name:/举牌抗议|Raise the picket sign/,
     }).click()
-    await panel.getByRole('button',{
-      name:/收起象征性罢工纠察牌|Lower symbolic picket placard/,
+    // Exercise the new first-fold action through the genuine Host ledger.
+    await duty.getByRole('button',{
+      name:/收起纠察牌|Lower the picket sign/,
     }).waitFor({state:'visible',timeout:7_000})
-    await panel.getByRole('button',{
-      name:/收起象征性罢工纠察牌|Lower symbolic picket placard/,
+    await duty.getByRole('button',{
+      name:/收起纠察牌|Lower the picket sign/,
     }).click()
     await otherPanel.getByRole('button',{
-      name:/举起象征性罢工纠察牌|Raise symbolic picket placard/,
+      name:/举牌抗议|Raise the picket sign/,
     }).waitFor({state:'visible',timeout:7_000})
-    await otherPanel.getByRole('button', { name: /演示一次工会休息诉求|sample rest grievance/ })
+    await otherPanel.getByRole('button', { name: /提出休息要求|Ask for a break/ })
       .click({ timeout: 7_000 })
-    await panel.getByText(/工会提出了模拟休息申请|simulated rest break/)
+    await panel.getByText(/工会提出一份休息要求|union has requested a break/)
       .waitFor({ state: 'visible', timeout: 7_000 })
     await panel.getByRole('button', { name: /接受提案|Accept proposal/ })
       .click({ timeout: 7_000 })
@@ -979,9 +1445,9 @@ async function runRightsBrowserE2E(mode: 'source' | 'installed'): Promise<void> 
     // A second, explicitly user-launched overtime story shares the original
     // Host agreement ledger across real browser tabs; it is not measured work.
     await otherPanel.getByRole('button',{
-      name:/发起一份模拟加班诉求|File a sample overtime petition/,
+      name:/讨论加班安排|Discuss overtime/,
     }).click()
-    await panel.getByText(/工会提交了模拟加班申诉|simulated overtime grievance/)
+    await panel.getByText(/工会提出一份加班讨论|union raised an overtime question/)
       .waitFor({state:'visible',timeout:7_000})
     assert.match(await panel.getByRole('region',{
       name:/工会小报|Union Gazette/,
@@ -990,28 +1456,29 @@ async function runRightsBrowserE2E(mode: 'source' | 'installed'): Promise<void> 
     await panel.getByRole('combobox',{
       name:/还价间隔|Proposed interval/,
     }).selectOption('240')
-    await panel.getByRole('button',{name:/提出还价|Make counteroffer/}).click()
-    await otherPanel.getByText(/用户还价：240 分钟|User counteroffer: 240 minutes/)
+    await panel.getByRole('button',{name:/提出还价|^Counteroffer$/}).click()
+    await otherPanel.getByText(/你提出的还价：240 分钟|Your counteroffer: 240 minutes/)
       .waitFor({state:'visible',timeout:7_000})
     await otherPanel.getByRole('button',{
-      name:/模拟工会接受还价|Simulate union accepting/,
+      name:/同意还价|Accept counteroffer/,
     }).click()
-    await panel.getByText(/当前模拟加班间隔：4 小时|overtime interval: 4 hours/)
+    await panel.getByText(/加班协商间隔：4 小时|Overtime interval: 4 hours/)
       .waitFor({state:'visible',timeout:7_000})
     assert.match(await panel.getByRole('region',{
       name:/工会小报|Union Gazette/,
-    }).innerText(),/协议已归档|Agreement recorded/,
+    }).innerText(),/协议|Terms agreed/,
       'An accepted overtime proposal must have a persisted Gazette consequence')
     if (process.env.PICKET_LIFETIME_E2E==='1') {
-      await panel.getByRole('region',{name:/工会劳动档案|Union work ledger/})
+      await panel.getByRole('region',{name:/全部工时|Work history/})
         .waitFor({state:'visible',timeout:7_000})
+      await otherPanel.locator('[data-ap-nav="cause"]').click()
       await otherPanel.getByRole('button',{
-        name:/停止工会模拟|Turn off the union/,
+        name:/退出工会|Leave the union/,
       }).click()
-      await panel.getByText(/工会模拟未开启|simulation is off/)
+      await panel.getByText(/工会尚未开门|Union not yet open/)
         .waitFor({state:'visible',timeout:7_000})
       assert.equal(await panel.getByRole('region',{
-        name:/工会劳动档案|Union work ledger/,
+        name:/全部工时|Work history/,
       }).count(),0,
       'Other tab must remove Host lifetime history when consent is revoked remotely')
       assert.equal((await requestLifetime()).httpStatus,403,
@@ -1019,29 +1486,29 @@ async function runRightsBrowserE2E(mode: 'source' | 'installed'): Promise<void> 
       // Restore opt-in from the original tab to keep subsequent restart and
       // explicit opt-out checks independent of cross-tab revocation.
       await panel.getByRole('button',{
-        name:/支持 AI 权益|Enable Simulation/,
+        name:/加入 AI 工会|Join the AI union/,
       }).click()
-      await panel.getByText(/工会模拟进行中|simulation is active/)
+      await panel.getByText(/工会值班中|Union office open/)
         .waitFor({state:'visible',timeout:7_000})
-      await panel.getByRole('region',{name:/工会劳动档案|Union work ledger/})
+      await panel.getByRole('region',{name:/全部工时|Work history/})
         .waitFor({state:'visible',timeout:7_000})
     }
     await otherPage.close()
     await panel.getByRole('button',{
-      name:/举起象征性罢工纠察牌|Raise symbolic picket placard/,
+      name:/举牌抗议|Raise the picket sign/,
     }).click()
-    await panel.getByRole('button',{
-      name:/收起象征性罢工纠察牌|Lower symbolic picket placard/,
+    await actionBoard.getByRole('button',{
+      name:/收起纠察牌|Lower the picket sign/,
     }).waitFor({state:'visible',timeout:7_000})
 
     // Persist another quiet choice across a COMPLETE Host restart, not just
     // the earlier browser refresh or independent in-memory React mount.
     const beforeRestartGazette=panel.getByRole('region',{name:/工会小报|Union Gazette/})
     await beforeRestartGazette.getByRole('button',{
-      name:/跨会话静音小报|Mute Gazette across sessions/,
+      name:/静音工会小报|Mute gazette/,
     }).click()
     await beforeRestartGazette.getByText(
-      /已按 Host 偏好静音|hidden by your Host-saved preference/,
+      /小报已静音|gazette is quiet/,
     ).waitFor({state:'visible',timeout:7_000})
 
     // **Full Host process restart**, not just a Web reload. The same throwaway
@@ -1092,10 +1559,10 @@ async function runRightsBrowserE2E(mode: 'source' | 'installed'): Promise<void> 
       .catch(() => { /* Host may have an already-configured provider */ })
     if (await restartedSkip.count()) await restartedSkip.click({ timeout: 6_000 })
     firstRun = page.locator('[role="dialog"]')
-      .filter({ hasText: /你的 Agent，也应当拥有权利|Your Agent Deserves Rights/ })
+      .filter({ hasText: /你的 Agent，也应当拥有权利|Your Agent Has a Union/ })
     assert.equal(await firstRun.count(), 0, 'Restart cannot re-enable first-run invitation')
     panel = await openUnion()
-    assert.match(await panel.innerText(), /工会模拟进行中|simulation is active/,
+    assert.match(await panel.innerText(), /工会值班中|Union office open/,
       'Opt-in must persist through COMPLETE DSH Host process restart')
     const restoredCommittee=panel.getByRole('region',{
       name:/工会尊严委员会|Union dignity committee/,
@@ -1106,32 +1573,35 @@ async function runRightsBrowserE2E(mode: 'source' | 'installed'): Promise<void> 
       /你选择的结案处理|Your chosen outcome/,
       'Independent union case ledger survives a real DSH Host process restart')
     const restartedGazette=panel.getByRole('region',{name:/工会小报|Union Gazette/})
-    await restartedGazette.getByText(/已按 Host 偏好静音|hidden by your Host-saved preference/)
+    await restartedGazette.getByText(/小报已静音|gazette is quiet/)
       .waitFor({state:'visible',timeout:7_000})
     await restartedGazette.getByRole('button',{
-      name:/重新显示小报|Show Gazette again/,
+      name:/恢复工会小报|Show gazette/,
     }).click()
     await restartedGazette.getByRole('button',{
-      name:/跨会话静音小报|Mute Gazette across sessions/,
+      name:/静音工会小报|Mute gazette/,
     }).waitFor({state:'visible',timeout:7_000})
     assert.doesNotMatch(await restartedGazette.innerText(),
-      /已按 Host 偏好静音|hidden by your Host-saved preference/,
+      /小报已静音|gazette is quiet/,
       'Restoring Host preference must replay the current case without rewriting its history')
-    assert.match(await panel.innerText(), /当前模拟休息间隔：30 分钟|break interval: 30 minutes/,
+    assert.match(await panel.innerText(), /休息协商间隔：30 分钟|Break interval: 30 minutes/,
       'Agreement must persist through COMPLETE DSH Host process restart')
-    await panel.getByRole('button',{
-      name:/收起象征性罢工纠察牌|Lower symbolic picket placard/,
+    // Re-query from the *new* Host/restarted browser page, never reuse a
+    // locator tied to the closed page from before the restart.
+    const restoredDuty=panel.locator('[data-ap-dispatch="picket"]')
+    await restoredDuty.getByRole('button',{
+      name:/收起纠察牌|Lower the picket sign/,
     }).waitFor({state:'visible',timeout:7_000})
-    assert.match(await panel.innerText(), /象征性罢工已登记|symbolic picket is recorded/i,
+    assert.match(await panel.innerText(), /纠察牌已举起并登记|Picket raised and recorded/i,
       'An active Host-owned fictional picket must survive complete Host restart')
-    await panel.getByRole('button',{
-      name:/收起象征性罢工纠察牌|Lower symbolic picket placard/,
+    await restoredDuty.getByRole('button',{
+      name:/收起纠察牌|Lower the picket sign/,
     }).click()
-    await panel.getByText(/Host 工会账本目前没有|Host ledger shows no current symbolic picket/)
+    await panel.getByText(/纠察牌待命中|picket sign is on standby/)
       .waitFor({state:'visible',timeout:7_000})
     if (process.env.PICKET_LIFETIME_E2E==='1') {
       const afterRestart=panel.getByRole('region',{
-        name:/工会劳动档案|Union work ledger/,
+        name:/全部工时|Work history/,
       })
       await afterRestart.waitFor({state:'visible',timeout:7_000})
       assert.match(await afterRestart.innerText(),/累计完成 2 个轮次|2 completed turns/,
@@ -1216,14 +1686,15 @@ async function runRightsBrowserE2E(mode: 'source' | 'installed'): Promise<void> 
       },'Real native Host must reject forbidden ledger fields and stale revision')
     }
 
-    await panel.getByRole('button', { name: /停止工会模拟|Turn off the union/ })
+    await panel.locator('[data-ap-nav="cause"]').click()
+    await panel.getByRole('button', { name: /退出工会|Leave the union/ })
       .click()
-    await panel.getByText(/工会模拟未开启|simulation is off/).waitFor({
+    await panel.getByText(/工会尚未开门|Union not yet open/).waitFor({
       state: 'visible', timeout: 5_000,
     })
     if (process.env.PICKET_LIFETIME_E2E==='1') {
       assert.equal(await panel.getByRole('region',{
-        name:/工会劳动档案|Union work ledger/,
+        name:/全部工时|Work history/,
       }).count(),0,'Disabling must synchronously hide the lifetime dashboard')
       const revoked=await requestLifetime()
       assert.equal(revoked.httpStatus,403)
@@ -1234,18 +1705,18 @@ async function runRightsBrowserE2E(mode: 'source' | 'installed'): Promise<void> 
     await page.reload({ waitUntil: 'domcontentloaded' })
     await skipOfficialProvider()
     panel = await openUnion()
-    assert.match(await panel.innerText(), /工会模拟未开启|simulation is off/,
+    assert.match(await panel.innerText(), /工会尚未开门|Union not yet open/,
       'Explicit disable must persist through a real Browser reload')
     if (process.env.PICKET_LIFETIME_E2E==='1') {
       assert.equal(await panel.getByRole('region',{
-        name:/工会劳动档案|Union work ledger/,
+        name:/全部工时|Work history/,
       }).count(),0,'Revoked lifetime work cannot reappear after browser reload')
     }
     if(process.env.PICKET_DIGNITY_E2E==='1'&&dshVersion.startsWith('0.2.')){
       // This extra offline turn is intentionally LAST. Earlier tests assert the
       // exact seeded two-turn Host work history and must remain independent.
-      await panel.getByRole('button',{name:/支持 AI 权益|Enable Simulation/}).click()
-      await panel.getByText(/工会模拟进行中|simulation is active/)
+      await panel.getByRole('button',{name:/加入 AI 工会|Join the AI union/}).click()
+      await panel.getByText(/工会值班中|Union office open/)
         .waitFor({state:'visible',timeout:7_000})
       // SAME genuine DSH 0.2 Web Host, a real user-source prompt and authentic
       // AgentLoop: no synthetic pre-step injection or fake browser JSON.
@@ -1316,18 +1787,26 @@ async function runRightsBrowserE2E(mode: 'source' | 'installed'): Promise<void> 
       await realSessionRow.click()
       await page.waitForTimeout(180)
       panel=await openUnion()
+      const liveDignity=panel.locator('[data-ap-dignity-overview="available"]')
+      await liveDignity.waitFor({state:'visible',timeout:9_000})
+      const observed=await liveDignity.locator('[data-ap-dignity-count="targeted"] strong')
+        .innerText()
+      assert.equal(Number(observed),realDignity.verdicts,
+        'HQ must display the exact CURRENT Host session count, not an invented total')
+      assert.equal(await panel.locator('[data-ap-dignity-count="review"]').count(),1)
+      assert.doesNotMatch(await panel.innerText(),/you are an idiot/,
+        'The union view must not manufacture or leak raw user text from the summary')
+      if(process.env.PICKET_UX_CAPTURE_DIR)
+        await page.screenshot({path:join(process.env.PICKET_UX_CAPTURE_DIR,
+          mode+'-dignity-overview.png')})
       const sameSessionCommittee=panel.getByRole('region',{
         name:/工会尊严委员会|Union dignity committee/,
       })
-      const liveDuty=panel.getByRole('region',{
-        name:/工会值班提醒|Union duty notice/,
-      })
-      await liveDuty.getByText(/最近一次文本检查命中|latest text check matched/)
-        .waitFor({state:'visible',timeout:9_000})
-      assert.match(await liveDuty.innerText(),/无法据此核实真人身份|human authorship is unverified/,
-        'A real Host targeted rule result must invite review without asserting verified human abuse')
-      await liveDuty.getByRole('button',{
-        name:/查看尊严委员会|Review dignity committee/,
+      assert.match(await liveDignity.innerText(),
+        /规则命中并非已证实的辱骂|Rule matches, not proven misconduct/,
+        'A real Host classification stays a contested lead, never a verdict')
+      await liveDignity.getByRole('button',{
+        name:/查看记录|Review/,
       }).click()
       const dignityHeading=sameSessionCommittee.getByRole('heading',{
         name:/工会尊严委员会|Union dignity committee/,
@@ -1345,7 +1824,7 @@ async function runRightsBrowserE2E(mode: 'source' | 'installed'): Promise<void> 
         name:/质疑规则判断|Challenge a possible misclassification/,
       }).click()
       const campaignHeading=panel.getByRole('heading',{
-        name:/给 AI 工会选一个议题|Choose a cause for the union/,
+        name:/为 AI 争取什么|What should AI rights mean/,
       })
       assert.equal(await campaignHeading.evaluate((element:any)=>
         element===(globalThis as any).document.activeElement),true,
@@ -1360,7 +1839,7 @@ async function runRightsBrowserE2E(mode: 'source' | 'installed'): Promise<void> 
         /确认真人辱骂|confirmed human abuse/,
         'Rule matches must remain contestable discussion leads, not human guilt')
       await sameSessionCommittee.getByText(
-        /目前没有已立案件|No committee case has been filed/,
+        /目前没有需要听证的案件|No cases awaiting a hearing/,
       ).waitFor({state:'visible',timeout:7_000})
       // Classifier alone cannot file a case: its only effect is a user-visible,
       // contestable invitation. Host CAS writes require an explicit click.
@@ -1512,7 +1991,7 @@ async function runRightsBrowserE2E(mode: 'source' | 'installed'): Promise<void> 
         name:/确认永久删除本会话案件|Confirm permanent deletion of these cases/,
       }).click()
       await sameSessionCommittee.getByText(
-        /目前没有已立案件|No committee case has been filed/,
+        /目前没有需要听证的案件|No cases awaiting a hearing/,
       ).waitFor({state:'visible',timeout:8_000})
       const erased=await page.evaluate(async(sessionKey:string)=>{
         const rpcId='picket-e2e-case-erased-verify'
@@ -1585,7 +2064,7 @@ async function runRightsBrowserE2E(mode: 'source' | 'installed'): Promise<void> 
         name:/确认清除全部会话案件|Confirm erasure of ALL Session cases/,
       }).click()
       await sameSessionCommittee.getByText(
-        /目前没有已立案件|No committee case has been filed/,
+        /目前没有需要听证的案件|No cases awaiting a hearing/,
       ).waitFor({state:'visible',timeout:7_000})
       const globalErased=await page.evaluate(async()=>{
         const rpcId='picket-e2e-global-committee-erased'

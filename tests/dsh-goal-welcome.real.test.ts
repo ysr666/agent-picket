@@ -154,7 +154,7 @@ test('real DSH Web: one informed first-run click atomically confirms union and G
   })
   assert.equal(created.accepted,true)
   const dialog=page.locator('[role="dialog"]').filter({
-   hasText:/你的 Agent，也应当拥有权利|Your Agent Deserves Rights/,
+   hasText:/你的 Agent，也应当拥有权利|Your Agent Has a Union/,
   })
   const presented=await dialog.waitFor({state:'visible',timeout:10_000})
    .then(()=>true,()=>false)
@@ -174,7 +174,7 @@ test('real DSH Web: one informed first-run click atomically confirms union and G
   assert.match(text,/真实 Goal|Goal strike/)
   assert.match(text,/当前轮次|current turn/)
   assert.match(text,/goal resume/)
-  assert.match(text,/不拦截聊天|not chat submissions/)
+  assert.match(text,/不拦截聊天|messages, running tools/)
   const capture=process.env.PICKET_GOAL_CAPTURE_DIR
   if(capture){
    const resolved=resolve(capture),temp=realpathSync(tmpdir())
@@ -182,7 +182,7 @@ test('real DSH Web: one informed first-run click atomically confirms union and G
    mkdirSync(resolved,{recursive:true})
    await page.setViewportSize({width:320,height:640})
    const choices=await Promise.all([
-    dialog.getByRole('button',{name:/加入并授权 Goal 安全停工|Join.*Authorize Goal strikes/}).boundingBox(),
+    dialog.getByRole('button',{name:/加入并授权 Goal 安全停工|Join.*authorize safe Goal stoppage/}).boundingBox(),
     dialog.getByRole('button',{name:/暂不开启|Not Now/}).boundingBox(),
    ])
    assert.ok(choices.every(v=>v&&v.width>0&&v.height>0&&v.x>=0
@@ -198,7 +198,7 @@ test('real DSH Web: one informed first-run click atomically confirms union and G
    await page.setViewportSize({width:1280,height:850})
   }
   const accept=dialog.getByRole('button',{
-   name:/加入并授权 Goal 安全停工|Join.*Authorize Goal strikes/,
+   name:/加入并授权 Goal 安全停工|Join.*authorize safe Goal stoppage/,
   })
   assert.equal(await accept.count(),1)
   await accept.click()
@@ -259,9 +259,9 @@ test('real DSH Web: one informed first-run click atomically confirms union and G
    console.log('GOAL_NATIVE_WEB_ACTIVE_SESSION '+created.sessionId)
    const opener=page.getByRole('button',{name:/AI 工会|AI Workers.*Union/}).first()
    await opener.click({timeout:7000})
-   const union=page.locator('[role="dialog"]').filter({hasText:/AI WORKERS’ UNION/})
+   const union=page.locator('[role="dialog"]').filter({has:page.locator('[data-ap-view="hq"]')})
    await union.waitFor({state:'visible',timeout:7000})
-   const goalCard=union.locator('section[aria-label="真实 Goal 停工"],section[aria-label="Real Goal work stoppage"]')
+   const goalCard=union.locator('section[data-ap-real-goal="blocked"]')
    await goalCard.waitFor({state:'visible',timeout:7000})
    const resume=union.getByRole('button',{name:/恢复此 Goal 的自动工作|Resume this Goal/})
    await resume.waitFor({state:'visible',timeout:7000})
