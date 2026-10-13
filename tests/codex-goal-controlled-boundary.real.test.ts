@@ -56,6 +56,7 @@ test('native Codex completes in-flight autonomous Turn, holds next round and col
   })
  })
  let first:Awaited<ReturnType<typeof launch>>|undefined
+ let external:Awaited<ReturnType<typeof launch>>|undefined
  let second:Awaited<ReturnType<typeof launch>>|undefined
  try{
   server.listen(0,'127.0.0.1');await once(server,'listening')
@@ -92,8 +93,30 @@ test('native Codex completes in-flight autonomous Turn, holds next round and col
   assert.equal(await until(()=>first!.notifications.some(n=>
    n.method==='item/started'&&n.params?.item?.type==='commandExecution')),
    true,'Official Host must start an actual synthetic shell tool')
-  assert.equal((await first.rpc('thread/goal/set',{threadId,status:'blocked'}))
-   .goal?.status,'blocked')
+  // A separate official App-Server is an external control plane, NOT
+  // another thread owner. Never call thread/resume: that RPC independently
+  // schedules a duplicate active Goal Turn on this pinned Codex version.
+  external=await launch()
+  assert.equal((await external.rpc('thread/goal/get',{threadId}))
+   .goal?.status,'active',
+   'External official Goal getter works without resuming the Thread')
+  assert.equal((await external.rpc('thread/goal/set',{threadId,status:'blocked'}))
+   .goal?.status,'blocked',
+   'External official Goal setter must block without loading the Thread')
+  assert.equal((await first.rpc('thread/goal/get',{threadId})).goal?.status,
+   'blocked','Active owner must observe external block')
+  // CRITICAL negative: a stale external client can silently override a
+  // newer hold. Official goal/set has NO expectedRevision/CAS. Restore the
+  // synthetic block immediately, before releasing the in-flight tool.
+  assert.equal((await external.rpc('thread/goal/set',{threadId,status:'active'}))
+   .goal?.status,'active','Unconditional external write can undo a hold')
+  assert.equal((await first.rpc('thread/goal/get',{threadId})).goal?.status,'active')
+  assert.equal((await external.rpc('thread/goal/set',{threadId,status:'blocked'}))
+   .goal?.status,'blocked','Synthetic test must leave Goal held')
+  assert.equal((await first.rpc('thread/goal/get',{threadId})).goal?.status,'blocked')
+  assert.equal(external.notifications.some(n=>n.method==='turn/started'),false,
+   'External non-resuming control plane must not start work')
+  assert.equal(requests.length,1,'No competing Goal Turn started by controller')
   writeFileSync(join(root,'release.flag'),'synthetic release')
   assert.equal(await until(()=>first!.notifications.some(n=>
    n.method==='item/completed'&&n.params?.item?.type==='commandExecution')),
@@ -119,6 +142,8 @@ test('native Codex completes in-flight autonomous Turn, holds next round and col
   await new Promise(resolve=>setTimeout(resolve,450))
   assert.equal(requests.length,2,'No automatic NEXT TURN model request while blocked')
   assert.equal((await first.rpc('thread/goal/get',{threadId})).goal?.status,'blocked')
+  assert.equal(external.notifications.some(n=>n.method==='turn/started'),false)
+  await external.close();external=undefined
 
   await first.close();first=undefined
   second=await launch()
@@ -160,7 +185,7 @@ test('native Codex completes in-flight autonomous Turn, holds next round and col
   assert.equal(requests.length,3,'No duplicate or third automatic round')
   assert.equal((await second.rpc('thread/goal/get',{threadId})).goal?.status,'blocked')
  }finally{
-  await Promise.allSettled([first?.close(),second?.close()])
+  await Promise.allSettled([first?.close(),external?.close(),second?.close()])
   for(const request of requests)try{request.response.end()}catch{/* cleanup */}
   await new Promise<void>(resolve=>server.close(()=>resolve()))
   rmSync(root,{recursive:true,force:true})

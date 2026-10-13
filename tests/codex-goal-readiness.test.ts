@@ -51,4 +51,9 @@ test('Codex 0.146.1 does NOT qualify for autonomous work blocking from goal/set 
   conditionalCommitVerified:true,durableLosslessRecoveryVerified:true,
  }).gaps,['multi-owner-fencing-unverified'],
   'A single owner appears safe until another App-Server resumes the same active Goal')
+ assert.deepEqual(inspectCodexGoalHoldSafety({
+  consentFromHost:true,activeOwnerVerified:true,
+  exclusiveCrossProcessGoalOwnerVerified:true,safeIdleBoundaryVerified:true,
+  conditionalCommitVerified:false,durableLosslessRecoveryVerified:true,
+ }).gaps,['atomic-transition-unverified'])
 })
