@@ -174,11 +174,13 @@ test('native Windows crash after snapshot commit and before WAL replace never re
 },async()=>{
  const parent=mkdtempSync(join(tmpdir(),'ap-writer-crash-checkpoint-'))
  const dir=join(parent,'secured-ledger')
- const program=`import {ExperimentalNtfsWalWriter} from ${JSON.stringify(source)};\n`+
+ const program=`import {writeSync} from 'node:fs';\n`+
+  `import {ExperimentalNtfsWalWriter} from ${JSON.stringify(source)};\n`+
   `const w=new ExperimentalNtfsWalWriter(process.env.PICKET_TEST_DIR);\n`+
   `w.recordSyntheticToolCall('checkpoint-crash-1','synthetic-agent','synthetic-session',${now});\n`+
   `w.recordSyntheticToolCall('checkpoint-crash-2','synthetic-agent','synthetic-session',${now+1});\n`+
-  `w.checkpointForTest(()=>{process.stdout.write('SNAPSHOT_DURABLE\\n');setInterval(()=>{},1000)});\n`
+  `w.checkpointForTest(()=>{writeSync(1,'SNAPSHOT_DURABLE\\n');`+
+   `Atomics.wait(new Int32Array(new SharedArrayBuffer(4)),0,0)});\n`
  let child:ChildProcess|undefined
  try{
   child=spawn(process.execPath,['--experimental-strip-types','--input-type=module','-e',program],{
@@ -567,11 +569,13 @@ test('native NTFS OS-killed writer after WAL fsync does not certify an older ind
 },async()=>{
  const parent=mkdtempSync(join(tmpdir(),'ap-witness-killed-'))
  const dir=join(parent,'new-private-ledger')
- const program=`import {ExperimentalNtfsWalWriter} from ${JSON.stringify(source)};\n`+
+ const program=`import {writeSync} from 'node:fs';\n`+
+  `import {ExperimentalNtfsWalWriter} from ${JSON.stringify(source)};\n`+
   `const w=new ExperimentalNtfsWalWriter(process.env.PICKET_TEST_DIR);\n`+
   `w.recordSyntheticToolCall('witnessed','synthetic-agent','synthetic-session',${now});\n`+
   `w.recordSyntheticToolCall('wal-only','synthetic-agent','synthetic-session',${now+1},`+
-   `()=>{process.stdout.write('WAL_ONLY_FSYNCED\\n');setInterval(()=>{},1000)});\n`
+   `()=>{writeSync(1,'WAL_ONLY_FSYNCED\\n');`+
+   `Atomics.wait(new Int32Array(new SharedArrayBuffer(4)),0,0)});\n`
  let child:ChildProcess|undefined
  try{
   child=spawn(process.execPath,['--experimental-strip-types','--input-type=module','-e',program],{

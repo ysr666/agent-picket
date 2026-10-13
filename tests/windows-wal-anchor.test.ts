@@ -64,3 +64,42 @@ test('the anchored read-only filesystem inspector is fail-closed off NTFS',()=>{
  if(process.platform!=='win32')assert.equal(
   inspectPrivateNtfsAnchoredWalReplay('/nonexistent/synthetic-ledger'),'unconfirmed')
 })
+
+test('native test harness synchronous crash marker really blocks until process termination',{
+ timeout:15_000,
+},async()=>{
+ const {spawn}=await import('node:child_process')
+ // Unlike setInterval, Atomics.wait blocks the CURRENT callback. sync stdout
+ // guarantees the parent can witness the exact boundary before termination.
+ const code="import {writeSync} from 'node:fs';"+
+  "writeSync(1,'AT_SYNC_BOUNDARY\\n');"+
+  'Atomics.wait(new Int32Array(new SharedArrayBuffer(4)),0,0);'+
+  "writeSync(1,'UNSAFE_AFTER_BOUNDARY\\n');"
+ const child=spawn(process.execPath,['--input-type=module','-e',code],{
+  stdio:['ignore','pipe','pipe'],windowsHide:true,
+ })
+ let output=''
+ try{
+  const marker=new Promise<void>((resolve,reject)=>{
+   child.stdout!.on('data',data=>{
+    output+=String(data)
+    if(output.includes('AT_SYNC_BOUNDARY'))resolve()
+   })
+   child.once('error',reject)
+   child.once('exit',()=>reject(Error('Crash marker child exited too early')))
+  })
+  await Promise.race([marker,new Promise<never>((_,reject)=>
+   setTimeout(()=>reject(Error('Synchronous marker not observed')),5_000).unref())])
+  await new Promise(resolve=>setTimeout(resolve,100))
+  assert.doesNotMatch(output,/UNSAFE_AFTER_BOUNDARY/,
+   'The test hook MUST remain stopped, not merely schedule an interval')
+  const exited=new Promise<void>(resolve=>{
+   if(child.exitCode!==null||child.signalCode!==null)resolve()
+   else child.once('exit',()=>resolve())
+  })
+  child.kill('SIGKILL')
+  await Promise.race([exited,new Promise<never>((_,reject)=>
+   setTimeout(()=>reject(Error('Synthetic crash hook did not terminate')),5_000).unref())])
+  assert.doesNotMatch(output,/UNSAFE_AFTER_BOUNDARY/)
+ }finally{if(child.exitCode===null&&child.signalCode===null)child.kill('SIGKILL')}
+})
