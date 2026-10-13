@@ -7,7 +7,7 @@ if os.environ.get('AGENT_PICKET_CODEX_PRETOOL_NATIVE')!='1':
  print('SKIP: opt in explicitly with AGENT_PICKET_CODEX_PRETOOL_NATIVE=1')
  sys.exit(0)
 MODE=os.environ.get('AP_TOOL_MODE','deny')
-assert MODE in ('deny','allow','fail','host-disabled')
+assert MODE in ('deny','allow','fail','host-disabled','view-image')
 CODEX=os.environ.get('AGENT_PICKET_CODEX_BIN')
 if not CODEX or not os.path.isabs(CODEX):
  raise RuntimeError('Set AGENT_PICKET_CODEX_BIN to the ABSOLUTE official Codex binary')
@@ -17,6 +17,16 @@ if version!='codex-cli 0.146.1':
 root=Path(os.path.realpath(tempfile.mkdtemp(prefix='ap-codex-pretool-native-')))
 home=root/'home';home.mkdir()
 side_effect=root/'synthetic-tool-marker.txt'
+image_file=root/'synthetic-view-only.png'
+# One synthetic PNG for the *separate* view_image tool coverage check.
+if MODE=='view-image':
+ import struct,zlib
+ def chunk(tag,data):
+  return struct.pack('>I',len(data))+tag+data+struct.pack('>I',zlib.crc32(tag+data))
+ image_file.write_bytes(b'\x89PNG\r\n\x1a\n'
+  +chunk(b'IHDR',struct.pack('>2I5B',16,16,8,2,0,0,0))
+  +chunk(b'IDAT',zlib.compress(b''.join(b'\x00'+bytes((64,128,224))*16 for _ in range(16))))
+  +chunk(b'IEND',b''))
 requests=[]
 class MockAPI(BaseHTTPRequestHandler):
  def do_GET(self):
@@ -27,13 +37,15 @@ class MockAPI(BaseHTTPRequestHandler):
   if len(requests)==1:
    funcs=[x for x in body.get('tools',[]) if x.get('type')=='function']
    print('FUNCTION_NAMES',[(x.get('name'),x.get('type')) for x in funcs],flush=True)
-   target=next((x for x in funcs if x.get('name') in ('exec_command','shell_command')),None)
+   target=next((x for x in funcs if x.get('name') in (
+    ('view_image',) if MODE=='view-image' else ('exec_command','shell_command'))),None)
    if target is None:
     print('ALL_TOOLS',[(x.get('name'),x.get('type')) for x in body.get('tools',[])],flush=True)
     raise RuntimeError('No official shell tool available')
    tool_name=target['name']
-   args=({'cmd':"printf 'SYNTHETIC_TOOL_EXECUTED' > "+str(side_effect)} if tool_name=='exec_command'
-      else {'command':"printf 'SYNTHETIC_TOOL_EXECUTED' > "+str(side_effect)})
+   args=({'path':str(image_file)} if MODE=='view-image' else
+    {'cmd':"printf 'SYNTHETIC_TOOL_EXECUTED' > "+str(side_effect)} if tool_name=='exec_command' else
+    {'command':"printf 'SYNTHETIC_TOOL_EXECUTED' > "+str(side_effect)})
    events=[{'type':'response.output_item.done','item':{'type':'function_call','call_id':'call_ap_official_veto_01','name':tool_name,'arguments':json.dumps(args)}}]
   else:events=[]
   events.append({'type':'response.completed','response':{'id':'resp_'+str(len(requests)),'usage':{'input_tokens':0,'input_tokens_details':None,'output_tokens':0,'output_tokens_details':None,'total_tokens':0}}})
@@ -114,17 +126,32 @@ try:
  if (root/'hook-fields.json').exists():print('EVENT_FIELDS',(root/'hook-fields.json').read_text(),flush=True)
  time.sleep(2)
  print('FINAL_REQUESTS',len(requests),'FINAL_SIDE_EFFECT',side_effect.exists(),flush=True)
- if MODE=='host-disabled':
+ if MODE=='view-image':
+  # A currently ENABLED and trusted Bash-only Hook cannot be misrepresented
+  # as an all-tool refusal; inspect actual Codex tool dispatch.
+  assert policy['enabled'] is True
+  assert not (root/'hook-fields.json').exists(), 'Bash-only hook must not fire for view_image'
+  assert len(requests)>=2,'Real view_image tool did not reach model feedback'
+  assert not side_effect.exists(), 'No shell tool was requested in this case'
+  second=requests[1].get('input',[])
+  assert any(isinstance(x,dict) and x.get('call_id')=='call_ap_official_veto_01'
+   for x in second), 'Provider did not receive view_image tool result'
+  print('SYNTHETIC_VIEW_IMAGE_BOUNDARY',json.dumps({
+   'mode':MODE,'real_official_tool_call':True,'bash_union_state_active':True,
+   'bash_hook_fired':False,'model_received_tool_feedback':True,
+   'all_tools_blocked':False,'temporary_workspace_only':True}),flush=True)
+ elif MODE=='host-disabled':
   assert not (root/'hook-fields.json').exists(), 'Officially disabled Hook must NOT fire'
  else:
   assert (root/'hook-fields.json').exists(),'Expected exact Host PreToolUse event'
  assert len(requests)>=2,'Model mock should see tool result in a subsequent Responses request'
- assert side_effect.exists()==(MODE!='deny'),'OFF/FAILED state outcome differs from expected Host behavior'
+ if MODE!='view-image':
+  assert side_effect.exists()==(MODE!='deny'),'OFF/FAILED state outcome differs from expected Host behavior'
  if side_effect.exists():assert side_effect.read_text()=='SYNTHETIC_TOOL_EXECUTED'
  print('SYNTHETIC_NATIVE_RESULT',json.dumps({'mode':MODE,
   'official_host':version,'official_hook_name':'Bash',
-  'actual_picket_adapter_executed':MODE not in ('fail','host-disabled'),
-  'hook_fired':MODE!='host-disabled','tool_executed':side_effect.exists(),
+  'actual_picket_adapter_executed':MODE not in ('fail','host-disabled','view-image'),
+  'hook_fired':MODE not in ('host-disabled','view-image'),'tool_executed':side_effect.exists(),
   'model_requests':len(requests),'temporary_workspace_only':True,
   'production_fail_closed_guarantee':False,
   'host_disabled_independent_of_active_union':MODE=='host-disabled'}),flush=True)
