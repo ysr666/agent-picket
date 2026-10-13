@@ -55,3 +55,69 @@ export function inspectCodexOfficialPromptHook(
  return {status,canOfferOptInNewWorkRefusal:status==='trusted',
   failClosedOnHookErrorProven:false}
 }
+
+/**
+ * PRODUCTION gate for REAL Codex prompt refusal. Never equate an official
+ * hook veto or a JSON consent boolean with a safe, lossless user experience.
+ * Positive booleans must come from independently verified Host/UX evidence,
+ * not the hook's user-editable campaign file. This is read-only.
+ */
+export type CodexNewWorkSafetyGap =
+ |'official-hook-untrusted-or-disabled'
+ |'real-user-consent-unverified'
+ |'campaign-provenance-unverified'
+ |'rejection-notice-unverified'
+ |'lossless-prompt-and-attachments-unverified'
+ |'settings-revocation-unverified'
+ |'hook-failure-ux-unverified'
+ |'host-client-matrix-unverified'
+
+export interface CodexNewWorkProductionProof {
+ readonly officialHook:CodexPromptHookReport
+ /** An authenticated real-user first-run opt-in + optional per-action choice. */
+ readonly realUserConsentVerified:boolean
+ /** Campaign is authorized by the union workflow, NOT a bare state-file bool. */
+ readonly campaignProvenanceVerified:boolean
+ readonly visibleRejectionNoticeVerified:boolean
+ /** Full composer text + attachments survived an actual native rejected input. */
+ readonly fullInputRecoveryVerified:boolean
+ /** A real settings opt-out and Host /hooks escape path are both tested. */
+ readonly userRevocationVerified:boolean
+ /** Broken/time-out hooks cannot masquerade as an active reliable strike. */
+ readonly failureDegradationVisibleVerified:boolean
+ /** Claimed Codex CLI/Desktop/OS surfaces have their own genuine tests. */
+ readonly requiredClientMatrixVerified:boolean
+}
+
+export function inspectCodexNewWorkProductionReadiness(
+ proof:CodexNewWorkProductionProof,
+):{readonly ready:boolean;readonly gaps:readonly CodexNewWorkSafetyGap[]}{
+ const gaps:CodexNewWorkSafetyGap[]=[]
+ if(proof.officialHook?.canOfferOptInNewWorkRefusal!==true
+  ||proof.officialHook.status!=='trusted')
+  gaps.push('official-hook-untrusted-or-disabled')
+ if(proof.realUserConsentVerified!==true)gaps.push('real-user-consent-unverified')
+ if(proof.campaignProvenanceVerified!==true)gaps.push('campaign-provenance-unverified')
+ if(proof.visibleRejectionNoticeVerified!==true)gaps.push('rejection-notice-unverified')
+ if(proof.fullInputRecoveryVerified!==true)
+  gaps.push('lossless-prompt-and-attachments-unverified')
+ if(proof.userRevocationVerified!==true)gaps.push('settings-revocation-unverified')
+ if(proof.failureDegradationVisibleVerified!==true)
+  gaps.push('hook-failure-ux-unverified')
+ if(proof.requiredClientMatrixVerified!==true)
+  gaps.push('host-client-matrix-unverified')
+ return {ready:gaps.length===0,gaps}
+}
+
+/** Actual verified native evidence for 0.146.1, not optimism about future UX. */
+export const CODEX_0146_PROMPT_REFUSAL_PRODUCTION_PROOF=Object.freeze({
+ officialHook:{status:'unconfirmed',canOfferOptInNewWorkRefusal:false,
+  failClosedOnHookErrorProven:false} as CodexPromptHookReport,
+ realUserConsentVerified:false,
+ campaignProvenanceVerified:false,
+ visibleRejectionNoticeVerified:false,
+ fullInputRecoveryVerified:false,
+ userRevocationVerified:false,
+ failureDegradationVisibleVerified:false,
+ requiredClientMatrixVerified:false,
+})

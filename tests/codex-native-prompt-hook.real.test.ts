@@ -132,7 +132,7 @@ test('official Codex UserPromptSubmit explicitly denies before a model HTTP requ
      'Codex must acknowledge official per-hash hook trust before execution')
     assert.equal(inspectCodexOfficialPromptHook(confirmed,root,
      selected.sourcePath,selected.currentHash).canOfferOptInNewWorkRefusal,true)
-    const newThread=await rpc('thread/start',{cwd:root,ephemeral:true})
+    const newThread=await rpc('thread/start',{cwd:root,ephemeral:false})
     const threadId=newThread.thread?.id;assert.equal(typeof threadId,'string')
     await rpc('turn/start',{threadId,input:[{type:'text',text:'SYNTHETIC_OFFLINE_UNION_TEST_NO_REAL_WORK'}]})
     const until=async(fn:()=>boolean,time=5000)=>{
@@ -148,6 +148,33 @@ test('official Codex UserPromptSubmit explicitly denies before a model HTTP requ
      assert.equal(requests.length,before,'Explicit policy deny must prevent model request')
      assert.ok(notifications.some(x=>x.method==='turn/completed'),
       'Explicit denied input must result in terminal turn event, not silent infinite work')
+     if(mode==='union-deny'){
+      const readback=await rpc('thread/read',{threadId,includeTurns:true})
+      const persisted=JSON.stringify(readback.thread?.turns??[])
+      assert.equal(readback.thread?.turns?.length,1)
+      assert.equal(readback.thread?.turns?.[0]?.status,'completed')
+      assert.equal(persisted.includes('SYNTHETIC_OFFLINE_UNION_TEST_NO_REAL_WORK'),false,
+       'Native Host thread/read alone does NOT prove recovery of rejected input')
+      // HOST-OWNED EMERGENCY STOP: official config disables the exact hook,
+      // independent of the separate, now still-active union campaign file.
+      await rpc('config/batchWrite',{edits:[{keyPath:'hooks.state',
+       value:{[selected.key]:{trusted_hash:selected.currentHash,enabled:false}},
+       mergeStrategy:'upsert'}],filePath:null,expectedVersion:null,
+       reloadUserConfig:true})
+      const stopped=await rpc('hooks/list',{cwds:[root]})
+      const result=inspectCodexOfficialPromptHook(stopped,root,
+       selected.sourcePath,selected.currentHash)
+      assert.equal(result.status,'disabled')
+      assert.equal(result.canOfferOptInNewWorkRefusal,false)
+      const second=await rpc('thread/start',{cwd:root,ephemeral:false})
+      await rpc('turn/start',{threadId:second.thread.id,
+       input:[{type:'text',text:'SYNTHETIC_ONLY_OFFICIAL_HOOK_DISABLED'}]})
+      assert.equal(await until(()=>requests.length===before+1),true,
+       'Officially disabling the hook must restore new submissions immediately')
+      assert.equal(requests.length,before+1)
+
+     }
+
     }else{
      assert.equal(await until(()=>requests.length>before),true,
       `${mode}: did not reach the local no-inference sink`)

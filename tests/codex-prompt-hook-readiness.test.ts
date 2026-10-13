@@ -34,3 +34,28 @@ test('duplicate, tampered, malformed and error Host readback cannot enable promp
  assert.equal(inspectCodexOfficialPromptHook(response([hook]),'/other',home,hash).status,
   'unconfirmed')
 })
+
+import {inspectCodexNewWorkProductionReadiness,
+ CODEX_0146_PROMPT_REFUSAL_PRODUCTION_PROOF} from '../src/adapters/codex/prompt-hook-readiness.ts'
+
+test('successful native pre-model veto alone is NEVER production safety readiness',()=>{
+ const verifiedHook=inspect(response([hook]))
+ const optimistic={...CODEX_0146_PROMPT_REFUSAL_PRODUCTION_PROOF,
+  officialHook:verifiedHook}
+ const verdict=inspectCodexNewWorkProductionReadiness(optimistic)
+ assert.equal(verdict.ready,false)
+ assert.deepEqual(verdict.gaps,[
+  'real-user-consent-unverified', 'campaign-provenance-unverified',
+  'rejection-notice-unverified','lossless-prompt-and-attachments-unverified',
+  'settings-revocation-unverified','hook-failure-ux-unverified',
+  'host-client-matrix-unverified',
+ ])
+ assert.equal(inspectCodexNewWorkProductionReadiness(
+  CODEX_0146_PROMPT_REFUSAL_PRODUCTION_PROOF).ready,false)
+ assert.equal(inspectCodexNewWorkProductionReadiness({
+  ...optimistic,realUserConsentVerified:true,campaignProvenanceVerified:true,
+  visibleRejectionNoticeVerified:true,userRevocationVerified:true,
+  failureDegradationVisibleVerified:true,requiredClientMatrixVerified:true,
+ }).gaps.includes('lossless-prompt-and-attachments-unverified'),true,
+ 'Even all other green flags cannot mask missing native input recovery')
+})
