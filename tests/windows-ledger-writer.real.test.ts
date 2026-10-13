@@ -211,3 +211,43 @@ test('native Windows verifies actual opened WAL identity, not just pathname or A
   closeSync(fd);fd=undefined
  }finally{if(fd!==undefined)closeSync(fd);rmSync(parent,{recursive:true,force:true})}
 })
+
+test('native Windows separate process cannot seize an active experimental ledger writer lock',{
+ skip:process.platform!=='win32'&&'Native NTFS two-process writer contention only',timeout:70_000,
+},async()=>{
+ const parent=mkdtempSync(join(tmpdir(),'ap-writer-contention-'))
+ const dir=join(parent,'private-ledger')
+ let owner:ExperimentalNtfsWalWriter|undefined
+ let competitor:ChildProcess|undefined
+ try{
+  owner=new ExperimentalNtfsWalWriter(dir)
+  owner.recordSyntheticToolCall('owner-one','sandbox-agent','sandbox-session',now)
+  const program=`import {ExperimentalNtfsWalWriter} from ${JSON.stringify(source)};\n`+
+   `try{const lost=new ExperimentalNtfsWalWriter(process.env.PICKET_TEST_DIR);\n`+
+   `lost.close();process.stderr.write('UNSAFE_SECOND_WRITER\\n');process.exit(3)}\n`+
+   `catch(e){if(!String(e.message).includes('existing lock or recovery')){\n`+
+   `process.stderr.write('UNEXPECTED_REFUSAL\\n');process.exit(4)}\n`+
+   `process.stdout.write('SECOND_WRITER_REFUSED\\n')}\n`
+  competitor=spawn(process.execPath,['--experimental-strip-types','--input-type=module','-e',program],{
+   env:{...process.env,PICKET_TEST_DIR:dir},stdio:['ignore','pipe','pipe'],windowsHide:true,
+  })
+  const evidence=await Promise.race([
+   new Promise<{code:number|null;out:string;err:string}>((resolve,reject)=>{
+    let out='',err=''
+    competitor!.stdout!.on('data',v=>out+=String(v))
+    competitor!.stderr!.on('data',v=>err+=String(v))
+    competitor!.once('error',reject)
+    competitor!.once('exit',code=>resolve({code,out,err}))
+   }),
+   new Promise<never>((_,reject)=>setTimeout(()=>reject(Error('Competing native writer timed out')),25_000)),
+  ])
+  assert.equal(evidence.code,0,evidence.err)
+  assert.match(evidence.out,/SECOND_WRITER_REFUSED/)
+  owner.recordSyntheticToolCall('owner-two','sandbox-agent','sandbox-session',now+1)
+  owner.close();owner=undefined
+  const verified=inspectPrivateNtfsWalReplay(dir)
+  assert.equal(verified.status,'verified')
+  assert.equal(verified.sequence,2)
+  assert.equal(verified.totals?.toolCalls,2)
+ }finally{competitor?.kill('SIGKILL');owner?.close();rmSync(parent,{recursive:true,force:true})}
+})
