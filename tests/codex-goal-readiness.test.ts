@@ -37,11 +37,18 @@ test('Codex Goal getter cannot mutate Host state, errors are unconfirmed',async(
 test('Codex 0.146.1 does NOT qualify for autonomous work blocking from goal/set alone',()=>{
  const native=inspectCodexGoalHoldSafety(CODEX_0146_NATIVE_GOAL_CAPABILITY)
  assert.equal(native.ready,false)
- assert.equal(native.gaps.length,5)
+ assert.equal(native.gaps.length,6)
  assert.equal(inspectCodexGoalHoldSafety({...CODEX_0146_NATIVE_GOAL_CAPABILITY,
   consentFromHost:true,activeOwnerVerified:true}).ready,false)
  assert.deepEqual(inspectCodexGoalHoldSafety({
-  consentFromHost:true,activeOwnerVerified:true,safeIdleBoundaryVerified:true,
+  consentFromHost:true,activeOwnerVerified:true,
+  exclusiveCrossProcessGoalOwnerVerified:true,safeIdleBoundaryVerified:true,
   conditionalCommitVerified:true,durableLosslessRecoveryVerified:true,
  }).gaps,[])
+ assert.deepEqual(inspectCodexGoalHoldSafety({
+  consentFromHost:true,activeOwnerVerified:true,
+  exclusiveCrossProcessGoalOwnerVerified:false,safeIdleBoundaryVerified:true,
+  conditionalCommitVerified:true,durableLosslessRecoveryVerified:true,
+ }).gaps,['multi-owner-fencing-unverified'],
+  'A single owner appears safe until another App-Server resumes the same active Goal')
 })
