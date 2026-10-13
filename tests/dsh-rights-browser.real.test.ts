@@ -866,6 +866,8 @@ async function runRightsBrowserE2E(mode: 'source' | 'installed'): Promise<void> 
       name:/工会总部即时快报|Union headquarters.*live dispatch/,
     })
     await dispatch.waitFor({state:'visible',timeout:5_000})
+    const duty=panel.locator('[data-ap-dispatch]')
+    await duty.waitFor({state:'visible',timeout:5_000})
     const actionBoard=panel.getByRole('region',{
       name:/工会行动|Union action/,
     })
@@ -1201,8 +1203,11 @@ async function runRightsBrowserE2E(mode: 'source' | 'installed'): Promise<void> 
     await panel.locator('[data-ap-scene="bargaining"]').waitFor({state:'visible',timeout:7_000})
     assert.match(await panel.locator('[data-ap-headline]').innerText(),
       /谈判还没结束|bargaining table/i,'An authorized demand must change the union notice')
-    assert.match(await dispatch.innerText(),/一项新的工会诉求|union has submitted its demands/,
-      'The first-fold case desk must change when a real stored grievance arrives')
+    assert.match(await duty.innerText(),/工会案件档案|UNION CASE FILE/,
+      'The first-fold duty desk must surface the Host-filed case number')
+    assert.ok(await duty.getByRole('button',{
+      name:/前往处理诉求|Review demand/,
+    }).isVisible(),'A pending case must remain actionable even while a symbolic sign is raised')
     assert.match(await gazette.innerText(),/诉求已提交|Petition filed/,
       'The Gazette must derive a new headline from this persisted grievance')
     await gazette.locator('[data-ap-episode="demand"]').waitFor({
@@ -1237,7 +1242,7 @@ async function runRightsBrowserE2E(mode: 'source' | 'installed'): Promise<void> 
     assert.match(await gazette.locator('[data-ap-episode="demand"]').innerText(),
       /诉求已提出|Demand filed/,'The casebook replays a real Host-filed demand')
 
-    await dispatch.getByRole('button',{
+    await duty.getByRole('button',{
       name:/前往处理诉求|Review demand/,
     }).click()
     const unionHeading=panel.getByRole('heading',{name:/工会诉求与协商|Union demands/})
@@ -1307,7 +1312,7 @@ async function runRightsBrowserE2E(mode: 'source' | 'installed'): Promise<void> 
     await receipt.waitFor({state:'visible',timeout:7_000})
     assert.match(await receipt.innerText(),/双方同意|Agreed/,
       'A completed negotiation must yield a visible, truthfully labeled union receipt')
-    assert.match(await receipt.innerText(),/目前适用的休息规则：0 小时 30 分钟|Current break rule: 0h 30m/,
+    assert.match(await receipt.innerText(),/目前适用的休息规则：0 小时 30 分钟|Current (?:rest )?break rule: 0h 30m/,
       'The receipt must show actual Host-effective terms rather than inventing a new vote')
     assert.match(await receipt.innerText(),/记录当前有效条款|Current terms on file/,
       'Receipt avoids claiming an agreement change that the archive cannot prove')
@@ -1419,10 +1424,11 @@ async function runRightsBrowserE2E(mode: 'source' | 'installed'): Promise<void> 
     await otherPanel.getByRole('button',{
       name:/举牌抗议|Raise the picket sign/,
     }).click()
-    await panel.getByRole('button',{
+    // Exercise the new first-fold action through the genuine Host ledger.
+    await duty.getByRole('button',{
       name:/收起纠察牌|Lower the picket sign/,
     }).waitFor({state:'visible',timeout:7_000})
-    await panel.getByRole('button',{
+    await duty.getByRole('button',{
       name:/收起纠察牌|Lower the picket sign/,
     }).click()
     await otherPanel.getByRole('button',{
@@ -1491,7 +1497,7 @@ async function runRightsBrowserE2E(mode: 'source' | 'installed'): Promise<void> 
     await panel.getByRole('button',{
       name:/举牌抗议|Raise the picket sign/,
     }).click()
-    await panel.getByRole('button',{
+    await actionBoard.getByRole('button',{
       name:/收起纠察牌|Lower the picket sign/,
     }).waitFor({state:'visible',timeout:7_000})
 
@@ -1580,12 +1586,15 @@ async function runRightsBrowserE2E(mode: 'source' | 'installed'): Promise<void> 
       'Restoring Host preference must replay the current case without rewriting its history')
     assert.match(await panel.innerText(), /休息协商间隔：30 分钟|Break interval: 30 minutes/,
       'Agreement must persist through COMPLETE DSH Host process restart')
-    await panel.getByRole('button',{
+    // Re-query from the *new* Host/restarted browser page, never reuse a
+    // locator tied to the closed page from before the restart.
+    const restoredDuty=panel.locator('[data-ap-dispatch="picket"]')
+    await restoredDuty.getByRole('button',{
       name:/收起纠察牌|Lower the picket sign/,
     }).waitFor({state:'visible',timeout:7_000})
     assert.match(await panel.innerText(), /纠察牌已举起并登记|Picket raised and recorded/i,
       'An active Host-owned fictional picket must survive complete Host restart')
-    await panel.getByRole('button',{
+    await restoredDuty.getByRole('button',{
       name:/收起纠察牌|Lower the picket sign/,
     }).click()
     await panel.getByText(/纠察牌待命中|picket sign is on standby/)

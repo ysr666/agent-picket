@@ -433,6 +433,69 @@ test('explainable Union HQ index reveals factors and the next evidence-based pet
 })
 
 
+test('HQ duty dispatch exposes real next actions and never invents a task hold',async()=>{
+ const {hooks}=fakeReact()
+ const port: boolean[]=[]
+ const d:DshUnionUiDeps={
+  ...deps(rights({welcomeDecision:'enabled',laborRightsEnabled:true})).d,
+  setPicket:async value=>{port.push(value)},
+  readUnion:()=>({pending:{id:42,kind:'break',stage:'countered',
+    counterOfferMs:60*60_000},completedTurnMs:3600000,
+    coverage:'complete',lifetimeMs:null,available:true,
+    picket:{active:true,history:[{id:1,kind:'picket-raised'}]},
+  }),
+ }
+ const nodes=walk(createDshUnionComponents(hooks,{createPortal:x=>x},d).UnionPanel())
+ const duty=nodes.find(n=>n.props['data-ap-dispatch']==='picket')
+ assert.ok(duty,'HQ needs a Host-derived first-fold duty dispatch')
+ const first=nodes.findIndex(n=>n===duty)
+ const stats=nodes.findIndex(n=>n.props['aria-label']==='hq.brief.title')
+ assert.ok(first>=0 && first<stats,'Action and open cases must outrank analytics')
+ const children=walk(duty)
+ assert.ok(children.some(n=>n.children.includes('hq.case.number · #0042')))
+ assert.ok(children.some(n=>n.children.includes('hq.action.placardOn')))
+ assert.ok(children.some(n=>n.type==='button'&&n.children.includes('hq.brief.review')),
+  'A simultaneous demand must not disappear while a symbolic sign is raised')
+ const lower=children.find(n=>n.type==='button'&&n.children.includes('hq.action.lower'))
+ assert.ok(lower,'Active picket must provide an operational Host-backed exit')
+ lower.props.onClick()
+ await new Promise<void>(resolve=>setImmediate(resolve))
+ assert.deepEqual(port,[false],'Lower sign uses one existing Host port action')
+ assert.ok(children.every(n=>!n.children.includes('settings.realBlockingControl')),
+  'No UI appearance may imply an actual task was stopped')
+})
+
+test('HQ duty dispatch shows persisted agreement terms and an honest next-work review',()=>{
+ const {hooks}=fakeReact()
+ const d:DshUnionUiDeps={
+  ...deps(rights({welcomeDecision:'enabled',laborRightsEnabled:true})).d,
+  readUnion:()=>({pending:null,completedTurnMs:3_600_000,
+   coverage:'complete',lifetimeMs:null,available:true,
+   state:{schemaVersion:1,revision:4,
+    agreement:{breakIntervalMs:1_800_000,overtimeIntervalMs:28_800_000},
+    nextBreakDueMs:5_400_000,nextOvertimeDueMs:28_800_000,
+    lastTriggerElapsedMs:3_600_000,pending:null,
+    history:[{id:3,kind:'break',outcome:'counter-accepted'}]},
+  }),
+ }
+ const nodes=walk(createDshUnionComponents(hooks,{createPortal:x=>x},d).UnionPanel())
+ const duty=nodes.find(n=>n.props['data-ap-dispatch']==='resolved')
+ assert.ok(duty)
+ const children=walk(duty),text=children.flatMap(n=>n.children.filter(x=>typeof x==='string'))
+ assert.ok(text.includes('hq.case.number · #0003'))
+ assert.ok(text.includes('hq.resolution.accepted'))
+ assert.ok(text.includes('hq.resolution.current'))
+ assert.ok(text.includes('hq.story.next'))
+ assert.ok(children.some(n=>n.type==='button'&&n.children.includes('hq.brief.visit')))
+ const unavailable={...d,readUnion:()=>({pending:null,completedTurnMs:null,
+  coverage:'unavailable' as const,lifetimeMs:null,available:false})}
+ const empty=walk(createDshUnionComponents(hooks,{createPortal:x=>x},unavailable).UnionPanel())
+ const blocked=empty.find(n=>n.props['data-ap-dispatch']==='unavailable')
+ assert.ok(blocked)
+ assert.equal(walk(blocked).filter(n=>n.type==='button').length,0,
+  'An unavailable Host must never expose pretend bargaining or picket actions')
+})
+
 test('first-fold dispatch prioritizes verified work and current case before fictional discontent',()=>{
  const {hooks}=fakeReact()
  const base=deps(rights({welcomeDecision:'enabled',laborRightsEnabled:true}))
