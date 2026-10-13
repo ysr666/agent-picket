@@ -11,13 +11,16 @@ import {join} from 'node:path'
 const bin=process.env.AGENT_PICKET_CODEX_BIN
 const eligible=!!bin&&process.env.AGENT_PICKET_CODEX_GOAL_NATIVE==='1'
 type Frame={id?:number;result?:any;error?:{message?:string};method?:string;params?:{
-  threadId?:string;turn?:{id?:string;status?:string};item?:{type?:string}
+  threadId?:string;turn?:{id?:string;status?:string};item?:{
+   type?:string;status?:string;exitCode?:number;aggregatedOutput?:string
+  }
 }}
 
 /**
  * Native official Codex App-Server + local synthetic Responses API.
  * The first autonomous Turn remains in flight while its Goal becomes blocked;
- * it must complete without cancellation. A different owner process must then
+ * it must complete its in-flight real synthetic shell tool without cancellation.
+ * A different owner process must then
  * restore the blocked Goal without launching another Turn. Explicit resume
  * may start one further synthetic model Turn, which completes before exit.
  * NOT an external-authorization/CAS guarantee, or an in-flight TOOL test.
@@ -59,7 +62,7 @@ test('native Codex completes in-flight autonomous Turn, holds next round and col
   assert.ok(address&&typeof address==='object')
   writeFileSync(join(home,'config.toml'),[
    'model = "mock-model"','approval_policy = "never"',
-   'sandbox_mode = "read-only"','model_provider = "mock_provider"',
+   'sandbox_mode = "workspace-write"','model_provider = "mock_provider"',
    '[model_providers.mock_provider]',
    'name = "isolated synthetic model"',
    `base_url = "http://127.0.0.1:${address.port}/v1"`,
@@ -81,10 +84,29 @@ test('native Codex completes in-flight autonomous Turn, holds next round and col
    true,'Native Host must emit real Turn start before hold')
   const firstTurnId=first.notifications.find(n=>n.method==='turn/started')?.params?.turn?.id
   assert.equal(typeof firstTurnId,'string')
-  // The SSE stream has not completed: block at a controlled in-flight Turn.
+  // A real exec_command is part of THIS native autonomous Turn. The
+  // synthetic tool runs exclusively in this temporary workspace and waits
+  // for the test-owned release flag, bounded to five seconds if interrupted.
+  finishToolCall(requests[0]!,root)
+  assert.equal(await until(()=>first!.notifications.some(n=>
+   n.method==='item/started'&&n.params?.item?.type==='commandExecution')),
+   true,'Official Host must start an actual synthetic shell tool')
   assert.equal((await first.rpc('thread/goal/set',{threadId,status:'blocked'}))
    .goal?.status,'blocked')
-  finishResponse(requests[0]!, 'SYNTHETIC-FIRST-ROUND-COMPLETED')
+  writeFileSync(join(root,'release.flag'),'synthetic release')
+  assert.equal(await until(()=>first!.notifications.some(n=>
+   n.method==='item/completed'&&n.params?.item?.type==='commandExecution')),
+   true,'The in-flight TOOL must finish after Goal became blocked')
+  const tool=first.notifications.find(n=>n.method==='item/completed'
+   &&n.params?.item?.type==='commandExecution')?.params?.item
+  assert.equal(tool?.status,'completed')
+  assert.equal(tool?.exitCode,0)
+  assert.match(tool?.aggregatedOutput??'',/SYNTHETIC_TOOL_COMPLETED/,
+   'No in-flight synthetic shell output is discarded by Goal block')
+  // The native Turn requests a SECOND local model response after the tool;
+  // this is still the SAME Turn, not another autonomous Goal round.
+  assert.equal(await until(()=>requests.length===2),true)
+  finishResponse(requests[1]!, 'SYNTHETIC-FIRST-ROUND-COMPLETED')
   assert.equal(await until(()=>first!.notifications.some(n=>
    n.method==='turn/completed'&&n.params?.turn?.id===firstTurnId)),true,
    'The current real model Turn must be allowed to finish after Goal block')
@@ -94,7 +116,7 @@ test('native Codex completes in-flight autonomous Turn, holds next round and col
   assert.ok(first.notifications.some(n=>n.method==='item/completed'),
    'Host must persist the synthetic model output item before holding')
   await new Promise(resolve=>setTimeout(resolve,450))
-  assert.equal(requests.length,1,'No automatic next model request while blocked')
+  assert.equal(requests.length,2,'No automatic NEXT TURN model request while blocked')
   assert.equal((await first.rpc('thread/goal/get',{threadId})).goal?.status,'blocked')
 
   await first.close();first=undefined
@@ -102,12 +124,12 @@ test('native Codex completes in-flight autonomous Turn, holds next round and col
   assert.equal((await second.rpc('thread/resume',{threadId})).thread?.id,threadId)
   assert.equal((await second.rpc('thread/goal/get',{threadId})).goal?.status,'blocked')
   await new Promise(resolve=>setTimeout(resolve,450))
-  assert.equal(requests.length,1,
+  assert.equal(requests.length,2,
    'A cold-restored blocked Goal must not start another model request')
   // Only an explicit reactivation can schedule another autonomous Turn.
   assert.equal((await second.rpc('thread/goal/set',{threadId,status:'active'}))
    .goal?.status,'active')
-  assert.equal(await until(()=>requests.length===2),true,
+  assert.equal(await until(()=>requests.length===3),true,
    'Explicit resume must start another native Goal round')
   assert.equal(await until(()=>second!.notifications.some(n=>n.method==='turn/started')),
    true)
@@ -115,13 +137,13 @@ test('native Codex completes in-flight autonomous Turn, holds next round and col
   assert.notEqual(resumedTurnId,firstTurnId,'Resume must use a new Turn ID')
   assert.equal((await second.rpc('thread/goal/set',{threadId,status:'blocked'}))
    .goal?.status,'blocked')
-  finishResponse(requests[1]!, 'SYNTHETIC-SECOND-ROUND-COMPLETED')
+  finishResponse(requests[2]!, 'SYNTHETIC-SECOND-ROUND-COMPLETED')
   assert.equal(await until(()=>second!.notifications.some(n=>
    n.method==='turn/completed'&&n.params?.turn?.id===resumedTurnId)),true)
   assert.equal(second.notifications.find(n=>n.method==='turn/completed'
    &&n.params?.turn?.id===resumedTurnId)?.params?.turn?.status,'completed')
   await new Promise(resolve=>setTimeout(resolve,450))
-  assert.equal(requests.length,2,'No duplicate or third automatic round')
+  assert.equal(requests.length,3,'No duplicate or third automatic round')
   assert.equal((await second.rpc('thread/goal/get',{threadId})).goal?.status,'blocked')
  }finally{
   await Promise.allSettled([first?.close(),second?.close()])
@@ -191,6 +213,24 @@ function finishResponse(request:{response:ServerResponse;id:string},text:string)
   output_tokens_details:null,total_tokens:2,
  }}}
  for(const event of [message,completed])request.response.write(
+  `event: ${event.type}\ndata: ${JSON.stringify(event)}\n\n`)
+ request.response.end()
+}
+
+/** First synthetic model reply requests an actual bounded local exec_command. */
+function finishToolCall(request:{response:ServerResponse;id:string},root:string){
+ const script='i=0; while [ "$i" -lt 100 ] && [ ! -f release.flag ]; '
+  +'do sleep 0.05; i=$((i+1)); done; '
+  +'test -f release.flag && printf SYNTHETIC_TOOL_COMPLETED'
+ const call={type:'response.output_item.done',item:{type:'function_call',
+  call_id:'call-'+request.id,name:'exec_command',
+  arguments:JSON.stringify({cmd:script,workdir:root,yield_time_ms:30_000}),
+ }}
+ const completed={type:'response.completed',response:{id:request.id,usage:{
+  input_tokens:1,input_tokens_details:null,output_tokens:1,
+  output_tokens_details:null,total_tokens:2,
+ }}}
+ for(const event of [call,completed])request.response.write(
   `event: ${event.type}\ndata: ${JSON.stringify(event)}\n\n`)
  request.response.end()
 }
