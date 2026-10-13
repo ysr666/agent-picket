@@ -1,4 +1,4 @@
-import {createHmac} from 'node:crypto'
+import {createHash,createHmac} from 'node:crypto'
 import {existsSync,lstatSync,readFileSync} from 'node:fs'
 import {join} from 'node:path'
 import {inspectPrivateNtfsLedgerLayout} from './windows-ledger-layout.ts'
@@ -32,6 +32,8 @@ export type WindowsWalReadback={
  readonly applied?:number
  readonly tornTail?:boolean
  readonly totals?:Readonly<Totals>
+ /** Research-only hash of complete canonical recovered state, never raw ids. */
+ readonly stateDigest?:string
 }
 const unconfirmed:WindowsWalReadback={status:'unconfirmed'}
 function validTotals(v:unknown):v is Totals {
@@ -109,10 +111,23 @@ export function replayVerifiedV1SnapshotWal(snapshotText:string,bytes:Buffer):Wi
    daily[date]=next
    for(const old of Object.keys(daily).sort().slice(0,Math.max(0,Object.keys(daily).length-maxDay)))
      delete daily[old]
+   // DurableStats v1 stores only its latest 16,384 fingerprints; older
+   // entries leave the dedup window in insertion order during WAL replay.
    seen.add(record.fp)
+   if(seen.size>maxSeen)seen.delete(seen.values().next().value!)
    sequence=record.seq;applied++
   }
-  return {status:'verified',sequence,applied,tornTail,totals}
+  // Stable across snapshot-first checkpoint, even when the old WAL remains.
+  // Canonicalize object key order, date order, and bounded fingerprint order.
+  // This is not a MAC or independent trust root; it only binds the witnessed
+  // journal/snapshot state together against isolated edits/rollback.
+  const canonTotals=(v:Totals)=>keys.map(k=>v[k])
+  const stateDigest=createHash('sha256').update(JSON.stringify([
+   sequence,snapshot.secret,canonTotals(totals),
+   Object.keys(daily).sort().map(day=>[day,canonTotals(daily[day]!)]),
+   [...seen],
+  ])).digest('base64url')
+  return {status:'verified',sequence,applied,tornTail,totals,stateDigest}
  }catch{return unconfirmed}
 }
 /** Fail-closed NTFS filesystem wrapper; no lock deletion or torn-tail truncate. */
@@ -129,7 +144,10 @@ export function inspectPrivateNtfsWalReplay(directory:string):WindowsWalReadback
   const snapStat=lstatSync(snap)
   if(!snapStat.isFile()||snapStat.size>maxSnapshotBytes)return unconfirmed
   if(existsSync(wal) && lstatSync(wal).size>maxWalBytes)return unconfirmed
-  const journal=existsSync(wal)?readFileSync(wal):Buffer.alloc(0)
+  // An existing snapshot without its journal is not a proven empty log:
+  // an attacker/crash could have removed post-checkpoint acknowledged rows.
+  if(!existsSync(wal))return unconfirmed
+  const journal=readFileSync(wal)
   // Layout preflight checked each DACL. TOCTOU still prevents this from being
   // authorization for mutation or production enforcement.
   return replayVerifiedV1SnapshotWal(readFileSync(snap,'utf8'),journal)

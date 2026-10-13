@@ -4,7 +4,7 @@ import {verifyPrivateNtfsAcl} from './windows-private-acl.ts'
 
 /** Experimental READ-ONLY NTFS ledger layout preflight, never a write permit. */
 const NAMES=new Set([
-  'aggregate.v1.json','aggregate.v1.journal',
+  'aggregate.v1.json','aggregate.v1.journal','aggregate.v1.anchor',
   'aggregate.v1.lock','aggregate.v1.recovery',
 ])
 const SNAPSHOT_TEMP=/^aggregate\.v1-[0-9a-f]{16}\.tmp$/

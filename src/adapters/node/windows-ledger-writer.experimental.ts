@@ -1,19 +1,22 @@
 /**
  * ISOLATED RESEARCH ONLY; excluded from npm. Not a production DurableStats.
- * Narrow v1-compatible NTFS WAL writer: no dead-owner takeover, explicit test-only checkpoint,
+ * Research-only v1 WAL format plus NEW-ledger sidecar anchor (no legacy migration):
+ * no dead-owner takeover, explicit test-only checkpoint,
  * no torn-tail repair; checkpoint requires manual test invocation.
  */
 import {createHmac,randomBytes} from 'node:crypto'
-import {closeSync,existsSync,fstatSync,fsyncSync,lstatSync,openSync,
+import {constants as fsConstants,closeSync,existsSync,fstatSync,fsyncSync,lstatSync,openSync,
  readFileSync,renameSync,unlinkSync,writeFileSync,writeSync} from 'node:fs'
 import {hostname} from 'node:os'
 import {isAbsolute,join} from 'node:path'
 import {createProtectedNtfsDirectory,verifyPrivateNtfsAcl} from './windows-private-acl.ts'
 import {inspectPrivateNtfsLedgerLayout} from './windows-ledger-layout.ts'
 import {replayVerifiedV1SnapshotWal} from './windows-wal-replay.ts'
+import {auditExperimentalWalAnchor} from './windows-wal-anchor.experimental.ts'
 
 const snapshotName='aggregate.v1.json'
 const journalName='aggregate.v1.journal'
+const anchorName='aggregate.v1.anchor'
 const lockName='aggregate.v1.lock'
 const totalsZero={turnStarts:0,turnEnds:0,toolCalls:0,toolResults:0,
  completedTurnMs:0,checked:0,safe:0,review:0,targeted:0}
@@ -51,6 +54,7 @@ export class ExperimentalNtfsWalWriter {
  #seen=new Set<string>()
  #sinceCheckpoint=0
  #fd:number|undefined
+ #lockFd:number|undefined
  #owned=false
  #closed=false
  #faulted=false
@@ -69,21 +73,52 @@ export class ExperimentalNtfsWalWriter {
    throw Error('Unverified existing lock or recovery; do not steal')
   try {
    const lock=join(directory,lockName)
-   const fd=openSync(lock,'wx',0o600)
-   try{
-    writeFileSync(fd,JSON.stringify({version:1,pid:process.pid,host:hostname(),token:this.#token}))
-    fsyncSync(fd)
-   }finally{closeSync(fd)}
+   this.#lockFd=openSync(lock,'wx',0o600)
    this.#owned=true
-   if(!verifyPrivateNtfsAcl(lock,'file'))throw Error('Lock ACL unverified')
+   writeFileSync(this.#lockFd,JSON.stringify({version:1,pid:process.pid,
+    host:hostname(),token:this.#token}))
+   fsyncSync(this.#lockFd)
+   // Keep this particular NTFS lock FILE OBJECT open until close. A copied
+   // lock with the same token is NOT the lock this writer acquired.
+   if(!verifyPrivateNtfsAcl(lock,'file')
+     ||!verifyNtfsOpenFileIdentity(this.#lockFd,lock))
+    throw Error('Lock ACL or opened file identity unverified')
    this.#initialize(existing)
    const journal=join(directory,journalName)
-   this.#fd=openSync(journal,'a',0o600)
+   // O_APPEND without O_CREAT: a missing pre-existing WAL must NEVER be
+   // silently recreated (this would discard uncheckpointed acknowledged work).
+   this.#fd=openSync(journal,fsConstants.O_WRONLY|fsConstants.O_APPEND)
    if(!verifyPrivateNtfsAcl(journal,'file')
     ||!verifyNtfsOpenFileIdentity(this.#fd,journal))
     throw Error('Journal ACL or file handle identity unverified')
    if(!inspectPrivateNtfsLedgerLayout(directory).private)throw Error('NTFS layout changed during writer initialization')
   }catch(error){this.close();throw error}
+ }
+ // TEST ONLY: a separate fsynced sequence/tool-call watermark is committed
+ // AFTER WAL fsync but BEFORE an event is acknowledged. A crash in-between
+ // leaves a mismatch and demands forensic recovery, never automatic rollback.
+ #writeAnchor(sequence:number,toolCalls:number,tipMac:string|null):void{
+  const anchor=join(this.#directory,anchorName)
+  const temp=join(this.#directory,'aggregate.v1-'+randomBytes(8).toString('hex')+'.tmp')
+  let fd:number|undefined
+  try{
+   const recovered=replayVerifiedV1SnapshotWal(
+    readFileSync(join(this.#directory,snapshotName),'utf8'),
+    readFileSync(join(this.#directory,journalName)))
+   if(recovered.status!=='verified'||recovered.tornTail
+      ||recovered.sequence!==sequence||recovered.totals?.toolCalls!==toolCalls
+      ||typeof recovered.stateDigest!=='string')
+    throw Error('Anchor cannot attest inconsistent recovered WAL state')
+   fd=openSync(temp,'wx',0o600)
+   writeFileSync(fd,JSON.stringify({version:2,sequence,toolCalls,tipMac,
+    stateDigest:recovered.stateDigest}))
+   fsyncSync(fd);closeSync(fd);fd=undefined
+   if(!verifyPrivateNtfsAcl(temp,'file'))throw Error('Anchor temp ACL unverified')
+   renameSync(temp,anchor)
+   if(!verifyPrivateNtfsAcl(anchor,'file'))throw Error('Committed anchor ACL unverified')
+  }finally{
+   if(fd!==undefined)try{closeSync(fd)}catch{/* fail closed */}
+  }
  }
  #initialize(existing:boolean):void{
   const snap=join(this.#directory,snapshotName)
@@ -100,15 +135,26 @@ export class ExperimentalNtfsWalWriter {
    if(!verifyPrivateNtfsAcl(temp,'file'))throw Error('Snapshot temp ACL unverified')
    renameSync(temp,snap)
    if(!verifyPrivateNtfsAcl(snap,'file'))throw Error('Snapshot ACL unverified')
+   // New ledgers get an explicitly created empty WAL. A later open may
+   // append only to THIS existing private WAL; never reinitialize one.
+   const journalFd=openSync(wal,'wx',0o600)
+   try{fsyncSync(journalFd)}finally{closeSync(journalFd)}
+   if(!verifyPrivateNtfsAcl(wal,'file'))throw Error('Initial WAL ACL unverified')
+   this.#writeAnchor(0,0,null)
    return
   }
+  if(!existsSync(wal))throw Error('Missing existing WAL; cannot prove no data loss')
+  const anchor=join(this.#directory,anchorName)
+  if(!existsSync(anchor))throw Error('Missing independent WAL anchor; no safe migration')
   const snapText=readFileSync(snap,'utf8')
   const raw=JSON.parse(snapText) as {secret?:string;seen?:string[];sequence?:number}
-  const bytes=existsSync(wal)?readFileSync(wal):Buffer.alloc(0)
+  const bytes=readFileSync(wal)
   if(bytes.length>MAX_BYTES)throw Error('Oversized WAL')
   const recovered=replayVerifiedV1SnapshotWal(snapText,bytes)
   if(recovered.status!=='verified'||recovered.tornTail)
    throw Error('WAL requires forensic review before writing')
+  if(auditExperimentalWalAnchor(snapText,bytes,readFileSync(anchor,'utf8'))!=='verified')
+   throw Error('WAL anchor mismatch; suspected committed work rollback')
   if((recovered.applied??0)>MAX_RECORDS_BETWEEN_CHECKPOINTS)throw Error('Experimental WAL limit reached')
   this.#secret=raw.secret!
   this.#sequence=recovered.sequence!
@@ -123,7 +169,13 @@ export class ExperimentalNtfsWalWriter {
   for(const line of bytes.toString('utf8').split('\n').filter(Boolean)){
    const v=JSON.parse(line) as {seq:number;fp:string;atMs:number;changes:Partial<typeof totalsZero>}
    if(v.seq<=committedSequence)continue
-   if(FP.test(v.fp))this.#seen.add(v.fp)
+   // Match DurableStats v1 bounded FIFO dedup across snapshot + WAL.
+   // Keep the latest 16,384 event fingerprints in original insertion order.
+   if(FP.test(v.fp)){
+    this.#seen.add(v.fp)
+    if(this.#seen.size>MAX_FINGERPRINTS)
+     this.#seen.delete(this.#seen.values().next().value!)
+   }
    const day=new Date(v.atMs).toISOString().slice(0,10)
    const base=this.#daily[day]??{...totalsZero}
    const updated={...base}
@@ -140,7 +192,8 @@ export class ExperimentalNtfsWalWriter {
  get snapshot():Readonly<{sequence:number;toolCalls:number}>{
   return {sequence:this.#sequence,toolCalls:this.#toolCalls}
  }
- recordSyntheticToolCall(eventId:string,agentId:string,sessionId:string,atMs:number):boolean{
+ recordSyntheticToolCall(eventId:string,agentId:string,sessionId:string,atMs:number,
+  afterWalFsyncForTest?:()=>void):boolean{
   if(this.#closed||this.#faulted||this.#fd===undefined)throw Error('Writer is not usable')
   if([eventId,agentId,sessionId].some(v=>typeof v!=='string'||!v||v.length>128)
     ||!Number.isSafeInteger(atMs)||atMs<0||atMs>8_640_000_000_000_000)
@@ -148,8 +201,13 @@ export class ExperimentalNtfsWalWriter {
   const fp=createHmac('sha256',Buffer.from(this.#secret,'hex'))
    .update(JSON.stringify(['work',agentId,sessionId,eventId])).digest('base64url')
   if(this.#seen.has(fp))return false
-  if(this.#sinceCheckpoint>=MAX_RECORDS_BETWEEN_CHECKPOINTS
-   ||this.#seen.size>=MAX_FINGERPRINTS)throw Error('Experimental WAL checkpoint or dedup capacity exceeded')
+  // An exhausted sequence must be rejected BEFORE any WAL bytes are written.
+  // Otherwise replay rejects the unsafe JSON number and a once-valid ledger
+  // becomes permanently unopenable even though the event was unacknowledged.
+  if(!Number.isSafeInteger(this.#sequence+1))
+   throw Error('Experimental WAL sequence exhausted')
+  if(this.#sinceCheckpoint>=MAX_RECORDS_BETWEEN_CHECKPOINTS)
+   throw Error('Experimental WAL checkpoint required')
   const day=new Date(atMs).toISOString().slice(0,10)
   if(!Number.isSafeInteger(this.#totals.toolCalls+1)
    ||!Number.isSafeInteger((this.#daily[day]?.toolCalls??0)+1))
@@ -157,6 +215,8 @@ export class ExperimentalNtfsWalWriter {
   const lock=join(this.#directory,lockName)
   try{
    if(!inspectPrivateNtfsLedgerLayout(this.#directory).private
+      ||this.#lockFd===undefined
+      ||!verifyNtfsOpenFileIdentity(this.#lockFd,lock)
       ||JSON.parse(readFileSync(lock,'utf8')).token!==this.#token
       ||!verifyNtfsOpenFileIdentity(this.#fd,join(this.#directory,journalName)))
     throw Error('NTFS lock, ACL or opened journal identity changed')
@@ -166,7 +226,11 @@ export class ExperimentalNtfsWalWriter {
    const bytes=Buffer.from(JSON.stringify({seq,fp,changes,atMs,mac})+'\n')
    if(writeSync(this.#fd,bytes)!==bytes.length)throw Error('Short WAL write')
    fsyncSync(this.#fd)
+   afterWalFsyncForTest?.()
+   this.#writeAnchor(seq,this.#totals.toolCalls+1,mac)
    this.#sequence=seq;this.#toolCalls++;this.#totals.toolCalls++;this.#seen.add(fp)
+   if(this.#seen.size>MAX_FINGERPRINTS)
+    this.#seen.delete(this.#seen.values().next().value!)
    const date=day
    const base=this.#daily[date]??{...totalsZero}
    this.#daily[date]={...base,toolCalls:base.toolCalls+1}
@@ -190,6 +254,8 @@ export class ExperimentalNtfsWalWriter {
   let name:string|undefined, fd:number|undefined
   try {
    if(!inspectPrivateNtfsLedgerLayout(this.#directory).private
+      ||this.#lockFd===undefined
+      ||!verifyNtfsOpenFileIdentity(this.#lockFd,join(this.#directory,lockName))
       ||JSON.parse(readFileSync(join(this.#directory,lockName),'utf8')).token!==this.#token
       ||!verifyNtfsOpenFileIdentity(this.#fd,wal))
     throw Error('NTFS lock, ACL or journal handle identity changed')
@@ -213,7 +279,9 @@ export class ExperimentalNtfsWalWriter {
    closeSync(old)
    renameSync(name,wal);name=undefined
    if(!verifyPrivateNtfsAcl(wal,'file'))throw Error('New WAL ACL unverified')
-   this.#fd=openSync(wal,'a',0o600)
+   // Also disallow creation after the checkpoint's WAL rename: a competing
+   // pathname removal must fault this writer, never manufacture an empty log.
+   this.#fd=openSync(wal,fsConstants.O_WRONLY|fsConstants.O_APPEND)
    if(!verifyNtfsOpenFileIdentity(this.#fd,wal))
     throw Error('Post-checkpoint WAL handle identity unverified')
    this.#sinceCheckpoint=0
@@ -228,11 +296,25 @@ export class ExperimentalNtfsWalWriter {
   this.#closed=true
   try{if(this.#fd!==undefined)closeSync(this.#fd)}catch{/* fail closed */}
   this.#fd=undefined
+  const fd=this.#lockFd
+  this.#lockFd=undefined
+  const lock=join(this.#directory,lockName)
+  // NTFS commonly disallows deleting an OPEN file, so record the acquired
+  // file ID before close and compare again immediately before unlink.
+  // This still has a pathname race: it is NOT an atomic owner fence.
+  let acquired:import('node:fs').BigIntStats|undefined
+  if(fd!==undefined){
+   try{acquired=fstatSync(fd,{bigint:true})}catch{/* unknown, leave lock */}
+   try{closeSync(fd)}catch{/* leave lock */}
+  }
   if(!this.#owned)return
   try{
-   const lock=join(this.#directory,lockName)
-   if(verifyPrivateNtfsAcl(lock,'file')&&
-      JSON.parse(readFileSync(lock,'utf8')).token===this.#token)
+   const named=lstatSync(lock,{bigint:true})
+   if(acquired?.isFile()&&acquired.ino>0n&&acquired.nlink===1n
+     &&named.isFile()&&!named.isSymbolicLink()&&named.nlink===1n
+     &&named.ino===acquired.ino&&named.dev===acquired.dev
+     &&verifyPrivateNtfsAcl(lock,'file')
+     &&JSON.parse(readFileSync(lock,'utf8')).token===this.#token)
     unlinkSync(lock)
   }catch{/* leave uncertain lock for manual handling */}
   this.#owned=false

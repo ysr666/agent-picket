@@ -1,0 +1,85 @@
+/**
+ * EXPERIMENT ONLY, excluded from npm. A separately committed high-water mark
+ * detects accidental or unauthorized-after-the-fact WAL suffix disappearance.
+ * This is NOT an adversary-resistant source of truth: a privileged actor who
+ * replaces BOTH v1 files and the mark can still roll back everything.
+ */
+import {existsSync,lstatSync,readFileSync} from 'node:fs'
+import {join} from 'node:path'
+import {inspectPrivateNtfsLedgerLayout} from './windows-ledger-layout.ts'
+import {inspectPrivateNtfsWalReplay,replayVerifiedV1SnapshotWal} from './windows-wal-replay.ts'
+
+export type ExperimentalWalAnchor=Readonly<{
+ version:2;sequence:number;toolCalls:number;tipMac:string|null;stateDigest:string
+}>
+const safe=(x:unknown):x is number=>typeof x==='number'&&Number.isSafeInteger(x)&&x>=0
+const digest=/^[A-Za-z0-9_-]{43}$/
+export function validExperimentalWalAnchor(value:unknown):value is ExperimentalWalAnchor{
+ if(value===null||typeof value!=='object'||Array.isArray(value))return false
+ const a=value as Record<string,unknown>
+ return Object.keys(a).sort().join('|')==='sequence|stateDigest|tipMac|toolCalls|version'
+  &&a.version===2&&safe(a.sequence)&&safe(a.toolCalls)
+  &&typeof a.stateDigest==='string'&&digest.test(a.stateDigest)
+  &&(a.sequence===0?a.tipMac===null:typeof a.tipMac==='string'&&digest.test(a.tipMac))
+}
+/** Compare an already-durable independent mark with BOTH unmodified v1 files. */
+export function auditExperimentalWalAnchor(
+ snapshotText:string,wal:Buffer,anchorText:string,
+):'verified'|'unconfirmed'{
+ try{
+  if(typeof anchorText!=='string'||Buffer.byteLength(anchorText)>512)return 'unconfirmed'
+  const anchor:unknown=JSON.parse(anchorText)
+  if(!validExperimentalWalAnchor(anchor))return 'unconfirmed'
+  const replay=replayVerifiedV1SnapshotWal(snapshotText,wal)
+  if(replay.status!=='verified'||replay.tornTail
+    ||replay.sequence!==anchor.sequence||replay.totals?.toolCalls!==anchor.toolCalls
+    ||replay.stateDigest!==anchor.stateDigest)
+   return 'unconfirmed'
+  const snapshot:unknown=JSON.parse(snapshotText)
+  if(!snapshot||typeof snapshot!=='object'||Array.isArray(snapshot))return 'unconfirmed'
+  const snapshotSequence=(snapshot as Record<string,unknown>).sequence??0
+  if(!safe(snapshotSequence)||snapshotSequence>anchor.sequence)return 'unconfirmed'
+  if(snapshotSequence===anchor.sequence)return 'verified'
+  // A not-yet-checkpointed mark requires the last WAL row to match the
+  // independently fsynced marker. No row, replacement, or torn tail qualifies.
+  const lines=wal.toString('utf8').split('\n').filter(Boolean)
+  const last=JSON.parse(lines[lines.length-1]??'null') as {seq?:unknown;mac?:unknown}|null
+  if(last?.seq!==anchor.sequence||last.mac!==anchor.tipMac)return 'unconfirmed'
+  return 'verified'
+ }catch{return 'unconfirmed'}
+}
+
+
+/**
+ * Independent READ-ONLY inspector for the new experimental ANCHORED profile.
+ * Unlike the legacy v1-only reader it never calls a signed WAL prefix
+ * "verified" if its separate acknowledged high-water mark is missing.
+ * This is observational forensic evidence only: pathname/ACL checks and
+ * multiple file reads are not kernel-atomic and CANNOT authorize a writer.
+ */
+export function inspectPrivateNtfsAnchoredWalReplay(directory:string):
+ 'verified'|'unconfirmed'{
+ if(process.platform!=='win32')return 'unconfirmed'
+ try{
+  if(!inspectPrivateNtfsLedgerLayout(directory).private)return 'unconfirmed'
+  const lock=join(directory,'aggregate.v1.lock')
+  const recovery=join(directory,'aggregate.v1.recovery')
+  if(existsSync(lock)||existsSync(recovery))return 'unconfirmed'
+  const anchor=join(directory,'aggregate.v1.anchor')
+  const snapshot=join(directory,'aggregate.v1.json')
+  const journal=join(directory,'aggregate.v1.journal')
+  if(![anchor,snapshot,journal].every(path=>lstatSync(path).isFile()))
+   return 'unconfirmed'
+  if(lstatSync(anchor).size>512)return 'unconfirmed'
+  // First use the existing v1-only forensic checks, then the stricter
+  // independent watermark. Never auto-generate the missing anchor.
+  const prior=inspectPrivateNtfsWalReplay(directory)
+  if(prior.status!=='verified'||prior.tornTail)return 'unconfirmed'
+  const ok=auditExperimentalWalAnchor(readFileSync(snapshot,'utf8'),
+   readFileSync(journal),readFileSync(anchor,'utf8'))
+  if(ok!=='verified')return 'unconfirmed'
+  if(existsSync(lock)||existsSync(recovery)
+    ||!inspectPrivateNtfsLedgerLayout(directory).private)return 'unconfirmed'
+  return 'verified'
+ }catch{return 'unconfirmed'}
+}
