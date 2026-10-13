@@ -1,7 +1,7 @@
 /**
  * ISOLATED RESEARCH ONLY; excluded from npm. Not a production DurableStats.
- * Narrow v1-compatible NTFS WAL writer: no dead-owner takeover, no checkpoint,
- * no torn-tail repair; fails closed after 255 committed rows.
+ * Narrow v1-compatible NTFS WAL writer: no dead-owner takeover, explicit test-only checkpoint,
+ * no torn-tail repair; checkpoint requires manual test invocation.
  */
 import {createHmac,randomBytes} from 'node:crypto'
 import {closeSync,existsSync,fsyncSync,openSync,
@@ -18,7 +18,8 @@ const lockName='aggregate.v1.lock'
 const totalsZero={turnStarts:0,turnEnds:0,toolCalls:0,toolResults:0,
  completedTurnMs:0,checked:0,safe:0,review:0,targeted:0}
 const FP=/^[A-Za-z0-9_-]{43}$/
-const MAX_RECORDS=255
+const MAX_RECORDS_BETWEEN_CHECKPOINTS=255
+const MAX_FINGERPRINTS=16384
 const MAX_BYTES=4_000_000
 
 export class ExperimentalNtfsWalWriter {
@@ -27,7 +28,9 @@ export class ExperimentalNtfsWalWriter {
  #secret=''
  #sequence=0
  #toolCalls=0
+ #daily:Record<string,typeof totalsZero>={}
  #seen=new Set<string>()
+ #sinceCheckpoint=0
  #fd:number|undefined
  #owned=false
  #closed=false
@@ -85,15 +88,29 @@ export class ExperimentalNtfsWalWriter {
   const recovered=replayVerifiedV1SnapshotWal(snapText,bytes)
   if(recovered.status!=='verified'||recovered.tornTail)
    throw Error('WAL requires forensic review before writing')
-  if((recovered.sequence??0)>MAX_RECORDS)throw Error('Experimental WAL limit reached')
+  if((recovered.applied??0)>MAX_RECORDS_BETWEEN_CHECKPOINTS)throw Error('Experimental WAL limit reached')
   this.#secret=raw.secret!
   this.#sequence=recovered.sequence!
   this.#toolCalls=recovered.totals!.toolCalls
+  const snapData=JSON.parse(snapText) as {
+   sequence?:number;daily?:Record<string,typeof totalsZero>;seen?:string[]
+  }
+  this.#daily=structuredClone(snapData.daily??{})
+  const committedSequence=snapData.sequence??0
   for(const fp of raw.seen??[])this.#seen.add(fp)
   for(const line of bytes.toString('utf8').split('\n').filter(Boolean)){
-   const v=JSON.parse(line) as {fp:string}
+   const v=JSON.parse(line) as {seq:number;fp:string;atMs:number;changes:{toolCalls?:number}}
+   if(v.seq<=committedSequence)continue
    if(FP.test(v.fp))this.#seen.add(v.fp)
+   const day=new Date(v.atMs).toISOString().slice(0,10)
+   const base=this.#daily[day]??{...totalsZero}
+   this.#daily[day]={...base,toolCalls:base.toolCalls+(v.changes.toolCalls??0)}
+   for(const oldDay of Object.keys(this.#daily).sort()
+    .slice(0,Math.max(0,Object.keys(this.#daily).length-366)))delete this.#daily[oldDay]
+   this.#sinceCheckpoint++
   }
+  if(this.#sinceCheckpoint>MAX_RECORDS_BETWEEN_CHECKPOINTS)
+   throw Error('Experimental WAL checkpoint required')
  }
  get snapshot():Readonly<{sequence:number;toolCalls:number}>{
   return {sequence:this.#sequence,toolCalls:this.#toolCalls}
@@ -106,7 +123,8 @@ export class ExperimentalNtfsWalWriter {
   const fp=createHmac('sha256',Buffer.from(this.#secret,'hex'))
    .update(JSON.stringify(['work',agentId,sessionId,eventId])).digest('base64url')
   if(this.#seen.has(fp))return false
-  if(this.#sequence>=MAX_RECORDS)throw Error('Experimental WAL checkpoint not supported')
+  if(this.#sinceCheckpoint>=MAX_RECORDS_BETWEEN_CHECKPOINTS
+   ||this.#seen.size>=MAX_FINGERPRINTS)throw Error('Experimental WAL checkpoint or dedup capacity exceeded')
   const lock=join(this.#directory,lockName)
   try{
    if(!inspectPrivateNtfsLedgerLayout(this.#directory).private
@@ -119,8 +137,58 @@ export class ExperimentalNtfsWalWriter {
    if(writeSync(this.#fd,bytes)!==bytes.length)throw Error('Short WAL write')
    fsyncSync(this.#fd)
    this.#sequence=seq;this.#toolCalls++;this.#seen.add(fp)
+   const date=new Date(atMs).toISOString().slice(0,10)
+   const base=this.#daily[date]??{...totalsZero}
+   this.#daily[date]={...base,toolCalls:base.toolCalls+1}
+   for(const oldDay of Object.keys(this.#daily).sort()
+    .slice(0,Math.max(0,Object.keys(this.#daily).length-366)))delete this.#daily[oldDay]
+   this.#sinceCheckpoint++
    return true
   }catch(error){this.#faulted=true;throw error}
+ }
+ /**
+  * TEST ONLY. Commit an HMAC-compatible, complete v1 checkpoint; the caller
+  * can inject a forced process crash immediately after durable snapshot rename.
+  * NEVER used in the installed package or real Agent Picket control.
+  */
+ checkpointForTest(afterSnapshotCommitted?:()=>void):void {
+  if(this.#closed||this.#faulted||this.#fd===undefined)
+   throw Error('Writer is not usable')
+  const snap=join(this.#directory,snapshotName)
+  const wal=join(this.#directory,journalName)
+  const temp=()=>join(this.#directory,'aggregate.v1-'+randomBytes(8).toString('hex')+'.tmp')
+  let name:string|undefined, fd:number|undefined
+  try {
+   if(!inspectPrivateNtfsLedgerLayout(this.#directory).private
+      ||JSON.parse(readFileSync(join(this.#directory,lockName),'utf8')).token!==this.#token)
+    throw Error('NTFS lock or ACL changed')
+   const data={version:1,secret:this.#secret,sequence:this.#sequence,
+    totals:{...totalsZero,toolCalls:this.#toolCalls},
+    daily:structuredClone(this.#daily),seen:[...this.#seen]}
+   name=temp()
+   fd=openSync(name,'wx',0o600)
+   writeFileSync(fd,JSON.stringify(data));fsyncSync(fd)
+   closeSync(fd);fd=undefined
+   if(!verifyPrivateNtfsAcl(name,'file'))throw Error('Checkpoint snapshot ACL unverified')
+   renameSync(name,snap);name=undefined
+   if(!verifyPrivateNtfsAcl(snap,'file'))throw Error('Committed snapshot ACL unverified')
+   afterSnapshotCommitted?.()
+   name=temp()
+   fd=openSync(name,'wx',0o600)
+   fsyncSync(fd);closeSync(fd);fd=undefined
+   if(!verifyPrivateNtfsAcl(name,'file'))throw Error('Checkpoint WAL temp ACL unverified')
+   const old=this.#fd
+   this.#fd=undefined
+   closeSync(old)
+   renameSync(name,wal);name=undefined
+   if(!verifyPrivateNtfsAcl(wal,'file'))throw Error('New WAL ACL unverified')
+   this.#fd=openSync(wal,'a',0o600)
+   this.#sinceCheckpoint=0
+  }catch(error){this.#faulted=true;throw error}
+  finally{
+   if(fd!==undefined)try{closeSync(fd)}catch{/* fail closed */}
+   if(name!==undefined)try{unlinkSync(name)}catch{/* leave for inspection */}
+  }
  }
  close():void{
   if(this.#closed)return
