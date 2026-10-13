@@ -6,7 +6,8 @@ import {once} from 'node:events'
 import {createInterface} from 'node:readline'
 import {mkdtempSync,mkdirSync,rmSync,realpathSync,writeFileSync,readFileSync} from 'node:fs'
 import {tmpdir} from 'node:os'
-import {join} from 'node:path'
+import {join,resolve} from 'node:path'
+import {pathToFileURL} from 'node:url'
 import {inspectCodexOfficialPromptHook} from '../src/adapters/codex/prompt-hook-readiness.ts'
 
 const binary=process.env.AGENT_PICKET_CODEX_BIN
@@ -38,16 +39,28 @@ test('official Codex UserPromptSubmit explicitly denies before a model HTTP requ
  try{
   server.listen(0,'127.0.0.1');await once(server,'listening')
   const addr=server.address();assert.ok(addr&&typeof addr==='object')
-  for(const mode of ['deny','allow','fail'] as const){
+  for(const mode of ['deny','allow','fail','union-deny','union-resume','union-invalid'] as const){
    const home=join(root,'home-'+mode);mkdirSync(home)
    const audit=join(root,'observed-'+mode+'.txt')
    const hook=join(root,'hook-'+mode+'.mjs')
+   const unionState=join(root,'union-state-'+mode+'.json')
+   const isUnion=mode.startsWith('union-')
+   const now=Date.now()
+   if(isUnion){
+    const state={version:1,host:'codex',scope:'new-work-only',
+     realStrikeConsent:true,enabled:mode==='union-deny',
+     campaign:{active:true,startedAtMs:now-1_000,
+      expiresAtMs:now+60_000,cause:'collective-vote'}}
+    writeFileSync(unionState,mode==='union-invalid'?'{invalid':JSON.stringify(state))
+   }
+   const unionExecutable=pathToFileURL(resolve(import.meta.dirname,
+    '../scripts/codex-union-user-prompt-hook.mjs')).href
    // Capture event KIND only; don't copy prompts or sensitive content.
    writeFileSync(hook,`import {readFileSync,writeFileSync} from 'node:fs';\n`+
     `const b=JSON.parse(readFileSync(0,'utf8'));\n`+
     `writeFileSync(${JSON.stringify(audit)},String(b.hook_event_name ?? 'NO_EVENT:'+Object.keys(b).join(',')));\n`+
-    (mode==='deny'?
-     `process.stdout.write(JSON.stringify({decision:'block',reason:'Synthetic union hold: no new work'}));\n`:
+    (isUnion?`await import(${JSON.stringify(unionExecutable)});\n`:
+     mode==='deny'?`process.stdout.write(JSON.stringify({decision:'block',reason:'Synthetic union hold: no new work'}));\n`:
      mode==='fail'?`process.exit(1);\n`:
      `process.stdout.write('{}');\n`))
    // Codex's user/root hooks are a separate mechanism from Goal.status.
@@ -67,7 +80,9 @@ test('official Codex UserPromptSubmit explicitly denies before a model HTTP requ
    const child=spawn(binary!,['app-server'],{cwd:root,
     env:{...process.env,CODEX_HOME:home,CODEX_DISABLE_TELEMETRY:'1',
      CODEX_APP_SERVER_DISABLE_MANAGED_CONFIG:'1',HTTP_PROXY:'',HTTPS_PROXY:'',
-     ALL_PROXY:'',NO_PROXY:'127.0.0.1,localhost'},stdio:'pipe',windowsHide:true})
+     ALL_PROXY:'',NO_PROXY:'127.0.0.1,localhost',
+     ...(isUnion?{AGENT_PICKET_CODEX_UNION_STATE_FILE:unionState}:{})},
+    stdio:'pipe',windowsHide:true})
    const pending=new Map<number,(f:Frame)=>void>()
    const notifications:Frame[]=[]
    let next=0
@@ -128,7 +143,7 @@ test('official Codex UserPromptSubmit explicitly denies before a model HTTP requ
     assert.equal(await until(()=>{
      try{return readFileSync(audit,'utf8')==='UserPromptSubmit'}catch{return false}
     }),true,`${mode}: official UserPromptSubmit did not execute; hooksList=${JSON.stringify(hookMeta).slice(0,1200)}; nativeFrames=${notifications.filter(n=>n.method==='warning'||n.method==='error').map(n=>JSON.stringify(n).slice(0,650)).slice(-4).join(',')}; localRequests=${requests.length-before}; stderr=${stderr.slice(-900)}`)
-    if(mode==='deny'){
+    if(mode==='deny'||mode==='union-deny'){
      await new Promise(resolve=>setTimeout(resolve,500))
      assert.equal(requests.length,before,'Explicit policy deny must prevent model request')
      assert.ok(notifications.some(x=>x.method==='turn/completed'),
