@@ -20,10 +20,10 @@ type Frame={id?:number;result?:any;error?:{message?:string};method?:string;param
  * Native official Codex App-Server + local synthetic Responses API.
  * The first autonomous Turn remains in flight while its Goal becomes blocked;
  * it must complete its in-flight real synthetic shell tool without cancellation.
- * A different owner process must then
- * restore the blocked Goal without launching another Turn. Explicit resume
- * may start one further synthetic model Turn, which completes before exit.
- * NOT an external-authorization/CAS guarantee, or an in-flight TOOL test.
+ * A different owner process must then restore the blocked Goal without
+ * launching another Turn. Explicit resume starts a further synthetic Turn.
+ * This proves ONLY an isolated synthetic tool; it does NOT establish
+ * external authorization, global owner fencing or conditional Host CAS.
  */
 test('native Codex completes in-flight autonomous Turn, holds next round and cold-resumes safely',{
  skip:!eligible&&'Opt-in: isolated Codex 0.146.1 or reviewed compatible native binary required',
