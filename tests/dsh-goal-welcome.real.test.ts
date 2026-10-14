@@ -60,9 +60,13 @@ test('real DSH Web: one informed first-run click atomically confirms union and G
   DEEPSEEK_API_KEY:'',OPENAI_API_KEY:'',
   HTTP_PROXY:'http://127.0.0.1:9',HTTPS_PROXY:'http://127.0.0.1:9',
   ALL_PROXY:'http://127.0.0.1:9'}
+ // Plugin installation must resolve declared dependencies before switching
+ // the actual Web Host into no-network, offline-model test mode.
+ const installEnv={...process.env,DSH_HOME:home,DEEPSEEK_API_KEY:'',
+  OPENAI_API_KEY:'',DSH_TELEMETRY_DISABLED:'1'}
  const install=(packagePath:string)=>spawnSync(bin!,[
   'plugin','--profile','web','add',packagePath
- ],{env,encoding:'utf8',timeout:30_000})
+ ],{env:installEnv,encoding:'utf8',timeout:90_000})
  let child:ReturnType<typeof spawn>|null=null, browser:any
  try{
   const plugin=install(join(root,tgz!))
@@ -100,6 +104,24 @@ test('real DSH Web: one informed first-run click atomically confirms union and G
   const before=await inspect(base,cookieText)
   assert.equal(before.value.welcomeDecision,'unseen')
   assert.equal(before.value.realGoalStrikeConsent??'off','off')
+  // A freshly initialized CI profile has NO workspace. Bootstrap one
+  // through DSH's own authenticated workspace/create RPC (not fake DOM
+  // state), then let the actual browser select its real workspace row.
+  const workspacePath=join(root,'fixture-workspace')
+  mkdirSync(workspacePath,{recursive:true})
+  const workspaceResponse=await fetch(base+'api/workspace/create',{
+   method:'POST',headers:{'content-type':'application/json',cookie:cookieText},
+   body:JSON.stringify({type:'client-request',rpcId:'picket-real-web-workspace',
+    method:'workspace/create',payload:{args:{request:{path:workspacePath}}}}),
+   signal:AbortSignal.timeout(10_000),
+  })
+  assert.equal(workspaceResponse.status,200,
+   'Real Host workspace/create endpoint unavailable')
+  const workspaceBody=await workspaceResponse.json() as any
+  assert.equal(workspaceBody.result?.ok,true,
+   'Real Host did not create an isolated workspace')
+  assert.ok(workspaceBody.result?.value?.workspace?.title,
+   'Official workspace creation must return a real workspace')
   const {chromium}=await import(pathToFileURL(pw!).href)
   browser=await chromium.launch({headless:true,executablePath:chrome,
    args:['--no-proxy-server','--no-first-run','--disable-extensions','--disable-background-networking']})
@@ -123,6 +145,8 @@ test('real DSH Web: one informed first-run click atomically confirms union and G
   const skipProvider=page.getByRole('button',{name:/稍后配置|Skip for now|Configure later/})
   await skipProvider.waitFor({state:'visible',timeout:1500}).catch(()=>{})
   if(await skipProvider.count())await skipProvider.click({timeout:6000})
+  await page.locator('[data-row-key^="workspace:"]').first()
+   .waitFor({state:'visible',timeout:10_000})
   // Real Host session creation and a real queued OFFLINE prompt. No fake
   // transcript, DSH's own selection and onboarding eligibility must fire.
   const created=await page.evaluate(async()=>{
