@@ -291,7 +291,10 @@ test('real DSH Web: one informed first-run click atomically confirms union and G
    assert.equal(diagnostic.turn?.body?.result?.value?.accepted,true)
    assert.equal(blocked?.phase,'blocked','REAL DSH Goal must be physically blocked')
    assert.equal(blocked?.blockedReason?.code,'picket-work-limit')
-   assert.equal(blocked?.roundsStarted,1,'One real offline Goal round must finish')
+   assert.equal(blocked?.roundsStarted,officialPersisted?0:1,
+    officialPersisted
+     ?'Official persisted-work pre-step must stop BEFORE autonomous model round 1'
+     :'Legacy turn-stopping mode must finish one real offline Goal round')
    assert.equal(blocked?.activation,'disarmed')
    console.log('GOAL_NATIVE_BLOCK_CONFIRMED '+JSON.stringify({
     phase:blocked.phase,reason:blocked.blockedReason.code,
