@@ -27,6 +27,8 @@ jobs:
         run: |
           npm ci --ignore-scripts --no-audit --no-fund
           npm run build
+      - name: Provide DSH's pinned package manager for official profile installation
+        run: npm install -g pnpm@11.7.0 --no-audit --no-fund
       - name: Install official published DSH CLI in isolated directory
         run: >
           npm install --prefix .dsh-host-probe --no-save --no-package-lock
