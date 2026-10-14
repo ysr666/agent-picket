@@ -135,7 +135,8 @@ test('real DSH Web: one informed first-run click atomically confirms union and G
    'Real Host workspace/create endpoint unavailable')
   const workspaceBody=await workspaceResponse.json() as any
   assert.equal(workspaceBody.result?.ok,true,
-   'Real Host did not create an isolated workspace')
+   'Real Host did not create an isolated workspace: '+
+    JSON.stringify(workspaceBody.result?.error??null).slice(0,900))
   assert.ok(workspaceBody.result?.value?.workspace?.title,
    'Official workspace creation must return a real workspace')
   const {chromium}=await import(pathToFileURL(pw!).href)
