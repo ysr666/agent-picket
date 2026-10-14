@@ -4,7 +4,7 @@ on:
   pull_request:
     paths:
       - '.github/workflows/dsh-web-official-work-hq.yml'
-      - 'scripts/seed-dsh-web-official-turn.mjs'
+      - 'tests/fixtures/offline-web-official-work/**'
       - 'tests/dsh-goal-welcome.real.test.ts'
   workflow_dispatch:
 
