@@ -20,7 +20,7 @@ export function apply(ctx){
   if(process.env.PICKET_GOAL_REAL_PERSISTED_E2E!=='1')
     throw Error('Explicit isolated persistence-seed E2E opt-in required')
   let started=null
-  ctx.on('agent/pre-step',async({messages},next)=>{
+  ctx.on('agent/pre-step',async({agent,messages},next)=>{
     const human=messages.some(m=>m.source?.kind==='user')
     const byteCheck=messages.some(m=>m.source?.kind==='user'&&
       m.content?.some(b=>b.type==='text'&&b.text==='VERIFY_DURABLE_FILE_BYTES'))
@@ -48,7 +48,7 @@ export function apply(ctx){
         throw Error('Verbatim stored file bytes failed SHA256 and metadata checks')
       if(process.env.PICKET_WEB_WORK_SEED_LOG)
         appendFileSync(process.env.PICKET_WEB_WORK_SEED_LOG,
-          'official-cold-file-bytes-sha256-verified\\n')
+          'official-cold-file-bytes-sha256-verified\n')
     }
     if(human){
       if(!started){
