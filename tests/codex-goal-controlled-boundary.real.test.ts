@@ -90,9 +90,18 @@ test('native Codex completes in-flight autonomous Turn, holds next round and col
   // synthetic tool runs exclusively in this temporary workspace and waits
   // for the test-owned release flag, bounded to five seconds if interrupted.
   finishToolCall(requests[0]!,root)
-  assert.equal(await until(()=>first!.notifications.some(n=>
-   n.method==='item/started'&&n.params?.item?.type==='commandExecution')),
-   true,'Official Host must start an actual synthetic shell tool')
+  const startedShell=await until(()=>first!.notifications.some(n=>
+   n.method==='item/started'&&n.params?.item?.type==='commandExecution'))
+  assert.equal(startedShell,true,
+   'Official Host must start an actual synthetic shell tool; bounded Host event envelope: '+
+   JSON.stringify({modelRequests:requests.length,
+    events:first.notifications.slice(-16).map(n=>({
+     name:n.method,itemType:n.params?.item?.type,
+     itemStatus:n.params?.item?.status,turnStatus:n.params?.turn?.status,
+     ...(n.method==='warning'?{warning:String(
+       (n.params as Record<string,unknown>|undefined)?.message??'')
+       .slice(0,280)}:{}),
+    }))}))
   // A separate official App-Server is an external control plane, NOT
   // another thread owner. Never call thread/resume: that RPC independently
   // schedules a duplicate active Goal Turn on this pinned Codex version.
