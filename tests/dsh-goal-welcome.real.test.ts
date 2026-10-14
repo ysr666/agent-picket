@@ -56,7 +56,11 @@ test('real DSH Web: one informed first-run click atomically confirms union and G
  assert.equal(pack.status,0,'Package must be built before live E2E')
  const tgz=pack.stdout.trim().split('\n').at(-1)
  assert.ok(tgz?.endsWith('.tgz'))
- const env={...process.env,DSH_HOME:home,AGENT_PICKET_STATS:process.env.PICKET_GOAL_RECOVERY_E2E==='1'?'on':'off',
+ const officialPersisted=process.env.PICKET_GOAL_REAL_PERSISTED_E2E==='1'
+ const env={...process.env,DSH_HOME:home,
+  AGENT_PICKET_STATS:process.env.PICKET_GOAL_RECOVERY_E2E==='1'
+   &&!officialPersisted?'on':'off',
+  AGENT_PICKET_DSH_OFFICIAL_WORK_PREVIEW:officialPersisted?'on':'off',
   DEEPSEEK_API_KEY:'',OPENAI_API_KEY:'',
   HTTP_PROXY:'http://127.0.0.1:9',HTTPS_PROXY:'http://127.0.0.1:9',
   ALL_PROXY:'http://127.0.0.1:9'}
@@ -73,7 +77,19 @@ test('real DSH Web: one informed first-run click atomically confirms union and G
   assert.equal(plugin.status,0,'Official disposable Host profile plugin installation failed')
   const offline=install(join(packageRoot,'tests/fixtures/offline-web-provider'))
   assert.equal(offline.status,0,'Local offline test model is required')
-  if(process.env.PICKET_GOAL_RECOVERY_E2E==='1'){
+  if(officialPersisted){
+   assert.equal(process.env.PICKET_GOAL_RECOVERY_E2E,'1',
+    'Official Web persistent Goal probe must also test real recovery')
+   const seeded=spawnSync(process.execPath,[
+    resolve(packageRoot,'scripts/seed-dsh-web-official-turn.mjs'),home,
+   ],{cwd:packageRoot,encoding:'utf8',timeout:15000,
+    env:{...env,PICKET_GOAL_REAL_PERSISTED_E2E:'1'}})
+   assert.equal(seeded.status,0,
+    'Official Web synthetic session persistence setup failed: '+
+    (seeded.stderr??'').slice(-1000))
+   assert.match(seeded.stdout,/OFFICIAL_WEB_SYNTHETIC_PERSISTENCE_SEEDED=1/)
+  }
+  if(process.env.PICKET_GOAL_RECOVERY_E2E==='1'&&!officialPersisted){
    const now=Date.now(),start=Date.parse(new Date(now).toISOString().slice(0,10)+'T00:00:00.000Z')
    assert.ok(now>=start+8*3600000+30_000,
     'Real-timestamp 8h UTC fixture requires at least 8h elapsed today')
