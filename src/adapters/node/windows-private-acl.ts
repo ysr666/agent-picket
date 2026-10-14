@@ -63,14 +63,16 @@ export function verifyPrivateNtfsAcl(path:string,kind:'file'|'directory'):boolea
  * Experimental native NTFS ACL proof for a tiny set of current SQLite paths.
  * Reuse the EXACT security-descriptor body of verifyPrivateNtfsAcl, but check
  * all paths in one PowerShell process. Every trusted read rechecks ownership.
+ * Base64 UTF-16 path tokens avoid PowerShell 5.1 JSON-array enumeration quirks.
  * Not an atomic handle-lock or tamper/rollback attestation.
  */
 const BATCH_INSPECT_SCRIPT=INSPECT_SCRIPT.replace(
   '$p=$env:AGENT_PICKET_ACL_CHECK_PATH\nif(-not $p){exit 10}',
   [
-    '$paths=@(ConvertFrom-Json -InputObject $env:AGENT_PICKET_ACL_CHECK_PATHS)',
-    'if($paths.Count -lt 1 -or $paths.Count -gt 4){exit 10}',
-    'foreach($p in $paths){',
+    '$tokens=$env:AGENT_PICKET_ACL_CHECK_PATHS -split ";"',
+    'if($tokens.Count -lt 1 -or $tokens.Count -gt 4){exit 10}',
+    'foreach($token in $tokens){',
+    '$p=[System.Text.Encoding]::Unicode.GetString([System.Convert]::FromBase64String($token))',
     'if(-not $p){exit 10}',
   ].join('\n'),
 ) + '\n}\n'
@@ -95,7 +97,8 @@ export function verifyPrivateNtfsAclBatch(
     const result=spawnSync('powershell.exe',[
       '-NoLogo','-NoProfile','-NonInteractive','-EncodedCommand',encoded,
     ],{encoding:'utf8',windowsHide:true,timeout:15_000,maxBuffer:65_536,
-      env:{...process.env,AGENT_PICKET_ACL_CHECK_PATHS:JSON.stringify(paths)}})
+      env:{...process.env,AGENT_PICKET_ACL_CHECK_PATHS:paths.map(path=>
+        Buffer.from(path,'utf16le').toString('base64')).join(';')}})
     const lines=result.stdout.trim().split(/\r?\n/)
     return result.status===0&&lines.length===items.length&&
       lines.every(line=>line.trim()==='PRIVATE_NTFS_DACL_VERIFIED')

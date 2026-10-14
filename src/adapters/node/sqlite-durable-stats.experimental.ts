@@ -246,8 +246,7 @@ export class SQLiteDurableStatsCandidate {
   this.#healthy()
   return rowsToTotals(this.#db.prepare('SELECT * FROM totals WHERE singleton=1').get())
  }
- snapshotDays(limit=7):ReadonlyArray<{day:string;totals:DurableTotals}>{
-  this.#healthy()
+ #readDays(limit:number):ReadonlyArray<{day:string;totals:DurableTotals}>{
   if(!Number.isSafeInteger(limit)||limit<1||limit>31)
    throw Error('Daily summary limit must be 1..31')
   const rows=this.#db.prepare('SELECT * FROM daily ORDER BY day DESC LIMIT ?').all(limit)
@@ -255,13 +254,20 @@ export class SQLiteDurableStatsCandidate {
    day:String(row.day),totals:rowsToTotals(row),
   }))
  }
+ snapshotDays(limit=7):ReadonlyArray<{day:string;totals:DurableTotals}>{
+  this.#healthy()
+  return this.#readDays(limit)
+ }
  trustedWorkDays(limit=31):ReturnType<SQLiteDurableStatsCandidate['snapshotDays']>|null{
   try{
+   // One fresh full ACL/path witness, then quick_check and the synchronous
+   // SELECT using the same live SQLite connection. Calling snapshotDays()
+   // here would redundantly spawn a second PowerShell security audit.
    this.#healthy()
    if(this.#db.prepare('PRAGMA quick_check').get()?.quick_check!=='ok'){
     this.#faulted=true;return null
    }
-   return this.snapshotDays(limit)
+   return this.#readDays(limit)
   }catch{this.#faulted=true;return null}
  }
  reset():void{
