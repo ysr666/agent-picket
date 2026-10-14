@@ -51,8 +51,14 @@ try{
     }
     // This is the supported profile plugin install path, NOT a direct import
     // of the source plugin or a --patch reference pretending installation.
+    const installEnv={...process.env,DSH_HOME:home,
+      DEEPSEEK_API_KEY:'',OPENAI_API_KEY:'',
+      DSH_TELEMETRY_DISABLED:'1'}
+    // Installation legitimately resolves the tarball's declared dependencies.
+    // The dummy network proxy is deliberately applied ONLY when the offline
+    // Host runs, never to the package-manager installation subprocess.
     const install=spawnSync(process.execPath,[cli,'plugin','--profile','sdk',
-      'add',archive],{cwd:temp,env,encoding:'utf8',timeout:110000,
+      'add',archive],{cwd:temp,env:installEnv,encoding:'utf8',timeout:110000,
       maxBuffer:1024*1024})
     assert.equal(install.status,0,
       'official DSH profile install failed: '+String(install.stderr).slice(-800)
