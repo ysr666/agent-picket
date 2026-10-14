@@ -6,6 +6,7 @@
 import { appendFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
+import { alreadyBlockedGoalToday } from '../../src/adapters/dsh/goal-work-enforcement.ts'
 
 export const name='agent-picket-dsh-official-work-host-probe'
 export const inject=['llm','goals','agents','sessionPersistence']
@@ -113,6 +114,16 @@ export function apply(ctx){
     }
     // ONLY an exclusively auto-generated Goal prompt may be rejected; do not
     // drop a mixed batch, a human user message or any attachment.
+    const manualResume=messages.some(m=>m.source?.kind==='user' &&
+      m.content?.some(b=>b.type==='text'&&b.text==='RESUME_OFFLINE_GOAL'))
+    if(manualResume){
+      const prior=ctx.goals.get(agent)
+      if(prior?.phase==='blocked'&&prior.blockedReason?.code==='picket-work-limit'){
+        const updated=ctx.goals.resume(agent,{id:prior.id,revision:prior.revision})
+        marker('resume:'+updated.phase+':revision-plus-one='+String(
+          updated.revision===prior.revision+1))
+      }
+    }
     const auto=messages.length===1?messages[0]:null
     if(auto?.source?.kind==='goal'&&Number.isSafeInteger(auto.source.round)
       &&auto.source.round>0){
@@ -121,6 +132,7 @@ export function apply(ctx){
       if(enabled&&work!==null&&work>=8*3_600_000){
         const goal=ctx.goals.get(agent)
         if(goal?.phase==='active'&&goal.activation==='armed'&&
+          !alreadyBlockedGoalToday(agent.session.snapshotEvents(),goal.id,Date.now())&&
           auto.source.goalId===goal.id&&auto.source.revision===goal.revision){
           const block=ctx.goals.block(agent,{id:goal.id,revision:goal.revision},{
             code:'picket-work-limit',
