@@ -1,0 +1,35 @@
+name: DSH Packaged Picket Real Host Goal
+
+on:
+  pull_request:
+    paths:
+      - 'scripts/verify-dsh-packaged-picket-goal.mjs'
+      - 'tests/fixtures/dsh-packaged-agent-picket-goal.mjs'
+      - '.github/workflows/dsh-packaged-picket-goal.yml'
+      - 'src/adapters/dsh/official-persisted-work-preview.ts'
+      - 'src/adapters/dsh/plugin.ts'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  installed-plugin-goal:
+    name: Official SDK Profile + packaged Agent Picket / Ubuntu Node24
+    runs-on: ubuntu-latest
+    timeout-minutes: 18
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - name: Compile actual candidate package, without release
+        run: |
+          npm ci --ignore-scripts --no-audit --no-fund
+          npm run build
+      - name: Install official published DSH CLI in isolated directory
+        run: >
+          npm install --prefix .dsh-host-probe --no-save --no-package-lock
+          --no-audit --no-fund @deepseek-ai/dsh@0.2.0-rc.2
+      - name: Official package manager installs Picket into actual SDK Profile; exercise Host Goal
+        run: node scripts/verify-dsh-packaged-picket-goal.mjs
