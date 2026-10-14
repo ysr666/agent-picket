@@ -1,0 +1,36 @@
+name: DSH Official Work Integrity & List Coverage
+
+on:
+  pull_request:
+    paths:
+      - 'src/adapters/dsh/official-persisted-work-preview.ts'
+      - 'tests/dsh-official-persisted-work-preview.test.ts'
+      - 'scripts/verify-dsh-official-list-gap.mjs'
+      - '.github/workflows/dsh-official-work-integrity.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  official-integrity:
+    name: ${{ matrix.os }} Node24 official provider missing-header probe
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 18
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - name: Install real published DSH provider into disposable test prefix
+        run: >
+          npm install --prefix .dsh-host-probe --no-save --no-package-lock
+          --no-audit --no-fund @deepseek-ai/dsh@0.2.0-rc.2
+      - name: Verify Turn identities and midnight conservative fail-safe
+        run: node --experimental-strip-types --test tests/dsh-official-persisted-work-preview.test.ts
+      - name: Confirm real official list omits corrupt header (scope NOT complete)
+        run: node --experimental-strip-types scripts/verify-dsh-official-list-gap.mjs

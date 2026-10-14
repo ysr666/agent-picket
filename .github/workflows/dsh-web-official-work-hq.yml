@@ -6,6 +6,9 @@ on:
       - '.github/workflows/dsh-web-official-work-hq.yml'
       - 'tests/fixtures/offline-web-official-work/**'
       - 'tests/dsh-goal-welcome.real.test.ts'
+      - 'src/adapters/dsh/official-persisted-work-preview.ts'
+      - 'src/adapters/dsh/plugin.ts'
+      - 'tests/dsh-official-persisted-work-preview.test.ts'
   workflow_dispatch:
 
 permissions:
