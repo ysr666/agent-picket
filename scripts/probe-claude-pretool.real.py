@@ -1,4 +1,4 @@
-import json,os,threading,tempfile,subprocess,time,shutil,sys
+import json,os,threading,tempfile,subprocess,time,shutil,sys,shlex
 from pathlib import Path
 from http.server import BaseHTTPRequestHandler,ThreadingHTTPServer
 if os.environ.get('AGENT_PICKET_CLAUDE_PRETOOL_NATIVE')!='1':
@@ -12,6 +12,9 @@ if not CLAUDE_BIN or not os.path.isabs(CLAUDE_BIN):
 version=subprocess.check_output([CLAUDE_BIN,'--version'],text=True).strip()
 if version!='2.1.295 (Claude Code)':
  raise RuntimeError('Native safety proof PINNED to Claude Code 2.1.295: '+version)
+node_bin=os.environ.get('AGENT_PICKET_CLAUDE_NODE_BIN') or shutil.which('node')
+if not node_bin or not os.path.isabs(node_bin):
+ raise RuntimeError('Use official Node executable via absolute AGENT_PICKET_CLAUDE_NODE_BIN or PATH')
 root=Path(tempfile.mkdtemp(prefix='ap-claude-pretool-offline-')).resolve()
 marker=root/'tool-actually-executed.txt';hook_called=root/'hook-called'
 counts=[]; observed_denial=[]
@@ -27,7 +30,7 @@ class Server(BaseHTTPRequestHandler):
    data=json.dumps({'input_tokens':25}).encode();typ='application/json'
   elif self.path.split('?',1)[0].endswith('/messages'):
    if sum('/messages' in p for p,*_ in counts)==1:
-    tool='Bash'; command='printf test-tool-ran > '+str(marker)
+    tool='Bash'; command='printf test-tool-ran > '+shlex.quote(str(marker))
     events=[('message_start',{'type':'message_start','message':{'id':'msg_ap_fake_001','type':'message','role':'assistant','content':[],'model':'claude-sonnet-4-5','stop_reason':None,'stop_sequence':None,'usage':{'input_tokens':100,'output_tokens':0}}}),('content_block_start',{'type':'content_block_start','index':0,'content_block':{'type':'tool_use','id':'toolu_ap_test_001','name':tool,'input':{}}}),('content_block_delta',{'type':'content_block_delta','index':0,'delta':{'type':'input_json_delta','partial_json':json.dumps({'command':command})}}),('content_block_stop',{'type':'content_block_stop','index':0}),('message_delta',{'type':'message_delta','delta':{'stop_reason':'tool_use','stop_sequence':None},'usage':{'output_tokens':15}}),('message_stop',{'type':'message_stop'})]
    else:
     events=[('message_start',{'type':'message_start','message':{'id':'msg_ap_fake_002','type':'message','role':'assistant','content':[],'model':'claude-sonnet-4-5','stop_reason':None,'stop_sequence':None,'usage':{'input_tokens':20,'output_tokens':0}}}),('content_block_start',{'type':'content_block_start','index':0,'content_block':{'type':'text','text':''}}),('content_block_delta',{'type':'content_block_delta','index':0,'delta':{'type':'text_delta','text':'Synthetic test complete.'}}),('content_block_stop',{'type':'content_block_stop','index':0}),('message_delta',{'type':'message_delta','delta':{'stop_reason':'end_turn','stop_sequence':None},'usage':{'output_tokens':3}}),('message_stop',{'type':'message_stop'})]
@@ -51,7 +54,7 @@ if MODE=='fail':
 settings=root/'settings.json';settings.write_text(json.dumps({
  'disableAllHooks':MODE=='host-disabled',
  'hooks':{'PreToolUse':[{'matcher':'Bash',
-  'hooks':[{'type':'command','command':'/opt/homebrew/bin/node '+str(script),'timeout':10}]}]}}))
+  'hooks':[{'type':'command','command':shlex.quote(node_bin)+' '+shlex.quote(str(script)),'timeout':10}]}]}}))
 env={**os.environ,'AGENT_PICKET_CLAUDE_UNION_TOOL_STATE_FILE':str(state),'CLAUDE_CONFIG_DIR':str(root/'claude-home'),'ANTHROPIC_API_KEY':'synthetic-offline-key','ANTHROPIC_BASE_URL':f'http://127.0.0.1:{srv.server_address[1]}','CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC':'1','DISABLE_TELEMETRY':'1','NO_PROXY':'127.0.0.1,localhost','HTTP_PROXY':'','HTTPS_PROXY':'','ALL_PROXY':''}
 proc=None
 try:
