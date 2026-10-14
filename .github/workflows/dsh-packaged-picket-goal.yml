@@ -15,9 +15,13 @@ permissions:
 
 jobs:
   installed-plugin-goal:
-    name: Official SDK Profile + packaged Agent Picket / Ubuntu Node24
-    runs-on: ubuntu-latest
+    name: ${{ matrix.os }} / Node24 / installed real Agent Picket
+    runs-on: ${{ matrix.os }}
     timeout-minutes: 18
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
