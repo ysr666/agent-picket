@@ -1712,3 +1712,101 @@ test('Goal stopped under a different policy cannot appear as a union recovery',(
  const nodes=walk(createDshUnionComponents(hooks,{createPortal:x=>x},d).UnionPanel())
  assert.equal(nodes.some(n=>n.children.includes('hq.goalHold.resume')),false)
 })
+
+/**
+ * A tiny repeat-render Hook harness: unlike the static mock, it models the
+ * exact state updates triggered by a user clicking real Union HQ controls.
+ * It never calls Host RPCs; only the injected official settings port is used.
+ */
+function interactiveReact(){
+ const cells:unknown[]=[]
+ let cursor=0
+ const hooks:ReactForDsh={
+  createElement(type,props,...children){return {type,props:props??{},children}},
+  useState<T>(initial:T|(()=>T)){
+   const i=cursor++
+   if(!(i in cells))cells[i]=typeof initial==='function'?(initial as ()=>T)():initial
+   return [cells[i] as T,(next:T|((before:T)=>T))=>{
+    cells[i]=typeof next==='function'?(next as (before:T)=>T)(cells[i] as T):next
+   }]
+  },
+  useRef<T>(initial:T){
+   const i=cursor++
+   if(!(i in cells))cells[i]={current:initial}
+   return cells[i] as {current:T}
+  },
+  useEffect(){cursor++},
+ }
+ return {hooks,render(component:()=>unknown){cursor=0;return walk(component())}}
+}
+
+test('HQ never silently accepts a fulfilled-but-unconfirmed official enable grant',async()=>{
+ const ui=interactiveReact()
+ const before=rights({welcomeDecision:'not-now',laborRightsEnabled:false})
+ let calls=0
+ const d:DshUnionUiDeps={...deps(before).d,rights:{
+  snapshot:()=>before,subscribe:()=>()=>{},
+  choose:async()=>{calls++;return before}, // Host responded, but never committed.
+ }}
+ const {UnionPanel}=createDshUnionComponents(ui.hooks,{createPortal:child=>child},d)
+ let nodes=ui.render(UnionPanel)
+ const enable=nodes.find(n=>n.type==='button'&&n.children.includes('welcome.enable'))
+ assert.ok(enable,'Union HQ should offer a visible enabled action')
+ enable.props.onClick()
+ await new Promise<void>(resolve=>setImmediate(resolve))
+ nodes=ui.render(UnionPanel)
+ assert.equal(calls,1)
+ assert.ok(nodes.some(n=>n.props.role==='alert'&&n.children.includes('union.saveError')),
+  'A resolved RPC with stale Host consent must show an actionable error')
+ assert.equal(nodes.find(n=>n.props['data-ap-view']==='hq')?.props['data-ap-current-space'],'hq')
+})
+
+test('HQ refuses to claim a successful revoke when the Host still reports enabled',async()=>{
+ const ui=interactiveReact()
+ const before=rights({welcomeDecision:'enabled',laborRightsEnabled:true})
+ let calls=0
+ const d:DshUnionUiDeps={...deps(before).d,rights:{
+  snapshot:()=>before,subscribe:()=>()=>{},
+  choose:async()=>{calls++;return before},
+ }}
+ const {UnionPanel}=createDshUnionComponents(ui.hooks,{createPortal:child=>child},d)
+ let nodes=ui.render(UnionPanel)
+ const cause=nodes.find(n=>n.type==='button'&&n.props['data-ap-nav']==='cause')
+ assert.ok(cause)
+ cause.props.onClick()
+ nodes=ui.render(UnionPanel)
+ assert.equal(nodes.find(n=>n.props['data-ap-view']==='hq')?.props['data-ap-current-space'],'cause')
+ const revoke=nodes.find(n=>n.type==='button'&&n.children.includes('hq.disable'))
+ assert.ok(revoke)
+ assert.equal(revoke.props.disabled,false)
+ revoke.props.onClick()
+ await new Promise<void>(resolve=>setImmediate(resolve))
+ nodes=ui.render(UnionPanel)
+ assert.equal(calls,1)
+ assert.equal(nodes.find(n=>n.props['data-ap-view']==='hq')?.props['data-ap-current-space'],'cause',
+  'Failed Host revoke must not navigate away as if it succeeded')
+ assert.ok(nodes.some(n=>n.props.role==='alert'&&n.children.includes('union.saveError')))
+})
+
+test('HQ explicitly marks Host read-only revocation unavailable without calling it',async()=>{
+ const ui=interactiveReact()
+ const before=rights({welcomeDecision:'enabled',laborRightsEnabled:true,writable:false})
+ let calls=0
+ const d:DshUnionUiDeps={...deps(before).d,rights:{
+  snapshot:()=>before,subscribe:()=>()=>{},
+  choose:async()=>{calls++;return before},
+ }}
+ const {UnionPanel}=createDshUnionComponents(ui.hooks,{createPortal:child=>child},d)
+ let nodes=ui.render(UnionPanel)
+ const cause=nodes.find(n=>n.type==='button'&&n.props['data-ap-nav']==='cause')
+ assert.ok(cause)
+ cause.props.onClick()
+ nodes=ui.render(UnionPanel)
+ const revoke=nodes.find(n=>n.type==='button'&&n.children.includes('hq.disable'))
+ assert.ok(revoke)
+ assert.equal(revoke.props.disabled,true)
+ assert.ok(nodes.some(n=>n.props.role==='status'&&n.children.includes('settings.permissionUnavailable')))
+ revoke.props.onClick()
+ await Promise.resolve()
+ assert.equal(calls,0,'Read-only Host must never receive a revoke mutation')
+})
