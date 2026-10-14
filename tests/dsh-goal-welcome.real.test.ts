@@ -332,7 +332,7 @@ test('real DSH Web: one informed first-run click atomically confirms union and G
         method:'POST',credentials:'same-origin',
         headers:{'content-type':'application/octet-stream'},body,
       })
-      const staged=await upload.json()
+      const staged=await upload.json() as any
       if(upload.status!==200||staged.ok!==true||
          !staged.value?.receiptId||!staged.value?.file?.attachmentId)
         throw Error('Official Host could not stage test-only file')
@@ -348,7 +348,7 @@ test('real DSH Web: one informed first-run click atomically confirms union and G
             ],
           }}}}),
       })
-      const accepted=await sent.json()
+      const accepted=await sent.json() as any
       if(sent.status!==200||accepted.result?.ok!==true||
          accepted.result.value?.accepted!==true)
         throw Error('Official Host failed to accept human file during blocked Goal')
@@ -371,7 +371,7 @@ test('real DSH Web: one informed first-run click atomically confirms union and G
         body:JSON.stringify({type:'client-request',rpcId:'picket-file-goal-read',
           method:'goals/get',payload:{args:{agentId:sessionId}}}),
       })
-      return (await resp.json()).result?.value
+      return ((await resp.json()) as any).result?.value
     },created.sessionId)
     assert.equal(status?.phase,'blocked',
       'Human file submission must not implicitly resume an autonomous Goal')
