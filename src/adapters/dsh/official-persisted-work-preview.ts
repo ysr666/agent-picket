@@ -119,7 +119,7 @@ interface AutoGoalMsg{
 interface GoalOwner {
   readonly agents:{get(id:string):AutoGoalAgent|undefined}
   readonly goals:{
-    get(agent:AutoGoalAgent):HostGoalSnapshot|undefined
+    get(agent:AutoGoalAgent):(HostGoalSnapshot&{readonly blockedReason?:{readonly code?:string}})|undefined
     block(agent:AutoGoalAgent,ref:{id:string;revision:number},
       reason:{code:string;message:string}):HostGoalSnapshot
   }
@@ -175,15 +175,29 @@ export function registerOfficialPersistedGoalPreview(
         !Number.isSafeInteger(goal.roundsStarted)||goal.roundsStarted<0||
         alreadyBlockedGoalToday(agent.session.snapshotEvents(),goal.id,after))
         return next()
-      // A Host exception may happen after committing the block. Never
-      // speculatively replay the auto message or resubmit the user prompt.
+      // Rejecting an automatic round WITHOUT a verified official Goal block
+      // creates an unintended hold. A Host exception can happen either
+      // before or after commit: inspect the authoritative Goal projection,
+      // never fabricate a successful block or replay user submissions.
+      let committed=false
       try{
-        owner.goals.block(agent,{id:goal.id,revision:goal.revision},{
+        const result=owner.goals.block(agent,{id:goal.id,revision:goal.revision},{
           code:'picket-work-limit',
           message:'Agent Picket: confirmed completed Turn work limit reached. Review and explicitly resume the Goal.',
         })
-      }catch{/* No automatic replay. Host stays the authority. */}
-      return {kind:'reject'}
+        committed=result.id===goal.id&&result.phase==='blocked'&&
+          result.activation==='disarmed'&&result.revision===goal.revision+1
+      }catch{/* Recheck the official projection below before deciding. */}
+      if(!committed){
+        try{
+          const projection=owner.goals.get(agent)
+          committed=projection?.id===goal.id&&
+            projection.phase==='blocked'&&projection.activation==='disarmed'&&
+            projection.revision===goal.revision+1&&
+            projection.blockedReason?.code==='picket-work-limit'
+        }catch{/* No confirmed Host block. */}
+      }
+      return committed?{kind:'reject'}:next()
     })
   })
 }
