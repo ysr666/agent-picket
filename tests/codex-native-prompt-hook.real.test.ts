@@ -194,6 +194,8 @@ test('official Codex UserPromptSubmit explicitly denies before a model HTTP requ
   }
  }finally{
   await new Promise<void>(resolve=>server.close(()=>resolve()))
-  rmSync(root,{recursive:true,force:true})
+  // Codex may still finish cleanup of test-only rollout artifacts just after
+  // the App-Server exits; bounded native EBUSY/ENOTEMPTY retry is safe here.
+  rmSync(root,{recursive:true,force:true,maxRetries:12,retryDelay:200})
  }
 })
