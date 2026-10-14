@@ -98,8 +98,10 @@ async function scenario(hours,consent){
       const all=snapshot()
       assert.equal(all.filter(s=>s==='model-call').length,1,
         'Official Goal must block next autonomous round BEFORE another model request')
-      assert.ok(all.includes('durable-work:28800000'),
-        'actual official persistence must supply exactly 8h')
+      const measured=all.filter(s=>s.startsWith('durable-work:'))
+        .map(s=>Number(s.slice('durable-work:'.length)))
+      assert.ok(measured.some(n=>Number.isSafeInteger(n)&&n>=8*3_600_000),
+        'official persisted work must meet the 8h threshold; current first Turn adds real wall time')
     }else{
       await until(s=>s.filter(x=>x==='model-call').length>=2,
         '7h or no consent must not stop the next automatic model call')
