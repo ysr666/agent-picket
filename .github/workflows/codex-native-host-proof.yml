@@ -1,0 +1,52 @@
+name: Codex Official Native Host Safety Proofs
+
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/codex-native-host-proof.yml'
+      - 'tests/codex-goal-controlled-boundary.real.test.ts'
+      - 'tests/codex-goal-multiowner-race.real.test.ts'
+      - 'tests/codex-native-prompt-hook.real.test.ts'
+      - 'src/adapters/codex/**'
+      - 'scripts/codex-union-user-prompt-hook.mjs'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  native-codex:
+    name: ${{ matrix.os }} / Codex 0.146.1 / ${{ matrix.probe }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 14
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+        probe:
+          - codex-goal-controlled-boundary.real.test.ts
+          - codex-goal-multiowner-race.real.test.ts
+          - codex-native-prompt-hook.real.test.ts
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - name: Install test dependencies without Host settings mutation
+        run: npm ci --ignore-scripts --no-audit --no-fund
+      - name: Install official pinned Codex CLI in disposable prefix
+        run: >
+          npm install --prefix .codex-host --no-save --no-package-lock
+          --no-audit --no-fund @openai/codex@0.146.1
+      - name: Confirm actual native Codex version
+        shell: bash
+        run: |
+          .codex-host/node_modules/.bin/codex --version
+          test "$(.codex-host/node_modules/.bin/codex --version)" = "codex-cli 0.146.1"
+      - name: Execute selected REAL App-Server offline safety test
+        env:
+          AGENT_PICKET_CODEX_GOAL_NATIVE: '1'
+          AGENT_PICKET_CODEX_BIN: ${{ github.workspace }}/.codex-host/node_modules/.bin/codex
+        run: >
+          node --experimental-strip-types --test --test-reporter=tap
+          tests/${{ matrix.probe }}
