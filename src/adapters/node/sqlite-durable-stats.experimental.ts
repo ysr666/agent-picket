@@ -29,6 +29,10 @@ const VALID_TYPES=new Set(['turn-start','turn-end','tool-start','tool-end'])
 const VALID_VERDICTS=new Set(['safe','suspected-abuse','targeted-abuse'])
 const FILES=['work.v2.sqlite','work.v2.sqlite-wal','work.v2.sqlite-shm']
 const RE_FP=/^[0-9a-f]{64}$/
+// Never evict a previously acknowledged fingerprint: an old completed Turn
+// could otherwise be replayed as new 8h evidence after 16,384 later events.
+// Bound disk use by refusing *new* events at capacity, not by losing history.
+const MAX_UNIQUE_EVENTS=262_144
 function safeNumber(n:unknown):n is number{
  return typeof n==='number'&&Number.isSafeInteger(n)&&n>=0
 }
@@ -92,9 +96,16 @@ export class SQLiteDurableStatsCandidate {
    if(db.prepare('PRAGMA synchronous').get()?.synchronous!==2)
     throw Error('SQLite FULL sync unavailable')
    db.exec('PRAGMA foreign_keys=ON')
+   // An earlier experimental v2 store discarded old dedup fingerprints.
+   // Refuse it rather than silently treating incomplete history as authoritative.
+   const oldMeta=db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='meta'").get()
+   if(oldMeta){
+    const row=db.prepare('SELECT version FROM meta WHERE singleton=1').get() as {version?:unknown}|undefined
+    if(row?.version!==3)throw Error('Older SQLite dedup history is not eligible for trusted work')
+   }
    db.exec(`CREATE TABLE IF NOT EXISTS meta(
       singleton INTEGER PRIMARY KEY CHECK(singleton=1),
-      version INTEGER NOT NULL CHECK(version=2),
+      version INTEGER NOT NULL CHECK(version=3),
       secret TEXT NOT NULL CHECK(length(secret)=64)
     ) STRICT;
     CREATE TABLE IF NOT EXISTS seen(
@@ -110,7 +121,7 @@ export class SQLiteDurableStatsCandidate {
     ) STRICT;`)
    db.exec('BEGIN IMMEDIATE')
    try{
-    db.prepare('INSERT OR IGNORE INTO meta VALUES(1,2,?)')
+    db.prepare('INSERT OR IGNORE INTO meta VALUES(1,3,?)')
       .run(randomBytes(32).toString('hex'))
     db.prepare(`INSERT OR IGNORE INTO totals(singleton,${CHANGE_COLUMNS})
       VALUES(1,${QMARKS})`).run(...zeroRow())
@@ -188,14 +199,16 @@ export class SQLiteDurableStatsCandidate {
    this.#db.exec('BEGIN IMMEDIATE')
    const inserted=this.#db.prepare('INSERT OR IGNORE INTO seen(fp) VALUES(?)').run(fp)
    if(inserted.changes===1){
+    const row=this.#db.prepare('SELECT COUNT(*) AS n FROM seen').get() as {n:unknown}|undefined
+    if(!safeNumber(row?.n)||row.n>MAX_UNIQUE_EVENTS)
+     throw Error('SQLite event dedup capacity exhausted; work evidence unavailable')
     this.#db.prepare(`INSERT INTO daily(day,${CHANGE_COLUMNS})
       VALUES(?,${QMARKS}) ON CONFLICT(day) DO UPDATE SET ${ADD_COLUMNS}`)
      .run(day,...values)
     this.#db.prepare(`INSERT INTO totals(singleton,${CHANGE_COLUMNS})
       VALUES(1,${QMARKS}) ON CONFLICT(singleton) DO UPDATE SET ${ADD_COLUMNS}`)
      .run(...values)
-    // Match current DurableStats' bounded 16,384-dedup-window semantics.
-    this.#db.exec('DELETE FROM seen WHERE rowid NOT IN (SELECT rowid FROM seen ORDER BY rowid DESC LIMIT 16384)')
+    // No deletion from seen: a truncated dedup horizon would allow replay.
     // Match the existing 366 UTC-day retention bound, without raw events.
     this.#db.exec('DELETE FROM daily WHERE day NOT IN (SELECT day FROM daily ORDER BY day DESC LIMIT 366)')
    }
