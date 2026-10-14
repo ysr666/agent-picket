@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import {mkdtempSync,readFileSync,readdirSync,rmSync,chmodSync,renameSync,writeFileSync} from 'node:fs'
+import {spawnSync} from 'node:child_process'
 import {tmpdir} from 'node:os'
 import {dirname,join} from 'node:path'
 import {SQLiteDurableStatsCandidate} from '../src/adapters/node/sqlite-durable-stats.experimental.ts'
@@ -130,4 +131,37 @@ test('an open SQLite DB path replacement cannot authorize stale Goal work',{
    assert.equal(completedUtcDayWork(s.trustedWorkDays(31)??undefined,start+8*3_600_000),null)
   }finally{s.close()}
  }finally{cleanup(dir)}
+})
+
+
+test('Windows private ACL revocation invalidates real 8h Goal evidence immediately',{
+ skip:process.platform!=='win32'&&'Requires actual Windows NTFS ACL change',
+ timeout:50_000,
+},()=>{
+ const dir=privateDir()
+ const start=Date.parse('2026-10-13T08:00:00Z')
+ const dbPath=join(dir,'work.v2.sqlite')
+ let ledger:SQLiteDurableStatsCandidate|undefined
+ try{
+  ledger=open(dir)
+  ledger.recordWork(event('start','turn-start',start))
+  ledger.recordWork(event('end','turn-end',start+8*3_600_000))
+  assert.equal(completedUtcDayWork(ledger.trustedWorkDays(31)??undefined,
+   start+8*3_600_000),8*3_600_000)
+  // Deliberately broaden the ACL of the *open* SQLite main file; the
+  // batched verifier must not keep a previously cached "private" verdict.
+  const granted=spawnSync('icacls',[dbPath,'/grant','*S-1-1-0:(R)'],{
+   encoding:'utf8',windowsHide:true,timeout:10_000,
+  })
+  assert.equal(granted.status,0,granted.stderr??'Cannot inject test ACL')
+  assert.equal(ledger.trustedWorkDays(31),null,
+   'A public read ACE revokes permission to use even already-recorded 8h')
+  assert.equal(completedUtcDayWork(ledger.trustedWorkDays(31)??undefined,
+    start+8*3_600_000),null,'No physical Goal threshold from compromised DB')
+  assert.throws(()=>ledger!.recordWork(event('more','tool-start',start+10)),
+   /unavailable/,'Store remains faulted after native DACL tamper')
+ }finally{
+  ledger?.close()
+  cleanup(dir)
+ }
 })

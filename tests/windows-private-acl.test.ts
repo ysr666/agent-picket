@@ -4,7 +4,7 @@ import {mkdtempSync,rmSync,writeFileSync,mkdirSync,symlinkSync,existsSync} from 
 import {spawnSync} from 'node:child_process'
 import {tmpdir} from 'node:os'
 import {join} from 'node:path'
-import {verifyPrivateNtfsAcl,createProtectedNtfsDirectory} from '../src/adapters/node/windows-private-acl.ts'
+import {verifyPrivateNtfsAcl,verifyPrivateNtfsAclBatch,createProtectedNtfsDirectory} from '../src/adapters/node/windows-private-acl.ts'
 
 test('Windows ACL probe explicitly refuses unsupported Unix platform',()=>{
   if(process.platform==='win32')return
@@ -64,12 +64,18 @@ foreach($sid in @($me.Value,'S-1-5-18','S-1-5-32-544')){
   writeFileSync(file,'{}',{mode:0o600})
   assert.equal(verifyPrivateNtfsAcl(file,'file'),true,
    'Owner-only NTFS rights remain private even if an elevated token owns the file via local Administrators')
+  assert.equal(verifyPrivateNtfsAclBatch([
+   {path:root,kind:'directory'},{path:file,kind:'file'},
+  ]),true,'Batch ACL proof must match both single-file proofs')
   const publicGrant=spawnSync('icacls',[file,'/grant','*S-1-1-0:(R)'],{
    encoding:'utf8',timeout:6_000,windowsHide:true,
   })
   assert.equal(publicGrant.status,0,publicGrant.stderr??'Failed to set test ACL')
   assert.equal(verifyPrivateNtfsAcl(file,'file'),false,
    'Granting even read access to Everyone must revoke private-file verification')
+  assert.equal(verifyPrivateNtfsAclBatch([
+   {path:root,kind:'directory'},{path:file,kind:'file'},
+  ]),false,'Batch ACL proof must reject a public Everyone ACE')
  }finally{rmSync(root,{recursive:true,force:true})}
 })
 

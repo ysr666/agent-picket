@@ -2,7 +2,7 @@ import {createHmac,randomBytes} from 'node:crypto'
 import {DatabaseSync} from 'node:sqlite'
 import {chmodSync,existsSync,lstatSync,readdirSync} from 'node:fs'
 import {join} from 'node:path'
-import {createProtectedNtfsDirectory,verifyPrivateNtfsAcl} from './windows-private-acl.ts'
+import {createProtectedNtfsDirectory,verifyPrivateNtfsAcl,verifyPrivateNtfsAclBatch} from './windows-private-acl.ts'
 import type {DurableTotals} from './durable-stats.ts'
 import type {DetectionResult,HumanPrompt,WorkEvent} from '../../core/types.ts'
 
@@ -141,19 +141,34 @@ export class SQLiteDurableStatsCandidate {
   }catch{return false}
  }
  #checkFiles():void{
-  if(readdirSync(this.#dir).some(name=>!FILES.includes(name)))
+  const names=readdirSync(this.#dir)
+  if(names.some(name=>!FILES.includes(name)))
    throw Error('SQLite directory contains unexpected file')
-  if(!this.#safeFile(FILES[0]!))throw Error('SQLite main file identity/privacy lost')
+  const present=FILES.filter(name=>names.includes(name))
+  if(!present.includes(FILES[0]!))
+   throw Error('SQLite main database disappeared')
+  for(const name of present){
+   const stat=lstatSync(join(this.#dir,name))
+   if(!stat.isFile()||stat.isSymbolicLink()||stat.nlink!==1)
+    throw Error('SQLite main/WAL/SHM file identity lost')
+  }
   const main=lstatSync(join(this.#dir,FILES[0]!))
   const identity=String(main.dev)+':'+String(main.ino)
   if(this.#mainIdentity!==undefined&&this.#mainIdentity!==identity)
    throw Error('SQLite main database file replaced while open')
+  if(process.platform==='win32'){
+   // The identical full DACL/reparse-point proof, one OS subprocess per pass.
+   const checks:{path:string;kind:'file'|'directory'}[]=[
+    {path:this.#dir,kind:'directory'},
+    ...present.map(name=>({path:join(this.#dir,name),kind:'file' as const})),
+   ]
+   if(!verifyPrivateNtfsAclBatch(checks))
+    throw Error('SQLite NTFS directory or file DACL no longer private')
+  }else{
+   for(const name of present)
+    if(!this.#safeFile(name))throw Error('SQLite private file identity lost')
+  }
   this.#mainIdentity=identity
-  for(const name of FILES.slice(1))
-   if(existsSync(join(this.#dir,name))&&!this.#safeFile(name))
-    throw Error('SQLite WAL/SHM identity/privacy lost')
-  if(process.platform==='win32'&&!verifyPrivateNtfsAcl(this.#dir,'directory'))
-   throw Error('Private NTFS directory lost')
  }
  #healthy():void{
   if(this.#closed||this.#faulted)throw Error('SQLite ledger unavailable')
@@ -231,8 +246,7 @@ export class SQLiteDurableStatsCandidate {
   this.#healthy()
   return rowsToTotals(this.#db.prepare('SELECT * FROM totals WHERE singleton=1').get())
  }
- snapshotDays(limit=7):ReadonlyArray<{day:string;totals:DurableTotals}>{
-  this.#healthy()
+ #readDays(limit:number):ReadonlyArray<{day:string;totals:DurableTotals}>{
   if(!Number.isSafeInteger(limit)||limit<1||limit>31)
    throw Error('Daily summary limit must be 1..31')
   const rows=this.#db.prepare('SELECT * FROM daily ORDER BY day DESC LIMIT ?').all(limit)
@@ -240,13 +254,20 @@ export class SQLiteDurableStatsCandidate {
    day:String(row.day),totals:rowsToTotals(row),
   }))
  }
+ snapshotDays(limit=7):ReadonlyArray<{day:string;totals:DurableTotals}>{
+  this.#healthy()
+  return this.#readDays(limit)
+ }
  trustedWorkDays(limit=31):ReturnType<SQLiteDurableStatsCandidate['snapshotDays']>|null{
   try{
+   // One fresh full ACL/path witness, then quick_check and the synchronous
+   // SELECT using the same live SQLite connection. Calling snapshotDays()
+   // here would redundantly spawn a second PowerShell security audit.
    this.#healthy()
    if(this.#db.prepare('PRAGMA quick_check').get()?.quick_check!=='ok'){
     this.#faulted=true;return null
    }
-   return this.snapshotDays(limit)
+   return this.#readDays(limit)
   }catch{this.#faulted=true;return null}
  }
  reset():void{
