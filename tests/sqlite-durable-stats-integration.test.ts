@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict'
+import {DatabaseSync} from 'node:sqlite'
 import test from 'node:test'
 import {mkdtempSync,readFileSync,readdirSync,rmSync,chmodSync,renameSync,writeFileSync} from 'node:fs'
 import {spawnSync} from 'node:child_process'
@@ -164,4 +165,87 @@ test('Windows private ACL revocation invalidates real 8h Goal evidence immediate
   ledger?.close()
   cleanup(dir)
  }
+})
+
+test('a completed Turn cannot be recounted after the former 16,384-ID dedup horizon',()=>{
+ const dir=privateDir()
+ const start=Date.parse('2026-10-13T08:00:00Z')
+ try{
+  const first=open(dir)
+  assert.equal(first.recordWork(event('first-start','turn-start',start)),true)
+  assert.equal(first.recordWork(event('first-end','turn-end',start+8*3_600_000)),true)
+  first.close()
+  // Compact synthetic DB fixture: insert unrelated opaque fingerprints without
+  // counter changes. This tests the actual SQLite uniqueness horizon without
+  // invoking 16k slow PowerShell ACL subprocesses on a genuine Windows runner.
+  const db=new DatabaseSync(join(dir,'work.v2.sqlite'))
+  try{
+   db.exec('BEGIN IMMEDIATE')
+   const add=db.prepare('INSERT OR IGNORE INTO seen(fp) VALUES(?)')
+   for(let i=1;i<=16_400;i++)add.run(i.toString(16).padStart(64,'0'))
+   db.exec('COMMIT')
+  }finally{db.close()}
+  const reopened=open(dir)
+  try{
+   assert.equal(reopened.recordWork(event('another-tool','tool-start',start+100)),true)
+   assert.equal(reopened.recordWork(event('first-end','turn-end',start+8*3_600_000)),false,
+    'Historical completed Turn fingerprint must never be evicted')
+   assert.equal(reopened.snapshot().turnEnds,1)
+   assert.equal(completedUtcDayWork(reopened.trustedWorkDays(31)??undefined,
+    start+8*3_600_000),8*3_600_000)
+  }finally{reopened.close()}
+ }finally{cleanup(dir)}
+})
+
+test('older lossy SQLite v2 experimental ledgers are not silently trusted',()=>{
+ const dir=privateDir()
+ try{
+  const file=join(dir,'work.v2.sqlite')
+  const db=new DatabaseSync(file)
+  try{
+   db.exec("CREATE TABLE meta(singleton INTEGER PRIMARY KEY CHECK(singleton=1), version INTEGER NOT NULL CHECK(version=2), secret TEXT NOT NULL CHECK(length(secret)=64)) STRICT")
+   db.prepare('INSERT INTO meta VALUES(1,2,?)').run('a'.repeat(64))
+  }finally{db.close()}
+  if(process.platform!=='win32')chmodSync(file,0o600)
+  assert.throws(()=>open(dir),/Older SQLite dedup history/)
+ }finally{cleanup(dir)}
+})
+
+test('a full exact-dedup SQLite ledger rolls back the next event and withholds Goal evidence',{
+ timeout:120_000,
+},()=>{
+ const dir=privateDir()
+ const start=Date.parse('2026-10-13T08:00:00Z')
+ try{
+  const first=open(dir)
+  assert.equal(first.recordWork(event('capacity-start','turn-start',start)),true)
+  assert.equal(first.recordWork(event('capacity-end','turn-end',start+8*3_600_000)),true)
+  first.close()
+  // A synthetic opaque-ID fixture fills the bounded table in ONE SQLite
+  // transaction. It does not claim 262k actual Agent work events occurred.
+  const db=new DatabaseSync(join(dir,'work.v2.sqlite'))
+  try{
+   db.exec('BEGIN IMMEDIATE')
+   db.exec(`WITH RECURSIVE n(x) AS (
+      SELECT 1 UNION ALL SELECT x+1 FROM n WHERE x<262142
+    ) INSERT OR IGNORE INTO seen(fp) SELECT printf('%064x',x) FROM n`)
+   db.exec('COMMIT')
+   const count=(db.prepare('SELECT COUNT(*) AS n FROM seen').get() as {n:number}).n
+   assert.equal(count,262_144)
+  }finally{db.close()}
+  const reopened=open(dir)
+  try{
+   assert.equal(reopened.recordWork(event('capacity-end','turn-end',
+    start+8*3_600_000)),false,'Existing ID remains idempotent at capacity')
+   assert.throws(()=>reopened.recordWork(event('one-too-many','tool-start',
+    start+50)),/capacity exhausted/)
+   assert.equal(reopened.trustedWorkDays(31),null,
+    'After an uncommittable event the live Goal evidence is unavailable')
+  }finally{reopened.close()}
+  const persisted=new DatabaseSync(join(dir,'work.v2.sqlite'))
+  try{
+   assert.equal((persisted.prepare('SELECT COUNT(*) AS n FROM seen').get() as {n:number}).n,
+    262_144,'Failed event was rolled back, not partially persisted')
+  }finally{persisted.close()}
+ }finally{cleanup(dir)}
 })
