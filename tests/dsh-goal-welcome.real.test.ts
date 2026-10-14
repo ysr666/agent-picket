@@ -56,7 +56,10 @@ async function verifyUploadedFileInHostHistory(
   })
   assert.equal(response.status,200,'Official session/page must be reachable')
   const data=await response.json() as any
-  assert.equal(data.result?.ok,true,'Official Host session/page failed')
+  assert.equal(data.result?.ok,true,
+   'Official Host session/page failed: '+
+    String(data.result?.error?.code??'unknown')+' / '+
+    String(data.result?.error?.message??'unknown').slice(0,250))
   const matches=(data.result.value?.records??[]).filter((r:any)=>
     r.event?.type==='user/message'&&r.event.data?.source?.rpcId===requestId)
   const files=matches.flatMap((r:any)=>r.event.data?.content??[])
