@@ -250,3 +250,15 @@ test('session read budget exhaustion and unrelated corrupt log invalidate otherw
   assert.equal(await inspectOfficialPersistedDay(corrupt,NOW),null)
   assert.deepEqual(await setup(corrupt).attempt(),{kind:'enter'})
 })
+
+test('single-Session wall clock rollback cannot double-count overlapping distinct Turns',async()=>{
+  const outOfTime=provider([{id:'clock-rollback',rows:[
+    st(0,1,NOW-8*HOUR),en(1,1,NOW-4*HOUR),
+    st(2,2,NOW-6*HOUR),en(3,2,NOW),
+  ]}])
+  assert.equal(await inspectOfficialPersistedDay(outOfTime,NOW),null,
+    'Host Turn ordinals increase, but time overlaps previously finished work')
+  const proof=setup(outOfTime)
+  assert.deepEqual(await proof.attempt(),{kind:'enter'})
+  assert.equal(proof.blocks.length,0)
+})
