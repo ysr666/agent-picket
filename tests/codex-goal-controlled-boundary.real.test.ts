@@ -97,7 +97,10 @@ test('native Codex completes in-flight autonomous Turn, holds next round and col
   assert.ok(address&&typeof address==='object')
   writeFileSync(join(home,'config.toml'),[
    'model = "mock-model"','approval_policy = "never"',
-   'sandbox_mode = "workspace-write"','model_provider = "mock_provider"',
+   // The temporary CI workspace contains only fixed synthetic fixtures.
+   // Use official danger-full-access to isolate the **Goal hold contract**
+   // from Linux runner sandbox provisioning. This does NOT sign off a sandbox.
+   'sandbox_mode = "danger-full-access"','model_provider = "mock_provider"',
    '[model_providers.mock_provider]',
    'name = "isolated synthetic model"',
    `base_url = "http://127.0.0.1:${address.port}/v1"`,
