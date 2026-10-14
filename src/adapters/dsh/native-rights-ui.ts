@@ -419,7 +419,9 @@ export function createDshUnionComponents(
     const enabled=rightsIsActive(rights)
     const writable=rights.state==='ready'&&rights.writable
     const goal=goalStatus(deps)
-    const goalWritable=enabled&&goal.writable&&(goal.available||goal.authorized)
+    // A legacy OFF membership may still have a Host-owned Goal grant. Its
+    // revocation must stay available even without union membership or Goal RPC.
+    const goalWritable=goal.writable&&(goal.authorized||(enabled&&goal.available))
     const chooseGoal=async(next:'off'|'authorized-v1')=>{
       if(busy||!goalWritable||!deps.goal)return
       setBusy(true);setError(false)
