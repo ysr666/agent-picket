@@ -16,9 +16,13 @@ permissions:
 
 jobs:
   official-web-goal:
-    name: Chrome real Web Goal / official JSONL / HQ recovery
+    name: Chrome real Web / DSH ${{ matrix.dsh }} / HQ & human file
     runs-on: ubuntu-latest
     timeout-minutes: 23
+    strategy:
+      fail-fast: false
+      matrix:
+        dsh: ['0.2.0-rc.2', '0.2.1-alpha.3']
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -31,7 +35,7 @@ jobs:
       - name: Install published DSH and actual browser driver
         run: |
           npm install -g pnpm@11.7.0 --no-audit --no-fund
-          npm install --prefix .dsh-web-host --no-save --no-package-lock --no-audit --no-fund @deepseek-ai/dsh@0.2.0-rc.2
+          npm install --prefix .dsh-web-host --no-save --no-package-lock --no-audit --no-fund @deepseek-ai/dsh@${{ matrix.dsh }}
           npm install --prefix .dsh-web-browser --no-save --no-package-lock --no-audit --no-fund playwright-core@1.58.2
       - name: Verify native Chrome is installed
         shell: bash
@@ -58,7 +62,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: dsh-real-web-goal-ui-${{ runner.os }}
+          name: dsh-real-web-goal-ui-${{ runner.os }}-${{ matrix.dsh }}
           path: /tmp/picket-goal-web-evidence/
           if-no-files-found: ignore
           retention-days: 7
