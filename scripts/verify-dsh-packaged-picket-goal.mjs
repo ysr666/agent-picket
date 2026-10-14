@@ -4,9 +4,9 @@
  * A real first-run UI click and real browser attachments remain separate gates.
  */
 import assert from 'node:assert/strict'
-import { execFileSync, spawn, spawnSync } from 'node:child_process'
+import { spawn, spawnSync } from 'node:child_process'
 import { createInterface } from 'node:readline'
-import { mkdtempSync, readFileSync, existsSync, rmSync } from 'node:fs'
+import { mkdtempSync, readFileSync, existsSync, rmSync, readdirSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { resolve, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -17,19 +17,12 @@ const cli=join(rootDeps,'@deepseek-ai/dsh/lib/bin.js')
 const fixture=join(repo,'tests/fixtures/dsh-packaged-agent-picket-goal.mjs')
 const sleep=ms=>new Promise(done=>setTimeout(done,ms))
 const parent=mkdtempSync(join(tmpdir(),'picket-dsh-installed-'))
-let archive=''
+const tarballs=readdirSync(repo).filter(name=>
+  /^agent-picket-[0-9]+[.][0-9]+[.][0-9]+(?:-[A-Za-z0-9.-]+)?[.]tgz$/u.test(name))
+assert.equal(tarballs.length,1,
+  'GitHub Actions must npm pack exactly one built Agent Picket tarball')
+const archive=join(repo,tarballs[0])
 try{
-  const packArgs=['pack','--ignore-scripts','--silent','--pack-destination',parent]
-  const packed=spawnSync(
-    process.platform==='win32'?'cmd.exe':'npm',
-    process.platform==='win32'
-      ? ['/d','/s','/c','npm pack --ignore-scripts --silent --pack-destination "'+parent+'"']
-      : packArgs,
-    {cwd:repo,encoding:'utf8',timeout:35000,windowsHide:true,
-      env:{...process.env,npm_config_offline:'true'}})
-  assert.equal(packed.status,0,'isolated npm pack: '+String(packed.stderr).slice(-500))
-  archive=join(parent,packed.stdout.trim().split(/\r?\n/).at(-1))
-  assert.ok(archive.endsWith('.tgz')&&existsSync(archive),'packaged tarball is required')
   for(const [hours,consent] of [[7,true],[8,false],[8,true]]){
     const temp=mkdtempSync(join(parent,'host-'))
     const home=join(temp,'home')
