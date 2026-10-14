@@ -4,6 +4,7 @@ on:
   pull_request:
     paths:
       - 'scripts/verify-dsh-official-host-goal.mjs'
+      - 'scripts/verify-dsh-official-host-cold-goal.mjs'
       - 'tests/fixtures/dsh-official-persistence-goal-host.mjs'
       - '.github/workflows/dsh-official-host-goal.yml'
   workflow_dispatch:
@@ -31,3 +32,5 @@ jobs:
           --no-audit --no-fund @deepseek-ai/dsh@0.2.0-rc.2
       - name: Verify official DSH profile, persisted completed work and actual Goal pre-step block
         run: node scripts/verify-dsh-official-host-goal.mjs
+      - name: Verify official Goal persisted across cold process restart and manual CAS resume
+        run: node scripts/verify-dsh-official-host-cold-goal.mjs
