@@ -139,10 +139,15 @@ test('uncertain Goal.block does not silently reject an automatic round when no b
   let hook!: (arg:any,next:()=>Promise<unknown>)=>Promise<unknown>
   let outcome:typeof active|{id:string;revision:number;phase:'blocked';
     activation:'disarmed';roundsStarted:number;blockedReason:{code:string}}=active
+  let commitThenThrow=false
   registerOfficialPersistedGoalPreview({
     inject:(_services:any,callback:any)=>callback({
       agents:{get:()=>agent},sessionPersistence:events,
-      goals:{get:()=>outcome,block:()=>{throw new Error('Host RPC refused')}},
+      goals:{get:()=>outcome,block:()=>{
+        if(commitThenThrow)outcome={...active,revision:9,phase:'blocked',
+          activation:'disarmed',blockedReason:{code:'picket-work-limit'}}
+        throw new Error('Host RPC failed after (or before) mutation')
+      }},
       on:(_event:string,fn:typeof hook)=>{hook=fn},
     }),
   },{
@@ -155,8 +160,7 @@ test('uncertain Goal.block does not silently reject an automatic round when no b
     'No confirmed Host block means the candidate round must not be dropped')
   // Some Hosts can commit and then throw. A matching authoritative readback
   // may still justify rejecting only that confirmed autonomous round.
-  outcome={...active,revision:9,phase:'blocked',activation:'disarmed',
-    blockedReason:{code:'picket-work-limit'}}
+  commitThenThrow=true
   assert.deepEqual(await hook({agent,messages:[message]},pass),{kind:'reject'})
 })
 test('revoking real strike consent while awaited persistence resolves prevents Host block',async()=>{
