@@ -13,9 +13,13 @@ permissions:
 
 jobs:
   official-host:
-    name: Real published SDK Host / Ubuntu Node24 / offline model
-    runs-on: ubuntu-latest
+    name: ${{ matrix.os }} / Node24 / real SDK Host offline
+    runs-on: ${{ matrix.os }}
     timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
