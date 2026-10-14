@@ -1,0 +1,29 @@
+name: DSH Offline Published Host Goal Probe
+
+on:
+  pull_request:
+    paths:
+      - 'scripts/verify-dsh-official-host-goal.mjs'
+      - 'tests/fixtures/dsh-official-persistence-goal-host.mjs'
+      - '.github/workflows/dsh-official-host-goal.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  official-host:
+    name: Real published SDK Host / Ubuntu Node24 / offline model
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - name: Install official DSH CLI into isolated folder
+        run: >
+          npm install --prefix .dsh-host-probe --no-save --no-package-lock
+          --no-audit --no-fund @deepseek-ai/dsh@0.2.0-rc.2
+      - name: Verify official DSH profile, persisted completed work and actual Goal pre-step block
+        run: node scripts/verify-dsh-official-host-goal.mjs
