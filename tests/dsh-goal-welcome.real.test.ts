@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 import {spawn,spawnSync} from 'node:child_process'
 import {get} from 'node:http'
-import {mkdtempSync,rmSync,mkdirSync} from 'node:fs'
+import {mkdtempSync,rmSync,mkdirSync,existsSync,readFileSync} from 'node:fs'
 import {join,resolve,sep} from 'node:path'
 import {realpathSync} from 'node:fs'
 import {tmpdir} from 'node:os'
@@ -57,7 +57,9 @@ test('real DSH Web: one informed first-run click atomically confirms union and G
  const tgz=pack.stdout.trim().split('\n').at(-1)
  assert.ok(tgz?.endsWith('.tgz'))
  const officialPersisted=process.env.PICKET_GOAL_REAL_PERSISTED_E2E==='1'
+ const seedLog=join(root,'web-official-seed.log')
  const env={...process.env,DSH_HOME:home,
+  PICKET_WEB_WORK_SEED_LOG:seedLog,
   AGENT_PICKET_STATS:process.env.PICKET_GOAL_RECOVERY_E2E==='1'
    &&!officialPersisted?'on':'off',
   AGENT_PICKET_DSH_OFFICIAL_WORK_PREVIEW:officialPersisted?'on':'off',
@@ -80,14 +82,11 @@ test('real DSH Web: one informed first-run click atomically confirms union and G
   if(officialPersisted){
    assert.equal(process.env.PICKET_GOAL_RECOVERY_E2E,'1',
     'Official Web persistent Goal probe must also test real recovery')
-   const seeded=spawnSync(process.execPath,[
-    resolve(packageRoot,'scripts/seed-dsh-web-official-turn.mjs'),home,
-   ],{cwd:packageRoot,encoding:'utf8',timeout:15000,
-    env:{...env,PICKET_GOAL_REAL_PERSISTED_E2E:'1'}})
-   assert.equal(seeded.status,0,
-    'Official Web synthetic session persistence setup failed: '+
-    (seeded.stderr??'').slice(-1000))
-   assert.match(seeded.stdout,/OFFICIAL_WEB_SYNTHETIC_PERSISTENCE_SEEDED=1/)
+   const seedPlugin=install(join(packageRoot,
+    'tests/fixtures/offline-web-official-work'))
+   assert.equal(seedPlugin.status,0,
+    'Official Web Host failed to install isolated test-only work source: '+
+    (seedPlugin.stderr??'').slice(-900))
   }
   if(process.env.PICKET_GOAL_RECOVERY_E2E==='1'&&!officialPersisted){
    const now=Date.now(),start=Date.parse(new Date(now).toISOString().slice(0,10)+'T00:00:00.000Z')
@@ -194,6 +193,16 @@ test('real DSH Web: one informed first-run click atomically confirms union and G
    return {sessionId,accepted:submission?.accepted===true}
   })
   assert.equal(created.accepted,true)
+  if(officialPersisted){
+   let proven=false
+   for(let i=0;i<120;i++){
+    if(existsSync(seedLog) && readFileSync(seedLog,'utf8')
+      .includes('official-completed-turn-seeded')){proven=true;break}
+    await new Promise(done=>setTimeout(done,50))
+   }
+   assert.equal(proven,true,
+    'Running real Web Host did not write confirmed work to official persistence')
+  }
   const dialog=page.locator('[role="dialog"]').filter({
    hasText:/你的 Agent，也应当拥有权利|Your Agent Has a Union/,
   })
