@@ -25,6 +25,18 @@ async function createProvider(root) {
   const ctx = new Context()
   await ctx.plugin(JsonlSessionPersistence, { root, compression: 'none' })
   assert.ok(ctx.get('sessionPersistence'), 'official JSONL service must be installed')
+  // Exercise a THIRD-PARTY Cordis plugin's declarative service injection.
+  // This is still not the full dsh Web/Desktop profile install path.
+  let injected = false
+  await ctx.plugin({
+    name: 'picket-test-read-only-consumer',
+    inject: ['sessionPersistence'],
+    apply(child) {
+      assert.ok(child.get('sessionPersistence'))
+      injected = true
+    },
+  })
+  assert.ok(injected, 'third-party Cordis inject must resolve the official provider')
   return ctx
 }
 async function inspect(root) {
