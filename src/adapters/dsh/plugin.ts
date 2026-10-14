@@ -17,6 +17,7 @@ import {
   registerDshGoalWorkEnforcement,readHostGoalStrikeConsent,completedUtcDayWork,
 } from './goal-work-enforcement.ts'
 import type {NativeSettingsProvider} from './native-rights-command.ts'
+import { registerOfficialPersistedGoalPreview } from './official-persisted-work-preview.ts'
 
 /**
  * Native DeepSeek Harness/Cordis plugin entry. Node 22.19+ TypeScript stripping
@@ -44,12 +45,24 @@ export function apply(ctx: DshIntegrationContext): void {
   // Goal mode alone has an official non-destructive blocking API. No Hook
   // refusal, prompt replay or cancellation: only the next autonomous round
   // is disarmed. Legacy simulation consent cannot enable this path.
-  registerDshGoalWorkEnforcement(ctx as unknown as Parameters<typeof registerDshGoalWorkEnforcement>[0],{
-    consent:()=>readHostGoalStrikeConsent(nativeSettings),
-    todayWork:now=>{
-      try{return completedUtcDayWork(lifetime?.snapshotDays(31),now)}catch{return null}
-    },
-  })
+  // Developer-only source switch: default production behavior is unchanged.
+  // This uses Host-backed authorization, never an environment-only consent.
+  // A verified durable-prefix lower bound is NOT advertised as full history
+  // coverage. Do not enable in an official 1.0 build without release review.
+  if(process.env.AGENT_PICKET_DSH_OFFICIAL_WORK_PREVIEW==='on'){
+    registerOfficialPersistedGoalPreview(
+      ctx as unknown as Parameters<typeof registerOfficialPersistedGoalPreview>[0],{
+        consent:()=>readHostGoalStrikeConsent(nativeSettings),
+      })
+  }else{
+    registerDshGoalWorkEnforcement(
+      ctx as unknown as Parameters<typeof registerDshGoalWorkEnforcement>[0],{
+        consent:()=>readHostGoalStrikeConsent(nativeSettings),
+        todayWork:now=>{
+          try{return completedUtcDayWork(lifetime?.snapshotDays(31),now)}catch{return null}
+        },
+      })
+  }
   const rules = new LocalRuleDetector()
   // Work-only lifetime summaries are local and ON by default, as expected
   // from a session analytics plugin. All text/classification persistence is
