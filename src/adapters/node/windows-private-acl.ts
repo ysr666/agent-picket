@@ -60,6 +60,50 @@ export function verifyPrivateNtfsAcl(path:string,kind:'file'|'directory'):boolea
 
 
 /**
+ * Experimental native NTFS ACL proof for a tiny set of current SQLite paths.
+ * Reuse the EXACT security-descriptor body of verifyPrivateNtfsAcl, but check
+ * all paths in one PowerShell process. Every trusted read rechecks ownership.
+ * Not an atomic handle-lock or tamper/rollback attestation.
+ */
+const BATCH_INSPECT_SCRIPT=INSPECT_SCRIPT.replace(
+  '$p=$env:AGENT_PICKET_ACL_CHECK_PATH\nif(-not $p){exit 10}',
+  [
+    '$paths=@(ConvertFrom-Json -InputObject $env:AGENT_PICKET_ACL_CHECK_PATHS)',
+    'if($paths.Count -lt 1 -or $paths.Count -gt 4){exit 10}',
+    'foreach($p in $paths){',
+    'if(-not $p){exit 10}',
+  ].join('\n'),
+) + '\n}\n'
+
+export function verifyPrivateNtfsAclBatch(
+  items:readonly {readonly path:string;readonly kind:'file'|'directory'}[],
+):boolean {
+  if(process.platform!=='win32'||items.length<1||items.length>4)return false
+  try {
+    const paths:string[]=[]
+    for(const item of items){
+      if(typeof item.path!=='string'||item.path.length<3||!item.path.trim())return false
+      if(item.kind!=='file'&&item.kind!=='directory')return false
+      const entry=lstatSync(item.path)
+      if(entry.isSymbolicLink()||
+        (item.kind==='file'?(!entry.isFile()||entry.nlink!==1):!entry.isDirectory()))
+        return false
+      if(paths.includes(item.path))return false
+      paths.push(item.path)
+    }
+    const encoded=Buffer.from(BATCH_INSPECT_SCRIPT,'utf16le').toString('base64')
+    const result=spawnSync('powershell.exe',[
+      '-NoLogo','-NoProfile','-NonInteractive','-EncodedCommand',encoded,
+    ],{encoding:'utf8',windowsHide:true,timeout:15_000,maxBuffer:65_536,
+      env:{...process.env,AGENT_PICKET_ACL_CHECK_PATHS:JSON.stringify(paths)}})
+    const lines=result.stdout.trim().split(/\r?\n/)
+    return result.status===0&&lines.length===items.length&&
+      lines.every(line=>line.trim()==='PRIVATE_NTFS_DACL_VERIFIED')
+  }catch{return false}
+}
+
+
+/**
  * Experimental NEW EMPTY directory creator. It does not relax DurableStats'
  * Windows NO-GO and must never mutate an already existing user directory.
  * Nothing sensitive is written between mkdir and DACL verification.
