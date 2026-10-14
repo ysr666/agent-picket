@@ -102,6 +102,17 @@ async function scenario(hours,consent){
         .map(s=>Number(s.slice('durable-work:'.length)))
       assert.ok(measured.some(n=>Number.isSafeInteger(n)&&n>=8*3_600_000),
         'official persisted work must meet the 8h threshold; current first Turn adds real wall time')
+      // User-originated resume is a NEW ordinary message. The official Host
+      // owns resume CAS; past union Goal change prevents same-day re-strike.
+      await rpc('session/prompt',{sessionId:'picket-offline-host-goal',
+        contentBlocks:[{type:'text',text:'RESUME_OFFLINE_GOAL'}]})
+      await until(s=>s.includes('resume:active:revision-plus-one=true'),
+        'official Host Goal CAS resume')
+      await until(s=>s.filter(v=>v==='model-call').length>=3,
+        'resumed Goal should continue automatic work without phantom replay')
+      const recovered=snapshot()
+      assert.equal(recovered.filter(v=>v==='official-goal-change:block').length,1,
+        'no duplicate same-day union strike after manual Host recovery')
     }else{
       await until(s=>s.filter(x=>x==='model-call').length>=2,
         '7h or no consent must not stop the next automatic model call')
