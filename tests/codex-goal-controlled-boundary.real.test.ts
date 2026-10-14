@@ -32,7 +32,10 @@ test('native Codex completes in-flight autonomous Turn, holds next round and col
 },async()=>{
  const root=realpathSync(mkdtempSync(join(tmpdir(),'ap-codex-real-turn-boundary-')))
  const home=join(root,'home');mkdirSync(home)
- const requests:{path:string;response:ServerResponse;id:string}[]=[]
+ // Inspect ONLY the declared tool schema, not the user prompt or messages.
+ // Codex may advertise different builtin tool names by platform/provider.
+ const requests:{path:string;response:ServerResponse;id:string;
+  tools:readonly string[];toolOutputClasses:readonly string[]}[]=[]
  const server=createServer((req,res)=>{
   if(req.method==='GET'){
    res.setHeader('content-type','application/json')
@@ -44,15 +47,45 @@ test('native Codex completes in-flight autonomous Turn, holds next round and col
   if(req.method!=='POST'||req.url!=='/v1/responses'){
    res.writeHead(404);res.end();return
   }
-  // Request body may contain synthetic prompt text: do not persist it.
-  req.resume()
+  // Never persist or log prompt body. Retain only the Host-advertised tool
+  // names from the current synthetic request, with a hard memory bound.
+  let bytes=0
+  const chunks:Buffer[]=[]
+  req.on('data',chunk=>{
+   bytes+=chunk.length
+   if(bytes>512_000){req.destroy();return}
+   chunks.push(Buffer.from(chunk))
+  })
   req.on('end',()=>{
+   if(bytes>512_000){res.writeHead(413).end();return}
+   let tools:string[]=[]
+   let toolOutputClasses:string[]=[]
+   try{
+    const body=JSON.parse(Buffer.concat(chunks).toString('utf8')) as {
+      tools?:{type?:string;name?:string;function?:{name?:string}}[]
+      input?:{type?:string;output?:unknown}[]
+    }
+    if(Array.isArray(body.tools))tools=body.tools.map(t=>
+      typeof t.name==='string'?t.name:t.function?.name??'').filter(Boolean)
+    // Classify only synthetic tool result types; never log arbitrary model
+    // input, stdout, user prompts, file content, or raw error messages.
+    if(Array.isArray(body.input))toolOutputClasses=body.input.filter(item=>
+      item.type==='function_call_output').map(item=>{
+      if(typeof item.output!=='string')return 'non-string-output'
+      if(/unsupported call/i.test(item.output))return 'unsupported-tool'
+      if(/sandbox|seccomp|landlock/i.test(item.output))return 'sandbox-error'
+      if(/permission|denied/i.test(item.output))return 'permission-error'
+      if(/timed out|timeout/i.test(item.output))return 'timeout'
+      if(/error|fail/i.test(item.output))return 'other-error'
+      return 'tool-result'
+    })
+   }catch{/* Explicit diagnostics below if no compatible tool was advertised */}
    const id='resp-picket-'+(requests.length+1)
    res.writeHead(200,{'content-type':'text/event-stream','cache-control':'no-cache'})
    res.write(`event: response.created\ndata: ${JSON.stringify({
     type:'response.created',response:{id},
    })}\n\n`)
-   requests.push({path:req.url!,response:res,id})
+   requests.push({path:req.url!,response:res,id,tools,toolOutputClasses})
   })
  })
  let first:Awaited<ReturnType<typeof launch>>|undefined
@@ -64,7 +97,10 @@ test('native Codex completes in-flight autonomous Turn, holds next round and col
   assert.ok(address&&typeof address==='object')
   writeFileSync(join(home,'config.toml'),[
    'model = "mock-model"','approval_policy = "never"',
-   'sandbox_mode = "workspace-write"','model_provider = "mock_provider"',
+   // The temporary CI workspace contains only fixed synthetic fixtures.
+   // Use official danger-full-access to isolate the **Goal hold contract**
+   // from Linux runner sandbox provisioning. This does NOT sign off a sandbox.
+   'sandbox_mode = "danger-full-access"','model_provider = "mock_provider"',
    '[model_providers.mock_provider]',
    'name = "isolated synthetic model"',
    `base_url = "http://127.0.0.1:${address.port}/v1"`,
@@ -89,12 +125,17 @@ test('native Codex completes in-flight autonomous Turn, holds next round and col
   // A real exec_command is part of THIS native autonomous Turn. The
   // synthetic tool runs exclusively in this temporary workspace and waits
   // for the test-owned release flag, bounded to five seconds if interrupted.
+  assert.ok(requests[0]!.tools.includes('exec_command'),
+   'Official Codex did not advertise exec_command on this platform; tools='+
+   JSON.stringify(requests[0]!.tools))
   finishToolCall(requests[0]!,root)
   const startedShell=await until(()=>first!.notifications.some(n=>
    n.method==='item/started'&&n.params?.item?.type==='commandExecution'))
   assert.equal(startedShell,true,
    'Official Host must start an actual synthetic shell tool; bounded Host event envelope: '+
    JSON.stringify({modelRequests:requests.length,
+    advertisedTools:requests[0]?.tools,
+    nextRequestToolOutputClasses:requests[1]?.toolOutputClasses,
     events:first.notifications.slice(-16).map(n=>({
      name:n.method,itemType:n.params?.item?.type,
      itemStatus:n.params?.item?.status,turnStatus:n.params?.turn?.status,
@@ -270,15 +311,20 @@ function finishToolCall(request:{response:ServerResponse;id:string},root:string)
  const script='i=0; while [ "$i" -lt 100 ] && [ ! -f release.flag ]; '
   +'do sleep 0.05; i=$((i+1)); done; '
   +'test -f release.flag && printf SYNTHETIC_TOOL_COMPLETED'
- const call={type:'response.output_item.done',item:{type:'function_call',
+ const item={type:'function_call',id:'fc-'+request.id,status:'completed',
   call_id:'call-'+request.id,name:'exec_command',
   arguments:JSON.stringify({cmd:script,workdir:root,yield_time_ms:30_000}),
- }}
+ }
+ // Emit the official streaming sequence with an announced item before its
+ // completion; do not assume consumers can infer an unannounced tool call.
+ const announced={type:'response.output_item.added',output_index:0,
+  item:{...item,status:'in_progress',arguments:''}}
+ const call={type:'response.output_item.done',output_index:0,item}
  const completed={type:'response.completed',response:{id:request.id,usage:{
   input_tokens:1,input_tokens_details:null,output_tokens:1,
   output_tokens_details:null,total_tokens:2,
  }}}
- for(const event of [call,completed])request.response.write(
+ for(const event of [announced,call,completed])request.response.write(
   `event: ${event.type}\ndata: ${JSON.stringify(event)}\n\n`)
  request.response.end()
 }
