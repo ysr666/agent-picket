@@ -348,7 +348,8 @@ test('real DSH Web: one informed first-run click atomically confirms union and G
      assert.equal(persisted?.phase,'blocked','Durable Goal block must survive official Host restart')
      assert.equal(persisted?.blockedReason?.code,'picket-work-limit')
      assert.equal(persisted?.revision,blocked.revision)
-     assert.equal(persisted?.roundsStarted,1)
+     assert.equal(persisted?.roundsStarted,officialPersisted?0:1,
+       'Official Host must restore the exact blocked Goal round counter')
      await ctx.clearCookies()
      await ctx.addCookies([{...restartCookie,url:base,httpOnly:true,sameSite:'Strict'}])
      await page.goto(base,{waitUntil:'domcontentloaded',timeout:15_000})
