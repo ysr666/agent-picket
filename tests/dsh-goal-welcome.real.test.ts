@@ -443,6 +443,34 @@ test('real DSH Web: one informed first-run click atomically confirms union and G
       assert.deepEqual(durable,{messages:1,files:1},
         'Official cold Session history must retain one exact human file ref')
       console.log('PICKET_HUMAN_FILE_COLD_RESTART_SURVIVED '+JSON.stringify(durable))
+      if(process.env.PICKET_GOAL_FILE_BYTE_READBACK_E2E==='1'){
+        // Ask the already restarted official Host's TEST-ONLY service
+        // to read the original file via its own attachments.readFileStream().
+        // No bytes or source text are ever included in test logs.
+        const submitted=await fetch(base+'api/session/prompt',{
+          method:'POST',headers:{'content-type':'application/json',cookie:cookieText},
+          body:JSON.stringify({type:'client-request',
+            rpcId:'cold-file-byte-verification-submit',method:'session/prompt',
+            payload:{args:{request:{sessionId:created.sessionId,
+              mode:'queue',requestId:'picket-cold-file-verify-002',
+              content:[{type:'text',text:'VERIFY_DURABLE_FILE_BYTES'}]}}}}),
+          signal:AbortSignal.timeout(10_000),
+        })
+        const result=await submitted.json() as any
+        assert.equal(result.result?.ok,true,'Host rejected cold file verification prompt')
+        assert.equal(result.result?.value?.accepted,true)
+        let verified=false
+        for(let retry=0;retry<80;retry++){
+          if(existsSync(seedLog)&&readFileSync(seedLog,'utf8')
+            .includes('official-cold-file-bytes-sha256-verified')){
+            verified=true;break
+          }
+          await new Promise(resolve=>setTimeout(resolve,130))
+        }
+        assert.equal(verified,true,
+          'Actual official attachment service must re-read and SHA256-verify stored file bytes')
+        console.log('PICKET_HUMAN_FILE_VERBATIM_BYTES_COLD_VERIFIED')
+      }
      }
      assert.equal(replayGoal?.result?.ok,true)
      assert.equal(persisted?.phase,'blocked','Durable Goal block must survive official Host restart')
