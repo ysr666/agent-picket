@@ -92,7 +92,7 @@ export function apply(ctx){
       m.content?.some(b=>b.type==='text'&&b.text==='RESUME_PACKAGED_GOAL'))
     if(resume){
       const goal=ctx.goals.get(agent)
-      emit('before-resume:'+String(goal?.phase))
+      emit('before-resume:'+String(goal?.phase)+':'+String(goal?.activation))
       if(goal?.phase==='blocked'){
         const updated=ctx.goals.resume(agent,{id:goal.id,revision:goal.revision})
         emit('resumed:'+updated.phase+':'+String(updated.revision===goal.revision+1))
