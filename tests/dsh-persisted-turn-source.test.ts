@@ -23,7 +23,7 @@ function store(sessions:readonly {
       header:{id:s.id,isSeeded:s.fork===true},
     }))},
     async open(id,access){
-      assert.equal(access,'read','never open the Host's persistence write handle')
+      assert.equal(access,'read',"never open the Host\u2019s persistence write handle")
       visited.push(id)
       if(id===failId)throw Error('Host read error')
       const s=sessions.find(x=>x.id===id)
