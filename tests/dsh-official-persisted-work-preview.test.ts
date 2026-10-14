@@ -198,3 +198,55 @@ test('revoking real strike consent while awaited persistence resolves prevents H
   assert.ok(reads>0)
   assert.equal(blocks,0)
 })
+
+test('replay of a completed Turn with new event seq cannot fabricate 8h of work',async()=>{
+  const duplicated=provider([{id:'replayed',rows:[
+    st(0,1,NOW-4*HOUR),en(1,1,NOW),
+    st(2,1,NOW-4*HOUR),en(3,1,NOW),
+  ]}])
+  assert.equal(await inspectOfficialPersistedDay(duplicated,NOW),null,
+    'Repeated Turn ordinal in one Session invalidates proof even with contiguous seq')
+  const t=setup(duplicated)
+  assert.deepEqual(await t.attempt(),{kind:'enter'})
+  assert.equal(t.blocks.length,0)
+})
+test('two distinct increasing completed Turns can legitimately add to 8h',async()=>{
+  const different=provider([{id:'two-turns',rows:[
+    st(0,1,NOW-8*HOUR),en(1,1,NOW-4*HOUR),
+    st(2,2,NOW-4*HOUR),en(3,2,NOW),
+  ]}])
+  const projection=await inspectOfficialPersistedDay(different,NOW)
+  assert.equal(projection?.confirmedCompletedTurnMs,8*HOUR)
+  assert.deepEqual(await setup(different).attempt(),{kind:'reject'})
+})
+test('reverse-order turn ordinal invalidates a log even with valid event seq',async()=>{
+  const reversed=provider([{id:'reordered',rows:[
+    st(0,9,NOW-8*HOUR),en(1,9,NOW-4*HOUR),
+    st(2,8,NOW-4*HOUR),en(3,8,NOW),
+  ]}])
+  assert.equal(await inspectOfficialPersistedDay(reversed,NOW),null)
+  assert.deepEqual(await setup(reversed).attempt(),{kind:'enter'})
+})
+test('UTC midnight work is NOT silently attributed whole to today to cause false strike',async()=>{
+  const midnight=Date.parse('2026-10-14T00:00:00.000Z')
+  const at=Date.parse('2026-10-14T09:30:00.000Z')
+  const跨日=provider([{id:'cross-midnight',rows:[
+    st(0,1,midnight-60*60_000),en(1,1,midnight+7*HOUR+30*60_000),
+  ]}])
+  assert.equal(await inspectOfficialPersistedDay(跨日,at),null,
+    'Whole-span attribution would incorrectly create 8.5h despite only 7.5h today')
+  let blocked=0
+  const original=setup(跨日)
+  assert.deepEqual(await original.attempt(),{kind:'enter'})
+  blocked+=original.blocks.length
+  assert.equal(blocked,0)
+})
+test('session read budget exhaustion and unrelated corrupt log invalidate otherwise sufficient work',async()=>{
+  const eight:Corpus={id:'eight',rows:[st(0,1,NOW-8*HOUR),en(1,1,NOW)]}
+  assert.equal(await inspectOfficialPersistedDay(provider([eight]),NOW,{maxEvents:1}),null)
+  const corrupt=provider([eight,{id:'other-corrupt',rows:[
+    st(0,1,NOW-60_000),en(2,1,NOW),
+  ]}])
+  assert.equal(await inspectOfficialPersistedDay(corrupt,NOW),null)
+  assert.deepEqual(await setup(corrupt).attempt(),{kind:'enter'})
+})
