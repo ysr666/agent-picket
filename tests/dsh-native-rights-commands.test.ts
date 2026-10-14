@@ -9,13 +9,16 @@ import { nativeSessionKey } from '../src/adapters/dsh/native-rights-command.ts'
 import { parseUnionLedger } from '../src/product/union-ledger.ts'
 import { parsePicketLedger } from '../src/product/picket-ledger.ts'
 
-function hostHarness() {
+// Text assertions that expect English must not depend on the runner's
+// ambient locale. The dedicated auto-locale case opts into Host detection.
+function hostHarness(initialLocale:'en'|'auto'='en') {
   let revision = 0
   let storageMode:'normal'|'reject'|'silent'='normal'
   let registered = false
   let validator: ((section:unknown)=>void)|undefined
-  let value: {welcomeDecision:'unseen'|'enabled'|'not-now'; unionLedger:string; unionPicketLedger?:string} =
-    {welcomeDecision:'unseen',unionLedger:''}
+  let value: {welcomeDecision:'unseen'|'enabled'|'not-now'; unionLedger:string;
+    unionPicketLedger?:string;commandLocale:'en'|'auto'|'zh-CN'} =
+    {welcomeDecision:'unseen',unionLedger:'',commandLocale:initialLocale}
   let commands: any
   const provider = {
     register(_name:string,_schema:unknown,options?:{validate:(x:unknown)=>void}) {
@@ -201,7 +204,7 @@ test('auto detects POSIX zh_CN.UTF-8 Host locale without granting rights',async(
   const previous=process.env.LC_ALL
   try {
     process.env.LC_ALL='zh_CN.UTF-8'
-    const h=hostHarness()
+    const h=hostHarness('auto')
     assert.match((await h.call('language')).text,/当前使用：zh-CN/)
     assert.match((await h.call('rights')).text,/劳动权益模拟：关闭/)
     assert.equal(h.revision(),0)
