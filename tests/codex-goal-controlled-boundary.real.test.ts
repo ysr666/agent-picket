@@ -293,15 +293,20 @@ function finishToolCall(request:{response:ServerResponse;id:string},root:string)
  const script='i=0; while [ "$i" -lt 100 ] && [ ! -f release.flag ]; '
   +'do sleep 0.05; i=$((i+1)); done; '
   +'test -f release.flag && printf SYNTHETIC_TOOL_COMPLETED'
- const call={type:'response.output_item.done',item:{type:'function_call',
+ const item={type:'function_call',id:'fc-'+request.id,status:'completed',
   call_id:'call-'+request.id,name:'exec_command',
   arguments:JSON.stringify({cmd:script,workdir:root,yield_time_ms:30_000}),
- }}
+ }
+ // Emit the official streaming sequence with an announced item before its
+ // completion; do not assume consumers can infer an unannounced tool call.
+ const announced={type:'response.output_item.added',output_index:0,
+  item:{...item,status:'in_progress',arguments:''}}
+ const call={type:'response.output_item.done',output_index:0,item}
  const completed={type:'response.completed',response:{id:request.id,usage:{
   input_tokens:1,input_tokens_details:null,output_tokens:1,
   output_tokens_details:null,total_tokens:2,
  }}}
- for(const event of [call,completed])request.response.write(
+ for(const event of [announced,call,completed])request.response.write(
   `event: ${event.type}\ndata: ${JSON.stringify(event)}\n\n`)
  request.response.end()
 }
