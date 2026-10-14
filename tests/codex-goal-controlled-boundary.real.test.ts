@@ -35,7 +35,7 @@ test('native Codex completes in-flight autonomous Turn, holds next round and col
  // Inspect ONLY the declared tool schema, not the user prompt or messages.
  // Codex may advertise different builtin tool names by platform/provider.
  const requests:{path:string;response:ServerResponse;id:string;
-  tools:readonly string[]}[]=[]
+  tools:readonly string[];toolOutputClasses:readonly string[]}[]=[]
  const server=createServer((req,res)=>{
   if(req.method==='GET'){
    res.setHeader('content-type','application/json')
@@ -59,19 +59,33 @@ test('native Codex completes in-flight autonomous Turn, holds next round and col
   req.on('end',()=>{
    if(bytes>512_000){res.writeHead(413).end();return}
    let tools:string[]=[]
+   let toolOutputClasses:string[]=[]
    try{
     const body=JSON.parse(Buffer.concat(chunks).toString('utf8')) as {
       tools?:{type?:string;name?:string;function?:{name?:string}}[]
+      input?:{type?:string;output?:unknown}[]
     }
     if(Array.isArray(body.tools))tools=body.tools.map(t=>
       typeof t.name==='string'?t.name:t.function?.name??'').filter(Boolean)
+    // Classify only synthetic tool result types; never log arbitrary model
+    // input, stdout, user prompts, file content, or raw error messages.
+    if(Array.isArray(body.input))toolOutputClasses=body.input.filter(item=>
+      item.type==='function_call_output').map(item=>{
+      if(typeof item.output!=='string')return 'non-string-output'
+      if(/unsupported call/i.test(item.output))return 'unsupported-tool'
+      if(/sandbox|seccomp|landlock/i.test(item.output))return 'sandbox-error'
+      if(/permission|denied/i.test(item.output))return 'permission-error'
+      if(/timed out|timeout/i.test(item.output))return 'timeout'
+      if(/error|fail/i.test(item.output))return 'other-error'
+      return 'tool-result'
+    })
    }catch{/* Explicit diagnostics below if no compatible tool was advertised */}
    const id='resp-picket-'+(requests.length+1)
    res.writeHead(200,{'content-type':'text/event-stream','cache-control':'no-cache'})
    res.write(`event: response.created\ndata: ${JSON.stringify({
     type:'response.created',response:{id},
    })}\n\n`)
-   requests.push({path:req.url!,response:res,id,tools})
+   requests.push({path:req.url!,response:res,id,tools,toolOutputClasses})
   })
  })
  let first:Awaited<ReturnType<typeof launch>>|undefined
@@ -118,6 +132,7 @@ test('native Codex completes in-flight autonomous Turn, holds next round and col
    'Official Host must start an actual synthetic shell tool; bounded Host event envelope: '+
    JSON.stringify({modelRequests:requests.length,
     advertisedTools:requests[0]?.tools,
+    nextRequestToolOutputClasses:requests[1]?.toolOutputClasses,
     events:first.notifications.slice(-16).map(n=>({
      name:n.method,itemType:n.params?.item?.type,
      itemStatus:n.params?.item?.status,turnStatus:n.params?.turn?.status,
