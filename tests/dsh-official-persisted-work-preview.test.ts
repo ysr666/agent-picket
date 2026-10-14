@@ -130,3 +130,66 @@ test('a true read error is unavailable, not the false zero of a separate Windows
   assert.equal(await inspectOfficialPersistedDay(provider([],true),NOW),null)
   assert.equal(await inspectOfficialPersistedDay(provider([]),NOW),null)
 })
+
+test('uncertain Goal.block does not silently reject an automatic round when no block exists',async()=>{
+  const events=provider([{id:'prior',rows:[st(0,1,NOW-8*HOUR),en(1,1,NOW)]}])
+  const agent={id:'agent1',session:{id:'s',snapshotEvents:()=>[]}}
+  const active={id:'g',revision:8,phase:'active' as const,
+    activation:'armed' as const,roundsStarted:1}
+  let hook!: (arg:any,next:()=>Promise<unknown>)=>Promise<unknown>
+  let outcome=active
+  registerOfficialPersistedGoalPreview({
+    inject:(_services:any,callback:any)=>callback({
+      agents:{get:()=>agent},sessionPersistence:events,
+      goals:{get:()=>outcome,block:()=>{throw new Error('Host RPC refused')}},
+      on:(_event:string,fn:typeof hook)=>{hook=fn},
+    }),
+  },{
+    consent:()=>({kind:'agent-picket-real-goal-strike-v1',
+      hostAuthenticated:true,enabled:true}),now:()=>NOW,
+  })
+  const message={source:{kind:'goal',goalId:'g',revision:8,round:1}}
+  const pass=()=>Promise.resolve({kind:'enter'})
+  assert.deepEqual(await hook({agent,messages:[message]},pass),{kind:'enter'},
+    'No confirmed Host block means the candidate round must not be dropped')
+  // Some Hosts can commit and then throw. A matching authoritative readback
+  // may still justify rejecting only that confirmed autonomous round.
+  outcome={...active,revision:9,phase:'blocked',activation:'disarmed',
+    blockedReason:{code:'picket-work-limit'}} as typeof active
+  assert.deepEqual(await hook({agent,messages:[message]},pass),{kind:'reject'})
+})
+test('revoking real strike consent while awaited persistence resolves prevents Host block',async()=>{
+  let authorized=true,reads=0
+  const original=provider([{id:'prior',rows:[st(0,1,NOW-8*HOUR),en(1,1,NOW)]}])
+  const delayed:OfficialPersistedPort={
+    list:()=>original.list(),
+    open:async(id,access)=>{
+      const handle=await original.open(id,access)
+      return {...handle,read:async(offset,length)=>{
+        reads++
+        authorized=false
+        return handle.read(offset,length)
+      }}
+    },
+  }
+  let callback!: (p:any,next:()=>Promise<unknown>)=>Promise<unknown>
+  let blocks=0
+  const agent={id:'a',session:{id:'s',snapshotEvents:()=>[]}}
+  registerOfficialPersistedGoalPreview({
+    inject:(_services:any,fn:any)=>fn({
+      agents:{get:()=>agent},sessionPersistence:delayed,
+      goals:{get:()=>({id:'g',revision:1,phase:'active',
+        activation:'armed',roundsStarted:1}),block:()=>{blocks++}},
+      on:(_name:string,fn:typeof callback)=>{callback=fn},
+    }),
+  },{
+    consent:()=>authorized?{kind:'agent-picket-real-goal-strike-v1',
+      hostAuthenticated:true,enabled:true}:null,
+    now:()=>NOW,
+  })
+  assert.deepEqual(await callback({agent,messages:[
+    {source:{kind:'goal',round:1,goalId:'g',revision:1}},
+  ]},async()=>({kind:'enter'})),{kind:'enter'})
+  assert.ok(reads>0)
+  assert.equal(blocks,0)
+})
