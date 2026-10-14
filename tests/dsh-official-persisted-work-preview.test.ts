@@ -230,13 +230,13 @@ test('reverse-order turn ordinal invalidates a log even with valid event seq',as
 test('UTC midnight work is NOT silently attributed whole to today to cause false strike',async()=>{
   const midnight=Date.parse('2026-10-14T00:00:00.000Z')
   const at=Date.parse('2026-10-14T09:30:00.000Z')
-  const跨日=provider([{id:'cross-midnight',rows:[
+  const crossing=provider([{id:'cross-midnight',rows:[
     st(0,1,midnight-60*60_000),en(1,1,midnight+7*HOUR+30*60_000),
   ]}])
-  assert.equal(await inspectOfficialPersistedDay(跨日,at),null,
+  assert.equal(await inspectOfficialPersistedDay(crossing,at),null,
     'Whole-span attribution would incorrectly create 8.5h despite only 7.5h today')
   let blocked=0
-  const original=setup(跨日)
+  const original=setup(crossing)
   assert.deepEqual(await original.attempt(),{kind:'enter'})
   blocked+=original.blocks.length
   assert.equal(blocked,0)
