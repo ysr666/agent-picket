@@ -103,7 +103,32 @@ export function apply(ctx){
   const enabled=process.env.AGENT_PICKET_NATIVE_GOAL_CONSENT==='yes'
   if(![7,8].includes(hours))throw Error('Only isolated seven/eight hour fixture is supported')
   const activated=new Set()
+  let coldRestored
   ctx.on('agent/pre-step',async({agent,messages},next)=>{
+    const controlText=messages.filter(m=>m.source?.kind==='user')
+      .flatMap(m=>m.content??[]).filter(b=>b.type==='text').map(b=>b.text)
+    if(controlText.includes('ATTACH_RESTORED_GOAL')){
+      try{
+        coldRestored=await ctx.agents.resume({
+          resumeSessionId:'picket-offline-host-goal',
+          agentOptions:{provider:'picket-offline-persisted',model:'offline'},
+        })
+        const restored=ctx.goals.get(coldRestored.agent)
+        marker('cold-restored:'+String(restored?.phase??'none'))
+        marker('cold-reason:'+String(restored?.blockedReason?.code??'none'))
+        marker('cold-union-history:'+String(alreadyBlockedGoalToday(
+          coldRestored.agent.session.snapshotEvents(),restored?.id??'',Date.now())))
+      }catch(error){marker('cold-restore-error:'+String(error?.message??error))}
+    }
+    if(controlText.includes('RESUME_RESTORED_GOAL')){
+      const target=coldRestored?.agent
+      const prior=target&&ctx.goals.get(target)
+      if(prior?.phase==='blocked'&&prior.blockedReason?.code==='picket-work-limit'){
+        const updated=ctx.goals.resume(target,{id:prior.id,revision:prior.revision})
+        marker('cold-resumed:'+updated.phase+':revision-plus-one='+String(
+          updated.revision===prior.revision+1))
+      }else marker('cold-resume-refused')
+    }
     const human=messages.some(m=>m.source?.kind==='user' &&
       m.content?.some(b=>b.type==='text'&&b.text==='START_OFFLINE_GOAL'))
     if(human&&!activated.has(agent.session.id)){
