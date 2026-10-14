@@ -47,11 +47,24 @@ async function inspect(host:string,cookie:string){
 async function verifyUploadedFileInHostHistory(
   base:string,cookie:string,sessionId:string,requestId:string,attachmentId:string,
 ):Promise<{messages:number;files:number}>{
+  // The official Session projection gives the exact validated log cut for
+  // page(). An arbitrary future throughSeq is rejected by DSH by design.
+  const projection=await fetch(base+'api/session/projections',{
+   method:'POST',headers:{'content-type':'application/json',cookie},
+   body:JSON.stringify({type:'client-request',rpcId:'picket-file-projection-cut',
+    method:'session/projections',payload:{args:{request:{sessionId}}}}),
+   signal:AbortSignal.timeout(10_000),
+  })
+  assert.equal(projection.status,200)
+  const projected=await projection.json() as any
+  assert.equal(projected.result?.ok,true,'Official Session projection missing')
+  const cursor=projected.result.value?.asOfSeq
+  if(!Number.isSafeInteger(cursor)||cursor<0)return {messages:0,files:0}
   const response=await fetch(base+'api/session/page',{
    method:'POST',headers:{'content-type':'application/json',cookie},
    body:JSON.stringify({type:'client-request',rpcId:'picket-file-history-proof',
     method:'session/page',payload:{args:{request:{
-     address:{kind:'session',sessionId},throughSeq:1_000_000,maxMessages:120,
+     address:{kind:'session',sessionId},throughSeq:cursor,maxMessages:120,
     }}}}),signal:AbortSignal.timeout(10_000),
   })
   assert.equal(response.status,200,'Official session/page must be reachable')
