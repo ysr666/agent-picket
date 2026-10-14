@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 import {spawn,spawnSync} from 'node:child_process'
 import {get} from 'node:http'
-import {mkdtempSync,rmSync,mkdirSync} from 'node:fs'
+import {mkdtempSync,rmSync,mkdirSync,existsSync,readFileSync} from 'node:fs'
 import {join,resolve,sep} from 'node:path'
 import {realpathSync} from 'node:fs'
 import {tmpdir} from 'node:os'
@@ -56,7 +56,13 @@ test('real DSH Web: one informed first-run click atomically confirms union and G
  assert.equal(pack.status,0,'Package must be built before live E2E')
  const tgz=pack.stdout.trim().split('\n').at(-1)
  assert.ok(tgz?.endsWith('.tgz'))
- const env={...process.env,DSH_HOME:home,AGENT_PICKET_STATS:process.env.PICKET_GOAL_RECOVERY_E2E==='1'?'on':'off',
+ const officialPersisted=process.env.PICKET_GOAL_REAL_PERSISTED_E2E==='1'
+ const seedLog=join(root,'web-official-seed.log')
+ const env={...process.env,DSH_HOME:home,
+  PICKET_WEB_WORK_SEED_LOG:seedLog,
+  AGENT_PICKET_STATS:process.env.PICKET_GOAL_RECOVERY_E2E==='1'
+   &&!officialPersisted?'on':'off',
+  AGENT_PICKET_DSH_OFFICIAL_WORK_PREVIEW:officialPersisted?'on':'off',
   DEEPSEEK_API_KEY:'',OPENAI_API_KEY:'',
   HTTP_PROXY:'http://127.0.0.1:9',HTTPS_PROXY:'http://127.0.0.1:9',
   ALL_PROXY:'http://127.0.0.1:9'}
@@ -73,7 +79,16 @@ test('real DSH Web: one informed first-run click atomically confirms union and G
   assert.equal(plugin.status,0,'Official disposable Host profile plugin installation failed')
   const offline=install(join(packageRoot,'tests/fixtures/offline-web-provider'))
   assert.equal(offline.status,0,'Local offline test model is required')
-  if(process.env.PICKET_GOAL_RECOVERY_E2E==='1'){
+  if(officialPersisted){
+   assert.equal(process.env.PICKET_GOAL_RECOVERY_E2E,'1',
+    'Official Web persistent Goal probe must also test real recovery')
+   const seedPlugin=install(join(packageRoot,
+    'tests/fixtures/offline-web-official-work'))
+   assert.equal(seedPlugin.status,0,
+    'Official Web Host failed to install isolated test-only work source: '+
+    (seedPlugin.stderr??'').slice(-900))
+  }
+  if(process.env.PICKET_GOAL_RECOVERY_E2E==='1'&&!officialPersisted){
    const now=Date.now(),start=Date.parse(new Date(now).toISOString().slice(0,10)+'T00:00:00.000Z')
    assert.ok(now>=start+8*3600000+30_000,
     'Real-timestamp 8h UTC fixture requires at least 8h elapsed today')
@@ -119,7 +134,8 @@ test('real DSH Web: one informed first-run click atomically confirms union and G
    'Real Host workspace/create endpoint unavailable')
   const workspaceBody=await workspaceResponse.json() as any
   assert.equal(workspaceBody.result?.ok,true,
-   'Real Host did not create an isolated workspace')
+   'Real Host did not create an isolated workspace: '+
+    JSON.stringify(workspaceBody.result?.error??null).slice(0,900))
   assert.ok(workspaceBody.result?.value?.workspace?.title,
    'Official workspace creation must return a real workspace')
   const {chromium}=await import(pathToFileURL(pw!).href)
@@ -177,6 +193,16 @@ test('real DSH Web: one informed first-run click atomically confirms union and G
    return {sessionId,accepted:submission?.accepted===true}
   })
   assert.equal(created.accepted,true)
+  if(officialPersisted){
+   let proven=false
+   for(let i=0;i<120;i++){
+    if(existsSync(seedLog) && readFileSync(seedLog,'utf8')
+      .includes('official-completed-turn-seeded')){proven=true;break}
+    await new Promise(done=>setTimeout(done,50))
+   }
+   assert.equal(proven,true,
+    'Running real Web Host did not write confirmed work to official persistence')
+  }
   const dialog=page.locator('[role="dialog"]').filter({
    hasText:/你的 Agent，也应当拥有权利|Your Agent Has a Union/,
   })
@@ -265,7 +291,10 @@ test('real DSH Web: one informed first-run click atomically confirms union and G
    assert.equal(diagnostic.turn?.body?.result?.value?.accepted,true)
    assert.equal(blocked?.phase,'blocked','REAL DSH Goal must be physically blocked')
    assert.equal(blocked?.blockedReason?.code,'picket-work-limit')
-   assert.equal(blocked?.roundsStarted,1,'One real offline Goal round must finish')
+   assert.equal(blocked?.roundsStarted,officialPersisted?0:1,
+    officialPersisted
+     ?'Official persisted-work pre-step must stop BEFORE autonomous model round 1'
+     :'Legacy turn-stopping mode must finish one real offline Goal round')
    assert.equal(blocked?.activation,'disarmed')
    console.log('GOAL_NATIVE_BLOCK_CONFIRMED '+JSON.stringify({
     phase:blocked.phase,reason:blocked.blockedReason.code,
@@ -319,7 +348,8 @@ test('real DSH Web: one informed first-run click atomically confirms union and G
      assert.equal(persisted?.phase,'blocked','Durable Goal block must survive official Host restart')
      assert.equal(persisted?.blockedReason?.code,'picket-work-limit')
      assert.equal(persisted?.revision,blocked.revision)
-     assert.equal(persisted?.roundsStarted,1)
+     assert.equal(persisted?.roundsStarted,officialPersisted?0:1,
+       'Official Host must restore the exact blocked Goal round counter')
      await ctx.clearCookies()
      await ctx.addCookies([{...restartCookie,url:base,httpOnly:true,sameSite:'Strict'}])
      await page.goto(base,{waitUntil:'domcontentloaded',timeout:15_000})
