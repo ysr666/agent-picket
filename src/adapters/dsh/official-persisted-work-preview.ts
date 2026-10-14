@@ -74,6 +74,7 @@ export async function inspectOfficialPersistedDay(
         // contiguous storage seq does not prevent duplicate Turn work from
         // being replayed with freshly assigned event seq numbers.
         let lastClosedTurn:number|undefined
+        let lastClosedTime:number|undefined
         for(;;){
           // The +1 read detects an over-cap tail, rather than treating the
           // last admitted event as a proven complete corpus.
@@ -89,7 +90,8 @@ export async function inspectOfficialPersistedDay(
             if(ev.type==='turn/start'){
               const turn=(ev.data as {turn?:unknown}|null)?.turn
               if(!validTurn(turn)||opening||
-                (lastClosedTurn!==undefined&&turn<=lastClosedTurn))return null
+                (lastClosedTurn!==undefined&&turn<=lastClosedTurn)||
+                (lastClosedTime!==undefined&&ev.time<lastClosedTime))return null
               opening={turn,time:ev.time}
             }else if(ev.type==='turn/end'){
               const row=ev.data as {turn?:unknown;reason?:{kind?:unknown}}|null
@@ -109,6 +111,7 @@ export async function inspectOfficialPersistedDay(
                 sum+=duration
               }
               lastClosedTurn=opening.turn
+              lastClosedTime=ev.time
               opening=null
             }
           }
