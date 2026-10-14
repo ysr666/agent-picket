@@ -98,6 +98,9 @@ test('native Codex completes in-flight autonomous Turn, holds next round and col
     events:first.notifications.slice(-16).map(n=>({
      name:n.method,itemType:n.params?.item?.type,
      itemStatus:n.params?.item?.status,turnStatus:n.params?.turn?.status,
+     ...(n.method==='warning'?{warning:String(
+       (n.params as Record<string,unknown>|undefined)?.message??'')
+       .slice(0,280)}:{}),
     }))}))
   // A separate official App-Server is an external control plane, NOT
   // another thread owner. Never call thread/resume: that RPC independently
