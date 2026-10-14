@@ -13,8 +13,8 @@ permissions:
 
 jobs:
   published-provider:
-    name: \${{ matrix.os }} / Node \${{ matrix.node }}
-    runs-on: \${{ matrix.os }}
+    name: ${{ matrix.os }} / Node ${{ matrix.node }}
+    runs-on: ${{ matrix.os }}
     timeout-minutes: 15
     strategy:
       fail-fast: false
@@ -32,7 +32,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: \${{ matrix.node }}
+          node-version: ${{ matrix.node }}
       - name: Install official published provider in isolated test directory
         run: >
           npm install --prefix .dsh-provider-probe --no-save --no-package-lock
