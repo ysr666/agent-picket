@@ -19,9 +19,14 @@ const sleep=ms=>new Promise(done=>setTimeout(done,ms))
 const parent=mkdtempSync(join(tmpdir(),'picket-dsh-installed-'))
 let archive=''
 try{
-  const packed=spawnSync('npm',['pack','--ignore-scripts','--silent',
-    '--pack-destination',parent],{cwd:repo,encoding:'utf8',timeout:35000,
-    env:{...process.env,npm_config_offline:'true'}})
+  const packArgs=['pack','--ignore-scripts','--silent','--pack-destination',parent]
+  const packed=spawnSync(
+    process.platform==='win32'?'cmd.exe':'npm',
+    process.platform==='win32'
+      ? ['/d','/s','/c','npm pack --ignore-scripts --silent --pack-destination "'+parent+'"']
+      : packArgs,
+    {cwd:repo,encoding:'utf8',timeout:35000,windowsHide:true,
+      env:{...process.env,npm_config_offline:'true'}})
   assert.equal(packed.status,0,'isolated npm pack: '+String(packed.stderr).slice(-500))
   archive=join(parent,packed.stdout.trim().split(/\r?\n/).at(-1))
   assert.ok(archive.endsWith('.tgz')&&existsSync(archive),'packaged tarball is required')
