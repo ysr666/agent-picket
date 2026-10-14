@@ -70,6 +70,10 @@ export async function inspectOfficialPersistedDay(
           (!h.header.isSeeded&&h.inheritedEventCount!==0))return null
         let seq=h.inheritedEventCount
         let opening:{turn:number;time:number}|null=null
+        // Stable Session Turn ordinals are strictly increasing. Merely having
+        // contiguous storage seq does not prevent duplicate Turn work from
+        // being replayed with freshly assigned event seq numbers.
+        let lastClosedTurn:number|undefined
         for(;;){
           // The +1 read detects an over-cap tail, rather than treating the
           // last admitted event as a proven complete corpus.
@@ -84,7 +88,8 @@ export async function inspectOfficialPersistedDay(
             used++
             if(ev.type==='turn/start'){
               const turn=(ev.data as {turn?:unknown}|null)?.turn
-              if(!validTurn(turn)||opening)return null
+              if(!validTurn(turn)||opening||
+                (lastClosedTurn!==undefined&&turn<=lastClosedTurn))return null
               opening={turn,time:ev.time}
             }else if(ev.type==='turn/end'){
               const row=ev.data as {turn?:unknown;reason?:{kind?:unknown}}|null
@@ -93,10 +98,17 @@ export async function inspectOfficialPersistedDay(
               if(!opening||row!.turn!==opening.turn||ev.time<opening.time)return null
               if(row!.reason?.kind==='completed'&&
                 new Date(ev.time).toISOString().slice(0,10)===day){
+                // The release contract has NOT settled whether cross-midnight
+                // work is split or assigned to the end date. Never attribute
+                // yesterday's hours to today's 8h threshold and false-strike.
+                // Refuse the whole projection until #77 fixes that policy.
+                if(new Date(opening.time).toISOString().slice(0,10)!==day)
+                  return null
                 const duration=ev.time-opening.time
                 if(!Number.isSafeInteger(sum+duration))return null
                 sum+=duration
               }
+              lastClosedTurn=opening.turn
               opening=null
             }
           }
