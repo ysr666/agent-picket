@@ -60,9 +60,13 @@ test('real DSH Web: one informed first-run click atomically confirms union and G
   DEEPSEEK_API_KEY:'',OPENAI_API_KEY:'',
   HTTP_PROXY:'http://127.0.0.1:9',HTTPS_PROXY:'http://127.0.0.1:9',
   ALL_PROXY:'http://127.0.0.1:9'}
+ // Plugin installation must resolve declared dependencies before switching
+ // the actual Web Host into no-network, offline-model test mode.
+ const installEnv={...process.env,DSH_HOME:home,DEEPSEEK_API_KEY:'',
+  OPENAI_API_KEY:'',DSH_TELEMETRY_DISABLED:'1'}
  const install=(packagePath:string)=>spawnSync(bin!,[
   'plugin','--profile','web','add',packagePath
- ],{env,encoding:'utf8',timeout:30_000})
+ ],{env:installEnv,encoding:'utf8',timeout:90_000})
  let child:ReturnType<typeof spawn>|null=null, browser:any
  try{
   const plugin=install(join(root,tgz!))
