@@ -137,7 +137,8 @@ test('uncertain Goal.block does not silently reject an automatic round when no b
   const active={id:'g',revision:8,phase:'active' as const,
     activation:'armed' as const,roundsStarted:1}
   let hook!: (arg:any,next:()=>Promise<unknown>)=>Promise<unknown>
-  let outcome=active
+  let outcome:typeof active|{id:string;revision:number;phase:'blocked';
+    activation:'disarmed';roundsStarted:number;blockedReason:{code:string}}=active
   registerOfficialPersistedGoalPreview({
     inject:(_services:any,callback:any)=>callback({
       agents:{get:()=>agent},sessionPersistence:events,
@@ -155,7 +156,7 @@ test('uncertain Goal.block does not silently reject an automatic round when no b
   // Some Hosts can commit and then throw. A matching authoritative readback
   // may still justify rejecting only that confirmed autonomous round.
   outcome={...active,revision:9,phase:'blocked',activation:'disarmed',
-    blockedReason:{code:'picket-work-limit'}} as typeof active
+    blockedReason:{code:'picket-work-limit'}}
   assert.deepEqual(await hook({agent,messages:[message]},pass),{kind:'reject'})
 })
 test('revoking real strike consent while awaited persistence resolves prevents Host block',async()=>{
