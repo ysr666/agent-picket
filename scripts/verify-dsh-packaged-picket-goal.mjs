@@ -118,8 +118,8 @@ try{
         s.includes('real-goal:created:active'),
       'installed Picket must expose settings and create real Goal')
       if(hours===8&&consent){
-        await until(s=>s.includes('official-goal:block:blocked:disarmed'),
-          'actual packaged plugin must block official Goal')
+        await until(s=>s.some(row=>row.startsWith('official-goal:block:blocked:')),
+          'actual packaged plugin must durably record official blocked Goal')
         await sleep(250)
         assert.equal(snapshot().filter(s=>s==='model-call').length,1,
           'no second autonomous model request while genuinely blocked')
@@ -132,7 +132,9 @@ try{
           contentBlocks:[{type:'text',text:'RESUME_PACKAGED_GOAL'}],
         })
         assert.equal(typeof human.messageId,'string')
-        await until(s=>s.includes('resumed:active:true'),'official Host CAS resume')
+        await until(s=>s.includes('before-resume:blocked:disarmed')&&
+          s.includes('resumed:active:true'),
+          'read real blocked/disarmed Goal projection and perform official CAS resume')
         await until(s=>s.filter(x=>x==='model-call').length>=3,
           'resumed Goal should execute remaining rounds')
         assert.equal(snapshot().filter(s=>s.startsWith('official-goal:block:')).length,1,
