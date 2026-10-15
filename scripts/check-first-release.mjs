@@ -37,6 +37,23 @@ export function checkFirstRelease(value){
       proof(target?.operatingSystems, os, name+'/'+os)
     }
   }
+  // Official Codex 0.146.1 can store a paused/blocked Goal across cold
+  // restarts, yet TWO separate app-server processes can independently launch
+  // distinct live Turns for the SAME active Goal on ALL THREE operating systems.
+  // A successful negative reproduction is evidence of UNSAFETY, never a
+  // verified owner fence. Do not let an optimistic aggregate Codex attestation
+  // silently override this known exact-build Host counterexample.
+  const codex=value.targets?.codex
+  for(const os of ['windows','macos','linux']){
+    const target=codex?.operatingSystems?.[os]
+    const build=target?.officialHostVersion
+    if(typeof build!=='string'||!/^\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.-]+)?$/.test(build))
+      invalid('codex/'+os+': exact official Host version is required')
+    if(build==='0.146.1')
+      invalid('codex/'+os+': Codex 0.146.1 has a verified duplicate live Goal owner race')
+    proof(target,'exclusiveLiveGoalOwnership','codex/'+os+'/exclusiveLiveGoalOwnership')
+    proof(target,'atomicGoalStateTransition','codex/'+os+'/atomicGoalStateTransition')
+  }
   for(const name of ['unionHeadquarters','settings','firstRunWarning',
     'warningAppealResume','responsiveAndAccessibility']){
     proof(value.userExperience,name)

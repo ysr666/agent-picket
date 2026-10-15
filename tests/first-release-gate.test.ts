@@ -36,12 +36,20 @@ test('missing or malformed evidence must fail closed',()=>{
 
 test('release demands an independent target-by-OS matrix, not aggregate OS or ACP evidence',()=>{
  const pass=structuredClone(manifest)
- for(const target of Object.values(pass.targets) as any[]){
+ for(const [name,target] of Object.entries(pass.targets) as [string,any][]){
    target.status='verified';target.evidence=['test://verified-host-runtime-flow']
    for(const key of ['realEnforcement','losslessRecovery',
      'verifiedHumanProvenance','visibleRefusalAndResume'])target[key]='verified'
    for(const os of Object.values(target.operatingSystems) as any[]){
      os.status='verified';os.evidence=['test://real-windows-mac-linux-e2e']
+     if(name==='codex'){
+       // Synthetic future-build acceptance SHAPE only; this test does NOT
+       // assert that any post-0.146.1 official build is actually safe.
+       os.officialHostVersion='9.999.0'
+       for(const key of ['exclusiveLiveGoalOwnership','atomicGoalStateTransition']){
+         os[key]={status:'verified',evidence:['test://independent-cross-owner-goal-proof']}
+       }
+     }
    }
  }
  for(const ui of Object.values(pass.userExperience) as any[]){
@@ -50,6 +58,27 @@ test('release demands an independent target-by-OS matrix, not aggregate OS or AC
  pass.status='ready';pass.finalHumanApproval=true
  assert.deepEqual(checkFirstRelease(pass),[],
    'Only a completely attested matrix plus explicit sign-off can clear gate')
+ // Known official 0.146.1 cross-owner bug survives regardless of forged
+ // "verified" cells, human approval or unrelated positive cold-restart CI.
+ const win=pass.targets.codex.operatingSystems.windows
+ win.officialHostVersion='0.146.1'
+ assert.ok(checkFirstRelease(pass).some(s=>
+  s.includes('codex/windows: Codex 0.146.1 has a verified duplicate')))
+ win.officialHostVersion='9.999.0'
+ win.exclusiveLiveGoalOwnership.status='not-verified'
+ assert.ok(checkFirstRelease(pass).some(s=>
+  s.includes('codex/windows/exclusiveLiveGoalOwnership')))
+ win.exclusiveLiveGoalOwnership.status='verified'
+ win.atomicGoalStateTransition.evidence=[]
+ assert.ok(checkFirstRelease(pass).some(s=>
+  s.includes('codex/windows/atomicGoalStateTransition')))
+ win.atomicGoalStateTransition.evidence=['test://synthetic-future-atomic-goal-proof']
+ win.officialHostVersion='UNKNOWN'
+ assert.ok(checkFirstRelease(pass).some(s=>
+  s.includes('codex/windows: exact official Host version')))
+ win.officialHostVersion='9.999.0'
+ assert.deepEqual(checkFirstRelease(pass),[],
+  'Synthetic future attestation restored; not a real safety certification')
  pass.targets['dsh-desktop'].operatingSystems.linux.status='not-verified'
  assert.ok(checkFirstRelease(pass).some(s=>s.includes('dsh-desktop/linux')),
    'Even with all other hosts and OS checks attested, one missing cell blocks release')

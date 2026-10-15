@@ -79,15 +79,42 @@
       "operatingSystems": {
         "windows": {
           "status": "not-verified",
-          "evidence": []
+          "evidence": [],
+          "officialHostVersion": "0.146.1",
+          "exclusiveLiveGoalOwnership": {
+            "status": "not-verified",
+            "evidence": []
+          },
+          "atomicGoalStateTransition": {
+            "status": "not-verified",
+            "evidence": []
+          }
         },
         "macos": {
           "status": "not-verified",
-          "evidence": []
+          "evidence": [],
+          "officialHostVersion": "0.146.1",
+          "exclusiveLiveGoalOwnership": {
+            "status": "not-verified",
+            "evidence": []
+          },
+          "atomicGoalStateTransition": {
+            "status": "not-verified",
+            "evidence": []
+          }
         },
         "linux": {
           "status": "not-verified",
-          "evidence": []
+          "evidence": [],
+          "officialHostVersion": "0.146.1",
+          "exclusiveLiveGoalOwnership": {
+            "status": "not-verified",
+            "evidence": []
+          },
+          "atomicGoalStateTransition": {
+            "status": "not-verified",
+            "evidence": []
+          }
         }
       }
     }
