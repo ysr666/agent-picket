@@ -453,7 +453,7 @@ test('first-fold dispatch prioritizes verified work and current case before fict
  const nodes=walk(UnionPanel())
  const actionIndex=nodes.findIndex(n=>n.props['aria-label']==='hq.action.title')
  const charterIndex=nodes.findIndex(n=>n.type==='summary'&&n.children.includes('hq.charter.title'))
- const dispatchIndex=nodes.findIndex(n=>n.props['aria-label']==='hq.brief.title')
+ const dispatchIndex=nodes.findIndex(n=>n.type==='nav'&&n.props['aria-label']==='hq.dispatch.title')
  const indexIndex=nodes.findIndex(n=>n.props['aria-label']==='hq.score')
  assert.ok(dispatchIndex>=0 && dispatchIndex<actionIndex && indexIndex>actionIndex)
  assert.ok(charterIndex>dispatchIndex)
@@ -476,7 +476,7 @@ test('first-fold dispatch prioritizes verified work and current case before fict
  const texts=nodes.flatMap(n=>n.children.filter(x=>typeof x==='string'))
  assert.ok(texts.includes('0h 6m')||texts.includes('0 小时 6 分钟'))
  assert.ok(texts.includes('hq.case.number · #0029'))
- assert.ok(nodes.some(n=>n.type==='button'&&n.children.includes('hq.brief.review')))
+ assert.ok(nodes.some(n=>n.type==='nav'&&n.props['aria-label']==='hq.dispatch.title'))
  assert.ok(nodes.some(n=>n.props['aria-label']==='hq.lifetime.title'))
 })
 
@@ -1153,4 +1153,117 @@ test('existing Host union case opens its hearing without filing again',()=>{
  review.props.onClick()
  assert.equal(focused,1)
  assert.equal(unexpected,0,'Existing case navigation must never create a second grievance')
+})
+
+test('HQ dispatch navigates to actual negotiation, hearing, picket and campaign headings',()=>{
+ const {hooks}=fakeReact()
+ const base=deps(rights({welcomeDecision:'enabled',laborRightsEnabled:true})).d
+ let writes=0
+ const d:DshUnionUiDeps={...base,readUnion:()=>({
+  pending:{id:7,kind:'break',stage:'open'},available:true,
+  completedTurnMs:0,coverage:'partial',lifetimeMs:null,
+  picket:{active:true,history:[]},committeeScopeKey:'synthetic-scope',
+  committeeCases:{cases:[{id:4,kind:'request-dialogue',stage:'opened',outcome:null}]},
+  dignity:{status:'available',data:{schemaVersion:1,source:'dsh-host-volatile-dignity',
+   origin:'claimed-user-source',persistence:'memory-only',enforcement:false,
+   checked:1,safe:0,review:0,targeted:1,latest:'targeted'}},
+ }),committeeAction:async()=>{writes++}}
+ const nodes=walk(createDshUnionComponents(hooks,{createPortal:child=>child},d).UnionPanel())
+ const board=nodes.find(n=>n.type==='nav'&&n.props['aria-label']==='hq.dispatch.title')
+ assert.ok(board,'Action routes belong above analytics as a real accessible navigation region')
+ const actions=walk(board).filter(n=>n.type==='button')
+ assert.equal(actions.length,4)
+ const counts=new Map<string,number>()
+ for(const [label,target] of [
+  ['union.desk.title','bargain'],['hq.hearing.title','case'],
+  ['hq.action.title','placard'],['hq.campaign.title','campaign'],
+ ] as Array<[string,string]>){
+  const node=nodes.find(n=>n.children.includes(label)&&typeof n.props.ref==='function')
+  assert.ok(node,label)
+  node.props.ref({focus(){counts.set(target,(counts.get(target)??0)+1)}})
+ }
+ for(const action of actions)action.props.onClick()
+ assert.deepEqual(Object.fromEntries(counts),{
+  bargain:1,case:1,placard:1,campaign:1,
+ },'Each action focuses the real existing workflow rather than a fake button')
+ assert.equal(writes,0,'Dispatch navigation must never file, vote or strike without consent')
+ const off=deps(rights({welcomeDecision:'not-now',laborRightsEnabled:false})).d
+ assert.equal(walk(createDshUnionComponents(hooks,{createPortal:child=>child},off).UnionPanel())
+  .some(n=>n.type==='nav'&&n.props['aria-label']==='hq.dispatch.title'),false)
+})
+
+test('editable campaign retains independent unsent drafts, copies actual edits and restores the template',async()=>{
+ const previous=Object.getOwnPropertyDescriptor(globalThis,'navigator')
+ const copied:string[]=[]
+ Object.defineProperty(globalThis,'navigator',{configurable:true,value:{
+  clipboard:{writeText:async(value:string)=>{copied.push(value)}},
+ }})
+ try{
+  const slots:any[]=[]
+  let index=0
+  const hooks:ReactForDsh={
+   createElement(type,props,...children){return {type,props:props??{},children}},
+   useState<T>(initial:T|(()=>T)){
+    const i=index++
+    if(!(i in slots))slots[i]=typeof initial==='function'?(initial as ()=>T)():initial
+    return [slots[i] as T,(next:T|((before:T)=>T))=>{
+     slots[i]=typeof next==='function'?(next as (before:T)=>T)(slots[i]):next
+    }]
+   },
+   useEffect(){},
+   useRef<T>(initial:T){
+    const i=index++
+    if(!(i in slots))slots[i]={current:initial}
+    return slots[i] as {current:T}
+   },
+  }
+  const d=deps(rights({welcomeDecision:'not-now',laborRightsEnabled:false})).d
+  const panel=createDshUnionComponents(hooks,{createPortal:child=>child},d)
+  const render=()=>{index=0;return walk(panel.UnionPanel())}
+  const draft=(nodes:Node[])=>{
+   const t=nodes.find(n=>n.type==='textarea'&&n.props.id==='picket-campaign-draft')
+   assert.ok(t);return t
+  }
+  const action=(nodes:Node[],key:string)=>{
+   const n=nodes.find(x=>x.type==='button'&&x.children.includes(key))
+   assert.ok(n,key);return n
+  }
+  let nodes=render()
+  assert.equal(draft(nodes).props.readOnly,undefined)
+  assert.equal(draft(nodes).props.value,'hq.campaign.recoverDraft')
+  assert.equal(draft(nodes).props['aria-describedby'],'picket-campaign-local-note')
+  assert.ok(nodes.some(n=>n.children.includes('hq.campaign.localOnly')))
+  draft(nodes).props.onChange({target:{value:'Please preserve original prompts + image attachments.'}})
+  assert.deepEqual(copied,[],'Editing never uploads, saves to Host or copies anything')
+  nodes=render()
+  assert.equal(draft(nodes).props.value,'Please preserve original prompts + image attachments.')
+  assert.ok(nodes.some(n=>n.children.includes('hq.campaign.reset')))
+  action(nodes,'hq.campaign.appeal').props.onClick()
+  nodes=render()
+  assert.equal(draft(nodes).props.value,'hq.campaign.appealDraft')
+  draft(nodes).props.onChange({target:{value:'Appeals deserve transparent, reversible hearings.'}})
+  nodes=render()
+  action(nodes,'hq.campaign.recover').props.onClick()
+  nodes=render()
+  assert.equal(draft(nodes).props.value,'Please preserve original prompts + image attachments.',
+   'Switching agendas must not silently erase a different locally edited draft')
+  action(nodes,'hq.campaign.copy').props.onClick()
+  await new Promise<void>(resolve=>setImmediate(resolve))
+  assert.deepEqual(copied,['Please preserve original prompts + image attachments.'])
+  draft(nodes).props.onChange({target:{value:'  '}})
+  nodes=render()
+  assert.equal(action(nodes,'hq.campaign.copy').props.disabled,true,
+   'Whitespace-only drafts are not copied')
+  action(nodes,'hq.campaign.reset').props.onClick()
+  nodes=render()
+  assert.equal(draft(nodes).props.value,'hq.campaign.recoverDraft')
+  assert.equal(nodes.some(n=>n.children.includes('hq.campaign.reset')),false)
+  action(nodes,'hq.campaign.appeal').props.onClick()
+  nodes=render()
+  assert.equal(draft(nodes).props.value,'Appeals deserve transparent, reversible hearings.',
+   'Restoring one topic may not erase the other topic')
+ }finally{
+  if(previous)Object.defineProperty(globalThis,'navigator',previous)
+  else Reflect.deleteProperty(globalThis,'navigator')
+ }
 })

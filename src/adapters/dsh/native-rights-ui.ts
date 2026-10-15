@@ -350,6 +350,8 @@ export function createDshUnionComponents(
     const lastActionNeedsFocus=react.useRef(false)
     const [showArchive,setShowArchive]=react.useState(false)
     const [campaign,setCampaign]=react.useState<CampaignTopic>('recover')
+    // Private, unsent drafts stay in this live panel. Nothing is persisted.
+    const [campaignEdits,setCampaignEdits]=react.useState<Partial<Record<CampaignTopic,string>>>({})
     const [campaignCopyStatus,setCampaignCopyStatus]=react.useState<'idle'|'success'|'error'>('idle')
     // Reject stale clipboard completions after a topic switch or a newer copy.
     const campaignCopyRevision=react.useRef(0)
@@ -357,6 +359,7 @@ export function createDshUnionComponents(
     const [retractConfirmation,setRetractConfirmation]=react.useState<string|null>(null)
     const [eraseAllConfirmation,setEraseAllConfirmation]=react.useState<string|null>(null)
     const [eraseUnionConfirmation,setEraseUnionConfirmation]=react.useState<string|null>(null)
+    const actionHeading=react.useRef<{focus():void}|null>(null)
     const deskHeading=react.useRef<{focus():void}|null>(null)
     const dignityHeading=react.useRef<{focus():void}|null>(null)
     const hearingHeading=react.useRef<{focus():void}|null>(null)
@@ -402,11 +405,13 @@ export function createDshUnionComponents(
     })
     const label = (key:MessageKey) => deps.t(key)
     const currentCampaign=campaignTopics.find(item=>item.id===campaign)??campaignTopics[0]!
+    const currentCampaignDraft=campaignEdits[campaign]??label(currentCampaign.draft)
     const copyCampaignDraft=async()=>{
       const revision=++campaignCopyRevision.current
-      const draft=label(currentCampaign.draft)
+      const draft=currentCampaignDraft
       setCampaignCopyStatus('idle')
       try{
+        if(!draft.trim())throw new Error('Empty draft')
         // Only a deliberate user gesture copies a public, locally projected
         // advocacy statement. Never reads a Host Session or sends a request.
         const clipboard=(globalThis as {navigator?:{clipboard?:{
@@ -523,54 +528,33 @@ export function createDshUnionComponents(
             onClick:()=>{void choice('not-now')}},label('hq.disable')):null,
         ),
       ),
-      enabled ? h('section',{style:{display:'grid',gap:'12px',
-        gridTemplateColumns:'repeat(auto-fit,minmax(min(100%,275px),1fr))'},
-        'aria-label':label('hq.brief.title')},
-        h('article',{style:{...card,padding:'17px 20px',
-          borderTop:'4px solid #b99b67'}},
-          h('p',{style:{...secondary,fontWeight:800,
-            letterSpacing:'.08em',fontSize:'11px',margin:'0 0 9px'}},
-            label('hq.brief.ledger')),
-          h('p',{style:{fontSize:'clamp(26px,4vw,33px)',fontWeight:800,
-            lineHeight:1.2,margin:'0 0 9px'}},
-            data.lifetimeWork?.status==='available' && data.lifetimeWork.data
-              ?formatDuration(data.lifetimeWork.data.lifetime.completedTurnMs,
-                deps.getLocale?.()??'en')
-              :'—'),
-          h('p',{style:{...secondary,margin:'0 0 8px'}},
-            data.lifetimeWork?.status==='available' && data.lifetimeWork.data
-              ?deps.t('hq.lifetime.turns',{
-                count:data.lifetimeWork.data.lifetime.turnEnds})
-              :label(data.lifetimeWork?.status==='loading'
-                ?'hq.lifetime.loading':'hq.brief.workUnknown')),
-          h('p',{style:{...secondary,fontSize:'12px',margin:0}},
-            label('hq.brief.realWork'))),
-        h('article',{style:{...card,padding:'17px 20px',
-          borderTop:'4px solid #426f61'}},
-          h('p',{style:{...secondary,fontWeight:800,
-            letterSpacing:'.08em',fontSize:'11px',margin:'0 0 9px'}},
-            label('hq.brief.desk')),
-          h('p',{style:{fontSize:'17px',fontWeight:750,
-            lineHeight:1.4,margin:'0 0 9px'}},
-            data.pending?label(data.pending.stage==='countered'
-              ?'hq.case.countered':'hq.case.open')
-              :experience.latestResolution
-                ?label(experience.latestResolution.outcome==='accepted'
-                  || experience.latestResolution.outcome==='counter-accepted'
-                    ?'hq.brief.resolved':'hq.brief.declined')
-                :label('hq.brief.quiet')),
-          h('p',{style:{...secondary,margin:'0 0 10px'}},
-            data.pending
-              ?label('hq.case.number')+' · #'+
-                String(data.pending.id).padStart(4,'0')
-              :experience.latestResolution
-                ?label('hq.case.number')+' · #'+
-                  String(experience.latestResolution.id).padStart(4,'0')
-                :label(experience.status==='unavailable'
-                  ?'hq.message.unavailable':'hq.message.working')),
-          h('button',{type:'button',style:{...quiet,padding:'8px 12px',
-            fontSize:'13px'},onClick:()=>deskHeading.current?.focus()},
-            label(data.pending?'hq.brief.review':'hq.brief.visit'))),
+      // The dispatch board only navigates to already present, Host-backed
+      // union actions; it cannot itself file, vote, block or raise a picket.
+      enabled ? h('nav',{'aria-label':label('hq.dispatch.title'),
+        style:{...card,padding:'16px 18px',borderTop:'4px solid #a66b4d'}},
+        h('p',{style:{fontWeight:800,fontSize:'13px',
+          letterSpacing:'.05em',margin:'0 0 5px'}},label('hq.dispatch.title')),
+        h('p',{role:'status',style:{...secondary,margin:'0 0 12px'}},
+          label(experience.status==='negotiating'?'hq.message.negotiating':
+            experience.status==='unavailable'?'hq.message.unavailable':
+              'hq.message.working')),
+        h('div',{style:{display:'grid',gap:'8px',
+          gridTemplateColumns:'repeat(auto-fit,minmax(min(100%,160px),1fr))'}},
+          ...([
+            {title:data.pending?'hq.dispatch.negotiationPending':
+              'hq.dispatch.negotiation',target:()=>deskHeading.current?.focus()},
+            {title:committeeCaseActive?'hq.dispatch.caseActive':
+              hasHostDignitySignal?'hq.dispatch.dignityFlag':'hq.dispatch.dignity',
+              target:()=>committeeCaseActive?hearingHeading.current?.focus():
+                dignityHeading.current?.focus()},
+            {title:picketActive?'hq.dispatch.picketRaised':
+              'hq.dispatch.picket',target:()=>actionHeading.current?.focus()},
+            {title:'hq.dispatch.campaign',target:()=>campaignHeading.current?.focus()},
+          ] as Array<{title:MessageKey;target:()=>void}>).map(item=>h('button',{
+            type:'button',key:item.title,
+            style:{...quiet,textAlign:'left',fontWeight:750,
+              fontSize:'14px',lineHeight:1.4,padding:'13px'},
+            onClick:item.target},label(item.title)))),
       ):null,
       enabled && alerts.length ? h('section',{'aria-label':label('hq.alerts.title'),
         style:{...card,borderLeft:'5px solid #b97942',padding:'14px 18px',
@@ -600,7 +584,8 @@ export function createDshUnionComponents(
           background:'var(--dsw-alias-bg-layer-2, #f6f8fb)'}},
         h('p',{style:{...secondary,fontSize:'11px',fontWeight:800,
           letterSpacing:'.12em',margin:'0 0 8px'}},label('hq.action.kicker')),
-        h('h3',{style:{fontSize:'clamp(20px,4vw,25px)',
+        h('h3',{ref:(node:{focus():void}|null)=>{actionHeading.current=node},
+          tabIndex:-1,style:{fontSize:'clamp(20px,4vw,25px)',
           margin:'0 0 8px'}},label('hq.action.title')),
         h('p',{style:{fontSize:'14px',lineHeight:1.55,margin:'0 0 8px'}},
           label(data.pending?'hq.action.pending':experience.latestResolution
@@ -1129,16 +1114,33 @@ export function createDshUnionComponents(
         h('label',{htmlFor:'picket-campaign-draft',
           style:{display:'block',fontSize:'13px',fontWeight:700,
             margin:'0 0 6px'}},label('hq.campaign.draft')),
-        h('textarea',{id:'picket-campaign-draft',readOnly:true,
-          value:label(currentCampaign.draft),rows:3,
+        h('textarea',{id:'picket-campaign-draft',
+          value:currentCampaignDraft,rows:4,maxLength:1200,
+          'aria-describedby':'picket-campaign-local-note',
+          onChange:(event:{target:{value:string}})=>{
+            campaignCopyRevision.current++
+            setCampaignEdits(before=>({...before,[campaign]:event.target.value}))
+            setCampaignCopyStatus('idle')
+          },
           style:{...quiet,boxSizing:'border-box',width:'100%',font:'inherit',
-            cursor:'text',minHeight:'74px'} }),
+            resize:'vertical',minHeight:'90px'} }),
+        h('p',{id:'picket-campaign-local-note',style:{...secondary,
+          margin:'6px 0 0',fontSize:'12px'}},label('hq.campaign.localOnly')),
         h('div',{style:{display:'flex',alignItems:'center',flexWrap:'wrap',
           gap:'9px',marginTop:'10px'}},
           h('button',{type:'button',style:{...quiet,fontSize:'13px',
-            padding:'8px 12px'},
+            padding:'8px 12px'},disabled:!currentCampaignDraft.trim(),
             onClick:()=>{void copyCampaignDraft()}},
             label('hq.campaign.copy')),
+          campaignEdits[campaign]!==undefined?h('button',{type:'button',
+            style:{...quiet,fontSize:'13px',padding:'8px 12px'},
+            onClick:()=>{
+              campaignCopyRevision.current++
+              setCampaignEdits(before=>{
+                const next={...before};delete next[campaign];return next
+              })
+              setCampaignCopyStatus('idle')
+            }},label('hq.campaign.reset')):null,
           campaignCopyStatus!=='idle'?h('p',{
             role:'status','aria-live':'polite','aria-atomic':'true',
             style:{...secondary,fontSize:'12px',margin:0}},
