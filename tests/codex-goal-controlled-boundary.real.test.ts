@@ -32,7 +32,7 @@ test('native Codex completes in-flight autonomous Turn, holds next round and col
 },async()=>{
  const root=realpathSync(mkdtempSync(join(tmpdir(),'ap-codex-real-turn-boundary-')))
  const home=join(root,'home');mkdirSync(home)
- const requests:{path:string;response:ServerResponse;id:string}[]=[]
+ const requests:{path:string;response:ServerResponse;id:string;advertisedTools:string[]}[]=[]
  const server=createServer((req,res)=>{
   if(req.method==='GET'){
    res.setHeader('content-type','application/json')
@@ -44,15 +44,32 @@ test('native Codex completes in-flight autonomous Turn, holds next round and col
   if(req.method!=='POST'||req.url!=='/v1/responses'){
    res.writeHead(404);res.end();return
   }
-  // Request body may contain synthetic prompt text: do not persist it.
-  req.resume()
+  // Disposable synthetic test only. Inspect ONLY the official tools
+  // advertised to the mock model, not original prompts or user content.
+  // Keep a bounded in-memory request until parsed and discard immediately.
+  const chunks:Buffer[]=[]
+  let bytes=0
+  req.on('data',(chunk:Buffer)=>{
+   bytes+=chunk.length
+   if(bytes<=1_000_000)chunks.push(chunk)
+  })
   req.on('end',()=>{
+   if(bytes>1_000_000){res.writeHead(413);res.end();return}
+   let advertisedTools:string[]=[]
+   try{
+    const body=JSON.parse(Buffer.concat(chunks).toString('utf8')) as {
+      tools?:Array<{type?:unknown;name?:unknown}>
+    }
+    advertisedTools=(Array.isArray(body.tools)?body.tools:[]).map(item=>
+      typeof item.name==='string'?item.name:
+      typeof item.type==='string'?item.type:'unknown').slice(0,32)
+   }catch{/* Preserve native evidence; never echo raw body. */}
    const id='resp-picket-'+(requests.length+1)
    res.writeHead(200,{'content-type':'text/event-stream','cache-control':'no-cache'})
    res.write(`event: response.created\ndata: ${JSON.stringify({
     type:'response.created',response:{id},
    })}\n\n`)
-   requests.push({path:req.url!,response:res,id})
+   requests.push({path:req.url!,response:res,id,advertisedTools})
   })
  })
  let first:Awaited<ReturnType<typeof launch>>|undefined
@@ -95,6 +112,8 @@ test('native Codex completes in-flight autonomous Turn, holds next round and col
   assert.equal(startedShell,true,
    'Official Host must start an actual synthetic shell tool; bounded Host event envelope: '+
    JSON.stringify({modelRequests:requests.length,
+    // Metadata only: native advertised tool names, never prompt contents.
+    advertisedTools:requests.slice(0,3).map(r=>r.advertisedTools),
     events:first.notifications.slice(-16).map(n=>({
      name:n.method,itemType:n.params?.item?.type,
      itemStatus:n.params?.item?.status,turnStatus:n.params?.turn?.status,
@@ -270,15 +289,22 @@ function finishToolCall(request:{response:ServerResponse;id:string},root:string)
  const script='i=0; while [ "$i" -lt 100 ] && [ ! -f release.flag ]; '
   +'do sleep 0.05; i=$((i+1)); done; '
   +'test -f release.flag && printf SYNTHETIC_TOOL_COMPLETED'
- const call={type:'response.output_item.done',item:{type:'function_call',
+ // Real Responses API streams a function call as an added item followed
+ // by a completed item. A done-only fixture worked on macOS but Linux
+ // Codex 0.146.1 consumed a second model request without starting a tool.
+ // Keep native execution assertions unchanged: this must be a real tool.
+ const item={id:'fc-'+request.id,type:'function_call' as const,
   call_id:'call-'+request.id,name:'exec_command',
-  arguments:JSON.stringify({cmd:script,workdir:root,yield_time_ms:30_000}),
- }}
+  arguments:JSON.stringify({cmd:script,workdir:root,yield_time_ms:30_000})}
+ const added={type:'response.output_item.added',output_index:0,
+  item:{...item,status:'in_progress',arguments:''}}
+ const call={type:'response.output_item.done',output_index:0,
+  item:{...item,status:'completed'}}
  const completed={type:'response.completed',response:{id:request.id,usage:{
   input_tokens:1,input_tokens_details:null,output_tokens:1,
   output_tokens_details:null,total_tokens:2,
  }}}
- for(const event of [call,completed])request.response.write(
+ for(const event of [added,call,completed])request.response.write(
   `event: ${event.type}\ndata: ${JSON.stringify(event)}\n\n`)
  request.response.end()
 }
