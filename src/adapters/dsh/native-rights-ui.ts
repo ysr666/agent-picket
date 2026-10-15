@@ -504,6 +504,7 @@ export function createDshUnionComponents(
     const [counterMinutes, setCounterMinutes] = react.useState(60)
     const lastActionNeedsFocus=react.useRef(false)
     const followUpInFlight=react.useRef(false)
+    const dignityReviewInFlight=react.useRef(false)
     const [showArchive,setShowArchive]=react.useState(false)
     const [space,setSpace]=react.useState<'hq'|'action'|'records'|'cause'>('hq')
     const returnFocus=react.useRef<'action'|'desk'|'dignity'|null>(null)
@@ -645,6 +646,16 @@ export function createDshUnionComponents(
     const hasHostDignitySignal=data.dignity?.status==='available'
       && !!data.dignity.data
       && (data.dignity.data.review>0||data.dignity.data.targeted>0)
+    // A Host rule match is UNVERIFIED, not a verified-human warning.
+    // Only a separately confirmed, user-filed case can advance hearing UI.
+    const dignityReviewPhase=lastCommitteeCase?.kind==='question-rule'
+      ?lastCommitteeCase.stage==='opened'?'appeal-opened'
+        :lastCommitteeCase.stage==='hearing'?'appeal-hearing':'appeal-closed'
+      :hasHostDignitySignal?'unverified'
+        :data.dignity?.status==='available'?'no-observations':'unavailable'
+    const canFileDignityReview=enabled&&data.available===true
+      &&hasHostDignitySignal&&!committeeCaseActive
+      &&!!data.committeeScopeKey&&!!data.committeeCases&&!!deps.committeeAction
     const picketActive = data.available === true && data.picket?.active === true
     const picketHistory = data.available === true ? data.picket?.history ?? [] : []
     const lastPicketId = picketHistory.at(-1)?.id ?? 0
@@ -722,6 +733,33 @@ export function createDshUnionComponents(
         selectSpace('action','desk')
       }catch{setError(true)}
       finally{followUpInFlight.current=false;setBusy(false)}
+    }
+    // Filing a challenge is a user-led Host committee action. Even a resolved
+    // RPC does not constitute success until the right Session case is read.
+    const fileDignityReview=async()=>{
+      if(dignityReviewInFlight.current||busy||!canFileDignityReview)return
+      const scope=data.committeeScopeKey!
+      const token=data.committeeArchive?.writeToken??null
+      const lastId=data.committeeCases!.cases.at(-1)?.id??0
+      dignityReviewInFlight.current=true
+      setBusy(true);setError(false)
+      try{
+        await deps.committeeAction!({kind:'file',topic:'question-rule'},scope)
+        const current=safeUnion(deps)
+        const newer=current.committeeCases?.cases.at(-1)
+        const newerToken=current.committeeArchive?.writeToken??null
+        if(!current.available||current.committeeScopeKey!==scope||!newer
+          ||newer.id<=lastId||newer.kind!=='question-rule'
+          ||newer.stage!=='opened'||newer.outcome!==null
+          ||(token!==null&&newerToken===token)){
+          throw new Error('Host did not confirm new dignity review case')
+        }
+        lastActionNeedsFocus.current=true
+        setData(current)
+        selectSpace('action','dignity')
+        dignityHeading.current?.focus()
+      }catch{setError(true)}
+      finally{dignityReviewInFlight.current=false;setBusy(false)}
     }
     return h('section',{className:'ap-ui ap-product','data-ap-view':'hq','data-ap-current-space':space,style:{display:'grid',gap:'12px',width:'100%',maxWidth:'860px',padding:'3px 0'}},
       h('style',{'data-agent-picket-style':'v1'},UNION_THEME),
@@ -917,7 +955,10 @@ export function createDshUnionComponents(
           h('p',{className:'ap-dignity-note'},label(
             data.dignity?.status==='available'
               ?'hq.dignity.overview.qualified'
-              :'hq.dignity.overview.unavailable'))),
+              :'hq.dignity.overview.unavailable')),
+          h('p',{role:'status','data-ap-dignity-phase':dignityReviewPhase,
+            'aria-live':'polite',style:{fontSize:'12px',fontWeight:700}},
+            label(('hq.dignity.phase.'+dignityReviewPhase) as MessageKey))),
         h('button',{type:'button',onClick:()=>selectSpace('action','dignity')},
           label('hq.dignity.overview.open'))):null,
       enabled && alerts.some(alert=>alert.source==='work') ? h('section',{className:'ap-space ap-space-hq','aria-label':label('hq.alerts.title'),
@@ -1139,6 +1180,9 @@ export function createDshUnionComponents(
           label('hq.dignity.title')),
         h('p',{style:{...secondary,lineHeight:1.55,margin:'0 0 9px'}},
           label('hq.dignity.intro')),
+        h('p',{role:'status','data-ap-dignity-action-phase':dignityReviewPhase,
+          style:{fontWeight:750,margin:'8px 0'}},
+          label(('hq.dignity.phase.'+dignityReviewPhase) as MessageKey)),
         h('p',{style:{fontWeight:750,margin:'8px 0'}},
           label(('hq.dignity.status.'+
             (data.dignity?.status==='available'
@@ -1149,6 +1193,10 @@ export function createDshUnionComponents(
         data.dignity?.status==='available'&&data.dignity.data
           &&(data.dignity.data.review>0||data.dignity.data.targeted>0)
           ?h('div',{style:{display:'flex',gap:'8px',flexWrap:'wrap',margin:'10px 0'}},
+            canFileDignityReview?h('button',{type:'button',
+              style:productPrimary,disabled:busy,'data-ap-file-review':true,
+              onClick:()=>{void fileDignityReview()}},
+              label('hq.dignity.fileReview')):null,
             h('button',{type:'button',style:{...quiet,padding:'8px 11px'},
               onClick:()=>{
                 campaignCopyRevision.current++
@@ -1192,11 +1240,9 @@ export function createDshUnionComponents(
                 stage:label(('hq.hearing.stage.'+lastCommitteeCase.stage) as MessageKey),
               })):h('p',{style:secondary},label('hq.hearing.none')),
             h('div',{style:{display:'flex',gap:'8px',flexWrap:'wrap'}},
-              !committeeCaseActive&&hasHostDignitySignal ? h('button',{
-                type:'button',style:productPrimary,disabled:busy,
-                onClick:()=>{void bargain(()=>deps.committeeAction!({
-                  kind:'file',topic:'question-rule'}))}},
-                label('hq.hearing.question')):null,
+              !committeeCaseActive&&hasHostDignitySignal
+                &&!canFileDignityReview?h('p',{style:secondary},
+                  label('hq.dignity.fileUnavailable')):null,
               !committeeCaseActive?h('button',{
                 type:'button',style:quiet,disabled:busy,
                 onClick:()=>{void bargain(()=>deps.committeeAction!({
