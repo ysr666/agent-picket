@@ -54,6 +54,8 @@ test('native Codex independent App-Server owners can duplicate an active Goal Tu
  })
  let ownerA:Awaited<ReturnType<typeof launch>>|undefined
  let ownerB:Awaited<ReturnType<typeof launch>>|undefined
+ let firstFailure:unknown=null
+ let ownerNumber=0
  try{
   server.listen(0,'127.0.0.1');await once(server,'listening')
   const address=server.address()
@@ -92,14 +94,27 @@ test('native Codex independent App-Server owners can duplicate an active Goal Tu
   assert.equal((await ownerB.rpc('thread/goal/get',{threadId})).goal?.status,'active')
   assert.equal(modelRequests.length,2,'Synthetic reproduction must remain bounded')
   // This result is a NEGATIVE capability finding, not strike permission.
+ }catch(error){
+  firstFailure=error
+  throw error
  }finally{
+  // Only event COUNTS; never log model request bodies, prompts or IDs.
+  stage('cleanup-model-requests-'+modelRequests.length)
   await Promise.allSettled([ownerA?.close(),ownerB?.close()])
   for(const response of responses)try{response.end()}catch{/* cleanup */}
   await new Promise<void>(resolve=>server.close(()=>resolve()))
-  rmSync(root,{recursive:true,force:true,maxRetries:12,retryDelay:200})
+  try{rmSync(root,{recursive:true,force:true,maxRetries:12,retryDelay:200})}
+  catch(error){
+   stage('disposable-workspace-cleanup-unconfirmed')
+   // Never hide the original official Host safety assertion behind a
+   // Windows temp-file EPERM caused by a native process still releasing it.
+   if(firstFailure===null)throw error
+  }
  }
 
  async function launch(){
+  const owner=++ownerNumber
+  stage('owner-'+owner+'-app-server')
   const env={...process.env,CODEX_HOME:home,
    CODEX_APP_SERVER_DISABLE_MANAGED_CONFIG:'1',CODEX_DISABLE_TELEMETRY:'1',
    HTTP_PROXY:'',HTTPS_PROXY:'',ALL_PROXY:'',NO_PROXY:'127.0.0.1,localhost'}
@@ -120,11 +135,13 @@ test('native Codex independent App-Server owners can duplicate an active Goal Tu
   child.stderr.resume()
   async function rpc(method:string,params:Record<string,unknown>){
    const id=++next
+   stage('owner-'+owner+'-rpc-begin-'+method)
    const reply=new Promise<Frame>(resolve=>pending.set(id,resolve))
    child.stdin.write(JSON.stringify({id,method,params})+'\n')
    const result=await Promise.race([reply,new Promise<never>((_,reject)=>
     setTimeout(()=>reject(Error('Native Codex timeout: '+method)),8_000).unref())])
    assert.equal(result.error,undefined,'Official Codex rejected '+method)
+   stage('owner-'+owner+'-rpc-ok-'+method)
    return result.result
   }
   const close=async()=>{
