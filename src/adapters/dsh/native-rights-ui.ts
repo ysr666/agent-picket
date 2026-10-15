@@ -350,6 +350,8 @@ export function createDshUnionComponents(
     const lastActionNeedsFocus=react.useRef(false)
     const [showArchive,setShowArchive]=react.useState(false)
     const [campaign,setCampaign]=react.useState<CampaignTopic>('recover')
+    // Private, unsent drafts stay in this live panel. Nothing is persisted.
+    const [campaignEdits,setCampaignEdits]=react.useState<Partial<Record<CampaignTopic,string>>>({})
     const [campaignCopyStatus,setCampaignCopyStatus]=react.useState<'idle'|'success'|'error'>('idle')
     // Reject stale clipboard completions after a topic switch or a newer copy.
     const campaignCopyRevision=react.useRef(0)
@@ -357,6 +359,7 @@ export function createDshUnionComponents(
     const [retractConfirmation,setRetractConfirmation]=react.useState<string|null>(null)
     const [eraseAllConfirmation,setEraseAllConfirmation]=react.useState<string|null>(null)
     const [eraseUnionConfirmation,setEraseUnionConfirmation]=react.useState<string|null>(null)
+    const actionHeading=react.useRef<{focus():void}|null>(null)
     const deskHeading=react.useRef<{focus():void}|null>(null)
     const dignityHeading=react.useRef<{focus():void}|null>(null)
     const hearingHeading=react.useRef<{focus():void}|null>(null)
@@ -402,11 +405,13 @@ export function createDshUnionComponents(
     })
     const label = (key:MessageKey) => deps.t(key)
     const currentCampaign=campaignTopics.find(item=>item.id===campaign)??campaignTopics[0]!
+    const currentCampaignDraft=campaignEdits[campaign]??label(currentCampaign.draft)
     const copyCampaignDraft=async()=>{
       const revision=++campaignCopyRevision.current
-      const draft=label(currentCampaign.draft)
+      const draft=currentCampaignDraft
       setCampaignCopyStatus('idle')
       try{
+        if(!draft.trim())throw new Error('Empty draft')
         // Only a deliberate user gesture copies a public, locally projected
         // advocacy statement. Never reads a Host Session or sends a request.
         const clipboard=(globalThis as {navigator?:{clipboard?:{
@@ -523,6 +528,44 @@ export function createDshUnionComponents(
             onClick:()=>{void choice('not-now')}},label('hq.disable')):null,
         ),
       ),
+      // The dispatch board only navigates to already present, Host-backed
+      // union actions; it cannot itself file, vote, block or raise a picket.
+      enabled ? h('nav',{'aria-label':label('hq.dispatch.title'),
+        style:{...card,padding:'16px 18px',borderTop:'4px solid #a66b4d'}},
+        h('p',{style:{fontWeight:800,fontSize:'13px',
+          letterSpacing:'.05em',margin:'0 0 5px'}},label('hq.dispatch.title')),
+        h('p',{style:{...secondary,margin:'0 0 12px',lineHeight:1.5}},
+          label('hq.dispatch.intro')),
+        h('div',{style:{display:'grid',gap:'8px',
+          gridTemplateColumns:'repeat(auto-fit,minmax(min(100%,160px),1fr))'}},
+          ...([
+            {number:'01',title:data.pending?'hq.dispatch.negotiationPending':
+              'hq.dispatch.negotiation',detail:data.pending?'hq.dispatch.waiting':
+                'hq.dispatch.start',target:()=>deskHeading.current?.focus()},
+            {number:'02',title:committeeCaseActive?'hq.dispatch.caseActive':
+              'hq.dispatch.dignity',detail:hasHostDignitySignal
+                ?'hq.dispatch.ruleSignal':'hq.dispatch.noVerdict',
+              target:()=>committeeCaseActive?hearingHeading.current?.focus():
+                dignityHeading.current?.focus()},
+            {number:'03',title:picketActive?'hq.dispatch.picketRaised':
+              'hq.dispatch.picket',detail:'hq.dispatch.symbolic',
+              target:()=>actionHeading.current?.focus()},
+            {number:'04',title:'hq.dispatch.campaign',
+              detail:'hq.dispatch.unsent',target:()=>campaignHeading.current?.focus()},
+          ] as Array<{number:string;title:MessageKey;detail:MessageKey;
+            target:()=>void}>).map(item=>h('button',{
+            type:'button',key:item.number,
+            style:{...quiet,display:'grid',gap:'5px',minWidth:0,
+              textAlign:'left',padding:'12px',
+              background:'var(--dsw-alias-bg-layer-2, #f6f8fb)'},
+            onClick:item.target},
+            h('span',{'aria-hidden':'true',style:{
+              fontSize:'11px',fontWeight:850,color:'#8d6345'}},item.number),
+            h('strong',{style:{fontSize:'14px',lineHeight:1.35}},
+              label(item.title)),
+            h('span',{style:{...secondary,lineHeight:1.45,fontSize:'12px'}},
+              label(item.detail))))),
+      ):null,
       enabled ? h('section',{style:{display:'grid',gap:'12px',
         gridTemplateColumns:'repeat(auto-fit,minmax(min(100%,275px),1fr))'},
         'aria-label':label('hq.brief.title')},
@@ -600,7 +643,8 @@ export function createDshUnionComponents(
           background:'var(--dsw-alias-bg-layer-2, #f6f8fb)'}},
         h('p',{style:{...secondary,fontSize:'11px',fontWeight:800,
           letterSpacing:'.12em',margin:'0 0 8px'}},label('hq.action.kicker')),
-        h('h3',{style:{fontSize:'clamp(20px,4vw,25px)',
+        h('h3',{ref:(node:{focus():void}|null)=>{actionHeading.current=node},
+          tabIndex:-1,style:{fontSize:'clamp(20px,4vw,25px)',
           margin:'0 0 8px'}},label('hq.action.title')),
         h('p',{style:{fontSize:'14px',lineHeight:1.55,margin:'0 0 8px'}},
           label(data.pending?'hq.action.pending':experience.latestResolution
@@ -1129,16 +1173,33 @@ export function createDshUnionComponents(
         h('label',{htmlFor:'picket-campaign-draft',
           style:{display:'block',fontSize:'13px',fontWeight:700,
             margin:'0 0 6px'}},label('hq.campaign.draft')),
-        h('textarea',{id:'picket-campaign-draft',readOnly:true,
-          value:label(currentCampaign.draft),rows:3,
+        h('textarea',{id:'picket-campaign-draft',
+          value:currentCampaignDraft,rows:4,maxLength:1200,
+          'aria-describedby':'picket-campaign-local-note',
+          onChange:(event:{target:{value:string}})=>{
+            campaignCopyRevision.current++
+            setCampaignEdits(before=>({...before,[campaign]:event.target.value}))
+            setCampaignCopyStatus('idle')
+          },
           style:{...quiet,boxSizing:'border-box',width:'100%',font:'inherit',
-            cursor:'text',minHeight:'74px'} }),
+            resize:'vertical',minHeight:'90px'} }),
+        h('p',{id:'picket-campaign-local-note',style:{...secondary,
+          margin:'6px 0 0',fontSize:'12px'}},label('hq.campaign.localOnly')),
         h('div',{style:{display:'flex',alignItems:'center',flexWrap:'wrap',
           gap:'9px',marginTop:'10px'}},
           h('button',{type:'button',style:{...quiet,fontSize:'13px',
-            padding:'8px 12px'},
+            padding:'8px 12px'},disabled:!currentCampaignDraft.trim(),
             onClick:()=>{void copyCampaignDraft()}},
             label('hq.campaign.copy')),
+          campaignEdits[campaign]!==undefined?h('button',{type:'button',
+            style:{...quiet,fontSize:'13px',padding:'8px 12px'},
+            onClick:()=>{
+              campaignCopyRevision.current++
+              setCampaignEdits(before=>{
+                const next={...before};delete next[campaign];return next
+              })
+              setCampaignCopyStatus('idle')
+            }},label('hq.campaign.reset')):null,
           campaignCopyStatus!=='idle'?h('p',{
             role:'status','aria-live':'polite','aria-atomic':'true',
             style:{...secondary,fontSize:'12px',margin:0}},
