@@ -542,8 +542,8 @@ export function createDshUnionComponents(
           gridTemplateColumns:'repeat(auto-fit,minmax(min(100%,160px),1fr))'}},
           ...([
             {title:data.pending?'hq.dispatch.negotiationPending':
-              'hq.dispatch.negotiation',detail:data.pending?'hq.dispatch.waiting':
-                'hq.dispatch.start',target:()=>deskHeading.current?.focus()},
+              'hq.dispatch.negotiation',detail:data.pending?'hq.action.pending':
+                'hq.action.quiet',target:()=>deskHeading.current?.focus()},
             {title:committeeCaseActive?'hq.dispatch.caseActive':
               'hq.dispatch.dignity',detail:hasHostDignitySignal
                 ?'hq.dispatch.ruleSignal':'hq.dispatch.noVerdict',
