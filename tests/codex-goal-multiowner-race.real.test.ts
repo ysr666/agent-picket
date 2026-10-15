@@ -4,12 +4,13 @@ import {spawn} from 'node:child_process'
 import {createServer, type ServerResponse} from 'node:http'
 import {once} from 'node:events'
 import {createInterface} from 'node:readline'
-import {mkdtempSync,mkdirSync,rmSync,realpathSync,writeFileSync} from 'node:fs'
+import {mkdtempSync,mkdirSync,rmSync,realpathSync,writeFileSync,lstatSync} from 'node:fs'
 import {tmpdir} from 'node:os'
 import {join} from 'node:path'
 
 const bin=process.env.AGENT_PICKET_CODEX_BIN
 const eligible=!!bin&&process.env.AGENT_PICKET_CODEX_GOAL_NATIVE==='1'
+const stage=(name:string)=>{if(process.platform==='win32')console.error('CODEX_GOAL_OWNER_STAGE='+name)}
 type Frame={id?:number;error?:{message?:string};result?:any;method?:string;params?:{
  threadId?:string;turn?:{id?:string;status?:string}
 }}
@@ -65,6 +66,7 @@ test('native Codex independent App-Server owners can duplicate an active Goal Tu
    'wire_api = "responses"','request_max_retries = 0',
    'stream_max_retries = 0','',
   ].join('\n'))
+  stage('owner-A-launch')
   ownerA=await launch()
   const created=await ownerA.rpc('thread/start',{cwd:root,ephemeral:false})
   const threadId=created.thread?.id
@@ -78,6 +80,7 @@ test('native Codex independent App-Server owners can duplicate an active Goal Tu
   assert.equal(await until(()=>ownerA!.turnIds(threadId).length===1),true)
   const firstTurnId=ownerA.turnIds(threadId)[0]!
   // No completed model response is sent to A. Goal remains in flight.
+  stage('owner-B-launch')
   ownerB=await launch()
   assert.equal((await ownerB.rpc('thread/resume',{threadId})).thread?.id,threadId)
   assert.equal(await until(()=>modelRequests.length>=2),true,
@@ -93,7 +96,7 @@ test('native Codex independent App-Server owners can duplicate an active Goal Tu
   await Promise.allSettled([ownerA?.close(),ownerB?.close()])
   for(const response of responses)try{response.end()}catch{/* cleanup */}
   await new Promise<void>(resolve=>server.close(()=>resolve()))
-  rmSync(root,{recursive:true,force:true})
+  rmSync(root,{recursive:true,force:true,maxRetries:12,retryDelay:200})
  }
 
  async function launch(){
@@ -124,25 +127,41 @@ test('native Codex independent App-Server owners can duplicate an active Goal Tu
    assert.equal(result.error,undefined,'Official Codex rejected '+method)
    return result.result
   }
-  const initialized=await rpc('initialize',{clientInfo:{name:'picket-native-multi-owner',
-   title:'Synthetic Codex owner exclusivity probe',version:'0.0.0'},
-   capabilities:{experimentalApi:true}})
-  assert.equal(initialized.codexHome,home)
-  child.stdin.write(JSON.stringify({method:'initialized',params:{}})+'\n')
-  return {rpc,turnIds:(threadId:string)=>notifications.filter(frame=>
-   frame.method==='turn/started'&&frame.params?.threadId===threadId
-  ).map(frame=>frame.params?.turn?.id).filter((value):value is string=>typeof value==='string'),
-  async close(){
+  const close=async()=>{
    child.stdin.end()
    const exited=new Promise<void>(resolve=>{
     if(child.exitCode!==null||child.signalCode!==null)resolve()
     else child.once('exit',()=>resolve())
    })
-   child.kill('SIGTERM')
+   if(child.exitCode===null&&child.signalCode===null)child.kill('SIGTERM')
    await Promise.race([exited,new Promise<void>(resolve=>setTimeout(resolve,1000).unref())])
-   if(child.exitCode===null)child.kill('SIGKILL')
+   if(child.exitCode===null&&child.signalCode===null)child.kill('SIGKILL')
    await Promise.race([exited,new Promise<void>(resolve=>setTimeout(resolve,1000).unref())])
-  }}
+  }
+  try{
+   const initialized=await rpc('initialize',{clientInfo:{name:'picket-native-multi-owner',
+    title:'Synthetic Codex owner exclusivity probe',version:'0.0.0'},
+    capabilities:{experimentalApi:true}})
+   assert.equal(typeof initialized.codexHome,'string')
+   // Windows official Host may report the SAME directory via a short/NT
+   // path. Never trust a lexical path: compare actual filesystem identity.
+   const expected=lstatSync(home,{bigint:true})
+   const actual=lstatSync(initialized.codexHome,{bigint:true})
+   assert.ok(expected.isDirectory()&&actual.isDirectory()
+    &&!actual.isSymbolicLink()&&expected.dev===actual.dev
+    &&expected.ino>0n&&expected.ino===actual.ino,
+    'Official Codex must use the exact test-owned CODEX_HOME')
+   child.stdin.write(JSON.stringify({method:'initialized',params:{}})+'\n')
+   return {rpc,turnIds:(threadId:string)=>notifications.filter(frame=>
+    frame.method==='turn/started'&&frame.params?.threadId===threadId
+   ).map(frame=>frame.params?.turn?.id).filter((value):value is string=>typeof value==='string'),
+    close}
+  }catch(error){
+   // Never leak a live native App-Server when validation fails before
+   // assigning ownerA/ownerB, or Windows cleanup will hide the root error.
+   await close()
+   throw error
+  }
  }
 })
 
