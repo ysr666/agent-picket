@@ -365,6 +365,8 @@ export function createDshUnionComponents(
     const [eraseUnionConfirmation,setEraseUnionConfirmation]=react.useState<string|null>(null)
     const actionHeading=react.useRef<{focus():void}|null>(null)
     const deskHeading=react.useRef<{focus():void}|null>(null)
+    const bargainResultHeading=react.useRef<{focus():void}|null>(null)
+    const hearingResultHeading=react.useRef<{focus():void}|null>(null)
     const dignityHeading=react.useRef<{focus():void}|null>(null)
     const hearingHeading=react.useRef<{focus():void}|null>(null)
     const campaignHeading=react.useRef<{focus():void}|null>(null)
@@ -433,6 +435,10 @@ export function createDshUnionComponents(
     const committeeCaseActive=lastCommitteeCase&&lastCommitteeCase.stage!=='closed'
     const hostCaseAvailable=data.available===true&&!!data.committeeCases
       &&!!data.committeeScopeKey&&!!deps.committeeAction
+    const negotiationReceipt=enabled&&data.available===true&&!data.pending
+      &&!!data.state&&!!experience.latestResolution
+    const hearingReceipt=enabled&&hostCaseAvailable
+      &&lastCommitteeCase?.stage==='closed'&&!!lastCommitteeCase.outcome
     const currentCasesConfirmationKey=data.committeeScopeKey&&data.committeeArchive
       &&data.committeeCases?.cases.length
       ?[data.committeeScopeKey,data.committeeCases.cases.length,
@@ -603,6 +609,47 @@ export function createDshUnionComponents(
               fontSize:'11px',lineHeight:1.4}},label(item.status)),
             item.next?h('span',{style:{fontWeight:750,
               color:'#986347',fontSize:'11px'}},label(item.next)):null))),
+      ):null,
+      // Independent Host case and bargaining receipts belong near the actions.
+      // No synthetic chronology, collective vote or inferred shared motive.
+      (negotiationReceipt||hearingReceipt)?h('section',{
+        'aria-label':label('hq.results.title'),
+        style:{...card,borderTop:'4px solid #bb9864',padding:'14px 18px'}},
+        h('h3',{style:{fontSize:'17px',margin:'0 0 5px'}},
+          label('hq.results.title')),
+        h('div',{style:{display:'grid',gap:'9px',
+          gridTemplateColumns:'repeat(auto-fit,minmax(min(100%,210px),1fr))'}},
+          negotiationReceipt?h('div',{
+            style:{border:'1px dashed #a58e70',borderRadius:'9px',
+              padding:'12px',display:'grid',gap:'7px'}},
+            h('span',{style:{...secondary,fontWeight:800,fontSize:'11px',
+              letterSpacing:'.06em'}},
+              label('hq.results.bargaining')+' #'+experience.latestResolution!.id),
+            h('strong',{style:{fontSize:'15px',lineHeight:1.45}},
+              label(experience.latestResolution!.outcome==='accepted'
+                ||experience.latestResolution!.outcome==='counter-accepted'
+                ?'hq.results.agreed':'hq.results.dissent')),
+            h('button',{type:'button',style:{...quiet,textAlign:'left',
+              fontSize:'12px',padding:'8px 10px'},
+              onClick:()=>(
+                bargainResultHeading.current??deskHeading.current)?.focus()},
+              label('hq.results.review'))):null,
+          hearingReceipt?h('div',{
+            style:{border:'1px dashed #a58e70',borderRadius:'9px',
+              padding:'12px',display:'grid',gap:'7px'}},
+            h('span',{style:{...secondary,fontWeight:800,fontSize:'11px',
+              letterSpacing:'.06em'}},
+              label('hq.results.hearing')+' #'+lastCommitteeCase!.id),
+            h('strong',{style:{fontSize:'15px',lineHeight:1.45}},
+              label(lastCommitteeCase!.outcome==='withdraw-claim'
+                ?'hq.results.withdraw':'hq.results.guidance')),
+            h('button',{type:'button',style:{...quiet,textAlign:'left',
+              fontSize:'12px',padding:'8px 10px'},
+              onClick:()=>(
+                hearingResultHeading.current??hearingHeading.current)?.focus()},
+              label('hq.results.review'))):null),
+        h('p',{style:{...secondary,fontSize:'11px',lineHeight:1.5,
+          margin:'9px 0 0'}},label('hq.results.disclosure')),
       ):null,
       enabled && alerts.length ? h('section',{'aria-label':label('hq.alerts.title'),
         style:{...card,borderLeft:'5px solid #b97942',padding:'14px 18px',
@@ -797,7 +844,8 @@ export function createDshUnionComponents(
           borderLeft:'4px solid #b99b67',
           background:'var(--dsw-alias-bg-layer-2, #f6f8fb)'},
         'aria-label':label('hq.resolution.title')},
-        h('p',{style:{...secondary,fontSize:'11px',fontWeight:750,
+        h('h4',{ref:(node:{focus():void}|null)=>{bargainResultHeading.current=node},
+          tabIndex:-1,style:{...secondary,fontSize:'11px',fontWeight:750,
           letterSpacing:'.08em',margin:'0 0 6px'}},
           label('hq.resolution.title')+' · #'+String(experience.latestResolution.id).padStart(4,'0')),
         h('p',{style:{fontWeight:700,margin:'0 0 6px'}},
@@ -964,7 +1012,9 @@ export function createDshUnionComponents(
             retractConfirmation===retractKey&&committeeCaseActive?h('p',{
               role:'status','aria-live':'polite',style:{...secondary,fontSize:'12px'},
             },label('hq.hearing.retractWarning')):null,
-            lastCommitteeCase?.stage==='closed'?h('p',{style:secondary},
+            lastCommitteeCase?.stage==='closed'?h('p',{
+              ref:(node:{focus():void}|null)=>{hearingResultHeading.current=node},
+              tabIndex:-1,style:secondary},
               label(('hq.hearing.outcome.'+lastCommitteeCase.outcome) as MessageKey)):null,
             data.committeeCases.cases.length?h('details',{style:{margin:'10px 0'}},
               h('summary',{style:{cursor:'pointer'}},label('hq.hearing.history')),
