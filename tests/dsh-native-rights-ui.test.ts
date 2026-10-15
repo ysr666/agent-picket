@@ -1625,3 +1625,28 @@ test('Goal stopped under a different policy cannot appear as a union recovery',(
  const nodes=walk(createDshUnionComponents(hooks,{createPortal:x=>x},d).UnionPanel())
  assert.equal(nodes.some(n=>n.children.includes('hq.goalHold.resume')),false)
 })
+
+test('Gazette explains stale Host work instead of promising a fictional follow-up',()=>{
+ const state={schemaVersion:1 as const,revision:2,
+  agreement:{breakIntervalMs:7_200_000,overtimeIntervalMs:28_800_000},
+  nextBreakDueMs:14_400_000,nextOvertimeDueMs:28_800_000,
+  lastTriggerElapsedMs:7_200_000,pending:null,
+  history:[{id:3,kind:'break' as const,outcome:'accepted' as const}]}
+ const data=deps(rights({welcomeDecision:'enabled',laborRightsEnabled:true})).d
+ const view=(ms:number)=>walk(createDshUnionComponents(fakeReact().hooks,
+  {createPortal:child=>child},{...data,readUnion:()=>({
+   available:true,state,pending:null,completedTurnMs:ms,
+   coverage:'complete',lifetimeMs:null,picket:null,
+  })}).UnionPanel())
+ const stale=view(4_000_000)
+ const notice=stale.find(n=>n.props['data-ap-work-evidence']==='stale')
+ assert.ok(notice,'The visible Gazette must explain why Host work cannot be trusted yet')
+ assert.deepEqual(notice?.children,['hq.story.staleWork'])
+ const gazette=stale.find(n=>n.props['aria-label']==='hq.story.title')
+ assert.ok(gazette)
+ assert.match(JSON.stringify(gazette),/hq.episode.stage.accepted/)
+ assert.doesNotMatch(JSON.stringify(gazette),/hq.story.next/)
+ const verified=view(7_200_000)
+ assert.equal(verified.some(n=>n.props['data-ap-work-evidence']==='stale'),false)
+ assert.match(JSON.stringify(verified.find(n=>n.props['aria-label']==='hq.story.title')),/hq.story.next/)
+})

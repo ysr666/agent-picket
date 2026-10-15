@@ -334,6 +334,7 @@ export const en = defineEnglish({
   'hq.story.scene.shift-report': 'Verified turn-time accumulated. The shift log is open.',
   'hq.story.scene.quiet': 'No new case. The union is taking minutes of its own silence.',
   'hq.story.next': 'About {duration} of recorded work remains before another request may be due.',
+  'hq.story.staleWork': 'The Host work snapshot is older than the latest union case. The case stays on record, but the next work-based review cannot yet be estimated.',
   'hq.episode.title': 'The union casebook',
   'hq.episode.provenance': 'Every case here was filed by the union.',
   'hq.episode.stage.demand': 'Demand filed · awaiting reply',

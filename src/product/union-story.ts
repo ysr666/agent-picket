@@ -51,6 +51,8 @@ export interface UnionStory {
   /** Next Host-derived threshold; not a wall-clock timer. */
   readonly nextDueInWorkMs: number | null
   readonly verifiedWorkMs: number | null
+  /** Whether official completed-work evidence supports the case countdown. */
+  readonly workEvidence: 'verified' | 'incomplete' | 'stale'
 }
 export function projectUnionStory(input: {
   readonly enabled: boolean
@@ -59,13 +61,17 @@ export function projectUnionStory(input: {
   readonly completedTurnMs: number | null
   readonly coverage: 'complete' | 'partial' | 'not-loaded' | 'unavailable'
 }): UnionStory {
-  const empty={cases:[],episodes:[],actions:[],nextDueInWorkMs:null,verifiedWorkMs:null} as const
+  const empty={cases:[],episodes:[],actions:[],nextDueInWorkMs:null,verifiedWorkMs:null,
+    workEvidence:'incomplete' as const}
   if(!input.enabled)return {scene:'off',...empty}
   if(!input.state)return {scene:'unavailable',...empty}
   const state=input.state
-  const verified=input.coverage==='complete' && input.completedTurnMs!==null
+  const complete=input.coverage==='complete' && input.completedTurnMs!==null
     && Number.isSafeInteger(input.completedTurnMs) && input.completedTurnMs>=0
-    ?input.completedTurnMs:null
+  const workEvidence:'verified'|'incomplete'|'stale'=!complete?'incomplete'
+    :input.completedTurnMs! < state.lastTriggerElapsedMs?'stale':'verified'
+  // A lagging Host snapshot cannot substantiate a work-based follow-up.
+  const verified=workEvidence==='verified'?input.completedTurnMs:null
   const cases:StoryEntry[]=[]
   if(state.pending) cases.push({
     key:'case:'+state.pending.id,
@@ -131,5 +137,6 @@ export function projectUnionStory(input: {
   const nextDueInWorkMs=verified!==null&&!state.pending
     ?Math.max(0,Math.min(state.nextBreakDueMs,state.nextOvertimeDueMs)-verified)
     :null
-  return {scene,cases,episodes,actions,nextDueInWorkMs,verifiedWorkMs:verified}
+  return {scene,cases,episodes,actions,nextDueInWorkMs,verifiedWorkMs:verified,
+    workEvidence}
 }

@@ -65,3 +65,19 @@ test('latest resolution reflects actual stored agreement, not inferred contract 
  assert.equal(projectUnionExperience({enabled:false,state:s,
    coverage:'complete',completedTurnMs:0}).latestResolution,null)
 })
+
+test('newer Host labor trigger fences stale score and petition prediction',()=>{
+ const state={...fresh(),lastTriggerElapsedMs:7_200_000,
+   history:[{id:7,kind:'overtime' as const,outcome:'declined' as const}]}
+ const stale=projectUnionExperience({enabled:true,state,coverage:'complete',
+   completedTurnMs:4_000_000})
+ assert.equal(stale.discontent,null)
+ assert.equal(stale.factors,null)
+ assert.equal(stale.verifiedCompletedTurnMs,null)
+ assert.equal(stale.nextDemandInWorkMs,null)
+ assert.deepEqual(stale.activity.map(e=>e.id),[7])
+ const caughtUp=projectUnionExperience({enabled:true,state,coverage:'complete',
+   completedTurnMs:7_200_000})
+ assert.equal(caughtUp.verifiedCompletedTurnMs,7_200_000)
+ assert.notEqual(caughtUp.discontent,null)
+})

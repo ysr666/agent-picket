@@ -1316,6 +1316,10 @@ export function createDshUnionComponents(
           story.nextDueInWorkMs!==null ? h('p',{style:secondary},
             deps.t('hq.story.next',{duration:formatDuration(
               story.nextDueInWorkMs,deps.getLocale?.()??'en')})):null,
+          story.workEvidence==='stale'?h('p',{role:'status',
+            'data-ap-work-evidence':'stale',style:{...secondary,
+              borderLeft:'3px solid #b8764d',paddingLeft:'10px',margin:'10px 0'}},
+            label('hq.story.staleWork')):null,
           story.episodes.length?h('div',{className:'ap-casebook',
             'aria-label':label('hq.episode.title'),style:{marginTop:'14px'}},
             h('h4',{style:{fontSize:'15px',margin:'0 0 7px'}},

@@ -331,6 +331,7 @@ export const zhCN: Readonly<Record<keyof typeof en, string>> = {
   'hq.story.scene.shift-report': '已累计可靠轮次工时，工作日志开始营业。',
   'hq.story.scene.quiet': '没有新案件。工会决定郑重记录这份安静。',
   'hq.story.next': '距离下一次可提诉求，可能还差 {duration} 的记录工时。',
+  'hq.story.staleWork': 'Host 工时快照落后于最近一次工会案件。案件仍已存档，但在工时证据更新前，无法估算下一次按工时触发的复议进度。',
   'hq.episode.title': '工会案件簿',
   'hq.episode.provenance': '这里记录已提出的诉求和最后结果。',
   'hq.episode.stage.demand': '诉求已提出 · 待回复',
