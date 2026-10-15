@@ -4,9 +4,9 @@ import {spawn, type ChildProcess} from 'node:child_process'
 import {createServer} from 'node:http'
 import {once} from 'node:events'
 import {createInterface} from 'node:readline'
-import {mkdtempSync,mkdirSync,rmSync,realpathSync,writeFileSync,readFileSync} from 'node:fs'
+import {mkdtempSync,mkdirSync,rmSync,realpathSync,writeFileSync,readFileSync,lstatSync} from 'node:fs'
 import {tmpdir} from 'node:os'
-import {join,resolve,relative,isAbsolute,sep} from 'node:path'
+import {join,resolve} from 'node:path'
 import {pathToFileURL} from 'node:url'
 import {inspectCodexOfficialPromptHook} from '../src/adapters/codex/prompt-hook-readiness.ts'
 
@@ -114,18 +114,18 @@ test('official Codex UserPromptSubmit explicitly denies before a model HTTP requ
     const selected=configured[0]
     assert.equal(selected.trustStatus,'untrusted',
      'New synthetic hook is deliberately NOT trusted automatically')
-    // On native Windows Codex may return an extended/normalized path that
-    // does not share the original lexical prefix. Compare actual filesystem
-    // locations, not string prefixes; this also rejects reparse escapes.
+    // Native Windows can surface the same hooks.json through distinct
+    // DOS/NT path spellings. Trust ONLY the exact physical synthetic file
+    // created here: device+file ID, not a string prefix or a user-claimed
+    // sourcePath. Reject symlinks/reparse aliases and unknown file IDs.
     assert.equal(typeof selected.sourcePath,'string')
-    const source=realpathSync(selected.sourcePath)
-    const safeHome=realpathSync(home)
-    const within=relative(safeHome,source)
-    assert.ok(within!==''&&!isAbsolute(within)&&within!=='..'
-      &&!within.startsWith('..'+sep),
-     'Never approve a hook outside the disposable test CODEX_HOME; '
-       +JSON.stringify({sourceRelativeToDisposableRoot:relative(root,source).slice(0,240),
-         sourceRelativeToCodeHome:within.slice(0,240)}))
+    const expectedFile=lstatSync(join(home,'hooks.json'),{bigint:true})
+    const actualFile=lstatSync(selected.sourcePath,{bigint:true})
+    assert.ok(expectedFile.isFile()&&actualFile.isFile()
+      &&!actualFile.isSymbolicLink()
+      &&expectedFile.dev===actualFile.dev
+      &&expectedFile.ino>0n&&expectedFile.ino===actualFile.ino,
+      'Never approve a different native Hook source than the test-owned hooks.json')
     assert.ok(String(selected.command).includes(hook),
      'Never approve a command other than our exact test-generated hook')
     assert.match(selected.currentHash,/^sha256:[a-f0-9]{64}$/)
