@@ -558,6 +558,10 @@ export function createDshUnionComponents(
                   data.pending?'hq.dispatch.replyWaiting':
                     experience.latestResolution?'hq.dispatch.resolved':
                       'hq.dispatch.ready',
+              next:data.available!==true?undefined:
+                data.pending?.stage==='countered'?'hq.next.counter':
+                  data.pending?'hq.next.reply':
+                    experience.latestResolution?'hq.next.agreement':undefined,
               target:()=>deskHeading.current?.focus()},
             {title:committeeCaseActive&&lastCommitteeCase.stage==='hearing'
               ?'hq.dispatch.caseActive':hasHostDignitySignal
@@ -565,7 +569,10 @@ export function createDshUnionComponents(
               status:!hostCaseAvailable?'hq.dispatch.caseUnavailable':
                 lastCommitteeCase?('hq.hearing.stage.'+lastCommitteeCase.stage) as MessageKey:
                   'hq.dispatch.noCase',
-              target:()=>committeeCaseActive?hearingHeading.current?.focus():
+              next:!hostCaseAvailable||!lastCommitteeCase?undefined:
+                lastCommitteeCase.stage==='opened'?'hq.next.convene':
+                  lastCommitteeCase.stage==='hearing'?'hq.next.close':'hq.next.outcome',
+              target:()=>lastCommitteeCase?hearingHeading.current?.focus():
                 dignityHeading.current?.focus()},
             {title:picketActive?'hq.dispatch.picketRaised':
               'hq.dispatch.picket',
@@ -576,7 +583,7 @@ export function createDshUnionComponents(
               status:campaignEdits[campaign]===undefined
                 ?'hq.dispatch.unsent':'hq.dispatch.edited',
               target:()=>campaignHeading.current?.focus()},
-          ] as Array<{title:MessageKey;status:MessageKey;
+          ] as Array<{title:MessageKey;status:MessageKey;next?:MessageKey;
             target:()=>void}>).map(item=>h('button',{
             type:'button',key:item.title,
             style:{...quiet,textAlign:'left',display:'grid',gap:'5px',
@@ -584,7 +591,9 @@ export function createDshUnionComponents(
             onClick:item.target},
             h('strong',{},label(item.title)),
             h('span',{style:{...secondary,fontWeight:500,
-              fontSize:'11px',lineHeight:1.4}},label(item.status))))),
+              fontSize:'11px',lineHeight:1.4}},label(item.status)),
+            item.next?h('span',{style:{fontWeight:750,
+              color:'#986347',fontSize:'11px'}},label(item.next)):null))),
       ):null,
       enabled && alerts.length ? h('section',{'aria-label':label('hq.alerts.title'),
         style:{...card,borderLeft:'5px solid #b97942',padding:'14px 18px',
