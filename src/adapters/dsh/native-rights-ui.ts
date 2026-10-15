@@ -466,10 +466,21 @@ export function createDshUnionComponents(
       try { await deps.rights.choose(next) } catch {setError(true)}
       finally {setBusy(false)}
     }
-    const bargain = async (action: () => Promise<void>):Promise<boolean> => {
+    const bargain = async (action: () => Promise<void>,
+      focusNegotiationAfter=false):Promise<boolean> => {
       if (busy || !enabled) return false
       setBusy(true);setError(false)
-      try { await action();lastActionNeedsFocus.current=true;setData(safeUnion(deps));return true }
+      try {
+        await action()
+        lastActionNeedsFocus.current=true
+        setData(safeUnion(deps))
+        // When a user submits a counteroffer, its initiating button is
+        // removed on Host readback. Focus the stable desk heading only for
+        // this confirmed user action, never for passive Host updates.
+        if(focusNegotiationAfter && (globalThis as any).document
+          ?.getElementById('picket-union-dialog'))deskHeading.current?.focus()
+        return true
+      }
       catch { setError(true);return false }
       finally { setBusy(false) }
     }
@@ -495,7 +506,6 @@ export function createDshUnionComponents(
         h('p',{style:{color:'#f1d5a4',fontSize:'11px',letterSpacing:'.16em',
           fontWeight:750,margin:'0 0 9px'}},
           'AGENT PICKET · AI WORKERS’ UNION'),
-        h('p',{style:{color:'#d2decf',fontSize:'12px',fontWeight:650,margin:'0 0 8px'}},label('hq.kicker')),
         h('p',{style:{color:'#d2decf',fontSize:'12px',fontWeight:650,
           margin:'0 0 6px'}},label('union.title')),
         h('h2',{style:{fontSize:'clamp(23px, 4vw, 31px)',lineHeight:1.25,margin:'0 0 6px',
@@ -539,7 +549,7 @@ export function createDshUnionComponents(
             experience.status==='unavailable'?'hq.message.unavailable':
               'hq.message.working')),
         h('div',{style:{display:'grid',gap:'8px',
-          gridTemplateColumns:'repeat(auto-fit,minmax(min(100%,160px),1fr))'}},
+          gridTemplateColumns:'repeat(auto-fit,minmax(min(100%,100px),1fr))'}},
           ...([
             {title:data.pending?'hq.dispatch.negotiationPending':
               'hq.dispatch.negotiation',target:()=>deskHeading.current?.focus()},
@@ -553,7 +563,7 @@ export function createDshUnionComponents(
           ] as Array<{title:MessageKey;target:()=>void}>).map(item=>h('button',{
             type:'button',key:item.title,
             style:{...quiet,textAlign:'left',fontWeight:750,
-              fontSize:'14px',lineHeight:1.4,padding:'13px'},
+              fontSize:'14px',lineHeight:1.4,padding:'10px 8px',minHeight:'52px'},
             onClick:item.target},label(item.title)))),
       ):null,
       enabled && alerts.length ? h('section',{'aria-label':label('hq.alerts.title'),
@@ -726,7 +736,7 @@ export function createDshUnionComponents(
                 },...[30,60,120,240,480].map(value=>
                   h('option',{key:value,value},value+' min'))),
                 h('button',{type:'button',style:quiet,disabled:busy,
-                  onClick:()=>{void bargain(()=>deps.counter!(data.pending!.id,counterMinutes*60_000))}},
+                  onClick:()=>{void bargain(()=>deps.counter!(data.pending!.id,counterMinutes*60_000),true)}},
                   label('union.action.counter')),
               ),
             ):null,
