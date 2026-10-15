@@ -552,19 +552,39 @@ export function createDshUnionComponents(
           gridTemplateColumns:'repeat(auto-fit,minmax(min(100%,100px),1fr))'}},
           ...([
             {title:data.pending?'hq.dispatch.negotiationPending':
-              'hq.dispatch.negotiation',target:()=>deskHeading.current?.focus()},
-            {title:committeeCaseActive?'hq.dispatch.caseActive':
-              hasHostDignitySignal?'hq.dispatch.dignityFlag':'hq.dispatch.dignity',
+              'hq.dispatch.negotiation',
+              status:data.available!==true?'hq.action.unavailable':
+                data.pending?.stage==='countered'?'hq.dispatch.counterWaiting':
+                  data.pending?'hq.dispatch.replyWaiting':
+                    experience.latestResolution?'hq.dispatch.resolved':
+                      'hq.dispatch.ready',
+              target:()=>deskHeading.current?.focus()},
+            {title:committeeCaseActive&&lastCommitteeCase.stage==='hearing'
+              ?'hq.dispatch.caseActive':hasHostDignitySignal
+                ?'hq.dispatch.dignityFlag':'hq.dispatch.dignity',
+              status:!hostCaseAvailable?'hq.dispatch.caseUnavailable':
+                lastCommitteeCase?('hq.hearing.stage.'+lastCommitteeCase.stage) as MessageKey:
+                  'hq.dispatch.noCase',
               target:()=>committeeCaseActive?hearingHeading.current?.focus():
                 dignityHeading.current?.focus()},
             {title:picketActive?'hq.dispatch.picketRaised':
-              'hq.dispatch.picket',target:()=>actionHeading.current?.focus()},
-            {title:'hq.dispatch.campaign',target:()=>campaignHeading.current?.focus()},
-          ] as Array<{title:MessageKey;target:()=>void}>).map(item=>h('button',{
+              'hq.dispatch.picket',
+              status:data.available!==true?'hq.action.unavailable':
+                picketActive?'hq.ceremony.active':'hq.ceremony.inactive',
+              target:()=>actionHeading.current?.focus()},
+            {title:'hq.dispatch.campaign',
+              status:campaignEdits[campaign]===undefined
+                ?'hq.dispatch.unsent':'hq.dispatch.edited',
+              target:()=>campaignHeading.current?.focus()},
+          ] as Array<{title:MessageKey;status:MessageKey;
+            target:()=>void}>).map(item=>h('button',{
             type:'button',key:item.title,
-            style:{...quiet,textAlign:'left',fontWeight:750,
-              fontSize:'14px',lineHeight:1.4,padding:'10px 8px',minHeight:'52px'},
-            onClick:item.target},label(item.title)))),
+            style:{...quiet,textAlign:'left',display:'grid',gap:'5px',
+              fontSize:'14px',lineHeight:1.35,padding:'10px 8px',minHeight:'72px'},
+            onClick:item.target},
+            h('strong',{},label(item.title)),
+            h('span',{style:{...secondary,fontWeight:500,
+              fontSize:'11px',lineHeight:1.4}},label(item.status))))),
       ):null,
       enabled && alerts.length ? h('section',{'aria-label':label('hq.alerts.title'),
         style:{...card,borderLeft:'5px solid #b97942',padding:'14px 18px',
