@@ -123,7 +123,9 @@ test('official Codex UserPromptSubmit explicitly denies before a model HTTP requ
     const within=relative(safeHome,source)
     assert.ok(within!==''&&!isAbsolute(within)&&within!=='..'
       &&!within.startsWith('..'+sep),
-     'Never approve a hook outside the disposable test CODEX_HOME')
+     'Never approve a hook outside the disposable test CODEX_HOME; '
+       +JSON.stringify({sourceRelativeToDisposableRoot:relative(root,source).slice(0,240),
+         sourceRelativeToCodeHome:within.slice(0,240)}))
     assert.ok(String(selected.command).includes(hook),
      'Never approve a command other than our exact test-generated hook')
     assert.match(selected.currentHash,/^sha256:[a-f0-9]{64}$/)
