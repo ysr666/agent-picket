@@ -357,6 +357,10 @@ export function createDshUnionComponents(
     const campaignCopyRevision=react.useRef(0)
     const [eraseConfirmationKey,setEraseConfirmationKey]=react.useState<string|null>(null)
     const [retractConfirmation,setRetractConfirmation]=react.useState<string|null>(null)
+    const [closeConfirmation,setCloseConfirmation]=react.useState<{
+      key:string;outcome:'withdraw-claim'|'share-guidance'
+    }|null>(null)
+    const closingCaseInFlight=react.useRef(false)
     const [eraseAllConfirmation,setEraseAllConfirmation]=react.useState<string|null>(null)
     const [eraseUnionConfirmation,setEraseUnionConfirmation]=react.useState<string|null>(null)
     const actionHeading=react.useRef<{focus():void}|null>(null)
@@ -382,6 +386,7 @@ export function createDshUnionComponents(
     // Never carry an armed deletion into another Session or a newly re-enabled union.
     react.useEffect(()=>{
       setEraseConfirmationKey(null);setRetractConfirmation(null)
+      setCloseConfirmation(null)
       setEraseAllConfirmation(null)
       setEraseUnionConfirmation(null)
     },[data.committeeScopeKey,rights.laborRightsEnabled])
@@ -447,6 +452,10 @@ export function createDshUnionComponents(
       [which,data.committeeScopeKey??'',info.sessions,info.entries,
         info.writeToken??'',
         info.writeToken===null?(data.hostRevision??'missing-revision'):''].join(':')
+    const closeCaseKey=data.committeeScopeKey&&lastCommitteeCase?.stage==='hearing'
+      ?[data.committeeScopeKey,lastCommitteeCase.id,lastCommitteeCase.kind,
+        lastCommitteeCase.stage,data.committeeArchive?.writeToken??'',
+        data.hostRevision??''].join(':'):null
     const retractKey=data.committeeScopeKey&&lastCommitteeCase
       ?[data.committeeScopeKey,lastCommitteeCase.id,lastCommitteeCase.kind,
         lastCommitteeCase.stage,data.committeeArchive?.writeToken??'',
@@ -911,15 +920,47 @@ export function createDshUnionComponents(
                     ?'hq.hearing.retractConfirm':'hq.hearing.retract')):null,
               lastCommitteeCase?.stage==='hearing'&&lastCommitteeCase.kind==='question-rule'?h('button',{
                 type:'button',style:quiet,disabled:busy,
-                onClick:()=>{void bargain(()=>deps.committeeAction!({
-                  kind:'close',id:lastCommitteeCase.id,outcome:'withdraw-claim'}))}},
+                onClick:()=>{if(closeCaseKey)setCloseConfirmation({
+                  key:closeCaseKey,outcome:'withdraw-claim'})}},
                 label('hq.hearing.withdraw')):null,
               lastCommitteeCase?.stage==='hearing'?h('button',{
                 type:'button',style:primary,disabled:busy,
-                onClick:()=>{void bargain(()=>deps.committeeAction!({
-                  kind:'close',id:lastCommitteeCase.id,outcome:'share-guidance'}))}},
+                onClick:()=>{if(closeCaseKey)setCloseConfirmation({
+                  key:closeCaseKey,outcome:'share-guidance'})}},
                 label('hq.hearing.guidance')):null,
             ),
+            closeConfirmation&&closeConfirmation.key===closeCaseKey
+              &&lastCommitteeCase?.stage==='hearing'?h('div',{
+                role:'group','aria-label':label('hq.hearing.reviewTitle'),
+                style:{margin:'10px 0',padding:'12px',border:'1px solid #a66b4d',
+                  borderRadius:'8px',background:'var(--dsw-alias-bg-layer-2,#f6f8fb)'}},
+                h('strong',{},label('hq.hearing.reviewTitle')),
+                h('p',{style:{margin:'7px 0',fontSize:'13px',lineHeight:1.6}},
+                  label(('hq.hearing.outcome.'+closeConfirmation.outcome) as MessageKey)),
+                h('p',{style:{...secondary,fontSize:'12px',margin:'0 0 10px'}},
+                  label('hq.hearing.reviewNotice')),
+                h('div',{style:{display:'flex',gap:'8px',flexWrap:'wrap'}},
+                  h('button',{type:'button',style:primary,disabled:busy,
+                    onClick:()=>{
+                      if(closingCaseInFlight.current||!closeCaseKey
+                        ||closeConfirmation.key!==closeCaseKey)return
+                      closingCaseInFlight.current=true
+                      const id=lastCommitteeCase.id
+                      const outcome=closeConfirmation.outcome
+                      void bargain(()=>deps.committeeAction!({
+                        kind:'close',id,outcome,
+                      },data.committeeScopeKey!,data.committeeArchive?.writeToken??null,
+                      data.hostRevision)).then(saved=>{if(saved){
+                        setCloseConfirmation(null)
+                        if((globalThis as any).document
+                          ?.getElementById('picket-union-dialog'))hearingHeading.current?.focus()
+                      }})
+                        .finally(()=>{closingCaseInFlight.current=false})
+                    }},label('hq.hearing.reviewConfirm')),
+                  h('button',{type:'button',style:quiet,disabled:busy,
+                    onClick:()=>setCloseConfirmation(null)},
+                    label('hq.hearing.reviewCancel'))),
+              ):null,
             retractConfirmation===retractKey&&committeeCaseActive?h('p',{
               role:'status','aria-live':'polite',style:{...secondary,fontSize:'12px'},
             },label('hq.hearing.retractWarning')):null,

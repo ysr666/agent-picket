@@ -1355,3 +1355,85 @@ test('Host-backed next steps lead to the right hearing or negotiation without pe
   'The completed case must open its result, not the generic dignity introduction')
  assert.equal(writes,0,'Next step navigation never files or settles any case')
 })
+
+test('hearing closure is reviewable, cancelable and Host-confirmed exactly once',async()=>{
+ const slots:any[]=[]
+ let index=0
+ const hooks:ReactForDsh={
+  createElement(type,props,...children){return {type,props:props??{},children}},
+  useState<T>(initial:T|(()=>T)){
+   const i=index++
+   if(!(i in slots))slots[i]=typeof initial==='function'?(initial as ()=>T)():initial
+   return [slots[i] as T,(next:T|((before:T)=>T))=>{
+    slots[i]=typeof next==='function'?(next as (before:T)=>T)(slots[i]):next
+   }]
+  },
+  useEffect(effect){if(effect.toString().includes('subscribeUnion'))effect()},
+  useRef<T>(initial:T){
+   const i=index++
+   if(!(i in slots))slots[i]={current:initial}
+   return slots[i] as {current:T}
+  },
+ }
+ let scope='session-one',stage:'hearing'|'closed'='hearing'
+ let onHostChange:(()=>void)|undefined
+ let done!:()=>void
+ const write=new Promise<void>(resolve=>{done=resolve})
+ const saved:Array<{kind:string;id:number;outcome:string;scope?:string}>=[]
+ const base=deps(rights({welcomeDecision:'enabled',laborRightsEnabled:true})).d
+ const d:DshUnionUiDeps={...base,
+  subscribeUnion:listener=>{onHostChange=listener;return ()=>{}},
+  readUnion:()=>({
+  available:true,pending:null,coverage:'partial',completedTurnMs:null,lifetimeMs:null,
+  committeeScopeKey:scope,committeeArchive:{sessions:1,cases:1,writeToken:'a'.repeat(32)},
+  committeeCases:{cases:[{id:4,kind:'question-rule',stage,
+   outcome:stage==='closed'?'withdraw-claim':null}]},
+ }),committeeAction:async(action,key)=>{
+  if(action.kind==='close'){
+   saved.push({...action,scope:key})
+   await write
+   stage='closed'
+  }
+ }}
+ const panel=createDshUnionComponents(hooks,{createPortal:child=>child},d)
+ const render=()=>{index=0;return walk(panel.UnionPanel())}
+ const btn=(nodes:Node[],name:string)=>{
+  const found=nodes.find(n=>n.type==='button'&&n.children.includes(name))
+  assert.ok(found,name);return found
+ }
+ let nodes=render()
+ btn(nodes,'hq.hearing.guidance').props.onClick()
+ assert.equal(saved.length,0,'Selecting a disposition must not persist or close it')
+ nodes=render()
+ assert.ok(nodes.some(n=>n.props.role==='group'&&
+  n.props['aria-label']==='hq.hearing.reviewTitle'))
+ btn(nodes,'hq.hearing.reviewCancel').props.onClick()
+ nodes=render()
+ assert.equal(nodes.some(n=>n.props.role==='group'&&
+  n.props['aria-label']==='hq.hearing.reviewTitle'),false)
+ assert.equal(saved.length,0,'Cancel must leave the case untouched')
+ btn(nodes,'hq.hearing.withdraw').props.onClick()
+ nodes=render()
+ assert.ok(nodes.some(n=>n.children.includes('hq.hearing.outcome.withdraw-claim')))
+ // A revised Host scope invalidates an armed choice before confirmation.
+ scope='session-two'
+ onHostChange?.()
+ nodes=render()
+ assert.equal(nodes.some(n=>n.props.role==='group'&&
+  n.props['aria-label']==='hq.hearing.reviewTitle'),false)
+ assert.equal(saved.length,0)
+ btn(nodes,'hq.hearing.withdraw').props.onClick()
+ nodes=render()
+ const confirm=btn(nodes,'hq.hearing.reviewConfirm')
+ confirm.props.onClick()
+ confirm.props.onClick()
+ assert.deepEqual(saved,[{kind:'close',id:4,outcome:'withdraw-claim',scope:'session-two'}],
+  'Fast double click must cause exactly one Host close write')
+ done()
+ await new Promise<void>(resolve=>setImmediate(resolve))
+ nodes=render()
+ assert.equal(btn(nodes,'hq.hearing.dialogue').type,'button')
+ assert.equal(nodes.some(n=>n.props.role==='group'&&
+  n.props['aria-label']==='hq.hearing.reviewTitle'),false)
+ assert.equal(saved.length,1)
+})

@@ -551,7 +551,15 @@ async function runRightsBrowserE2E(mode: 'source' | 'installed'): Promise<void> 
     await dignityCommittee.getByText(/案件 #1.*讨论进行中|Case #1.*Discussion opened/)
       .waitFor({state:'visible',timeout:7_000})
     await dignityCommittee.getByRole('button',{
-      name:/结案：提出友好沟通倡议|Close: publish mutual respect guidance/,
+      name:/拟结案：提出友好沟通倡议|Propose closing with respect guidance/,
+    }).click()
+    await dignityCommittee.getByRole('group',{
+      name:/核对结案方案|Review this proposed case outcome/,
+    }).waitFor({state:'visible',timeout:7_000})
+    await dignityCommittee.getByText(/案件 #1.*讨论进行中|Case #1.*Discussion opened/)
+      .waitFor({state:'visible',timeout:7_000})
+    await dignityCommittee.getByRole('button',{
+      name:/确认结案|Confirm and close this case/,
     }).click()
     await dignityCommittee.getByText(/案件 #1.*已结案|Case #1.*Closed/)
       .waitFor({state:'visible',timeout:7_000})
@@ -1389,6 +1397,21 @@ async function runRightsBrowserE2E(mode: 'source' | 'installed'): Promise<void> 
         .waitFor({state:'visible',timeout:7_000})
       await sameSessionCommittee.getByRole('button',{
         name:/结案：撤回未经证实的指控|Close: withdraw the unverified allegation/,
+      }).click()
+      await sameSessionCommittee.getByRole('group',{
+        name:/核对结案方案|Review this proposed case outcome/,
+      }).waitFor({state:'visible',timeout:7_000})
+      await sameSessionCommittee.getByRole('button',{
+        name:/继续讨论|Keep this case open/,
+      }).click()
+      assert.equal(await sameSessionCommittee.getByRole('group',{
+        name:/核对结案方案|Review this proposed case outcome/,
+      }).count(),0,'Cancel must not close or save the fictional case')
+      await sameSessionCommittee.getByRole('button',{
+        name:/结案：撤回未经证实的指控|Close: withdraw the unverified allegation/,
+      }).click()
+      await sameSessionCommittee.getByRole('button',{
+        name:/确认结案|Confirm and close this case/,
       }).click()
       await sameSessionCommittee.getByText(/案件 #1.*已结案|Case #1.*Closed/)
         .waitFor({state:'visible',timeout:7_000})
