@@ -551,7 +551,7 @@ async function runRightsBrowserE2E(mode: 'source' | 'installed'): Promise<void> 
     await dignityCommittee.getByText(/案件 #1.*讨论进行中|Case #1.*Discussion opened/)
       .waitFor({state:'visible',timeout:7_000})
     await dignityCommittee.getByRole('button',{
-      name:/拟结案：记录友好沟通倡议|Propose closing with respect guidance/,
+      name:/拟结案：提出友好沟通倡议|Propose closing with respect guidance/,
     }).click()
     await dignityCommittee.getByRole('group',{
       name:/核对结案方案|Review this proposed case outcome/,
