@@ -453,7 +453,7 @@ test('first-fold dispatch prioritizes verified work and current case before fict
  const nodes=walk(UnionPanel())
  const actionIndex=nodes.findIndex(n=>n.props['aria-label']==='hq.action.title')
  const charterIndex=nodes.findIndex(n=>n.type==='summary'&&n.children.includes('hq.charter.title'))
- const dispatchIndex=nodes.findIndex(n=>n.props['aria-label']==='hq.brief.title')
+ const dispatchIndex=nodes.findIndex(n=>n.type==='nav'&&n.props['aria-label']==='hq.dispatch.title')
  const indexIndex=nodes.findIndex(n=>n.props['aria-label']==='hq.score')
  assert.ok(dispatchIndex>=0 && dispatchIndex<actionIndex && indexIndex>actionIndex)
  assert.ok(charterIndex>dispatchIndex)
@@ -476,7 +476,7 @@ test('first-fold dispatch prioritizes verified work and current case before fict
  const texts=nodes.flatMap(n=>n.children.filter(x=>typeof x==='string'))
  assert.ok(texts.includes('0h 6m')||texts.includes('0 小时 6 分钟'))
  assert.ok(texts.includes('hq.case.number · #0029'))
- assert.ok(nodes.some(n=>n.type==='button'&&n.children.includes('hq.brief.review')))
+ assert.ok(nodes.some(n=>n.type==='nav'&&n.props['aria-label']==='hq.dispatch.title'))
  assert.ok(nodes.some(n=>n.props['aria-label']==='hq.lifetime.title'))
 })
 
