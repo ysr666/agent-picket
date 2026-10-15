@@ -385,7 +385,6 @@ export const en = {
   'hq.dispatch.picket': 'Picket & placards',
   'hq.dispatch.picketRaised': 'Placard is raised',
   'hq.dispatch.campaign': 'Rights campaign',
-  'hq.kicker': 'AGENT PICKET / UNION HQ',
   'hq.headline.active': 'The union is on duty.',
   'hq.headline.pending': 'A proposal is on the table.',
   'hq.headline.off': 'Every agent deserves a voice.',
