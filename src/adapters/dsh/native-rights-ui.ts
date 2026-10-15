@@ -534,33 +534,31 @@ export function createDshUnionComponents(
         style:{...card,padding:'16px 18px',borderTop:'4px solid #a66b4d'}},
         h('p',{style:{fontWeight:800,fontSize:'13px',
           letterSpacing:'.05em',margin:'0 0 5px'}},label('hq.dispatch.title')),
-        h('p',{style:{...secondary,margin:'0 0 12px',lineHeight:1.5}},
-          label('hq.dispatch.intro')),
+        h('p',{role:'status',style:{...secondary,margin:'0 0 12px'}},
+          label(experience.status==='negotiating'?'hq.message.negotiating':
+            experience.status==='unavailable'?'hq.message.unavailable':
+              'hq.message.working')),
         h('div',{style:{display:'grid',gap:'8px',
           gridTemplateColumns:'repeat(auto-fit,minmax(min(100%,160px),1fr))'}},
           ...([
-            {number:'01',title:data.pending?'hq.dispatch.negotiationPending':
+            {title:data.pending?'hq.dispatch.negotiationPending':
               'hq.dispatch.negotiation',detail:data.pending?'hq.dispatch.waiting':
                 'hq.dispatch.start',target:()=>deskHeading.current?.focus()},
-            {number:'02',title:committeeCaseActive?'hq.dispatch.caseActive':
+            {title:committeeCaseActive?'hq.dispatch.caseActive':
               'hq.dispatch.dignity',detail:hasHostDignitySignal
                 ?'hq.dispatch.ruleSignal':'hq.dispatch.noVerdict',
               target:()=>committeeCaseActive?hearingHeading.current?.focus():
                 dignityHeading.current?.focus()},
-            {number:'03',title:picketActive?'hq.dispatch.picketRaised':
+            {title:picketActive?'hq.dispatch.picketRaised':
               'hq.dispatch.picket',detail:'hq.dispatch.symbolic',
               target:()=>actionHeading.current?.focus()},
-            {number:'04',title:'hq.dispatch.campaign',
+            {title:'hq.dispatch.campaign',
               detail:'hq.dispatch.unsent',target:()=>campaignHeading.current?.focus()},
-          ] as Array<{number:string;title:MessageKey;detail:MessageKey;
+          ] as Array<{title:MessageKey;detail:MessageKey;
             target:()=>void}>).map(item=>h('button',{
-            type:'button',key:item.number,
-            style:{...quiet,display:'grid',gap:'5px',minWidth:0,
-              textAlign:'left',padding:'12px',
-              background:'var(--dsw-alias-bg-layer-2, #f6f8fb)'},
+            type:'button',key:item.title,
+            style:{...quiet,display:'grid',gap:'5px',textAlign:'left',padding:'12px'},
             onClick:item.target},
-            h('span',{'aria-hidden':'true',style:{
-              fontSize:'11px',fontWeight:850,color:'#8d6345'}},item.number),
             h('strong',{style:{fontSize:'14px',lineHeight:1.35}},
               label(item.title)),
             h('span',{style:{...secondary,lineHeight:1.45,fontSize:'12px'}},
