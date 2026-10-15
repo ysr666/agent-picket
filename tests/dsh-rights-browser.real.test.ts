@@ -790,6 +790,14 @@ async function runRightsBrowserE2E(mode: 'source' | 'installed'): Promise<void> 
       })
       assert.ok(dispatchReflow.scroll<=dispatchReflow.width+2,
         'First-fold Union dispatch must not overflow on a 320 CSS-pixel viewport')
+      const mobileActions=await dispatch.getByRole('button').all()
+      assert.equal(mobileActions.length,4)
+      const firstAction=await mobileActions[0]!.boundingBox()
+      const secondAction=await mobileActions[1]!.boundingBox()
+      assert.ok(firstAction&&secondAction&&
+        Math.abs(firstAction.y-secondAction.y)<3&&
+        secondAction.x>firstAction.x+firstAction.width-3,
+        'At 320px, show two real union actions per row instead of burying three below the fold')
       if(process.env.PICKET_HQ_SCREENSHOT==='1'){
         await panel.evaluate((node:any)=>{node.scrollTop=0})
         await panel.screenshot({path:'/tmp/picket-firstfold-'+mode+'-320.png'})
