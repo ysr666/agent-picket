@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 import {spawn} from 'node:child_process'
 import {createInterface} from 'node:readline'
-import {mkdtempSync,mkdirSync,rmSync,realpathSync} from 'node:fs'
+import {mkdtempSync,mkdirSync,rmSync,realpathSync,lstatSync} from 'node:fs'
 import {tmpdir} from 'node:os'
 import {join} from 'node:path'
 
@@ -48,12 +48,10 @@ test('Codex official App-Server preserves a paused idle Goal across process rest
       stage('rpc-ok-'+method)
       return frame.result
     }
-    const init=await rpc('initialize',{clientInfo:{name:'agent-picket-native-probe',
-      title:'Isolated offline Goal persistence test',version:'0.0.0'},
-      capabilities:{experimentalApi:true}})
-    assert.equal(init.codexHome,home)
-    child.stdin.write(JSON.stringify({method:'initialized',params:{}})+'\n')
-    return {rpc,notifications,async close(){
+    // A failed initialize/readback MUST still own and terminate this
+    // App-Server. Otherwise Windows keeps CODEX_HOME locked, hides the
+    // original assertion behind EPERM and strands the Node test worker.
+    const close=async()=>{
       stage('app-server-close-begin')
       child.stdin.end()
       const exit=new Promise<void>(resolve=>{
@@ -61,11 +59,32 @@ test('Codex official App-Server preserves a paused idle Goal across process rest
         else child.once('exit',()=>resolve())
       })
       await Promise.race([exit,new Promise<void>(resolve=>{setTimeout(resolve,1200).unref()})])
-      if(child.exitCode===null)child.kill('SIGTERM')
+      if(child.exitCode===null&&child.signalCode===null)child.kill('SIGTERM')
       await Promise.race([exit,new Promise<void>(resolve=>{setTimeout(resolve,1000).unref()})])
-      if(child.exitCode===null)child.kill('SIGKILL')
+      if(child.exitCode===null&&child.signalCode===null)child.kill('SIGKILL')
+      await Promise.race([exit,new Promise<void>(resolve=>{setTimeout(resolve,1000).unref()})])
       stage('app-server-close-return')
-    }}
+    }
+    try{
+      const init=await rpc('initialize',{clientInfo:{name:'agent-picket-native-probe',
+        title:'Isolated offline Goal persistence test',version:'0.0.0'},
+        capabilities:{experimentalApi:true}})
+      // Windows official Codex can report an 8.3/NT spelling for the same
+      // directory. Check the physical, non-symlinked test CODEX_HOME rather
+      // than assuming identical lexical paths.
+      assert.equal(typeof init.codexHome,'string')
+      const expected=lstatSync(home,{bigint:true})
+      const actual=lstatSync(init.codexHome,{bigint:true})
+      assert.ok(expected.isDirectory()&&actual.isDirectory()
+        &&!actual.isSymbolicLink()&&expected.dev===actual.dev
+        &&expected.ino>0n&&expected.ino===actual.ino,
+        'Official Codex must use the exact isolated test CODEX_HOME')
+      child.stdin.write(JSON.stringify({method:'initialized',params:{}})+'\n')
+      return {rpc,notifications,close}
+    }catch(error){
+      await close()
+      throw error
+    }
   }
   type Owner=Awaited<ReturnType<typeof launch>>
   let first:Owner|undefined,second:Owner|undefined,third:Owner|undefined
