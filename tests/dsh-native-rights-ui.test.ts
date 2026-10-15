@@ -1310,3 +1310,48 @@ test('four dispatch status lines reflect only current Host snapshots and safe lo
  assert.equal(statuses()[1],'hq.dispatch.noCase',
   'First-fold case status must be short and truthful when Host has no case')
 })
+
+test('Host-backed next steps lead to the right hearing or negotiation without performing actions',()=>{
+ const {hooks}=fakeReact()
+ const base=deps(rights({welcomeDecision:'enabled',laborRightsEnabled:true})).d
+ let stage:'opened'|'hearing'|'closed'='opened'
+ let demand:'open'|'countered'|null='open'
+ let writes=0
+ const d:DshUnionUiDeps={...base,readUnion:()=>({
+  available:true,coverage:'partial',completedTurnMs:0,lifetimeMs:null,
+  pending:demand?{id:3,kind:'break',stage:demand}:null,
+  committeeScopeKey:'case-scope',
+  committeeCases:{cases:[{id:7,kind:'question-rule',stage,
+   outcome:stage==='closed'?'share-guidance':null}]},
+  picket:{active:false,history:[]},
+ }),committeeAction:async()=>{writes++}}
+ const render=()=>{
+  const nodes=walk(createDshUnionComponents(hooks,{createPortal:child=>child},d).UnionPanel())
+  const board=nodes.find(n=>n.type==='nav'&&n.props['aria-label']==='hq.dispatch.title')
+  assert.ok(board)
+  return {nodes,buttons:walk(board).filter(n=>n.type==='button')}
+ }
+ const next=(buttons:Node[])=>buttons.slice(0,2)
+  .map(n=>(n.children[2] as Node|null)?.children[0]??null)
+ let view=render()
+ assert.deepEqual(next(view.buttons),['hq.next.reply','hq.next.convene'])
+ let hearingFocus=0
+ const hearing=view.nodes.find(n=>n.type==='h4'&&n.children.includes('hq.hearing.title'))
+ assert.ok(hearing)
+ hearing.props.ref({focus(){hearingFocus++}})
+ view.buttons[1]!.props.onClick()
+ assert.equal(hearingFocus,1,'Clicking a filed case opens its actual hearing')
+ stage='hearing';demand='countered'
+ view=render()
+ assert.deepEqual(next(view.buttons),['hq.next.counter','hq.next.close'])
+ stage='closed';demand=null
+ view=render()
+ assert.deepEqual(next(view.buttons),[null,'hq.next.outcome'])
+ const closedHearing=view.nodes.find(n=>n.type==='h4'&&n.children.includes('hq.hearing.title'))
+ assert.ok(closedHearing)
+ closedHearing.props.ref({focus(){hearingFocus++}})
+ view.buttons[1]!.props.onClick()
+ assert.equal(hearingFocus,2,
+  'The completed case must open its result, not the generic dignity introduction')
+ assert.equal(writes,0,'Next step navigation never files or settles any case')
+})
