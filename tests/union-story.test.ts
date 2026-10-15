@@ -184,3 +184,30 @@ test('malformed duplicate case IDs do not create duplicate episode React keys or
  assert.deepEqual(x.cases.map(e=>e.id),[8,7])
  assert.deepEqual(projectUnionStory({...base(),state}).episodes,x.episodes)
 })
+
+test('stale Host work prevents shift reports and invented follow-ups without erasing cases',()=>{
+ const state={...freshLaborState(),lastTriggerElapsedMs:7_200_000,
+   history:[{id:5,kind:'break' as const,outcome:'counter-accepted' as const}]}
+ const stale=projectUnionStory({...base(),state,completedTurnMs:4_000_000})
+ assert.equal(stale.workEvidence,'stale')
+ assert.equal(stale.verifiedWorkMs,null)
+ assert.equal(stale.nextDueInWorkMs,null)
+ assert.equal(stale.scene,'accepted','Keep genuine Host case outcome')
+ assert.deepEqual(stale.episodes.map(x=>x.id),[5])
+ assert.equal(stale.episodes[0]?.currentTermMs,state.agreement.breakIntervalMs)
+ assert.equal(stale.episodes[0]?.remainingVerifiedWorkMs,null)
+ const caughtUp=projectUnionStory({...base(),state,completedTurnMs:7_200_000})
+ assert.equal(caughtUp.workEvidence,'verified')
+ assert.equal(caughtUp.verifiedWorkMs,7_200_000)
+ assert.equal(projectUnionStory({...base(),state,completedTurnMs:7_200_000,
+   coverage:'partial'}).workEvidence,'incomplete')
+ assert.equal(projectUnionStory({...base(),state,enabled:false,
+   completedTurnMs:4_000_000}).workEvidence,'incomplete')
+})
+test('stale complete snapshot cannot manufacture a shift report',()=>{
+ const state={...freshLaborState(),lastTriggerElapsedMs:4_500_000}
+ const x=projectUnionStory({...base(),state,completedTurnMs:4_000_000})
+ assert.equal(x.scene,'quiet')
+ assert.equal(x.workEvidence,'stale')
+ assert.equal(x.nextDueInWorkMs,null)
+})
