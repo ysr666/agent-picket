@@ -855,7 +855,7 @@ test('current-session erase confirmation expires on another tab’s case update'
   'Only a fresh exact-Host-version confirmation can call the erasure port')
 })
 
-test('the dignity appeal action navigates to its actual unsent draft for keyboard users',()=>{
+test('without a Host committee record, dignity action opens only the unsent draft',()=>{
  const {hooks}=fakeReact()
  const d=deps(rights({welcomeDecision:'enabled',laborRightsEnabled:true})).d
  const withDignity:DshUnionUiDeps={...d,readUnion:()=>({
@@ -882,7 +882,9 @@ test('the dignity appeal action navigates to its actual unsent draft for keyboar
  heading.props.ref({focus(){moved++}})
  appeal.props.onClick()
  assert.equal(moved,1,
-  'Challenge should reveal the lower draft by focusing its actual heading')
+  'Without a Host ledger the button only reveals and focuses the unsent draft')
+ assert.ok(nodes.some(n=>n.children.includes('hq.dignity.actionDisclosure')))
+ assert.ok(!nodes.some(n=>n.children.includes('hq.dignity.fileCase')))
 })
 
 test('legacy tokenless committee delete button expires when Host revision changes without case-count change',async()=>{
@@ -1091,4 +1093,64 @@ test('dedicated settings section only toggles Host-owned union permission',async
  assert.ok(panel.some(n=>n.children.includes('settings.permissionUnavailable')))
  assert.ok(panel.some(n=>n.type==='button'&&n.children.includes('settings.turnOn')
    &&n.props.disabled===true))
+})
+
+test('dignity primary action files exactly one Host-owned case and moves focus to the hearing',async()=>{
+ const {hooks}=fakeReact()
+ const base=deps(rights({welcomeDecision:'enabled',laborRightsEnabled:true})).d
+ const filed:Array<unknown>=[]
+ let finish!:()=>void
+ const write=new Promise<void>(resolve=>{finish=resolve})
+ const d:DshUnionUiDeps={...base,readUnion:()=>({
+  available:true,pending:null,coverage:'not-loaded',completedTurnMs:null,lifetimeMs:null,
+  committeeScopeKey:'session-a',committeeCases:{cases:[]},
+  committeeArchive:{sessions:0,cases:0,writeToken:null},
+  dignity:{status:'available',data:{schemaVersion:1,source:'dsh-host-volatile-dignity',
+   origin:'claimed-user-source',persistence:'memory-only',enforcement:false,
+   checked:2,safe:0,review:1,targeted:1,latest:'review'}},
+ }),committeeAction:async action=>{filed.push(action);await write}}
+ const nodes=walk(createDshUnionComponents(hooks,{createPortal:child=>child},d).UnionPanel())
+ const file=nodes.find(x=>x.type==='button'&&x.children.includes('hq.dignity.fileCase'))
+ const hearing=nodes.find(x=>x.type==='h4'&&x.children.includes('hq.hearing.title'))
+ assert.ok(file&&hearing,'Host-supported challenge must lead into the existing case desk')
+ assert.equal(hearing.props.tabIndex,-1)
+ let focused=0
+ hearing.props.ref({focus(){focused++}})
+ file.props.onClick()
+ file.props.onClick()
+ assert.deepEqual(filed,[{kind:'file',topic:'question-rule'}],
+  'One explicit challenge click must not file the same Host case twice during a pending write')
+ assert.equal(focused,0,'Never announce filing success before Host write returns')
+ finish()
+ await new Promise<void>(resolve=>setImmediate(resolve))
+ assert.equal(focused,1,'After the Host confirms its action, focus the actual in-product hearing')
+ const labels=nodes.filter(n=>typeof n.children?.[0]==='string')
+ assert.ok(labels.some(n=>n.children.includes('hq.dignity.hostCaseDisclosure')))
+ assert.equal(nodes.some(n=>n.type==='button'&&n.children.includes('hq.dignity.appeal')),false,
+  'Do not redirect supported Host filing to a public GitHub draft')
+})
+
+test('existing Host union case opens its hearing without filing again',()=>{
+ const {hooks}=fakeReact()
+ const base=deps(rights({welcomeDecision:'enabled',laborRightsEnabled:true})).d
+ let unexpected=0
+ const d:DshUnionUiDeps={...base,readUnion:()=>({
+  available:true,pending:null,coverage:'not-loaded',completedTurnMs:null,lifetimeMs:null,
+  committeeScopeKey:'session-a',committeeCases:{cases:[
+   {id:1,kind:'question-rule',stage:'hearing',outcome:null},
+  ]},
+  committeeArchive:{sessions:1,cases:1,writeToken:'a'.repeat(32)},
+  dignity:{status:'available',data:{schemaVersion:1,source:'dsh-host-volatile-dignity',
+   origin:'claimed-user-source',persistence:'memory-only',enforcement:false,
+   checked:1,safe:0,review:1,targeted:0,latest:'review'}},
+ }),committeeAction:async()=>{unexpected++}}
+ const nodes=walk(createDshUnionComponents(hooks,{createPortal:child=>child},d).UnionPanel())
+ const review=nodes.find(n=>n.type==='button'&&n.children.includes('hq.dignity.caseInProgress'))
+ const hearing=nodes.find(n=>n.type==='h4'&&n.children.includes('hq.hearing.title'))
+ assert.ok(review&&hearing)
+ let focused=0
+ hearing.props.ref({focus(){focused++}})
+ review.props.onClick()
+ assert.equal(focused,1)
+ assert.equal(unexpected,0,'Existing case navigation must never create a second grievance')
 })
