@@ -466,10 +466,21 @@ export function createDshUnionComponents(
       try { await deps.rights.choose(next) } catch {setError(true)}
       finally {setBusy(false)}
     }
-    const bargain = async (action: () => Promise<void>):Promise<boolean> => {
+    const bargain = async (action: () => Promise<void>,
+      focusNegotiationAfter=false):Promise<boolean> => {
       if (busy || !enabled) return false
       setBusy(true);setError(false)
-      try { await action();lastActionNeedsFocus.current=true;setData(safeUnion(deps));return true }
+      try {
+        await action()
+        lastActionNeedsFocus.current=true
+        setData(safeUnion(deps))
+        // When a user submits a counteroffer, its initiating button is
+        // removed on Host readback. Focus the stable desk heading only for
+        // this confirmed user action, never for passive Host updates.
+        if(focusNegotiationAfter && (globalThis as any).document
+          ?.getElementById('picket-union-dialog'))deskHeading.current?.focus()
+        return true
+      }
       catch { setError(true);return false }
       finally { setBusy(false) }
     }
@@ -726,7 +737,7 @@ export function createDshUnionComponents(
                 },...[30,60,120,240,480].map(value=>
                   h('option',{key:value,value},value+' min'))),
                 h('button',{type:'button',style:quiet,disabled:busy,
-                  onClick:()=>{void bargain(()=>deps.counter!(data.pending!.id,counterMinutes*60_000))}},
+                  onClick:()=>{void bargain(()=>deps.counter!(data.pending!.id,counterMinutes*60_000),true)}},
                   label('union.action.counter')),
               ),
             ):null,
