@@ -1356,6 +1356,34 @@ test('Host-backed next steps lead to the right hearing or negotiation without pe
  assert.equal(writes,0,'Next step navigation never files or settles any case')
 })
 
+test('union results bulletin never synthesizes unverified or absent receipts',()=>{
+ const {hooks}=fakeReact()
+ const base=deps(rights({welcomeDecision:'enabled',laborRightsEnabled:true})).d
+ const state={schemaVersion:1 as const,revision:1,
+  agreement:{breakIntervalMs:1_800_000,overtimeIntervalMs:28_800_000},
+  nextBreakDueMs:3_600_000,nextOvertimeDueMs:28_800_000,
+  lastTriggerElapsedMs:0,pending:null,
+  history:[{id:12,kind:'break' as const,outcome:'accepted' as const}]}
+ let available=true,hasHistory=true,hasCase=true
+ const d:DshUnionUiDeps={...base,readUnion:()=>({
+  available,coverage:'partial',completedTurnMs:null,lifetimeMs:null,pending:null,
+  state:hasHistory?state:{...state,history:[]},committeeScopeKey:'scope',
+  committeeCases:{cases:hasCase?[{id:3,kind:'question-rule',
+   stage:'closed',outcome:'withdraw-claim'}]:[]},
+ })}
+ const ui=createDshUnionComponents(hooks,{createPortal:child=>child},d)
+ const receipts=()=>walk(ui.UnionPanel())
+  .filter(n=>n.props['aria-label']==='hq.results.title')
+  .flatMap(n=>walk(n).filter(child=>child.type==='button'))
+ assert.equal(receipts().length,2)
+ hasHistory=false
+ assert.equal(receipts().length,1)
+ hasCase=false
+ assert.equal(receipts().length,0)
+ hasHistory=true;hasCase=true;available=false
+ assert.equal(receipts().length,0)
+})
+
 test('hearing closure is reviewable, cancelable and Host-confirmed exactly once',async()=>{
  const slots:any[]=[]
  let index=0
