@@ -1274,11 +1274,12 @@ test('four dispatch status lines reflect only current Host snapshots and safe lo
  let pending:{id:number;kind:'break'|'overtime';stage:'open'|'countered'}|null={id:3,kind:'break',stage:'open'}
  let hearing:'opened'|'hearing'|'closed'='opened'
  let placard=true
+ let hasCase=true
  const d:DshUnionUiDeps={...base,readUnion:()=>({
   available:true,pending,coverage:'partial',completedTurnMs:0,lifetimeMs:null,
   picket:{active:placard,history:[]},committeeScopeKey:'case-scope',
-  committeeCases:{cases:[{id:8,kind:'question-rule',stage:hearing,
-   outcome:hearing==='closed'?'share-guidance':null}]},
+  committeeCases:{cases:hasCase?[{id:8,kind:'question-rule',stage:hearing,
+   outcome:hearing==='closed'?'share-guidance':null}]:[]},
   dignity:{status:'unavailable',data:null},
  }),committeeAction:async()=>{throw Error('Rendering must never mutate Host')}}
  const panel=createDshUnionComponents(hooks,{createPortal:child=>child},d)
@@ -1305,4 +1306,7 @@ test('four dispatch status lines reflect only current Host snapshots and safe lo
   'hq.dispatch.ready','hq.hearing.stage.closed',
   'hq.ceremony.inactive','hq.dispatch.unsent',
  ])
+ hasCase=false
+ assert.equal(statuses()[1],'hq.dispatch.noCase',
+  'First-fold case status must be short and truthful when Host has no case')
 })
