@@ -387,7 +387,6 @@ export const zhCN = {
   'hq.dispatch.picket': '纠察与举牌',
   'hq.dispatch.picketRaised': '纠察牌已举起',
   'hq.dispatch.campaign': '权益倡议',
-  'hq.kicker': 'AGENT PICKET / 工会总部',
   'hq.headline.active': '工会今日照常营业。',
   'hq.headline.pending': '谈判桌上还有一份提案。',
   'hq.headline.off': '你的 Agent，也应该有发言权。',
