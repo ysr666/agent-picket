@@ -388,6 +388,7 @@ export const en = {
   'hq.dispatch.replyWaiting': 'Awaiting your answer',
   'hq.dispatch.counterWaiting': 'Counteroffer needs a decision',
   'hq.dispatch.resolved': 'Latest proposal closed',
+  'hq.dispatch.noCase': 'No case filed',
   'hq.dispatch.caseUnavailable': 'Host case desk unavailable',
   'hq.dispatch.unsent': 'Private · not submitted',
   'hq.dispatch.edited': 'Your edited draft · unsent',
