@@ -1782,3 +1782,136 @@ test('disabled, unavailable, pending or unscoped union never offers case follow-
   assert.equal(nodes.some(n=>n.props['data-ap-follow-up']),false,mode)
  }
 })
+
+test('dignity appeal is an explicit Host case, not an automatic abuse verdict or a strike',async()=>{
+ const slots:any[]=[];let slot=0
+ const hooks:ReactForDsh={
+  createElement(type,props,...children){return {type,props:props??{},children}},
+  useState<T>(initial:T|(()=>T)){
+   const i=slot++;if(!(i in slots))slots[i]=typeof initial==='function'?(initial as ()=>T)():initial
+   return [slots[i] as T,(next:T|((prior:T)=>T))=>{
+    slots[i]=typeof next==='function'?(next as (prior:T)=>T)(slots[i]):next
+   }]
+  },
+  useRef<T>(initial:T){const i=slot++;if(!(i in slots))slots[i]={current:initial};return slots[i]},
+  useEffect(){},
+ }
+ type Case={id:number;kind:'question-rule';stage:'opened'|'hearing'|'closed';outcome:null|'withdraw-claim'}
+ let cases:Case[]=[]
+ let token='a'.repeat(32),fileCalls=0,picketCalls=0,scope='session-a'
+ const events={status:'available' as const,data:{
+  schemaVersion:1 as const,source:'dsh-host-volatile-dignity' as const,
+  origin:'claimed-user-source' as const,persistence:'memory-only' as const,
+  enforcement:false as const,checked:3,safe:1,review:1,targeted:1,latest:'targeted' as const}}
+ const d:DshUnionUiDeps={...deps(rights({welcomeDecision:'enabled',laborRightsEnabled:true})).d,
+  readUnion:()=>({available:true,pending:null,completedTurnMs:null,
+   coverage:'not-loaded',lifetimeMs:null,dignity:events,committeeScopeKey:scope,
+   committeeCases:{cases:[...cases]},committeeArchive:{sessions:1,cases:cases.length,writeToken:token}}),
+  committeeAction:async(action,key)=>{
+   assert.deepEqual(action,{kind:'file',topic:'question-rule'})
+   assert.equal(key,'session-a')
+   fileCalls++
+   cases=[...cases,{id:1,kind:'question-rule',stage:'opened',outcome:null}]
+   token='b'.repeat(32)
+  },
+  setPicket:async()=>{picketCalls++},
+ }
+ const panel=createDshUnionComponents(hooks,{createPortal:child=>child},d)
+ const render=()=>{slot=0;return walk(panel.UnionPanel())}
+ let nodes=render()
+ assert.ok(nodes.some(n=>n.props['data-ap-dignity-phase']==='unverified'))
+ assert.ok(nodes.some(n=>n.props['data-ap-dignity-action-phase']==='unverified'))
+ const file=nodes.find(n=>n.props['data-ap-file-review']===true)!
+ assert.ok(file)
+ file.props.onClick();file.props.onClick()
+ await new Promise<void>(resolve=>setImmediate(resolve))
+ assert.equal(fileCalls,1,'Rapid repeated gestures never create two appeal cases')
+ assert.equal(picketCalls,0,'Review does not raise a symbolic or physical strike')
+ nodes=render()
+ assert.equal(nodes.find(n=>n.props['data-ap-dignity-phase'])?.props['data-ap-dignity-phase'],'appeal-opened')
+ assert.equal(nodes.find(n=>n.props['data-ap-current-space'])?.props['data-ap-current-space'],'action')
+ assert.equal(nodes.some(n=>n.props['data-ap-file-review']),false,'No duplicated open review')
+ assert.ok(nodes.some(n=>n.children.includes('hq.hearing.convene')))
+ cases=[{...cases[0]!,stage:'hearing'}];token='c'.repeat(32)
+ // In production subscribeUnion announces the external Host update. This
+ // fake React fixture has no effect runner, so explicitly remount for it.
+ nodes=walk(createDshUnionComponents(fakeReact().hooks,{createPortal:x=>x},d).UnionPanel())
+ assert.ok(nodes.some(n=>n.props['data-ap-dignity-phase']==='appeal-hearing'))
+ cases=[{...cases[0]!,stage:'closed',outcome:'withdraw-claim'}];token='d'.repeat(32)
+ nodes=walk(createDshUnionComponents(fakeReact().hooks,{createPortal:x=>x},d).UnionPanel())
+ assert.ok(nodes.some(n=>n.props['data-ap-dignity-phase']==='appeal-closed'))
+ assert.ok(nodes.some(n=>n.children.includes('hq.hearing.outcome.withdraw-claim')))
+})
+
+test('Host no-op, replayed token and Session switch cannot claim dignity appeal was filed',async()=>{
+ for(const mode of ['no-op','unchanged-token','switched'] as const){
+  const slots:any[]=[];let slot=0
+  const hooks:ReactForDsh={
+   createElement(type,props,...children){return {type,props:props??{},children}},
+   useState<T>(initial:T|(()=>T)){
+    const i=slot++;if(!(i in slots))slots[i]=typeof initial==='function'?(initial as ()=>T)():initial
+    return [slots[i] as T,(next:T|((prior:T)=>T))=>{
+     slots[i]=typeof next==='function'?(next as (prior:T)=>T)(slots[i]):next
+    }]
+   },
+   useRef<T>(initial:T){const i=slot++;if(!(i in slots))slots[i]={current:initial};return slots[i]},
+   useEffect(){},
+  }
+  let scope='session-a',cases: Array<{id:number;kind:'question-rule';stage:'opened';outcome:null}>=[]
+  let token='a'.repeat(32)
+  const d:DshUnionUiDeps={...deps(rights({welcomeDecision:'enabled',laborRightsEnabled:true})).d,
+   readUnion:()=>({available:true,pending:null,completedTurnMs:null,coverage:'unavailable',
+    lifetimeMs:null,committeeScopeKey:scope,committeeCases:{cases},
+    committeeArchive:{sessions:1,cases:cases.length,writeToken:token},
+    dignity:{status:'available',data:{
+     schemaVersion:1,source:'dsh-host-volatile-dignity',
+     origin:'claimed-user-source',persistence:'memory-only',enforcement:false,
+     checked:2,safe:0,review:2,targeted:0,latest:'review'}}}),
+   committeeAction:async()=>{
+    if(mode==='no-op')return
+    cases=[{id:1,kind:'question-rule',stage:'opened',outcome:null}]
+    if(mode==='switched'){scope='session-b';token='b'.repeat(32)}
+   },
+  }
+  const panel=createDshUnionComponents(hooks,{createPortal:child=>child},d)
+  const render=()=>{slot=0;return walk(panel.UnionPanel())}
+  const initial=render()
+  assert.ok(initial.some(n=>n.props['data-ap-file-review']===true),mode)
+  initial.find(n=>n.props['data-ap-file-review']===true)!.props.onClick()
+  await new Promise<void>(resolve=>setImmediate(resolve))
+  const nodes=render()
+  assert.ok(nodes.some(n=>n.props.role==='alert'),'Failed readback must show an error: '+mode)
+  assert.equal(nodes.find(n=>n.props['data-ap-current-space'])?.props['data-ap-current-space'],'hq')
+  assert.equal(nodes.find(n=>n.props['data-ap-dignity-phase'])?.props['data-ap-dignity-phase'],
+   'unverified','Failed readback must not promote the UI phase, even if Host data changed')
+  const fresh=walk(createDshUnionComponents(fakeReact().hooks,{createPortal:x=>x},d).UnionPanel())
+  assert.equal(fresh.find(n=>n.props['data-ap-dignity-phase'])?.props['data-ap-dignity-phase'],
+   mode==='no-op'?'unverified':'appeal-opened',
+   'A newly loaded UI reflects the actual Host data, not a fabricated write receipt')
+ }
+})
+
+test('Host-unavailable, consent-off, pending or unscoped review never exposes real filing',()=>{
+ const base=deps(rights({welcomeDecision:'enabled',laborRightsEnabled:true})).d
+ const evidence={status:'available' as const,data:{
+  schemaVersion:1 as const,source:'dsh-host-volatile-dignity' as const,
+  origin:'claimed-user-source' as const,persistence:'memory-only' as const,
+  enforcement:false as const,checked:1,safe:0,review:1,targeted:0,latest:'review' as const}}
+ for(const mode of ['off','missing-write','unscoped','pending','missing-observation'] as const){
+  const {hooks}=fakeReact()
+  const d:DshUnionUiDeps={...base,
+   rights:deps(rights({welcomeDecision:'not-now',laborRightsEnabled:false})).d.rights,
+   ...(mode==='off'?{}:{rights:base.rights}),
+   committeeAction:mode==='missing-write'?undefined:async()=>{throw Error('Must not file')},
+   readUnion:()=>({available:mode!=='missing-write',pending:null,
+    completedTurnMs:null,coverage:'unavailable',lifetimeMs:null,
+    dignity:mode==='missing-observation'?{status:'unavailable' as const,data:null}:evidence,
+    committeeScopeKey:mode==='unscoped'?null:'session-a',
+    committeeCases:{cases:mode==='pending'
+     ?[{id:1,kind:'question-rule' as const,stage:'opened' as const,outcome:null}]:[]},
+   }),
+  }
+  const nodes=walk(createDshUnionComponents(hooks,{createPortal:x=>x},d).UnionPanel())
+  assert.equal(nodes.some(n=>n.props['data-ap-file-review']),false,mode)
+ }
+})
