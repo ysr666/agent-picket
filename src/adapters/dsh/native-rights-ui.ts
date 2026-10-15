@@ -566,55 +566,6 @@ export function createDshUnionComponents(
             h('span',{style:{...secondary,lineHeight:1.45,fontSize:'12px'}},
               label(item.detail))))),
       ):null,
-      enabled ? h('section',{style:{display:'grid',gap:'12px',
-        gridTemplateColumns:'repeat(auto-fit,minmax(min(100%,275px),1fr))'},
-        'aria-label':label('hq.brief.title')},
-        h('article',{style:{...card,padding:'17px 20px',
-          borderTop:'4px solid #b99b67'}},
-          h('p',{style:{...secondary,fontWeight:800,
-            letterSpacing:'.08em',fontSize:'11px',margin:'0 0 9px'}},
-            label('hq.brief.ledger')),
-          h('p',{style:{fontSize:'clamp(26px,4vw,33px)',fontWeight:800,
-            lineHeight:1.2,margin:'0 0 9px'}},
-            data.lifetimeWork?.status==='available' && data.lifetimeWork.data
-              ?formatDuration(data.lifetimeWork.data.lifetime.completedTurnMs,
-                deps.getLocale?.()??'en')
-              :'—'),
-          h('p',{style:{...secondary,margin:'0 0 8px'}},
-            data.lifetimeWork?.status==='available' && data.lifetimeWork.data
-              ?deps.t('hq.lifetime.turns',{
-                count:data.lifetimeWork.data.lifetime.turnEnds})
-              :label(data.lifetimeWork?.status==='loading'
-                ?'hq.lifetime.loading':'hq.brief.workUnknown')),
-          h('p',{style:{...secondary,fontSize:'12px',margin:0}},
-            label('hq.brief.realWork'))),
-        h('article',{style:{...card,padding:'17px 20px',
-          borderTop:'4px solid #426f61'}},
-          h('p',{style:{...secondary,fontWeight:800,
-            letterSpacing:'.08em',fontSize:'11px',margin:'0 0 9px'}},
-            label('hq.brief.desk')),
-          h('p',{style:{fontSize:'17px',fontWeight:750,
-            lineHeight:1.4,margin:'0 0 9px'}},
-            data.pending?label(data.pending.stage==='countered'
-              ?'hq.case.countered':'hq.case.open')
-              :experience.latestResolution
-                ?label(experience.latestResolution.outcome==='accepted'
-                  || experience.latestResolution.outcome==='counter-accepted'
-                    ?'hq.brief.resolved':'hq.brief.declined')
-                :label('hq.brief.quiet')),
-          h('p',{style:{...secondary,margin:'0 0 10px'}},
-            data.pending
-              ?label('hq.case.number')+' · #'+
-                String(data.pending.id).padStart(4,'0')
-              :experience.latestResolution
-                ?label('hq.case.number')+' · #'+
-                  String(experience.latestResolution.id).padStart(4,'0')
-                :label(experience.status==='unavailable'
-                  ?'hq.message.unavailable':'hq.message.working')),
-          h('button',{type:'button',style:{...quiet,padding:'8px 12px',
-            fontSize:'13px'},onClick:()=>deskHeading.current?.focus()},
-            label(data.pending?'hq.brief.review':'hq.brief.visit'))),
-      ):null,
       enabled && alerts.length ? h('section',{'aria-label':label('hq.alerts.title'),
         style:{...card,borderLeft:'5px solid #b97942',padding:'14px 18px',
           background:'var(--dsw-alias-bg-layer-2, #f6f8fb)'}},
