@@ -1650,3 +1650,135 @@ test('Gazette explains stale Host work instead of promising a fictional follow-u
  assert.equal(verified.some(n=>n.props['data-ap-work-evidence']==='stale'),false)
  assert.match(JSON.stringify(verified.find(n=>n.props['aria-label']==='hq.story.title')),/hq.story.next/)
 })
+
+// A closed-case follow-up must create a new Host-owned petition, not mutate
+// yesterday's outcome or navigate on a fulfilled but unconfirmed RPC.
+test('latest resolved union case can file one new same-kind Host petition and opens the desk',async()=>{
+ const slots:any[]=[]
+ let slot=0
+ const hooks:ReactForDsh={
+  createElement(type,props,...children){return {type,props:props??{},children}},
+  useState<T>(initial:T|(()=>T)){
+   const i=slot++
+   if(!(i in slots))slots[i]=typeof initial==='function'?(initial as ()=>T)():initial
+   return [slots[i] as T,(next:T|((prior:T)=>T))=>{
+    slots[i]=typeof next==='function'?(next as (prior:T)=>T)(slots[i]):next
+   }]
+  },
+  useRef<T>(initial:T){const i=slot++;if(!(i in slots))slots[i]={current:initial};return slots[i]},
+  useEffect(){},
+ }
+ let state={
+  schemaVersion:1 as const,revision:3,
+  agreement:{breakIntervalMs:3_600_000,overtimeIntervalMs:28_800_000},
+  nextBreakDueMs:14_400_000,nextOvertimeDueMs:28_800_000,
+  lastTriggerElapsedMs:7_200_000,
+  pending:null as {id:number;kind:'break'|'overtime';stage:'open';raisedAtElapsedMs:number;counterOfferMs:null}|null,
+  history:[{id:2,kind:'break' as const,outcome:'counter-accepted' as const}],
+ }
+ let writes=0
+ const d:DshUnionUiDeps={...deps(rights({welcomeDecision:'enabled',laborRightsEnabled:true})).d,
+  readUnion:()=>({available:true,state,pending:state.pending,
+   completedTurnMs:7_200_000,coverage:'complete',lifetimeMs:null,
+   committeeScopeKey:'session-A'}),
+  demoBreak:async()=>{
+   writes++
+   state={...state,revision:state.revision+1,pending:{
+    id:state.revision+1,kind:'break',stage:'open',
+    raisedAtElapsedMs:state.lastTriggerElapsedMs,counterOfferMs:null}}
+  },
+ }
+ const panel=createDshUnionComponents(hooks,{createPortal:child=>child},d)
+ const render=()=>{slot=0;return walk(panel.UnionPanel())}
+ let nodes=render()
+ const buttons=nodes.filter(n=>n.type==='button'&&n.props['data-ap-follow-up']==='break')
+ assert.equal(buttons.length,2,'Latest case is actionable from HQ and the saved casebook')
+ assert.ok(buttons.every(n=>n.children.includes('hq.episode.followUp.break')))
+ buttons[0]!.props.onClick()
+ buttons[1]!.props.onClick()
+ await new Promise<void>(resolve=>setImmediate(resolve))
+ assert.equal(writes,1,'Two same-render clicks must create only one Host petition')
+ assert.equal(state.pending?.id,4)
+ assert.deepEqual(state.history,[{id:2,kind:'break',outcome:'counter-accepted'}],
+  'The previous agreement is retained, not rewritten into the new petition')
+ nodes=render()
+ assert.equal(nodes.find(n=>n.props['data-ap-current-space'])?.props['data-ap-current-space'],'action')
+ assert.equal(nodes.some(n=>n.type==='button'&&n.props['data-ap-follow-up']),false,
+  'A pending petition blocks duplicate follow-up controls')
+ assert.ok(nodes.some(n=>n.children.includes('hq.episode.stage.demand')),
+  'Both the new open case and the archived outcome are visible in the casebook')
+})
+test('resolved overtime follow-up selects overtime, while Host no-op and cross-Session receipt refuse success',async()=>{
+ function setup(kind:'overtime'|'break',mode:'confirmed'|'no-op'|'switched'){
+  const slots:any[]=[];let slot=0
+  const hooks:ReactForDsh={
+   createElement(type,props,...children){return {type,props:props??{},children}},
+   useState<T>(initial:T|(()=>T)){
+    const i=slot++;if(!(i in slots))slots[i]=typeof initial==='function'?(initial as ()=>T)():initial
+    return [slots[i] as T,(next:T|((prior:T)=>T))=>{
+     slots[i]=typeof next==='function'?(next as (prior:T)=>T)(slots[i]):next
+    }]
+   },
+   useRef<T>(initial:T){const i=slot++;if(!(i in slots))slots[i]={current:initial};return slots[i]},
+   useEffect(){},
+  }
+  const original={schemaVersion:1 as const,revision:8,
+   agreement:{breakIntervalMs:7_200_000,overtimeIntervalMs:28_800_000},
+   nextBreakDueMs:14_400_000,nextOvertimeDueMs:57_600_000,
+   lastTriggerElapsedMs:28_800_000,pending:null as null|{id:number;kind:'break'|'overtime';stage:'open';raisedAtElapsedMs:number;counterOfferMs:null},
+   history:[{id:7,kind,outcome:'declined' as const}]}
+  let state=original,scope='session-A',calls=0
+  const submit=async()=>{
+   calls++
+   if(mode==='no-op')return
+   state={...state,revision:state.revision+1,pending:{
+    id:state.revision+1,kind,stage:'open',
+    raisedAtElapsedMs:state.lastTriggerElapsedMs,counterOfferMs:null}}
+   if(mode==='switched')scope='session-B'
+  }
+  const d:DshUnionUiDeps={...deps(rights({welcomeDecision:'enabled',laborRightsEnabled:true})).d,
+   readUnion:()=>({available:true,state,pending:state.pending,
+    completedTurnMs:28_800_000,coverage:'complete',lifetimeMs:null,committeeScopeKey:scope}),
+   demoBreak:kind==='break'?submit:undefined,
+   demoOvertime:kind==='overtime'?submit:undefined,
+  }
+  const panel=createDshUnionComponents(hooks,{createPortal:child=>child},d)
+  return {render:()=>{slot=0;return walk(panel.UnionPanel())},calls:()=>calls}
+ }
+ for(const mode of ['confirmed','no-op','switched'] as const){
+  const x=setup('overtime',mode)
+  const start=x.render()
+  assert.equal(start.filter(n=>n.props['data-ap-follow-up']==='overtime').length,2)
+  assert.equal(start.some(n=>n.props['data-ap-follow-up']==='break'),false)
+  await start.find(n=>n.type==='button'&&n.props['data-ap-follow-up']==='overtime')!.props.onClick()
+  await new Promise<void>(resolve=>setImmediate(resolve))
+  assert.equal(x.calls(),1)
+  const current=x.render()
+  if(mode==='confirmed')assert.equal(current.find(n=>n.props['data-ap-current-space'])?.props['data-ap-current-space'],'action')
+  else{
+   assert.equal(current.find(n=>n.props['data-ap-current-space'])?.props['data-ap-current-space'],'hq')
+   assert.ok(current.some(n=>n.props.role==='alert'),'Failed Host readback must be visible')
+  }
+ }
+})
+test('disabled, unavailable, pending or unscoped union never offers case follow-up',()=>{
+ const original={schemaVersion:1 as const,revision:4,
+  agreement:{breakIntervalMs:7_200_000,overtimeIntervalMs:28_800_000},
+  nextBreakDueMs:14_400_000,nextOvertimeDueMs:28_800_000,
+  lastTriggerElapsedMs:0,pending:null,
+  history:[{id:3,kind:'break' as const,outcome:'accepted' as const}]}
+ for(const mode of ['off','unavailable','unscoped','pending'] as const){
+  const rightsState=rights({welcomeDecision:mode==='off'?'not-now':'enabled',
+   laborRightsEnabled:mode!=='off'})
+  const {hooks}=fakeReact()
+  const d:DshUnionUiDeps={...deps(rightsState).d,
+   demoBreak:async()=>{throw Error('Must remain unavailable')},
+   readUnion:()=>({available:mode!=='unavailable',
+    state:mode==='unavailable'?null:original,
+    pending:mode==='pending'?{id:9,kind:'break' as const,stage:'open' as const}:null,
+    completedTurnMs:0,coverage:'complete',lifetimeMs:null,
+    committeeScopeKey:mode==='unscoped'?null:'session-A'})}
+  const nodes=walk(createDshUnionComponents(hooks,{createPortal:x=>x},d).UnionPanel())
+  assert.equal(nodes.some(n=>n.props['data-ap-follow-up']),false,mode)
+ }
+})
