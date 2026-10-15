@@ -6,7 +6,7 @@ import {once} from 'node:events'
 import {createInterface} from 'node:readline'
 import {mkdtempSync,mkdirSync,rmSync,realpathSync,writeFileSync,readFileSync} from 'node:fs'
 import {tmpdir} from 'node:os'
-import {join,resolve} from 'node:path'
+import {join,resolve,relative,isAbsolute,sep} from 'node:path'
 import {pathToFileURL} from 'node:url'
 import {inspectCodexOfficialPromptHook} from '../src/adapters/codex/prompt-hook-readiness.ts'
 
@@ -114,7 +114,15 @@ test('official Codex UserPromptSubmit explicitly denies before a model HTTP requ
     const selected=configured[0]
     assert.equal(selected.trustStatus,'untrusted',
      'New synthetic hook is deliberately NOT trusted automatically')
-    assert.ok(String(selected.sourcePath).startsWith(home),
+    // On native Windows Codex may return an extended/normalized path that
+    // does not share the original lexical prefix. Compare actual filesystem
+    // locations, not string prefixes; this also rejects reparse escapes.
+    assert.equal(typeof selected.sourcePath,'string')
+    const source=realpathSync(selected.sourcePath)
+    const safeHome=realpathSync(home)
+    const within=relative(safeHome,source)
+    assert.ok(within!==''&&!isAbsolute(within)&&within!=='..'
+      &&!within.startsWith('..'+sep),
      'Never approve a hook outside the disposable test CODEX_HOME')
     assert.ok(String(selected.command).includes(hook),
      'Never approve a command other than our exact test-generated hook')
