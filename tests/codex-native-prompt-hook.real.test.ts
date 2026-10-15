@@ -64,8 +64,14 @@ test('official Codex UserPromptSubmit explicitly denies before a model HTTP requ
      mode==='fail'?`process.exit(1);\n`:
      `process.stdout.write('{}');\n`))
    // Codex's user/root hooks are a separate mechanism from Goal.status.
+   // JSON.stringify is suitable for serializing a POSIX shell argument
+   // but doubles Windows separators before the Hook command is executed.
+   // The synthetic temp path has no quotes; emit one native quoted argv.
+   assert.equal(hook.includes('"'),false)
+   const command=process.platform==='win32'
+     ?'node "'+hook+'"':'node '+JSON.stringify(hook)
    writeFileSync(join(home,'hooks.json'),JSON.stringify({hooks:{
-    UserPromptSubmit:[{hooks:[{type:'command',command:`node ${JSON.stringify(hook)}`}]}],
+    UserPromptSubmit:[{hooks:[{type:'command',command}]}],
    }}))
    writeFileSync(join(home,'config.toml'),[
     'model = "synthetic-model"', 'approval_policy = "never"',
