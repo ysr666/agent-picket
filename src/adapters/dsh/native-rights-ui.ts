@@ -503,6 +503,7 @@ export function createDshUnionComponents(
     const [resumeRequested,setResumeRequested]=react.useState<string|null>(null)
     const [counterMinutes, setCounterMinutes] = react.useState(60)
     const lastActionNeedsFocus=react.useRef(false)
+    const followUpInFlight=react.useRef(false)
     const [showArchive,setShowArchive]=react.useState(false)
     const [space,setSpace]=react.useState<'hq'|'action'|'records'|'cause'>('hq')
     const returnFocus=react.useRef<'action'|'desk'|'dignity'|null>(null)
@@ -694,6 +695,34 @@ export function createDshUnionComponents(
       } catch {setError(true)}
       finally {setBusy(false)}
     }
+    // A closed case remains immutable. Filing a follow-up creates a NEW
+    // Host-owned petition, and only its confirmed ledger readback may open
+    // the bargaining desk. This does not automatically interrupt Agent work.
+    const followUp = async (priorId:number,kind:'break'|'overtime')=>{
+      const submit=kind==='break'?deps.demoBreak:deps.demoOvertime
+      const scope=data.committeeScopeKey
+      const previous=data.state
+      if(followUpInFlight.current||busy||!enabled||!data.available
+        ||data.pending||!submit||!scope
+        ||!previous||previous.history.at(-1)?.id!==priorId)return
+      followUpInFlight.current=true
+      setBusy(true);setError(false)
+      try{
+        await submit()
+        const current=safeUnion(deps)
+        if(!current.available||current.committeeScopeKey!==scope
+          ||!current.state||current.state.revision<=previous.revision
+          ||current.state.history.at(-1)?.id!==priorId
+          ||current.pending?.kind!==kind||current.pending.id===priorId
+          ||current.pending.stage!=='open'){
+          throw new Error('Host did not confirm a new union petition')
+        }
+        lastActionNeedsFocus.current=true
+        setData(current)
+        selectSpace('action','desk')
+      }catch{setError(true)}
+      finally{followUpInFlight.current=false;setBusy(false)}
+    }
     return h('section',{className:'ap-ui ap-product','data-ap-view':'hq','data-ap-current-space':space,style:{display:'grid',gap:'12px',width:'100%',maxWidth:'860px',padding:'3px 0'}},
       h('style',{'data-agent-picket-style':'v1'},UNION_THEME),
       h('header',{className:'ap-product-header'},
@@ -836,6 +865,13 @@ export function createDshUnionComponents(
           dutyState==='resolved'?h('button',{type:'button',style:quiet,
             onClick:()=>selectSpace('action','desk')},
             label('hq.brief.visit')):null,
+          dutyState==='resolved'&&experience.latestResolution&&data.committeeScopeKey
+            &&(experience.latestResolution.kind==='break'?deps.demoBreak:deps.demoOvertime)
+            ?h('button',{type:'button',style:productPrimary,disabled:busy,
+              'data-ap-follow-up':experience.latestResolution.kind,
+              onClick:()=>{void followUp(experience.latestResolution!.id,
+                experience.latestResolution!.kind)}},
+              label(('hq.episode.followUp.'+experience.latestResolution.kind) as MessageKey)):null,
           dutyState==='quiet'&&deps.demoBreak?h('button',{type:'button',
             style:productPrimary,disabled:busy,
             onClick:()=>{void bargain(deps.demoBreak!)}},
@@ -1357,6 +1393,17 @@ export function createDshUnionComponents(
                   ...quiet,padding:'7px 10px',fontSize:'12px',marginTop:'7px'},
                   onClick:()=>selectSpace('action','desk')},
                   label('hq.episode.reply')):null,
+              index===0&&!data.pending&&data.available===true
+                &&data.committeeScopeKey&&data.state?.history.at(-1)?.id===episode.id
+                &&(episode.kind==='break'?deps.demoBreak:deps.demoOvertime)
+                ?h('div',{style:{marginTop:'8px'}},
+                  h('button',{type:'button',style:{...quiet,
+                    padding:'7px 10px',fontSize:'12px'},disabled:busy,
+                    'data-ap-follow-up':episode.kind,
+                    onClick:()=>{void followUp(episode.id,episode.kind)}},
+                    label(('hq.episode.followUp.'+episode.kind) as MessageKey)),
+                  h('p',{style:{...secondary,fontSize:'11px',margin:'5px 0 0'}},
+                    label('hq.episode.followUp.note'))):null,
             ))):null,
           story.actions.length?h('div',{style:{marginTop:'16px'}},
             h('h4',{style:{fontSize:'14px',margin:'0 0 6px'}},
