@@ -5,6 +5,7 @@ on:
     paths:
       - '.github/workflows/codex-native-host-proof.yml'
       - 'tests/codex-goal-controlled-boundary.real.test.ts'
+      - 'tests/codex-goal-native.real.test.ts'
       - 'tests/codex-goal-multiowner-race.real.test.ts'
       - 'tests/codex-native-prompt-hook.real.test.ts'
       - 'src/adapters/codex/**'
@@ -27,11 +28,15 @@ jobs:
           - codex-goal-controlled-boundary.real.test.ts
           - codex-goal-multiowner-race.real.test.ts
           - codex-native-prompt-hook.real.test.ts
+          # Official cross-process cold Goal hold/readback/recovery contract.
+          - codex-goal-native.real.test.ts
         include:
           # Real Windows official UserPromptSubmit contract, scoped to the
           # actual Windows executable. Goal/tool claims remain separate.
           - os: windows-latest
             probe: codex-native-prompt-hook.real.test.ts
+          - os: windows-latest
+            probe: codex-goal-native.real.test.ts
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
