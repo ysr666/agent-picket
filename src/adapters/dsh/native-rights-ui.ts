@@ -506,7 +506,6 @@ export function createDshUnionComponents(
         h('p',{style:{color:'#f1d5a4',fontSize:'11px',letterSpacing:'.16em',
           fontWeight:750,margin:'0 0 9px'}},
           'AGENT PICKET · AI WORKERS’ UNION'),
-        h('p',{style:{color:'#d2decf',fontSize:'12px',fontWeight:650,margin:'0 0 8px'}},label('hq.kicker')),
         h('p',{style:{color:'#d2decf',fontSize:'12px',fontWeight:650,
           margin:'0 0 6px'}},label('union.title')),
         h('h2',{style:{fontSize:'clamp(23px, 4vw, 31px)',lineHeight:1.25,margin:'0 0 6px',
@@ -550,7 +549,7 @@ export function createDshUnionComponents(
             experience.status==='unavailable'?'hq.message.unavailable':
               'hq.message.working')),
         h('div',{style:{display:'grid',gap:'8px',
-          gridTemplateColumns:'repeat(auto-fit,minmax(min(100%,160px),1fr))'}},
+          gridTemplateColumns:'repeat(auto-fit,minmax(min(100%,100px),1fr))'}},
           ...([
             {title:data.pending?'hq.dispatch.negotiationPending':
               'hq.dispatch.negotiation',target:()=>deskHeading.current?.focus()},
@@ -564,7 +563,7 @@ export function createDshUnionComponents(
           ] as Array<{title:MessageKey;target:()=>void}>).map(item=>h('button',{
             type:'button',key:item.title,
             style:{...quiet,textAlign:'left',fontWeight:750,
-              fontSize:'14px',lineHeight:1.4,padding:'13px'},
+              fontSize:'14px',lineHeight:1.4,padding:'10px 8px',minHeight:'52px'},
             onClick:item.target},label(item.title)))),
       ):null,
       enabled && alerts.length ? h('section',{'aria-label':label('hq.alerts.title'),
