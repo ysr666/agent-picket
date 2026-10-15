@@ -8,6 +8,8 @@ import {join} from 'node:path'
 
 const bin=process.env.AGENT_PICKET_CODEX_BIN
 const eligible=!!bin&&process.env.AGENT_PICKET_CODEX_GOAL_NATIVE==='1'
+// Stage-only native evidence. No Goal objective, prompts or user paths emitted.
+const stage=(name:string)=>{if(process.platform==='win32')console.error('CODEX_GOAL_NATIVE_STAGE='+name)}
 
 test('Codex official App-Server preserves a paused idle Goal across process restart',{
   skip:!eligible&&'Opt-in: isolated official Codex binary required',
@@ -20,6 +22,7 @@ test('Codex official App-Server preserves a paused idle Goal across process rest
     HTTPS_PROXY:'http://127.0.0.1:9',ALL_PROXY:'http://127.0.0.1:9'}
   type Frame={id?:number;error?:{message?:string};result?:any;method?:string}
   async function launch(){
+    stage('app-server-spawn')
     const child=spawn(bin!,['app-server','--enable','goals'],{
       cwd:root,env,stdio:'pipe',windowsHide:true,
     })
@@ -36,11 +39,13 @@ test('Codex official App-Server preserves a paused idle Goal across process rest
     child.stderr.resume()
     const rpc=async(method:string,params:Record<string,unknown>)=>{
       const id=++next
+      stage('rpc-begin-'+method)
       const response=new Promise<Frame>(resolve=>awaiting.set(id,resolve))
       child.stdin.write(JSON.stringify({id,method,params})+'\n')
       const frame=await Promise.race([response,new Promise<never>((_,reject)=>
         setTimeout(()=>reject(new Error('Official Codex timeout: '+method)),9_000).unref())])
       assert.equal(frame.error,undefined,'Codex rejected '+method)
+      stage('rpc-ok-'+method)
       return frame.result
     }
     const init=await rpc('initialize',{clientInfo:{name:'agent-picket-native-probe',
@@ -49,6 +54,7 @@ test('Codex official App-Server preserves a paused idle Goal across process rest
     assert.equal(init.codexHome,home)
     child.stdin.write(JSON.stringify({method:'initialized',params:{}})+'\n')
     return {rpc,notifications,async close(){
+      stage('app-server-close-begin')
       child.stdin.end()
       const exit=new Promise<void>(resolve=>{
         if(child.exitCode!==null||child.signalCode!==null)resolve()
@@ -58,11 +64,13 @@ test('Codex official App-Server preserves a paused idle Goal across process rest
       if(child.exitCode===null)child.kill('SIGTERM')
       await Promise.race([exit,new Promise<void>(resolve=>{setTimeout(resolve,1000).unref()})])
       if(child.exitCode===null)child.kill('SIGKILL')
+      stage('app-server-close-return')
     }}
   }
   type Owner=Awaited<ReturnType<typeof launch>>
   let first:Owner|undefined,second:Owner|undefined,third:Owner|undefined
   try {
+    stage('first-host')
     first=await launch()
     const created=await first.rpc('thread/start',{cwd:root,ephemeral:false})
     const id=created.thread?.id
@@ -85,7 +93,9 @@ test('Codex official App-Server preserves a paused idle Goal across process rest
       threadId:otherId,objective:otherObjective,status:'paused',
     })).goal?.status,'paused')
     assert.equal((await first.rpc('thread/goal/get',{threadId:otherId})).goal?.status,'paused')
+    stage('first-host-close')
     await first.close();first=undefined
+    stage('second-host')
     second=await launch()
     const restored=await second.rpc('thread/resume',{threadId:id})
     assert.equal(restored.thread?.id,id)
@@ -105,7 +115,9 @@ test('Codex official App-Server preserves a paused idle Goal across process rest
       'Blocking one Goal must not block an unrelated second thread')
     assert.equal(unaffectedAfter.goal?.tokensUsed,0)
     assert.ok(second.notifications.includes('thread/goal/updated'))
+    stage('second-host-close')
     await second.close();second=undefined
+    stage('third-host')
     third=await launch()
     assert.equal((await third.rpc('thread/resume',{threadId:id})).thread?.id,id)
     const stillBlocked=await third.rpc('thread/goal/get',{threadId:id})
@@ -120,7 +132,9 @@ test('Codex official App-Server preserves a paused idle Goal across process rest
     assert.equal(stillPaused.goal?.tokensUsed,0)
 
   }finally{
+    stage('cleanup-start')
     await Promise.allSettled([first?.close(),second?.close(),third?.close()])
-    rmSync(root,{recursive:true,force:true})
+    rmSync(root,{recursive:true,force:true,maxRetries:12,retryDelay:200})
+    stage('cleanup-done')
   }
 })
