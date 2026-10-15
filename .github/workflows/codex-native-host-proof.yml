@@ -43,6 +43,24 @@ jobs:
         run: |
           .codex-host/node_modules/.bin/codex --version
           test "$(.codex-host/node_modules/.bin/codex --version)" = "codex-cli 0.146.1"
+      # GitHub-hosted Ubuntu may restrict unprivileged user namespaces via
+      # AppArmor even though Codex's workspace-write sandbox requires them.
+      # Match the official openai/codex-action Linux setup ON THIS EPHEMERAL
+      # RUNNER ONLY; never use danger-full-access or weaken the native tool
+      # assertion. On a self-hosted machine this needs separate approval.
+      - name: Qualify Linux native Codex workspace sandbox
+        if: runner.os == 'Linux' && matrix.probe == 'codex-goal-controlled-boundary.real.test.ts'
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ "$(sysctl -n kernel.unprivileged_userns_clone 2>/dev/null || true)" == "0" ]]; then
+            sudo sysctl -w kernel.unprivileged_userns_clone=1
+          fi
+          if [[ "$(sysctl -n kernel.apparmor_restrict_unprivileged_userns 2>/dev/null || true)" == "1" ]]; then
+            sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
+          fi
+          unshare --user --map-root-user true
+          echo 'CODEX_NATIVE_LINUX_USER_NAMESPACE_AVAILABLE=1'
       - name: Execute selected REAL App-Server offline safety test
         env:
           AGENT_PICKET_CODEX_GOAL_NATIVE: '1'
