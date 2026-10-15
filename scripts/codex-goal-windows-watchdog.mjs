@@ -11,8 +11,15 @@ if(process.platform!=='win32'||process.env.AGENT_PICKET_CODEX_GOAL_NATIVE!=='1')
  console.error('CODEX_GOAL_WINDOWS_NATIVE_RUNNER_UNAVAILABLE')
  process.exit(2)
 }
+const allowed=new Set(['codex-goal-native.real.test.ts',
+ 'codex-goal-multiowner-race.real.test.ts'])
+const selected=process.argv[2]??'codex-goal-native.real.test.ts'
+if(!allowed.has(selected)){
+ console.error('CODEX_GOAL_WINDOWS_NATIVE_UNREVIEWED_PROBE')
+ process.exit(2)
+}
 const root=join(import.meta.dirname,'..')
-const script=join(root,'tests','codex-goal-native.real.test.ts')
+const script=join(root,'tests',selected)
 const child=spawn(process.execPath,[
  '--experimental-strip-types','--test','--test-reporter=tap',script,
 ],{cwd:root,env:process.env,stdio:'inherit',windowsHide:true})

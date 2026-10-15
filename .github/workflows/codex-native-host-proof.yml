@@ -37,6 +37,10 @@ jobs:
             probe: codex-native-prompt-hook.real.test.ts
           - os: windows-latest
             probe: codex-goal-native.real.test.ts
+          # Negative safety proof: do two official Windows owners start the
+          # same active Goal concurrently? A PASS records the danger.
+          - os: windows-latest
+            probe: codex-goal-multiowner-race.real.test.ts
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -84,7 +88,7 @@ jobs:
           unshare --user --map-root-user true
           echo 'CODEX_NATIVE_LINUX_USER_NAMESPACE_AVAILABLE=1'
       - name: Execute selected REAL App-Server offline safety test
-        if: runner.os != 'Windows' || matrix.probe != 'codex-goal-native.real.test.ts'
+        if: runner.os != 'Windows' || (matrix.probe != 'codex-goal-native.real.test.ts' && matrix.probe != 'codex-goal-multiowner-race.real.test.ts')
         env:
           AGENT_PICKET_CODEX_GOAL_NATIVE: '1'
         run: >
@@ -94,7 +98,7 @@ jobs:
       # wrapper watches its REAL official test and kills its process tree on
       # timeout. Exit success ONLY if the native assertions really passed.
       - name: Execute bounded native Windows Goal recovery test
-        if: runner.os == 'Windows' && matrix.probe == 'codex-goal-native.real.test.ts'
+        if: runner.os == 'Windows' && (matrix.probe == 'codex-goal-native.real.test.ts' || matrix.probe == 'codex-goal-multiowner-race.real.test.ts')
         env:
           AGENT_PICKET_CODEX_GOAL_NATIVE: '1'
-        run: node scripts/codex-goal-windows-watchdog.mjs
+        run: node scripts/codex-goal-windows-watchdog.mjs ${{ matrix.probe }}
