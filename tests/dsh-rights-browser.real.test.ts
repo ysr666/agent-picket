@@ -1039,6 +1039,17 @@ async function runRightsBrowserE2E(mode: 'source' | 'installed'): Promise<void> 
       name:/工会小报|Union Gazette/,
     }).innerText(),/协议已归档|Agreement recorded/,
       'An accepted overtime proposal must have a persisted Gazette consequence')
+    const resolutionWall=panel.getByRole('region',{
+      name:/工会公告 · 已登记成果|Union bulletin · verified outcomes/,
+    })
+    await resolutionWall.waitFor({state:'visible',timeout:7_000})
+    assert.match(await resolutionWall.innerText(),/模拟协议已登记|Simulated agreement recorded/)
+    await resolutionWall.getByRole('button',{
+      name:/查看 Host 原始记录|Read the Host record/,
+    }).first().click()
+    assert.equal(await panel.getByRole('heading',{
+      name:/已归档协商决议|FILED RESOLUTION/,
+    }).evaluate((node:any)=>node===(globalThis as any).document.activeElement),true)
     if (process.env.PICKET_LIFETIME_E2E==='1') {
       await panel.getByRole('region',{name:/工会劳动档案|Union work ledger/})
         .waitFor({state:'visible',timeout:7_000})
