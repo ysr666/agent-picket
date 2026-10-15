@@ -41,3 +41,37 @@ Introduce a composable, authenticated **pre-prompt admission boundary** shared b
 **Current user promise:** DSH Web automatic physical refusal stays disabled until the supported Host build passes all of these tests. `ComposerBlocks` may be used for clearly labelled *UI affordances* but is not promoted to enforcement.
 
 Source: `docs/BLOCKING_SAFETY.md`, `src/core/host-hold-port.ts`, `src/core/pre-submit-admission.ts`, Issue #80 and Draft PR #110.
+
+## 2026-10-15: independent published 0.2.1-alpha.3 audit (NOT a new approval)
+
+As of 2026-10-15, the official npm `@deepseek-ai/dsh` tags report **latest/next = 0.2.0-rc.2**, **alpha = 0.2.1-alpha.3**. The alpha.3 package was installed separately in a new `/tmp` prefix with `npm install --ignore-scripts`; Agent Picket did **not** replace a user's DSH installation, touch a personal Host profile, trust unknown commands or modify settings.
+
+The exact **published alpha.3 distribution** passed the static API audit with these observations:
+
+| Published Host capability | alpha.3 |
+| --- | --- |
+| `ComposerBlocks` is present and documented as a UI affordance, not enforcement | Yes |
+| Composer shows disabled state while blocked | Yes |
+| `conversation.send(text)` independently calls the official `Session.prompt` | Yes |
+| `agent/pre-step.reject` has no Host-owned lossless receipt/notice | Yes |
+| Official session/conversation interfaces expose an atomic hold/resume of ordinary user text + ordered image/file attachments | **No published interface found** |
+| Genuine pre-submit no-loss interception capability is proven | **NO; release NO-GO** |
+
+Reproduce with the exact isolated official package version:
+
+```sh
+npm install --prefix /tmp/ap-dsh-alpha3 --ignore-scripts --no-save \
+  --no-package-lock --no-audit --no-fund @deepseek-ai/dsh@0.2.1-alpha.3
+AGENT_PICKET_DSH_HOST=/tmp/ap-dsh-alpha3/node_modules \
+  node scripts/inspect-dsh-web-admission.mjs
+AGENT_PICKET_DSH_HOST=/tmp/ap-dsh-alpha3/node_modules \
+  node --experimental-strip-types --test tests/dsh-web-admission-audit.test.ts
+```
+
+The audit's `knownInstalledVersion` now includes precisely alpha.3, **without turning that knowledge into an authorization flag**. Do not treat Host-provided command attachment-error recovery or client-side input echo retention as proof of atomic **ordinary chat** refusal after `agent/pre-step`. The static declaration scan does not replace a real Web/CLI/Desktop Host E2E with a direct human-authenticated source, byte-for-byte text/files preservation, visible warning, one-time resume, concurrency and cold restart. #80 and the 1.0 release stay **NO-GO**.
+
+### Additional genuine alpha.3 Goal lifecycle check (isolated macOS, 2026-10-15)
+
+The **unmodified published** `@deepseek-ai/dsh@0.2.1-alpha.3` CLI and SDK completed `AGENT_PICKET_DSH_BIN=/tmp/ap-dsh-021-alpha3-scan/node_modules/.bin/dsh AGENT_PICKET_DSH_HOST=/tmp/ap-dsh-021-alpha3-scan/node_modules bash scripts/verify-dsh-goal-safe-boundary.sh` with **5/5 positive native assertions**: `normal` 2/2 (block/cold restore/resume), `threshold` 1/1 (8h synthetic UTC worked-time boundary), `below` 1/1 (one millisecond short must NOT block), and `concurrent` 1/1 (bounded multi-Session scenario). All four modes returned `DSH_GOAL_REAL_E2E_PASS=1`. No installed user's DSH profile, real work or model requests were touched.
+
+This **positive** result is limited to post-Turn **automatic Goal continuation** stop/resume under synthetic E2E permissions; it does not qualify auto-enforcement in production, ordinary Web/CLI/Desktop submission refusal, direct-human source proof, attachment-preserving composer admission, or cross-OS UX. In particular, the **negative** alpha.3 Web published-API check above still reports `verifiedSafeHold:false` and `releaseDecision:'NO-GO'`. #80 remains OPEN.
