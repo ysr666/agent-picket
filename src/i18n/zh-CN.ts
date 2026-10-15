@@ -390,6 +390,7 @@ export const zhCN = {
   'hq.dispatch.replyWaiting': '待你答复',
   'hq.dispatch.counterWaiting': '还价等待决定',
   'hq.dispatch.resolved': '上一提案已结案',
+  'hq.dispatch.noCase': '暂无案件',
   'hq.dispatch.caseUnavailable': 'Host 案件记录不可用',
   'hq.dispatch.unsent': '仅本地 · 未提交',
   'hq.dispatch.edited': '已编辑 · 未提交',
