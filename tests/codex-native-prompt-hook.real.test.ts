@@ -4,7 +4,7 @@ import {spawn, type ChildProcess} from 'node:child_process'
 import {createServer} from 'node:http'
 import {once} from 'node:events'
 import {createInterface} from 'node:readline'
-import {mkdtempSync,mkdirSync,rmSync,realpathSync,writeFileSync,readFileSync} from 'node:fs'
+import {mkdtempSync,mkdirSync,rmSync,realpathSync,writeFileSync,readFileSync,lstatSync} from 'node:fs'
 import {tmpdir} from 'node:os'
 import {join,resolve} from 'node:path'
 import {pathToFileURL} from 'node:url'
@@ -64,8 +64,14 @@ test('official Codex UserPromptSubmit explicitly denies before a model HTTP requ
      mode==='fail'?`process.exit(1);\n`:
      `process.stdout.write('{}');\n`))
    // Codex's user/root hooks are a separate mechanism from Goal.status.
+   // JSON.stringify is suitable for serializing a POSIX shell argument
+   // but doubles Windows separators before the Hook command is executed.
+   // The synthetic temp path has no quotes; emit one native quoted argv.
+   assert.equal(hook.includes('"'),false)
+   const command=process.platform==='win32'
+     ?'node "'+hook+'"':'node '+JSON.stringify(hook)
    writeFileSync(join(home,'hooks.json'),JSON.stringify({hooks:{
-    UserPromptSubmit:[{hooks:[{type:'command',command:`node ${JSON.stringify(hook)}`}]}],
+    UserPromptSubmit:[{hooks:[{type:'command',command}]}],
    }}))
    writeFileSync(join(home,'config.toml'),[
     'model = "synthetic-model"', 'approval_policy = "never"',
@@ -114,8 +120,18 @@ test('official Codex UserPromptSubmit explicitly denies before a model HTTP requ
     const selected=configured[0]
     assert.equal(selected.trustStatus,'untrusted',
      'New synthetic hook is deliberately NOT trusted automatically')
-    assert.ok(String(selected.sourcePath).startsWith(home),
-     'Never approve a hook outside the disposable test CODEX_HOME')
+    // Native Windows can surface the same hooks.json through distinct
+    // DOS/NT path spellings. Trust ONLY the exact physical synthetic file
+    // created here: device+file ID, not a string prefix or a user-claimed
+    // sourcePath. Reject symlinks/reparse aliases and unknown file IDs.
+    assert.equal(typeof selected.sourcePath,'string')
+    const expectedFile=lstatSync(join(home,'hooks.json'),{bigint:true})
+    const actualFile=lstatSync(selected.sourcePath,{bigint:true})
+    assert.ok(expectedFile.isFile()&&actualFile.isFile()
+      &&!actualFile.isSymbolicLink()
+      &&expectedFile.dev===actualFile.dev
+      &&expectedFile.ino>0n&&expectedFile.ino===actualFile.ino,
+      'Never approve a different native Hook source than the test-owned hooks.json')
     assert.ok(String(selected.command).includes(hook),
      'Never approve a command other than our exact test-generated hook')
     assert.match(selected.currentHash,/^sha256:[a-f0-9]{64}$/)

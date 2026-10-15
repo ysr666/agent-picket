@@ -27,6 +27,11 @@ jobs:
           - codex-goal-controlled-boundary.real.test.ts
           - codex-goal-multiowner-race.real.test.ts
           - codex-native-prompt-hook.real.test.ts
+        include:
+          # Real Windows official UserPromptSubmit contract, scoped to the
+          # actual Windows executable. Goal/tool claims remain separate.
+          - os: windows-latest
+            probe: codex-native-prompt-hook.real.test.ts
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -38,11 +43,23 @@ jobs:
         run: >
           npm install --prefix .codex-host --no-save --no-package-lock
           --no-audit --no-fund @openai/codex@0.146.1
-      - name: Confirm actual native Codex version
+      - name: Resolve pinned native Codex executable (including Windows)
         shell: bash
         run: |
-          .codex-host/node_modules/.bin/codex --version
-          test "$(.codex-host/node_modules/.bin/codex --version)" = "codex-cli 0.146.1"
+          node --input-type=module -e '
+            import {existsSync,appendFileSync} from "node:fs";
+            import {join} from "node:path";
+            import {execFileSync} from "node:child_process";
+            const win=process.platform==="win32";
+            const path=join(process.cwd(),".codex-host","node_modules",
+              ...(win?["@openai","codex-win32-x64","vendor",
+                "x86_64-pc-windows-msvc","bin","codex.exe"]:[".bin","codex"]));
+            if(!existsSync(path))throw Error("Official Codex binary missing");
+            const version=execFileSync(path,["--version"],{encoding:"utf8"}).trim();
+            if(version!=="codex-cli 0.146.1")throw Error("Codex version mismatch");
+            appendFileSync(process.env.GITHUB_ENV,"AGENT_PICKET_CODEX_BIN="+path+"\n");
+            console.log("PINNED_OFFICIAL_CODEX="+version);
+          '
       # GitHub-hosted Ubuntu may restrict unprivileged user namespaces via
       # AppArmor even though Codex's workspace-write sandbox requires them.
       # Match the official openai/codex-action Linux setup ON THIS EPHEMERAL
@@ -64,7 +81,6 @@ jobs:
       - name: Execute selected REAL App-Server offline safety test
         env:
           AGENT_PICKET_CODEX_GOAL_NATIVE: '1'
-          AGENT_PICKET_CODEX_BIN: ${{ github.workspace }}/.codex-host/node_modules/.bin/codex
         run: >
           node --experimental-strip-types --test --test-reporter=tap
           tests/${{ matrix.probe }}
