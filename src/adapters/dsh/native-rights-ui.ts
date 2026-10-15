@@ -564,7 +564,7 @@ export function createDshUnionComponents(
                 ?'hq.dispatch.dignityFlag':'hq.dispatch.dignity',
               status:!hostCaseAvailable?'hq.dispatch.caseUnavailable':
                 lastCommitteeCase?('hq.hearing.stage.'+lastCommitteeCase.stage) as MessageKey:
-                  'hq.hearing.none',
+                  'hq.dispatch.noCase',
               target:()=>committeeCaseActive?hearingHeading.current?.focus():
                 dignityHeading.current?.focus()},
             {title:picketActive?'hq.dispatch.picketRaised':
