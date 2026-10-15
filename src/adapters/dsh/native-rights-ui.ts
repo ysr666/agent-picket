@@ -359,7 +359,9 @@ export function createDshUnionComponents(
     const [eraseUnionConfirmation,setEraseUnionConfirmation]=react.useState<string|null>(null)
     const deskHeading=react.useRef<{focus():void}|null>(null)
     const dignityHeading=react.useRef<{focus():void}|null>(null)
+    const hearingHeading=react.useRef<{focus():void}|null>(null)
     const campaignHeading=react.useRef<{focus():void}|null>(null)
+    const caseFilingInFlight=react.useRef(false)
     react.useEffect(()=>{
       if(!lastActionNeedsFocus.current)return
       lastActionNeedsFocus.current=false
@@ -419,6 +421,8 @@ export function createDshUnionComponents(
     }
     const lastCommitteeCase=data.committeeCases?.cases.at(-1)
     const committeeCaseActive=lastCommitteeCase&&lastCommitteeCase.stage!=='closed'
+    const hostCaseAvailable=data.available===true&&!!data.committeeCases
+      &&!!data.committeeScopeKey&&!!deps.committeeAction
     const currentCasesConfirmationKey=data.committeeScopeKey&&data.committeeArchive
       &&data.committeeCases?.cases.length
       ?[data.committeeScopeKey,data.committeeCases.cases.length,
@@ -798,22 +802,39 @@ export function createDshUnionComponents(
           &&(data.dignity.data.review>0||data.dignity.data.targeted>0)
           ?h('div',{style:{display:'flex',gap:'8px',flexWrap:'wrap',margin:'10px 0'}},
             h('button',{type:'button',style:{...quiet,padding:'8px 11px'},
+              disabled:busy,
               onClick:()=>{
+                if(hostCaseAvailable){
+                  // The entry action is a real, voluntary Host case filing,
+                  // never a simulated AI vote or an automatic punishment.
+                  if(committeeCaseActive){hearingHeading.current?.focus();return}
+                  // A second rapid click before React rerenders must not
+                  // create two complaints from one user intention.
+                  if(caseFilingInFlight.current)return
+                  caseFilingInFlight.current=true
+                  void bargain(()=>deps.committeeAction!({
+                    kind:'file',topic:'question-rule',
+                  })).then(saved=>{if(saved)hearingHeading.current?.focus()})
+                    .finally(()=>{caseFilingInFlight.current=false})
+                  return
+                }
+                // No authoritative Host case: offer an *unsent public draft*,
+                // never imply that the user's appeal has been recorded.
                 campaignCopyRevision.current++
                 setCampaign('appeal')
                 setCampaignCopyStatus('idle')
-                // The draft lives below several other sections. Keyboard and
-                // screen-reader users need to land at the actual destination,
-                // not a silent state change at the current scroll position.
                 campaignHeading.current?.focus()
-              }},label('hq.dignity.appeal')),
+              }},label(hostCaseAvailable
+                ?committeeCaseActive?'hq.dignity.caseInProgress':'hq.dignity.fileCase'
+                :'hq.dignity.appeal')),
             data.dignity.data.targeted>=2&&data.available&&deps.setPicket
               &&!picketActive?h('button',{type:'button',style:primary,
                 disabled:busy,
                 onClick:()=>{void bargain(()=>deps.setPicket!(true))}},
                 label('hq.dignity.symbolicAction')):null,
             h('p',{style:{...secondary,width:'100%',fontSize:'12px',margin:0}},
-              label('hq.dignity.actionDisclosure')),
+              label(hostCaseAvailable
+                ?'hq.dignity.hostCaseDisclosure':'hq.dignity.actionDisclosure')),
           ):null,
         data.dignity?.status==='available'&&data.dignity.data
           ?h('p',{style:{...secondary,margin:'5px 0',fontSize:'12px'}},
@@ -823,7 +844,9 @@ export function createDshUnionComponents(
               targeted:data.dignity.data.targeted})):null,
         data.committeeCases&&deps.committeeAction
           ?h('div',{style:{borderTop:'1px solid #d4d7d8',marginTop:'12px',paddingTop:'12px'}},
-            h('h4',{style:{fontSize:'16px',margin:'0 0 8px'}},label('hq.hearing.title')),
+            h('h4',{ref:(node:{focus():void}|null)=>{hearingHeading.current=node},
+              tabIndex:-1,style:{fontSize:'16px',margin:'0 0 8px'}},
+              label('hq.hearing.title')),
             lastCommitteeCase?h('p',{role:'status','aria-live':'polite',
               style:{fontWeight:700,margin:'0 0 8px'}},
               deps.t('hq.hearing.status',{
