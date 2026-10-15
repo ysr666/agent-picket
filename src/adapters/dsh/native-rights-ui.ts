@@ -542,27 +542,19 @@ export function createDshUnionComponents(
           gridTemplateColumns:'repeat(auto-fit,minmax(min(100%,160px),1fr))'}},
           ...([
             {title:data.pending?'hq.dispatch.negotiationPending':
-              'hq.dispatch.negotiation',detail:data.pending?'hq.action.pending':
-                'hq.action.quiet',target:()=>deskHeading.current?.focus()},
+              'hq.dispatch.negotiation',target:()=>deskHeading.current?.focus()},
             {title:committeeCaseActive?'hq.dispatch.caseActive':
-              'hq.dispatch.dignity',detail:hasHostDignitySignal
-                ?'hq.dispatch.ruleSignal':'hq.dispatch.noVerdict',
+              hasHostDignitySignal?'hq.dispatch.dignityFlag':'hq.dispatch.dignity',
               target:()=>committeeCaseActive?hearingHeading.current?.focus():
                 dignityHeading.current?.focus()},
             {title:picketActive?'hq.dispatch.picketRaised':
-              'hq.dispatch.picket',detail:'hq.dispatch.symbolic',
-              target:()=>actionHeading.current?.focus()},
-            {title:'hq.dispatch.campaign',
-              detail:'hq.dispatch.unsent',target:()=>campaignHeading.current?.focus()},
-          ] as Array<{title:MessageKey;detail:MessageKey;
-            target:()=>void}>).map(item=>h('button',{
+              'hq.dispatch.picket',target:()=>actionHeading.current?.focus()},
+            {title:'hq.dispatch.campaign',target:()=>campaignHeading.current?.focus()},
+          ] as Array<{title:MessageKey;target:()=>void}>).map(item=>h('button',{
             type:'button',key:item.title,
-            style:{...quiet,display:'grid',gap:'5px',textAlign:'left',padding:'12px'},
-            onClick:item.target},
-            h('strong',{style:{fontSize:'14px',lineHeight:1.35}},
-              label(item.title)),
-            h('span',{style:{...secondary,lineHeight:1.45,fontSize:'12px'}},
-              label(item.detail))))),
+            style:{...quiet,textAlign:'left',fontWeight:750,
+              fontSize:'14px',lineHeight:1.4,padding:'13px'},
+            onClick:item.target},label(item.title)))),
       ):null,
       enabled && alerts.length ? h('section',{'aria-label':label('hq.alerts.title'),
         style:{...card,borderLeft:'5px solid #b97942',padding:'14px 18px',
