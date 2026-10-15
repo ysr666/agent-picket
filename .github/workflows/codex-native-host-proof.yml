@@ -84,8 +84,32 @@ jobs:
           unshare --user --map-root-user true
           echo 'CODEX_NATIVE_LINUX_USER_NAMESPACE_AVAILABLE=1'
       - name: Execute selected REAL App-Server offline safety test
+        if: runner.os != 'Windows' || matrix.probe != 'codex-goal-native.real.test.ts'
         env:
           AGENT_PICKET_CODEX_GOAL_NATIVE: '1'
         run: >
           node --experimental-strip-types --test --test-reporter=tap
           tests/${{ matrix.probe }}
+      # The official Windows App-Server cold recovery probe can hang after
+      # entering its native process. Keep the real Host assertions unchanged
+      # but bound the entire spawned process tree, emitting stage-only evidence.
+      # A timeout is a HARD FAILURE, never a skip or simulated success.
+      - name: Execute bounded native Windows Goal recovery test
+        if: runner.os == 'Windows' && matrix.probe == 'codex-goal-native.real.test.ts'
+        shell: pwsh
+        env:
+          AGENT_PICKET_CODEX_GOAL_NATIVE: '1'
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $node = (Get-Command node.exe).Source
+          $arguments = @('--experimental-strip-types', '--test', '--test-reporter=tap', 'tests/codex-goal-native.real.test.ts')
+          $proc = Start-Process -FilePath $node -ArgumentList $arguments -NoNewWindow -PassThru
+          if (-not $proc.WaitForExit(120000)) {
+            Write-Output 'CODEX_NATIVE_GOAL_WINDOWS_TIMEOUT: official App-Server cold recovery did not terminate within 120 seconds'
+            & taskkill.exe /PID $proc.Id /T /F | Out-Null
+            exit 1
+          }
+          if ($proc.ExitCode -ne 0) {
+            throw "CODEX_NATIVE_GOAL_WINDOWS_FAILED: native process exit $($proc.ExitCode)"
+          }
+          Write-Output 'CODEX_NATIVE_GOAL_WINDOWS_PASS=1'
