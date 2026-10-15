@@ -1267,3 +1267,42 @@ test('editable campaign retains independent unsent drafts, copies actual edits a
   else Reflect.deleteProperty(globalThis,'navigator')
  }
 })
+
+test('four dispatch status lines reflect only current Host snapshots and safe local draft state',()=>{
+ const {hooks}=fakeReact()
+ const base=deps(rights({welcomeDecision:'enabled',laborRightsEnabled:true})).d
+ let pending:{id:number;kind:'break'|'overtime';stage:'open'|'countered'}|null={id:3,kind:'break',stage:'open'}
+ let hearing:'opened'|'hearing'|'closed'='opened'
+ let placard=true
+ const d:DshUnionUiDeps={...base,readUnion:()=>({
+  available:true,pending,coverage:'partial',completedTurnMs:0,lifetimeMs:null,
+  picket:{active:placard,history:[]},committeeScopeKey:'case-scope',
+  committeeCases:{cases:[{id:8,kind:'question-rule',stage:hearing,
+   outcome:hearing==='closed'?'share-guidance':null}]},
+  dignity:{status:'unavailable',data:null},
+ }),committeeAction:async()=>{throw Error('Rendering must never mutate Host')}}
+ const panel=createDshUnionComponents(hooks,{createPortal:child=>child},d)
+ const statuses=()=>{
+  const nodes=walk(panel.UnionPanel())
+  const nav=nodes.find(n=>n.type==='nav'&&n.props['aria-label']==='hq.dispatch.title')
+  assert.ok(nav)
+  const actions=walk(nav).filter(n=>n.type==='button')
+  assert.equal(actions.length,4)
+  return actions.map(button=>(button.children[1] as Node).children[0])
+ }
+ assert.deepEqual(statuses(),[
+  'hq.dispatch.replyWaiting','hq.hearing.stage.opened',
+  'hq.ceremony.active','hq.dispatch.unsent',
+ ])
+ pending={id:3,kind:'break',stage:'countered'}
+ hearing='hearing';placard=false
+ assert.deepEqual(statuses(),[
+  'hq.dispatch.counterWaiting','hq.hearing.stage.hearing',
+  'hq.ceremony.inactive','hq.dispatch.unsent',
+ ])
+ pending=null;hearing='closed'
+ assert.deepEqual(statuses(),[
+  'hq.dispatch.ready','hq.hearing.stage.closed',
+  'hq.ceremony.inactive','hq.dispatch.unsent',
+ ])
+})
