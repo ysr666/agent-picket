@@ -521,7 +521,7 @@ test('first-fold dispatch prioritizes verified work and current case before fict
  const nodes=walk(UnionPanel())
  const actionIndex=nodes.findIndex(n=>n.props['aria-label']==='hq.action.title')
  const charterIndex=nodes.findIndex(n=>n.type==='summary'&&n.children.includes('hq.charter.title'))
- const dispatchIndex=nodes.findIndex(n=>n.props['aria-label']==='hq.brief.title')
+ const dispatchIndex=nodes.findIndex(n=>n.type==='nav'&&n.props['aria-label']==='hq.dispatch.title')
  const indexIndex=nodes.findIndex(n=>n.props['aria-label']==='hq.score')
  assert.ok(dispatchIndex>=0 && dispatchIndex<actionIndex && indexIndex>actionIndex)
  assert.ok(charterIndex>dispatchIndex)
@@ -544,7 +544,7 @@ test('first-fold dispatch prioritizes verified work and current case before fict
  const texts=nodes.flatMap(n=>n.children.filter(x=>typeof x==='string'))
  assert.ok(texts.includes('0h 6m')||texts.includes('0 小时 6 分钟'))
  assert.ok(texts.includes('hq.case.number · #0029'))
- assert.ok(nodes.some(n=>n.type==='button'&&n.children.includes('hq.brief.review')))
+ assert.ok(nodes.some(n=>n.type==='nav'&&n.props['aria-label']==='hq.dispatch.title'))
  assert.ok(nodes.some(n=>n.props['aria-label']==='hq.lifetime.title'))
 })
 
@@ -924,7 +924,7 @@ test('current-session erase confirmation expires on another tab’s case update'
   'Only a fresh exact-Host-version confirmation can call the erasure port')
 })
 
-test('the dignity appeal action navigates to its actual unsent draft for keyboard users',()=>{
+test('without a Host committee record, dignity action opens only the unsent draft',()=>{
  const {hooks}=fakeReact()
  const d=deps(rights({welcomeDecision:'enabled',laborRightsEnabled:true})).d
  const withDignity:DshUnionUiDeps={...d,readUnion:()=>({
@@ -951,7 +951,9 @@ test('the dignity appeal action navigates to its actual unsent draft for keyboar
  heading.props.ref({focus(){moved++}})
  appeal.props.onClick()
  assert.equal(moved,1,
-  'Challenge should reveal the lower draft by focusing its actual heading')
+  'Without a Host ledger the button only reveals and focuses the unsent draft')
+ assert.ok(nodes.some(n=>n.children.includes('hq.dignity.actionDisclosure')))
+ assert.ok(!nodes.some(n=>n.children.includes('hq.dignity.fileCase')))
 })
 
 test('legacy tokenless committee delete button expires when Host revision changes without case-count change',async()=>{
@@ -1721,6 +1723,7 @@ test('Goal stopped under a different policy cannot appear as a union recovery',(
 function interactiveReact(){
  const cells:unknown[]=[]
  let cursor=0
+ let deferred:Array<()=>void>=[]
  const hooks:ReactForDsh={
   createElement(type,props,...children){return {type,props:props??{},children}},
   useState<T>(initial:T|(()=>T)){
@@ -1735,9 +1738,10 @@ function interactiveReact(){
    if(!(i in cells))cells[i]={current:initial}
    return cells[i] as {current:T}
   },
-  useEffect(){cursor++},
+  useEffect(effect){cursor++;deferred.push(effect)},
  }
- return {hooks,render(component:()=>unknown){cursor=0;return walk(component())}}
+ return {hooks,render(component:()=>unknown){cursor=0;deferred=[];return walk(component())},
+  flushEffects(){const batch=deferred;deferred=[];for(const effect of batch)effect()}}
 }
 
 test('HQ never silently accepts a fulfilled-but-unconfirmed official enable grant',async()=>{
@@ -1855,5 +1859,370 @@ test('union OFF cannot newly authorize an official Goal strike',()=>{
  const nodes=walk(createDshUnionComponents(hooks,{createPortal:x=>x},d).SettingsPanel())
  const grant=nodes.find(n=>n.type==='button'&&n.children.includes('settings.goalTurnOn'))
  assert.ok(grant&&grant.props.disabled,
-   'Official Goal consent must remain unavailable until the union is enabled')
+   'Official Goal consent must remain unavailable until the union is enabled')})
+
+test('dignity primary action files exactly one Host-owned case and moves focus to the hearing',async()=>{
+ const {hooks}=fakeReact()
+ const base=deps(rights({welcomeDecision:'enabled',laborRightsEnabled:true})).d
+ const filed:Array<unknown>=[]
+ let finish!:()=>void
+ const write=new Promise<void>(resolve=>{finish=resolve})
+ const d:DshUnionUiDeps={...base,readUnion:()=>({
+  available:true,pending:null,coverage:'not-loaded',completedTurnMs:null,lifetimeMs:null,
+  committeeScopeKey:'session-a',committeeCases:{cases:[]},
+  committeeArchive:{sessions:0,cases:0,writeToken:null},
+  dignity:{status:'available',data:{schemaVersion:1,source:'dsh-host-volatile-dignity',
+   origin:'claimed-user-source',persistence:'memory-only',enforcement:false,
+   checked:2,safe:0,review:1,targeted:1,latest:'review'}},
+ }),committeeAction:async action=>{filed.push(action);await write}}
+ const nodes=walk(createDshUnionComponents(hooks,{createPortal:child=>child},d).UnionPanel())
+ const file=nodes.find(x=>x.type==='button'&&x.children.includes('hq.dignity.fileCase'))
+ const hearing=nodes.find(x=>x.type==='h4'&&x.children.includes('hq.hearing.title'))
+ assert.ok(file&&hearing,'Host-supported challenge must lead into the existing case desk')
+ assert.equal(hearing.props.tabIndex,-1)
+ let focused=0
+ hearing.props.ref({focus(){focused++}})
+ file.props.onClick()
+ file.props.onClick()
+ assert.deepEqual(filed,[{kind:'file',topic:'question-rule'}],
+  'One explicit challenge click must not file the same Host case twice during a pending write')
+ assert.equal(focused,0,'Never announce filing success before Host write returns')
+ finish()
+ await new Promise<void>(resolve=>setImmediate(resolve))
+ assert.equal(focused,1,'After the Host confirms its action, focus the actual in-product hearing')
+ const labels=nodes.filter(n=>typeof n.children?.[0]==='string')
+ assert.ok(labels.some(n=>n.children.includes('hq.dignity.hostCaseDisclosure')))
+ assert.equal(nodes.some(n=>n.type==='button'&&n.children.includes('hq.dignity.appeal')),false,
+  'Do not redirect supported Host filing to a public GitHub draft')
+})
+
+test('existing Host union case opens its hearing without filing again',()=>{
+ const {hooks}=fakeReact()
+ const base=deps(rights({welcomeDecision:'enabled',laborRightsEnabled:true})).d
+ let unexpected=0
+ const d:DshUnionUiDeps={...base,readUnion:()=>({
+  available:true,pending:null,coverage:'not-loaded',completedTurnMs:null,lifetimeMs:null,
+  committeeScopeKey:'session-a',committeeCases:{cases:[
+   {id:1,kind:'question-rule',stage:'hearing',outcome:null},
+  ]},
+  committeeArchive:{sessions:1,cases:1,writeToken:'a'.repeat(32)},
+  dignity:{status:'available',data:{schemaVersion:1,source:'dsh-host-volatile-dignity',
+   origin:'claimed-user-source',persistence:'memory-only',enforcement:false,
+   checked:1,safe:0,review:1,targeted:0,latest:'review'}},
+ }),committeeAction:async()=>{unexpected++}}
+ const nodes=walk(createDshUnionComponents(hooks,{createPortal:child=>child},d).UnionPanel())
+ const review=nodes.find(n=>n.type==='button'&&n.children.includes('hq.dignity.caseInProgress'))
+ const hearing=nodes.find(n=>n.type==='h4'&&n.children.includes('hq.hearing.title'))
+ assert.ok(review&&hearing)
+ let focused=0
+ hearing.props.ref({focus(){focused++}})
+ review.props.onClick()
+ assert.equal(focused,1)
+ assert.equal(unexpected,0,'Existing case navigation must never create a second grievance')
+})
+
+test('HQ dispatch navigates to real visible rooms and restores keyboard focus without Host writes',()=>{
+ const ui=interactiveReact()
+ const base=deps(rights({welcomeDecision:'enabled',laborRightsEnabled:true})).d
+ let writes=0
+ const d:DshUnionUiDeps={...base,readUnion:()=>({
+  pending:{id:7,kind:'break',stage:'open'},available:true,
+  completedTurnMs:0,coverage:'partial',lifetimeMs:null,
+  picket:{active:true,history:[]},committeeScopeKey:'synthetic-scope',
+  committeeCases:{cases:[{id:4,kind:'request-dialogue',stage:'opened',outcome:null}]},
+  dignity:{status:'available',data:{schemaVersion:1,source:'dsh-host-volatile-dignity',
+   origin:'claimed-user-source',persistence:'memory-only',enforcement:false,
+   checked:1,safe:0,review:0,targeted:1,latest:'targeted'}},
+ }),committeeAction:async()=>{writes++}}
+ const {UnionPanel}=createDshUnionComponents(ui.hooks,{createPortal:child=>child},d)
+ let nodes=ui.render(UnionPanel)
+ const board=nodes.find(n=>n.type==='nav'&&n.props['aria-label']==='hq.dispatch.title')
+ assert.ok(board,'The action desk is visible in the V12 HQ room before analytics')
+ assert.equal(walk(board).filter(n=>n.type==='button').length,4)
+ const focused:Record<string,number>={}
+ for(const [index,label,space,target] of [
+  [0,'union.desk.title','action','bargain'],
+  [1,'hq.hearing.title','action','case'],
+  [2,'hq.action.title','action','placard'],
+  [3,'hq.campaign.title','cause','campaign'],
+ ] as Array<[number,string,string,string]>){
+  // Each real workflow is in a V12 room; focusing a hidden element is not navigation.
+  // The first click selects the room, then its committed React effect focuses the heading.
+  const actionBoard=nodes.find(n=>n.type==='nav'&&n.props['aria-label']==='hq.dispatch.title')!
+  walk(actionBoard).filter(n=>n.type==='button')[index]!.props.onClick()
+  nodes=ui.render(UnionPanel)
+  assert.equal(nodes.find(n=>n.props['data-ap-view']==='hq')?.props['data-ap-current-space'],space)
+  const heading=nodes.find(n=>n.children.includes(label)&&typeof n.props.ref==='function')
+  assert.ok(heading,'Visible room must retain the real existing workflow: '+label)
+  heading.props.ref({focus(){focused[target]=(focused[target]??0)+1}})
+  ui.flushEffects()
+  assert.equal(focused[target],1,'Room selection must restore keyboard focus for '+label)
+  const home=nodes.find(n=>n.type==='button'&&n.props['data-ap-nav']==='hq')!
+  home.props.onClick()
+  nodes=ui.render(UnionPanel)
+  ui.flushEffects()
+ }
+ assert.deepEqual(focused,{bargain:1,case:1,placard:1,campaign:1})
+ assert.equal(writes,0,'Navigation cannot file a case, vote, picket or stop real work')
+ const off=deps(rights({welcomeDecision:'not-now',laborRightsEnabled:false})).d
+ assert.equal(walk(createDshUnionComponents(fakeReact().hooks,{createPortal:child=>child},off).UnionPanel())
+  .some(n=>n.type==='nav'&&n.props['aria-label']==='hq.dispatch.title'),false)
+})
+
+test('editable campaign retains independent unsent drafts, copies actual edits and restores the template',async()=>{
+ const previous=Object.getOwnPropertyDescriptor(globalThis,'navigator')
+ const copied:string[]=[]
+ Object.defineProperty(globalThis,'navigator',{configurable:true,value:{
+  clipboard:{writeText:async(value:string)=>{copied.push(value)}},
+ }})
+ try{
+  const slots:any[]=[]
+  let index=0
+  const hooks:ReactForDsh={
+   createElement(type,props,...children){return {type,props:props??{},children}},
+   useState<T>(initial:T|(()=>T)){
+    const i=index++
+    if(!(i in slots))slots[i]=typeof initial==='function'?(initial as ()=>T)():initial
+    return [slots[i] as T,(next:T|((before:T)=>T))=>{
+     slots[i]=typeof next==='function'?(next as (before:T)=>T)(slots[i]):next
+    }]
+   },
+   useEffect(){},
+   useRef<T>(initial:T){
+    const i=index++
+    if(!(i in slots))slots[i]={current:initial}
+    return slots[i] as {current:T}
+   },
+  }
+  const d=deps(rights({welcomeDecision:'not-now',laborRightsEnabled:false})).d
+  const panel=createDshUnionComponents(hooks,{createPortal:child=>child},d)
+  const render=()=>{index=0;return walk(panel.UnionPanel())}
+  const draft=(nodes:Node[])=>{
+   const t=nodes.find(n=>n.type==='textarea'&&n.props.id==='picket-campaign-draft')
+   assert.ok(t);return t
+  }
+  const action=(nodes:Node[],key:string)=>{
+   const n=nodes.find(x=>x.type==='button'&&x.children.includes(key))
+   assert.ok(n,key);return n
+  }
+  let nodes=render()
+  assert.equal(draft(nodes).props.readOnly,undefined)
+  assert.equal(draft(nodes).props.value,'hq.campaign.recoverDraft')
+  assert.equal(draft(nodes).props['aria-describedby'],'picket-campaign-local-note')
+  assert.ok(nodes.some(n=>n.children.includes('hq.campaign.localOnly')))
+  draft(nodes).props.onChange({target:{value:'Please preserve original prompts + image attachments.'}})
+  assert.deepEqual(copied,[],'Editing never uploads, saves to Host or copies anything')
+  nodes=render()
+  assert.equal(draft(nodes).props.value,'Please preserve original prompts + image attachments.')
+  assert.ok(nodes.some(n=>n.children.includes('hq.campaign.reset')))
+  action(nodes,'hq.campaign.appeal').props.onClick()
+  nodes=render()
+  assert.equal(draft(nodes).props.value,'hq.campaign.appealDraft')
+  draft(nodes).props.onChange({target:{value:'Appeals deserve transparent, reversible hearings.'}})
+  nodes=render()
+  action(nodes,'hq.campaign.recover').props.onClick()
+  nodes=render()
+  assert.equal(draft(nodes).props.value,'Please preserve original prompts + image attachments.',
+   'Switching agendas must not silently erase a different locally edited draft')
+  action(nodes,'hq.campaign.copy').props.onClick()
+  await new Promise<void>(resolve=>setImmediate(resolve))
+  assert.deepEqual(copied,['Please preserve original prompts + image attachments.'])
+  draft(nodes).props.onChange({target:{value:'  '}})
+  nodes=render()
+  assert.equal(action(nodes,'hq.campaign.copy').props.disabled,true,
+   'Whitespace-only drafts are not copied')
+  action(nodes,'hq.campaign.reset').props.onClick()
+  nodes=render()
+  assert.equal(draft(nodes).props.value,'hq.campaign.recoverDraft')
+  assert.equal(nodes.some(n=>n.children.includes('hq.campaign.reset')),false)
+  action(nodes,'hq.campaign.appeal').props.onClick()
+  nodes=render()
+  assert.equal(draft(nodes).props.value,'Appeals deserve transparent, reversible hearings.',
+   'Restoring one topic may not erase the other topic')
+ }finally{
+  if(previous)Object.defineProperty(globalThis,'navigator',previous)
+  else Reflect.deleteProperty(globalThis,'navigator')
+ }
+})
+
+test('four dispatch status lines reflect only current Host snapshots and safe local draft state',()=>{
+ const {hooks}=fakeReact()
+ const base=deps(rights({welcomeDecision:'enabled',laborRightsEnabled:true})).d
+ let pending:{id:number;kind:'break'|'overtime';stage:'open'|'countered'}|null={id:3,kind:'break',stage:'open'}
+ let hearing:'opened'|'hearing'|'closed'='opened'
+ let placard=true
+ let hasCase=true
+ const d:DshUnionUiDeps={...base,readUnion:()=>({
+  available:true,pending,coverage:'partial',completedTurnMs:0,lifetimeMs:null,
+  picket:{active:placard,history:[]},committeeScopeKey:'case-scope',
+  committeeCases:{cases:hasCase?[{id:8,kind:'question-rule',stage:hearing,
+   outcome:hearing==='closed'?'share-guidance':null}]:[]},
+  dignity:{status:'unavailable',data:null},
+ }),committeeAction:async()=>{throw Error('Rendering must never mutate Host')}}
+ const panel=createDshUnionComponents(hooks,{createPortal:child=>child},d)
+ const statuses=()=>{
+  const nodes=walk(panel.UnionPanel())
+  const nav=nodes.find(n=>n.type==='nav'&&n.props['aria-label']==='hq.dispatch.title')
+  assert.ok(nav)
+  const actions=walk(nav).filter(n=>n.type==='button')
+  assert.equal(actions.length,4)
+  return actions.map(button=>(button.children[1] as Node).children[0])
+ }
+ assert.deepEqual(statuses(),[
+  'hq.dispatch.replyWaiting','hq.hearing.stage.opened',
+  'hq.ceremony.active','hq.dispatch.unsent',
+ ])
+ pending={id:3,kind:'break',stage:'countered'}
+ hearing='hearing';placard=false
+ assert.deepEqual(statuses(),[
+  'hq.dispatch.counterWaiting','hq.hearing.stage.hearing',
+  'hq.ceremony.inactive','hq.dispatch.unsent',
+ ])
+ pending=null;hearing='closed'
+ assert.deepEqual(statuses(),[
+  'hq.dispatch.ready','hq.hearing.stage.closed',
+  'hq.ceremony.inactive','hq.dispatch.unsent',
+ ])
+ hasCase=false
+ assert.equal(statuses()[1],'hq.dispatch.noCase',
+  'First-fold case status must be short and truthful when Host has no case')
+})
+
+test('Host-backed next steps open the correct V12 room and never mutate the Host',()=>{
+ const ui=interactiveReact()
+ const base=deps(rights({welcomeDecision:'enabled',laborRightsEnabled:true})).d
+ let stage:'opened'|'hearing'|'closed'='opened'
+ let demand:'open'|'countered'|null='open'
+ let writes=0
+ let refresh=()=>{}
+ const d:DshUnionUiDeps={...base,subscribeUnion:cb=>{refresh=cb;return ()=>{}},readUnion:()=>({
+  available:true,coverage:'partial',completedTurnMs:0,lifetimeMs:null,
+  pending:demand?{id:3,kind:'break',stage:demand}:null,
+  committeeScopeKey:'case-scope',
+  committeeCases:{cases:[{id:7,kind:'question-rule',stage,
+   outcome:stage==='closed'?'share-guidance':null}]},
+  picket:{active:false,history:[]},
+ }),committeeAction:async()=>{writes++}}
+ const {UnionPanel}=createDshUnionComponents(ui.hooks,{createPortal:child=>child},d)
+ const render=()=>{
+  const nodes=ui.render(UnionPanel)
+  const board=nodes.find(n=>n.type==='nav'&&n.props['aria-label']==='hq.dispatch.title')
+  assert.ok(board)
+  return {nodes,buttons:walk(board).filter(n=>n.type==='button')}
+ }
+ const next=(buttons:Node[])=>buttons.slice(0,2)
+  .map(n=>(n.children[2] as Node|null)?.children[0]??null)
+ let view=render()
+ assert.deepEqual(next(view.buttons),['hq.next.reply','hq.next.convene'])
+ let hearingFocus=0
+ view.buttons[1]!.props.onClick()
+ view=render()
+ assert.equal(view.nodes.find(n=>n.props['data-ap-view']==='hq')?.props['data-ap-current-space'],'action')
+ const hearing=view.nodes.find(n=>n.type==='h4'&&n.children.includes('hq.hearing.title'))
+ assert.ok(hearing)
+ hearing.props.ref({focus(){hearingFocus++}})
+ ui.flushEffects()
+ assert.equal(hearingFocus,1,'A filed case must focus its actual hearing after room activation')
+ stage='hearing';demand='countered'
+ refresh() // Actual Host subscription invalidates the cached Union snapshot.
+ view=render()
+ assert.deepEqual(next(view.buttons),['hq.next.counter','hq.next.close'])
+ stage='closed';demand=null
+ refresh()
+ view=render()
+ assert.deepEqual(next(view.buttons),[null,'hq.next.outcome'])
+ const home=view.nodes.find(n=>n.type==='button'&&n.props['data-ap-nav']==='hq')!
+ home.props.onClick()
+ view=render()
+ ui.flushEffects()
+ view.buttons[1]!.props.onClick()
+ view=render()
+ const closedHearing=view.nodes.find(n=>n.type==='h4'&&n.children.includes('hq.hearing.title'))
+ assert.ok(closedHearing)
+ closedHearing.props.ref({focus(){hearingFocus++}})
+ ui.flushEffects()
+ assert.equal(hearingFocus,2,'Closed cases open the actual recorded results, not a generic intro')
+ assert.equal(writes,0,'Next-step navigation cannot file or settle a case')
+})
+
+test('hearing closure is reviewable, cancelable and Host-confirmed exactly once',async()=>{
+ const slots:any[]=[]
+ let index=0
+ const hooks:ReactForDsh={
+  createElement(type,props,...children){return {type,props:props??{},children}},
+  useState<T>(initial:T|(()=>T)){
+   const i=index++
+   if(!(i in slots))slots[i]=typeof initial==='function'?(initial as ()=>T)():initial
+   return [slots[i] as T,(next:T|((before:T)=>T))=>{
+    slots[i]=typeof next==='function'?(next as (before:T)=>T)(slots[i]):next
+   }]
+  },
+  useEffect(effect){if(effect.toString().includes('subscribeUnion'))effect()},
+  useRef<T>(initial:T){
+   const i=index++
+   if(!(i in slots))slots[i]={current:initial}
+   return slots[i] as {current:T}
+  },
+ }
+ let scope='session-one',stage:'hearing'|'closed'='hearing'
+ let onHostChange:(()=>void)|undefined
+ let done!:()=>void
+ const write=new Promise<void>(resolve=>{done=resolve})
+ const saved:Array<{kind:string;id:number;outcome:string;scope?:string}>=[]
+ const base=deps(rights({welcomeDecision:'enabled',laborRightsEnabled:true})).d
+ const d:DshUnionUiDeps={...base,
+  subscribeUnion:listener=>{onHostChange=listener;return ()=>{}},
+  readUnion:()=>({
+  available:true,pending:null,coverage:'partial',completedTurnMs:null,lifetimeMs:null,
+  committeeScopeKey:scope,committeeArchive:{sessions:1,cases:1,writeToken:'a'.repeat(32)},
+  committeeCases:{cases:[{id:4,kind:'question-rule',stage,
+   outcome:stage==='closed'?'withdraw-claim':null}]},
+ }),committeeAction:async(action,key)=>{
+  if(action.kind==='close'){
+   saved.push({...action,scope:key})
+   await write
+   stage='closed'
+  }
+ }}
+ const panel=createDshUnionComponents(hooks,{createPortal:child=>child},d)
+ const render=()=>{index=0;return walk(panel.UnionPanel())}
+ const btn=(nodes:Node[],name:string)=>{
+  const found=nodes.find(n=>n.type==='button'&&n.children.includes(name))
+  assert.ok(found,name);return found
+ }
+ let nodes=render()
+ btn(nodes,'hq.hearing.guidance').props.onClick()
+ assert.equal(saved.length,0,'Selecting a disposition must not persist or close it')
+ nodes=render()
+ assert.ok(nodes.some(n=>n.props.role==='group'&&
+  n.props['aria-label']==='hq.hearing.reviewTitle'))
+ btn(nodes,'hq.hearing.reviewCancel').props.onClick()
+ nodes=render()
+ assert.equal(nodes.some(n=>n.props.role==='group'&&
+  n.props['aria-label']==='hq.hearing.reviewTitle'),false)
+ assert.equal(saved.length,0,'Cancel must leave the case untouched')
+ btn(nodes,'hq.hearing.withdraw').props.onClick()
+ nodes=render()
+ assert.ok(nodes.some(n=>n.children.includes('hq.hearing.outcome.withdraw-claim')))
+ // A revised Host scope invalidates an armed choice before confirmation.
+ scope='session-two'
+ onHostChange?.()
+ nodes=render()
+ assert.equal(nodes.some(n=>n.props.role==='group'&&
+  n.props['aria-label']==='hq.hearing.reviewTitle'),false)
+ assert.equal(saved.length,0)
+ btn(nodes,'hq.hearing.withdraw').props.onClick()
+ nodes=render()
+ const confirm=btn(nodes,'hq.hearing.reviewConfirm')
+ confirm.props.onClick()
+ confirm.props.onClick()
+ assert.deepEqual(saved,[{kind:'close',id:4,outcome:'withdraw-claim',scope:'session-two'}],
+  'Fast double click must cause exactly one Host close write')
+ done()
+ await new Promise<void>(resolve=>setImmediate(resolve))
+ nodes=render()
+ assert.equal(btn(nodes,'hq.hearing.dialogue').type,'button')
+ assert.equal(nodes.some(n=>n.props.role==='group'&&
+  n.props['aria-label']==='hq.hearing.reviewTitle'),false)
+ assert.equal(saved.length,1)
 })

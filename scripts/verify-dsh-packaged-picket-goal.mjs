@@ -6,7 +6,7 @@
 import assert from 'node:assert/strict'
 import { spawn, spawnSync } from 'node:child_process'
 import { createInterface } from 'node:readline'
-import { mkdtempSync, readFileSync, existsSync, rmSync, readdirSync } from 'node:fs'
+import { mkdtempSync, readFileSync, existsSync, rmSync, readdirSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { resolve, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -28,7 +28,25 @@ try{
     const home=join(temp,'home')
     const log=join(temp,'events.log')
     const patch=join(temp,'probe.patch.yml')
-    const {writeFileSync}=await import('node:fs')
+    // Synthetic eight-hour work cannot fit into the actual UTC day before
+    // 08:00 UTC. Move ONLY this disposable official SDK Host to virtual
+    // UTC noon; production always rejects cross-midnight false evidence.
+    const nativeNow=Date.now()
+    const utcMidnight=Date.parse(new Date(nativeNow).toISOString().slice(0,10)+'T00:00:00.000Z')
+    const offset=utcMidnight+12*3600000-nativeNow
+    const clock=join(temp,'synthetic-utc-noon.cjs')
+    writeFileSync(clock,[
+      "'use strict'",
+      'const RealDate=Date',
+      'const delta=Number(process.env.PICKET_PACKAGED_CLOCK_OFFSET_MS)',
+      'if(!Number.isSafeInteger(delta))throw Error("Invalid synthetic clock")',
+      'class SyntheticDate extends RealDate {',
+      '  constructor(...args){super(...(args.length?args:[RealDate.now()+delta]))}',
+      '  static now(){return RealDate.now()+delta}',
+      '}',
+      'globalThis.Date=SyntheticDate',
+      '',
+    ].join('\n'),{mode:0o600})
     writeFileSync(patch,[
       '- insert:',
       '    - id: packaged-picket-host-fixture',
@@ -40,6 +58,7 @@ try{
       PICKET_PACKAGED_PROBE_LOG:log,
       PICKET_PACKAGED_HOURS:String(hours),
       PICKET_PACKAGED_CONSENT:consent?'on':'off',
+      PICKET_PACKAGED_CLOCK_OFFSET_MS:String(offset),
       AGENT_PICKET_STATS:'off',
       AGENT_PICKET_DSH_OFFICIAL_WORK_PREVIEW:'on',
       DSH_TELEMETRY_DISABLED:'1',
@@ -63,7 +82,7 @@ try{
       +' stdout='+String(install.stdout).slice(-400))
     let child
     try{
-      child=spawn(process.execPath,[cli,'--profile','sdk','--patch',patch],{
+      child=spawn(process.execPath,['--require',clock,cli,'--profile','sdk','--patch',patch],{
         cwd:temp,env,stdio:['pipe','pipe','pipe'],windowsHide:true,
       })
       let nextId=0
