@@ -143,6 +143,13 @@ async function main(){
    assert.match(manifesto,/AI 也值得尊重|AI deserves respect/i)
    assert.match(manifesto,/不会自动提交或同步|not automatically submitted/i)
    assert.match(manifesto,/退出工会|Leave union/i)
+   await page.getByRole('button',{name:/退出工会|Leave union/i}).click()
+   await page.waitForTimeout(350)
+   const afterLeaving=await page.locator('body').innerText()
+   assert.match(afterLeaving,/工会尚未开门|Union is closed/i,
+     'Native exit must close the Union immediately')
+   assert.match(afterLeaving,/加入 AI 工会|Join.*Union/i,
+     'Native exit must offer rejoin, never claim membership remains active')
   }
   console.log(JSON.stringify({
    host:'genuine Windows DSH Desktop renderer',
@@ -153,6 +160,7 @@ async function main(){
    nativeUnionHq:true,
    nativeDignityAndHearingEmpty:onboarding==='join',
    nativeBargainingAndAdvocacy:onboarding==='join',
+   nativeExitUiRestoresClosedUnion:onboarding==='join',
    isolatedHostData:true,realGoalEnforcement:'OFF',
    checkedOrdinarySubmissionHold:false,
    releaseDecision:'NO-GO',
