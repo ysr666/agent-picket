@@ -10,7 +10,7 @@ import { pathToFileURL } from 'node:url'
  */
 export function inspectPublishedDshWebAdmission({version,blocks,conversation,
   session,preStep,clientJs}) {
-  const pinnedVersions=['0.2.0-rc.2','0.2.1-alpha.2','0.2.1-alpha.3']
+  const pinnedVersions=['0.2.0-rc.2','0.2.1-alpha.2','0.2.1-alpha.3','0.2.1-alpha.4']
   const isKnown=pinnedVersions.includes(version)
   // The false state is deliberate: successful shape checks do not attest
   // real Host recovery, verified human authorship, or genuine veto.

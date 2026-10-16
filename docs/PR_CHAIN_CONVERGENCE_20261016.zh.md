@@ -73,6 +73,14 @@
 
 本阶段完整本地 `npm run check` **597 tests / 524 PASS / 0 FAIL / 73 条条件 SKIP**，TypeScript / 打包通过；`npm pack --dry-run` **241,705 bytes / 113 files**，仍在 250,000 bytes 硬上限内。原生官方 DSH alpha.3 **真正安装版 SDK Goal 7h 有授权不挡、8h 无授权不挡、8h 有授权才挡：3/3 PASS**；Chrome 首次授权、Goal 真实阻断、用户附件冷启动字节验证及双标签复工的重新验收以该轮日志为准。**#80 普通人类消息/图像/附件的原子 pre-submit 暂扣和无损复工仍不可用**，**Codex #169 跨进程双持有者仍为 P0**；这只是特定 DSH 自动 Goal 后续轮次边界的可信度修复，不改变 Release NO-GO。
 
+## 第八阶段：新增官方 DSH 0.2.1-alpha.4（刚发布）的真机验收与安全否定审计
+
+2026-10-16 核查 npm 官方发布，新 `@deepseek-ai/dsh@0.2.1-alpha.4` 已成为 `alpha` 标签。仅在新临时目录独立安装。官方 Session / Conversation 的公开 `.d.ts`、`agent/pre-step` 和 Goal Round Driver 相比 alpha.3 **字节一致**；浏览器 `client.js` 虽发生改动，但仍有独立的 `conversation.send→Session.prompt` 路径、Composer UI block 仅作 affordance、pre-step `reject` 无 Host 原子回执和恢复凭证。静态实际产物审计：`publishedSessionHoldApi:false`、`verifiedSafeHold:false`、`releaseDecision:NO-GO`，**不得通过新增版本自动解禁 #80**。将 alpha.4 纳入来源识别与纯负面审计测试，不扩大物理人类消息拒绝范围。
+
+真机正面能力单独验收（Mac 独立 DSH/Chrome Profile）：alpha.4 官方 SDK 安装版 **7h 授权无阻断、8h 未授权无阻断、8h 授权阻断共 3/3 PASS**；真实 Web Host CAS 首次一键授权→官方已完成 Turn 8h 阈值→真实 Goal block→普通人类消息及上传附件原字节保留→冷启动恢复→两个标签复工 **1/1 PASS**。这些证明仅限已有自动 Goal 的安全轮次停工，**不是** #80 通用预提交输入拦截。
+
+对应已有两条 Github CI 扩展版本矩阵，**不创建新适配器**：`DSH Packaged Picket Real Host Goal` 从 6 个（Windows/macOS/Linux × rc.2/alpha.3）增至 **9 格**（新增 alpha.4 三系统）；`DSH Web Real Official-Work Goal and HQ Recovery` 从 rc.2/alpha.3 的 **2 格**增至 **3 格**（新增 alpha.4）。须以新的确切 Git SHA GitHub CI 结果为准，绝不能预先宣称 Windows/Linux alpha.4 也通过；真实普通消息无损暂扣与 Codex 跨进程竞态继续 Release NO-GO。
+
 ## 合并判定
 
 本候选现已包括低冲突链、#176 工会总部整合以及 #161–#163 安全内容收敛；**#136 的自建 Windows 生产账本明确不移植**。正式原生 Host×OS、通用人类输入与附件原子拒绝/恢复、Codex 多进程 Goal 和真人辅助功能仍未放行；它不是 1.0 集成/发布签收。不得将绿色 Node CI 或测试脚本误写为 Windows NTFS、全部宿主原生真实停工、人工无障碍签收或真实 AI 集体表决。不得伪造授权或绕过发布闸门。保持 `npm run release:gate` **NO-GO**。
