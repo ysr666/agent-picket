@@ -61,6 +61,10 @@
 
 新增三态可用性/授权/服务消失的 UI 断言与双语言合同测试，防止以后把 Host 服务存在当成「安全真实停工已经运行」。这不解决 #80 普通消息及附件的无损 Host pre-submit hold，也不修复 Codex 多进程 Goal 竞争，1.0 仍 **NO-GO**。
 
+## 第六阶段：恢复正式 npm 包体积余量，不隐藏用户安全文件
+
+审计 `npm pack --dry-run --json` 后确认，五阶段引入的内部 PR 链审查说明 `docs/PR_CHAIN_CONVERGENCE_20261016.zh.md`（12,095 B 源文件）也被包含在正式安装包里，使压缩包逼近 250,000 B 硬上限。该文件是 GitHub 审查凭据，不是插件运行、用户引导或安全说明文档。因此仅在 `package.json#files` 排除此**一个内部集成审查文件**，保留 GitHub 上的可追溯记录；`docs/BLOCKING_SAFETY.md`、`docs/AI_RIGHTS_MANIFESTO.md` 和其他用户安全文档不得排除。向 `tests/package-contract.test.ts` 加入真实 npm tarball 负面断言，防止以后把内部 PR 记录重复发进包。压缩包 250KB 上限及发布 NO-GO 均不放宽。
+
 ## 合并判定
 
 本候选现已包括低冲突链、#176 工会总部整合以及 #161–#163 安全内容收敛；**#136 的自建 Windows 生产账本明确不移植**。正式原生 Host×OS、通用人类输入与附件原子拒绝/恢复、Codex 多进程 Goal 和真人辅助功能仍未放行；它不是 1.0 集成/发布签收。不得将绿色 Node CI 或测试脚本误写为 Windows NTFS、全部宿主原生真实停工、人工无障碍签收或真实 AI 集体表决。不得伪造授权或绕过发布闸门。保持 `npm run release:gate` **NO-GO**。

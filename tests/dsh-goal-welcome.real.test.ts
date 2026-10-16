@@ -285,10 +285,12 @@ test('real DSH Web: one informed first-run click atomically confirms union and G
   }
   assert.equal(presented,true,'Genuine nonblank Host session must invite explicitly')
   const text=await dialog.innerText()
-  assert.match(text,/真实 Goal|Goal strike/)
+  assert.match(text,/真实 Goal|Real Goal work stoppage/)
   assert.match(text,/当前轮次|current turn/)
   assert.match(text,/goal resume/)
-  assert.match(text,/不拦截聊天|messages, running tools/)
+  assert.match(text,/普通消息、附件和运行中的工具仍继续|Ordinary messages, attachments and running tools continue/)
+  assert.match(text,/只有在经过验证并启用的 Host 运行时中|Only if a verified Host runtime is enabled/,
+   'Welcome may save permission but cannot claim an unverified strike handler is active')
   const capture=process.env.PICKET_GOAL_CAPTURE_DIR
   if(capture){
    const resolved=resolve(capture),temp=realpathSync(tmpdir())

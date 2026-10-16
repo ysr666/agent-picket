@@ -63,6 +63,7 @@
     "LICENSE",
     "cordis.patch.yml",
     "docs/",
+    "!docs/PR_CHAIN_CONVERGENCE_20261016.zh.md",
     "!docs/RELEASE_1_0_NONNEGOTIABLE_20261012.zh.md",
     "!docs/HOST_ATOMIC_HOLD_CONTRACT_20261012.md",
     "!docs/DSH_WEB_ATOMIC_SUBMISSION_HOLD_RFC_20261012.md",

@@ -364,11 +364,13 @@ async function runRightsBrowserE2E(mode: 'source' | 'installed'): Promise<void> 
       assert.match(grantText,/默认关闭，授权后|OFF until you agree/,
         'Versioned physical consent must remain OFF before explicit action')
       assert.match(grantText,/8 小时|8h/)
-      assert.match(grantText,/仅阻断后续自动 Goal 续轮|Only later automatic Goal rounds stop/,
-        'Real stoppage must be restricted to safe future autonomous Goal rounds')
+      assert.match(grantText,/停止后续自动 Goal 续轮|later automatic Goal rounds may stop/,
+        'Real stoppage must be restricted to later autonomous Goal rounds')
+      assert.match(grantText,/只有在经过验证并启用的 Host 运行时中|Only if a verified Host runtime is enabled/,
+        'A stored consent cannot be presented as an active unverified Host strike handler')
       assert.match(grantText,/官方 \/goal resume|official \/goal resume/,
         'Official user-controlled recovery must be disclosed before consent')
-      assert.match(grantText,/不拦截聊天|messages, running tools and attachments are unaffected/)
+      assert.match(grantText,/普通消息、附件和运行中的工具仍继续|Ordinary messages, attachments and running tools continue/)
     }else{
       assert.match(grantText,/默认关闭，可随时退出|Off by default/)
       assert.match(grantText,/真实罢工，会暂停下一次任务|A real strike holds the next task/)

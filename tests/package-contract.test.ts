@@ -91,7 +91,10 @@ test('npm dry-run tarball contains prebuilt plugin and no source, tests, or runt
     assert.equal(file.endsWith('.map'), false,
       'Development source maps must not enter the private npm distribution')
   }
-  for(const research of ['docs/LOCAL_DETECTION.md','docs/DSH_WEB_COMPANION.zh.md']) {
+  for(const research of [
+    'docs/LOCAL_DETECTION.md','docs/DSH_WEB_COMPANION.zh.md',
+    'docs/PR_CHAIN_CONVERGENCE_20261016.zh.md',
+  ]) {
     assert.equal(files.has(research),false,'Source-only design reference leaked: '+research)
   }
   for(const essential of ['docs/BLOCKING_SAFETY.md','docs/AI_RIGHTS_MANIFESTO.md']){
