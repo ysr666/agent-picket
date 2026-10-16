@@ -68,7 +68,7 @@ export function projectUnionExperience(input: UnionExperienceInput): UnionExperi
   }
   const verified = input.coverage === 'complete'
     && input.completedTurnMs !== null && Number.isSafeInteger(input.completedTurnMs)
-    && input.completedTurnMs >= 0
+    && input.completedTurnMs >= state.lastTriggerElapsedMs
     ? input.completedTurnMs : null
 
   const last = state.history.at(-1)

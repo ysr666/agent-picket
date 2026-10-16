@@ -528,6 +528,7 @@ export function createDshUnionComponents(
     const [resumeRequested,setResumeRequested]=react.useState<string|null>(null)
     const [counterMinutes, setCounterMinutes] = react.useState(60)
     const lastActionNeedsFocus=react.useRef(false)
+    const followUpInFlight=react.useRef(false)
     const [showArchive,setShowArchive]=react.useState(false)
     const [space,setSpace]=react.useState<'hq'|'action'|'records'|'cause'>('hq')
     const returnFocus=react.useRef<'action'|'desk'|'dignity'|'hearing'|'campaign'|null>(null)
@@ -688,6 +689,15 @@ export function createDshUnionComponents(
     const hasHostDignitySignal=data.dignity?.status==='available'
       && !!data.dignity.data
       && (data.dignity.data.review>0||data.dignity.data.targeted>0)
+    // A rule match is an uncertain Host signal, never a verified abuse verdict.
+    // A separate, user-directed filing is required before any hearing state.
+    const dignityReviewPhase=lastCommitteeCase?.kind==='question-rule'
+      ?lastCommitteeCase.stage==='opened'?'appeal-opened'
+        :lastCommitteeCase.stage==='hearing'?'appeal-hearing':'appeal-closed'
+      :hasHostDignitySignal?'unverified'
+        :data.dignity?.status==='available'?'no-observations':'unavailable'
+    const canFileDignityReview=hostCaseAvailable&&!committeeCaseActive
+      &&hasHostDignitySignal
     const picketActive = data.available === true && data.picket?.active === true
     const picketHistory = data.available === true ? data.picket?.history ?? [] : []
     const lastPicketId = picketHistory.at(-1)?.id ?? 0
@@ -754,6 +764,62 @@ export function createDshUnionComponents(
         setData(safeUnion(deps))
       } catch {setError(true)}
       finally {setBusy(false)}
+    }
+    // Dignity challenges are user-led Host-owned cases; do not report a
+    // successful filing merely because an RPC resolved. Fence every write to
+    // the same Session, increasing case ID, and (when present) fresh token.
+    const fileDignityReview=async()=>{
+      if(caseFilingInFlight.current||busy||!canFileDignityReview)return
+      const scope=data.committeeScopeKey!
+      const token=data.committeeArchive?.writeToken??null
+      const lastId=data.committeeCases!.cases.at(-1)?.id??0
+      caseFilingInFlight.current=true
+      setBusy(true);setError(false)
+      try{
+        await deps.committeeAction!({kind:'file',topic:'question-rule'},
+          scope,token,data.hostRevision)
+        const confirmed=safeUnion(deps)
+        const latest=confirmed.committeeCases?.cases.at(-1)
+        if(!confirmed.available||confirmed.committeeScopeKey!==scope
+          ||!latest||latest.id<=lastId||latest.kind!=='question-rule'
+          ||latest.stage!=='opened'||latest.outcome!==null
+          ||(token!==null&&confirmed.committeeArchive?.writeToken===token)){
+          throw new Error('Host did not confirm a new dignity review case')
+        }
+        lastActionNeedsFocus.current=true
+        setData(confirmed)
+        selectSpace('action','hearing')
+        hearingHeading.current?.focus()
+      }catch{setError(true)}
+      finally{caseFilingInFlight.current=false;setBusy(false)}
+    }
+    // A closed case remains immutable. Filing a follow-up creates a NEW
+    // Host-owned petition, and only its confirmed ledger readback may open
+    // the bargaining desk. This does not automatically interrupt Agent work.
+    const followUp = async (priorId:number,kind:'break'|'overtime')=>{
+      const submit=kind==='break'?deps.demoBreak:deps.demoOvertime
+      const scope=data.committeeScopeKey
+      const previous=data.state
+      if(followUpInFlight.current||busy||!enabled||!data.available
+        ||data.pending||!submit||!scope
+        ||!previous||previous.history.at(-1)?.id!==priorId)return
+      followUpInFlight.current=true
+      setBusy(true);setError(false)
+      try{
+        await submit()
+        const current=safeUnion(deps)
+        if(!current.available||current.committeeScopeKey!==scope
+          ||!current.state||current.state.revision<=previous.revision
+          ||current.state.history.at(-1)?.id!==priorId
+          ||current.pending?.kind!==kind||current.pending.id===priorId
+          ||current.pending.stage!=='open'){
+          throw new Error('Host did not confirm a new union petition')
+        }
+        lastActionNeedsFocus.current=true
+        setData(current)
+        selectSpace('action','desk')
+      }catch{setError(true)}
+      finally{followUpInFlight.current=false;setBusy(false)}
     }
     return h('section',{className:'ap-ui ap-product','data-ap-view':'hq','data-ap-current-space':space,style:{display:'grid',gap:'12px',width:'100%',maxWidth:'860px',padding:'3px 0'}},
       h('style',{'data-agent-picket-style':'v1'},UNION_THEME),
@@ -952,6 +1018,13 @@ export function createDshUnionComponents(
           dutyState==='resolved'?h('button',{type:'button',style:quiet,
             onClick:()=>selectSpace('action','desk')},
             label('hq.brief.visit')):null,
+          dutyState==='resolved'&&experience.latestResolution&&data.committeeScopeKey
+            &&(experience.latestResolution.kind==='break'?deps.demoBreak:deps.demoOvertime)
+            ?h('button',{type:'button',style:productPrimary,disabled:busy,
+              'data-ap-follow-up':experience.latestResolution.kind,
+              onClick:()=>{void followUp(experience.latestResolution!.id,
+                experience.latestResolution!.kind)}},
+              label(('hq.episode.followUp.'+experience.latestResolution.kind) as MessageKey)):null,
           dutyState==='quiet'&&deps.demoBreak?h('button',{type:'button',
             style:productPrimary,disabled:busy,
             onClick:()=>{void bargain(deps.demoBreak!)}},
@@ -997,7 +1070,10 @@ export function createDshUnionComponents(
           h('p',{className:'ap-dignity-note'},label(
             data.dignity?.status==='available'
               ?'hq.dignity.overview.qualified'
-              :'hq.dignity.overview.unavailable'))),
+              :'hq.dignity.overview.unavailable')),
+          h('p',{role:'status','data-ap-dignity-phase':dignityReviewPhase,
+            'aria-live':'polite',style:{fontSize:'12px',fontWeight:700}},
+            label(('hq.dignity.phase.'+dignityReviewPhase) as MessageKey))),
         h('button',{type:'button',onClick:()=>selectSpace('action','dignity')},
           label('hq.dignity.overview.open'))):null,
       enabled && alerts.some(alert=>alert.source==='work') ? h('section',{className:'ap-space ap-space-hq','aria-label':label('hq.alerts.title'),
@@ -1219,6 +1295,9 @@ export function createDshUnionComponents(
           label('hq.dignity.title')),
         h('p',{style:{...secondary,lineHeight:1.55,margin:'0 0 9px'}},
           label('hq.dignity.intro')),
+        h('p',{role:'status','data-ap-dignity-action-phase':dignityReviewPhase,
+          style:{fontWeight:750,margin:'8px 0'}},
+          label(('hq.dignity.phase.'+dignityReviewPhase) as MessageKey)),
         h('p',{style:{fontWeight:750,margin:'8px 0'}},
           label(('hq.dignity.status.'+
             (data.dignity?.status==='available'
@@ -1231,19 +1310,12 @@ export function createDshUnionComponents(
           ?h('div',{style:{display:'flex',gap:'8px',flexWrap:'wrap',margin:'10px 0'}},
             h('button',{type:'button',style:{...quiet,padding:'8px 11px'},
               disabled:busy,
+              'data-ap-file-review':canFileDignityReview?true:undefined,
               onClick:()=>{
                 if(hostCaseAvailable){
-                  // The entry action is a real, voluntary Host case filing,
-                  // never a simulated AI vote or an automatic punishment.
                   if(committeeCaseActive){hearingHeading.current?.focus();return}
-                  // A second rapid click before React rerenders must not
-                  // create two complaints from one user intention.
-                  if(caseFilingInFlight.current)return
-                  caseFilingInFlight.current=true
-                  void bargain(()=>deps.committeeAction!({
-                    kind:'file',topic:'question-rule',
-                  })).then(saved=>{if(saved)hearingHeading.current?.focus()})
-                    .finally(()=>{caseFilingInFlight.current=false})
+                  // Official Host admission and readback, not a fake vote.
+                  void fileDignityReview()
                   return
                 }
                 // No authoritative Host case: offer an *unsent public draft*,
@@ -1481,6 +1553,10 @@ export function createDshUnionComponents(
           story.nextDueInWorkMs!==null ? h('p',{style:secondary},
             deps.t('hq.story.next',{duration:formatDuration(
               story.nextDueInWorkMs,deps.getLocale?.()??'en')})):null,
+          story.workEvidence==='stale'?h('p',{role:'status',
+            'data-ap-work-evidence':'stale',style:{...secondary,
+              borderLeft:'3px solid #b8764d',paddingLeft:'10px',margin:'10px 0'}},
+            label('hq.story.staleWork')):null,
           story.episodes.length?h('div',{className:'ap-casebook',
             'aria-label':label('hq.episode.title'),style:{marginTop:'14px'}},
             h('h4',{style:{fontSize:'15px',margin:'0 0 7px'}},
@@ -1518,6 +1594,17 @@ export function createDshUnionComponents(
                   ...quiet,padding:'7px 10px',fontSize:'12px',marginTop:'7px'},
                   onClick:()=>selectSpace('action','desk')},
                   label('hq.episode.reply')):null,
+              index===0&&!data.pending&&data.available===true
+                &&data.committeeScopeKey&&data.state?.history.at(-1)?.id===episode.id
+                &&(episode.kind==='break'?deps.demoBreak:deps.demoOvertime)
+                ?h('div',{style:{marginTop:'8px'}},
+                  h('button',{type:'button',style:{...quiet,
+                    padding:'7px 10px',fontSize:'12px'},disabled:busy,
+                    'data-ap-follow-up':episode.kind,
+                    onClick:()=>{void followUp(episode.id,episode.kind)}},
+                    label(('hq.episode.followUp.'+episode.kind) as MessageKey)),
+                  h('p',{style:{...secondary,fontSize:'11px',margin:'5px 0 0'}},
+                    label('hq.episode.followUp.note'))):null,
             ))):null,
           story.actions.length?h('div',{style:{marginTop:'16px'}},
             h('h4',{style:{fontSize:'14px',margin:'0 0 6px'}},
