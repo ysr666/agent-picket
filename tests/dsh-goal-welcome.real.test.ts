@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 import {spawn,spawnSync} from 'node:child_process'
 import {get} from 'node:http'
-import {mkdtempSync,rmSync,mkdirSync,existsSync,readFileSync} from 'node:fs'
+import {mkdtempSync,rmSync,mkdirSync,existsSync,readFileSync,writeFileSync} from 'node:fs'
 import {join,resolve,sep} from 'node:path'
 import {realpathSync} from 'node:fs'
 import {tmpdir} from 'node:os'
@@ -93,8 +93,36 @@ test('real DSH Web: one informed first-run click atomically confirms union and G
  const tgz=pack.stdout.trim().split('\n').at(-1)
  assert.ok(tgz?.endsWith('.tgz'))
  const officialPersisted=process.env.PICKET_GOAL_REAL_PERSISTED_E2E==='1'
+ // The official 8-hour UTC-day evidence test must work even at 00:00–07:59
+ // UTC, when eight hours cannot yet have elapsed in the actual current day.
+ // Shift ONLY the disposable native Host's clock to synthetic UTC noon.
+ // Never change the production preview's real UTC/future-event validations.
+ const nativeNow=Date.now()
+ const currentUtcMidnight=Date.parse(new Date(nativeNow).toISOString().slice(0,10)+'T00:00:00.000Z')
+ const virtualNoonOffsetMs=currentUtcMidnight+12*3_600_000-nativeNow
+ const testClockPreload=join(root,'picket-offline-utc-clock.cjs')
+ if(officialPersisted){
+  writeFileSync(testClockPreload,[
+   "'use strict'",
+   'const NativeDate=Date',
+   'const offset=Number(process.env.PICKET_GOAL_TEST_CLOCK_OFFSET_MS)',
+   'if(!Number.isSafeInteger(offset))throw Error("Invalid disposable test clock offset")',
+   'class OfflineTestDate extends NativeDate {',
+   '  constructor(...args){super(...(args.length?args:[NativeDate.now()+offset]))}',
+   '  static now(){return NativeDate.now()+offset}',
+   '}',
+   'globalThis.Date=OfflineTestDate',
+   '',
+  ].join('\n'),{mode:0o600})
+ }
  const seedLog=join(root,'web-official-seed.log')
  const env={...process.env,DSH_HOME:home,
+  // This preload belongs to the temp Host process alone, not npm installers,
+  // the test runner, real user profiles, or any shipping plugin source.
+  NODE_OPTIONS:officialPersisted
+   ?[process.env.NODE_OPTIONS??'', '--require='+testClockPreload].filter(Boolean).join(' ')
+   :process.env.NODE_OPTIONS,
+  PICKET_GOAL_TEST_CLOCK_OFFSET_MS:officialPersisted?String(virtualNoonOffsetMs):'',
   PICKET_WEB_WORK_SEED_LOG:seedLog,
   AGENT_PICKET_STATS:process.env.PICKET_GOAL_RECOVERY_E2E==='1'
    &&!officialPersisted?'on':'off',

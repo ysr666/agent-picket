@@ -28,6 +28,12 @@
 3. #136：Windows 生产工时故障可信度降级要单独与官方持久证据方案复核，不直接混入未经签收的第二套账本。
 4. #84/#117/#118/#119/#121/#127/#80/#86 及 `release/first-release-evidence.json` 的验收持续开放；Codex Goal 多进程所有权竞态、DSH 普通文本与附件预提交无损阻断、DSH Desktop、Windows 真实 Host 及人工读屏仍未签收。
 
+## 集成 CI 暴露的 UTC 运行时钟问题与验证
+
+首轮 GitHub DSH Web 官方工时 Goal E2E 在 **UTC 06:15** 触发 `round-limit`（预期 `picket-work-limit`），rc.2/alpha.3 均复现。原因不是放宽工时规则的理由：测试夹具在当前 UTC 日尚未过去八小时时，向官方 SessionPersistence 注入了前八小时的「当日」模拟劳动，开始时间跨至前一 UTC 日；生产 `inspectOfficialPersistedDay` **正确拒绝跨日的八小时假证据**。此红灯是测试时间依赖，不能调整生产门槛或声称已真实拦截。
+
+修复严格限制在 `tests/dsh-goal-welcome.real.test.ts`：只给**临时 DSH_HOME 的子 Host 进程**注入测试期 UTC 正午的偏移时钟，重启保持同一偏移；不修改插件生产逻辑、正式 Host 配置、主测试进程和最终 npm 包。时间本来就是合成离线测试记录，不冒充真人八小时。Mac 真正安装的 **DSH 0.2.1-alpha.3 + Chrome** 完整官方持久工时 E2E **1/1 PASS**，证明首次授权 CAS、自动 Goal round 0 真正阻断、真实 Host 人类文本与文件持久写入、冷重启后文件字节 SHA-256 一致、两标签人工复工与 revision 正确增长。GitHub 独立跨版本/跨系统结果须以新提交运行记录为准。
+
 ## 合并判定
 
 本候选是**首批低冲突链的审核收敛**，不是 1.0 集成完成。必须在下一轮集中解决 UI/安全分叉，再独立做目标客户端真实验收。不得将绿色 Node CI 或测试脚本误写为 Windows NTFS、全部宿主原生真实停工、人工无障碍签收或真实 AI 集体表决。不得伪造授权或绕过发布闸门。保持 `npm run release:gate` **NO-GO**。
