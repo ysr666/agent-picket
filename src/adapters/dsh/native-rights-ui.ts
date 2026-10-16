@@ -480,6 +480,13 @@ export function createDshUnionComponents(
               :goal.available?'settings.goalOff':'settings.realBlockingUnavailable'))),
         h('p',{},label(goal.available?'settings.goalSafetyScope':
           goal.authorized?'settings.goalServiceLostScope':'settings.strikeExplanation')),
+        // A successful official goals/get and a stored Host permission do NOT
+        // prove that this plugin registered a validated physical strike hook.
+        // Default shipping apply() is monitor-only. No fake runtime green light.
+        (goal.available||goal.authorized)?h('p',{
+          role:'note','data-ap-goal-enforcement':'unverified',
+          style:{...secondary,fontSize:'12px',lineHeight:1.6,margin:'6px 0 12px'},
+        },label('settings.goalRuntimeUnverified')):null,
         (goal.available||goal.authorized)?h('div',{className:'ap-actions'},
           !goal.authorized?h('p',{role:'note',style:{...secondary,lineHeight:1.5,
             width:'100%',margin:'0 0 8px'}},label('settings.goalExplicitDisclosure')):null,

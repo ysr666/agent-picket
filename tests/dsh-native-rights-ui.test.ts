@@ -2524,3 +2524,43 @@ test('Host-unavailable, consent-off, pending or unscoped review never exposes re
   assert.equal(nodes.some(n=>n.props['data-ap-file-review']),false,mode)
  }
 })
+
+test('Goal permission UI never converts a service readback into proof of active physical enforcement',()=>{
+ const {hooks}=fakeReact()
+ const base=deps(rights({welcomeDecision:'enabled',laborRightsEnabled:true}))
+ for(const current of [
+  {available:true,writable:true,authorized:true},
+  {available:true,writable:true,authorized:false},
+  {available:false,writable:true,authorized:true},
+ ]){
+  const d:DshUnionUiDeps={...base.d,goal:{
+   snapshot:()=>current,choose:async()=>current,
+  }}
+  const nodes=walk(createDshUnionComponents(hooks,{createPortal:x=>x},d).SettingsPanel())
+  const witness=nodes.filter(x=>x.props['data-ap-goal-enforcement']==='unverified')
+  assert.equal(witness.length,1,'Each saved permission/Goal service combination must show uncertainty')
+  assert.equal(witness[0]?.props.role,'note')
+  assert.ok(witness[0]?.children.includes('settings.goalRuntimeUnverified'))
+  assert.equal(nodes.some(n=>n.props['data-ap-goal-enforcement']==='active'),false,
+   'A Goal service and an opt-in never prove that the plugin registered a stop listener')
+ }
+ const off:DshUnionUiDeps={...base.d,goal:{
+  snapshot:()=>({available:false,writable:false,authorized:false}),
+  choose:async()=>({available:false,writable:false,authorized:false}),
+ }}
+ assert.equal(walk(createDshUnionComponents(hooks,{createPortal:x=>x},off).SettingsPanel())
+  .some(n=>n.props['data-ap-goal-enforcement']==='unverified'),false)
+})
+
+test('English and Chinese Goal authorization copy distinguish stored permission from actual Host execution',async()=>{
+ const {en,zhCN}=await import('../src/i18n/index.ts')
+ for(const messages of [en,zhCN]){
+  const text=messages['settings.goalRuntimeUnverified']
+  assert.ok(text.length>40)
+  assert.ok(messages['settings.goalAuthorized'].length>12)
+  assert.match(messages['welcome.goalGrantText'],/Host|执行/)
+  assert.match(messages['welcome.goalBody'],/Host|执行/)
+ }
+ assert.match(en['settings.goalRuntimeUnverified'],/observation-only/)
+ assert.match(zhCN['settings.goalRuntimeUnverified'],/默认只观测/)
+})

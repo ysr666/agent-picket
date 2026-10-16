@@ -55,6 +55,12 @@
 
 只有在**隔离 DSH Host** 上明确开启 `AGENT_PICKET_DSH_OFFICIAL_WORK_PREVIEW=on`，并已另行获得 Host 持久授权，才注册原有 `SessionPersistence` 已完成 Turn 下界 → 官方 Goal 自动续轮阻断。不会触及普通用户输入、图片与附件。#80 普通消息 pre-submit reject 仍 **OFF/NO-GO**；#169 Codex 多所有者 Goal 仍 **NO-GO**。保留旧 `registerDshGoalWorkEnforcement` 独立研究测试/fixture，但不再由正式 `plugin.ts` 注册。新增两项真正注册路径 + 普通用户输入不吞消息的运行时测试，不靠文档声明安全。
 
+## 第五阶段：知情许可与已启用执行能力的诚实区分（#32 / #80）
+
+第四阶段关闭了默认插件的私有账本真实停工处理器，因此不能仅因 Client 成功读取官方 `goals/get` / `resume` 和 Host 保存 `realGoalStrikeConsent=authorized-v1`，就宣称**真实停工已经启用**。这两类数据分别证明 Goal 服务可见和用户知情许可，均**不证明执行 Hook 已注册或官方工时证据完整**。本阶段在真实设置界面加入常显的中英文运行状态警示（`data-ap-goal-enforcement=unverified`），更新欢迎页知情文案，明确：默认安装仅观测，官方已完成 Turn Goal 阻断仍是隔离、显式开启的研究预览；授权可通过设置撤销，已停 Goal 须经官方 Host 恢复。保留首次一键知情授权决定，不擅自改为每次都弹窗。
+
+新增三态可用性/授权/服务消失的 UI 断言与双语言合同测试，防止以后把 Host 服务存在当成「安全真实停工已经运行」。这不解决 #80 普通消息及附件的无损 Host pre-submit hold，也不修复 Codex 多进程 Goal 竞争，1.0 仍 **NO-GO**。
+
 ## 合并判定
 
 本候选现已包括低冲突链、#176 工会总部整合以及 #161–#163 安全内容收敛；**#136 的自建 Windows 生产账本明确不移植**。正式原生 Host×OS、通用人类输入与附件原子拒绝/恢复、Codex 多进程 Goal 和真人辅助功能仍未放行；它不是 1.0 集成/发布签收。不得将绿色 Node CI 或测试脚本误写为 Windows NTFS、全部宿主原生真实停工、人工无障碍签收或真实 AI 集体表决。不得伪造授权或绕过发布闸门。保持 `npm run release:gate` **NO-GO**。
