@@ -44,6 +44,42 @@ async function inspect(host:string,cookie:string){
  return own[0] as {revision:number;value:{
   welcomeDecision:string;realGoalStrikeConsent?:string}}
 }
+async function verifyUploadedFileInHostHistory(
+  base:string,cookie:string,sessionId:string,requestId:string,attachmentId:string,
+):Promise<{messages:number;files:number}>{
+  // The official Session projection gives the exact validated log cut for
+  // page(). An arbitrary future throughSeq is rejected by DSH by design.
+  const projection=await fetch(base+'api/session/projections',{
+   method:'POST',headers:{'content-type':'application/json',cookie},
+   body:JSON.stringify({type:'client-request',rpcId:'picket-file-projection-cut',
+    method:'session/projections',payload:{args:{request:{sessionId}}}}),
+   signal:AbortSignal.timeout(10_000),
+  })
+  assert.equal(projection.status,200)
+  const projected=await projection.json() as any
+  assert.equal(projected.result?.ok,true,'Official Session projection missing')
+  const cursor=projected.result.value?.asOfSeq
+  if(!Number.isSafeInteger(cursor)||cursor<0)return {messages:0,files:0}
+  const response=await fetch(base+'api/session/page',{
+   method:'POST',headers:{'content-type':'application/json',cookie},
+   body:JSON.stringify({type:'client-request',rpcId:'picket-file-history-proof',
+    method:'session/page',payload:{args:{request:{
+     address:{kind:'session',sessionId},throughSeq:cursor,maxMessages:120,
+    }}}}),signal:AbortSignal.timeout(10_000),
+  })
+  assert.equal(response.status,200,'Official session/page must be reachable')
+  const data=await response.json() as any
+  assert.equal(data.result?.ok,true,
+   'Official Host session/page failed: '+
+    String(data.result?.error?.code??'unknown')+' / '+
+    String(data.result?.error?.message??'unknown').slice(0,250))
+  const matches=(data.result.value?.records??[]).filter((r:any)=>
+    r.event?.type==='user/message'&&r.event.data?.source?.rpcId===requestId)
+  const files=matches.flatMap((r:any)=>r.event.data?.content??[])
+    .filter((b:any)=>b.type==='file'&&b.attachment?.attachmentId===attachmentId)
+  return {messages:matches.length,files:files.length}
+}
+
 test('real DSH Web: one informed first-run click atomically confirms union and Goal consent',{
  skip,timeout:100_000,
 },async()=>{
@@ -300,6 +336,63 @@ test('real DSH Web: one informed first-run click atomically confirms union and G
     phase:blocked.phase,reason:blocked.blockedReason.code,
     rounds:blocked.roundsStarted,revision:blocked.revision,
    }))
+   // A blocked autonomous Goal must not swallow a genuine human message or
+   // its staged binary file. All data are fixed test-only synthetic bytes.
+   const fileTrial=process.env.PICKET_GOAL_HUMAN_ATTACHMENT_E2E==='1'
+    ? await page.evaluate(async(sessionId:string)=>{
+      const requestId='picket-synthetic-file-during-strike-001'
+      const body=new TextEncoder().encode(
+        'Agent Picket synthetic file integrity: no personal data, only test bytes.')
+      const upload=await fetch('/api/session/uploadFileBinary?sessionId='+
+        encodeURIComponent(sessionId)+'&name=picket-synthetic.txt',{
+        method:'POST',credentials:'same-origin',
+        headers:{'content-type':'application/octet-stream'},body,
+      })
+      const staged=await upload.json() as any
+      if(upload.status!==200||staged.ok!==true||
+         !staged.value?.receiptId||!staged.value?.file?.attachmentId)
+        throw Error('Official Host could not stage test-only file')
+      const sent=await fetch('/api/session/prompt',{
+        method:'POST',credentials:'same-origin',
+        headers:{'content-type':'application/json'},
+        body:JSON.stringify({type:'client-request',
+          rpcId:'picket-synthetic-file-submit',method:'session/prompt',
+          payload:{args:{request:{sessionId,mode:'queue',requestId,
+            content:[
+              {type:'text',text:'Synthetic human request during blocked Goal'},
+              {type:'file',receiptId:staged.value.receiptId},
+            ],
+          }}}}),
+      })
+      const accepted=await sent.json() as any
+      if(sent.status!==200||accepted.result?.ok!==true||
+         accepted.result.value?.accepted!==true)
+        throw Error('Official Host failed to accept human file during blocked Goal')
+      return {requestId,attachmentId:staged.value.file.attachmentId}
+    },created.sessionId):null
+   if(fileTrial){
+    let proof={messages:0,files:0}
+    for(let tries=0;tries<80;tries++){
+      proof=await verifyUploadedFileInHostHistory(base,cookieText,created.sessionId,
+        fileTrial.requestId,fileTrial.attachmentId)
+      if(proof.messages===1&&proof.files===1)break
+      await new Promise(resolve=>setTimeout(resolve,150))
+    }
+    assert.deepEqual(proof,{messages:1,files:1},
+      'Exactly one user message and exact file reference must survive admission')
+    const status=await page.evaluate(async(sessionId:string)=>{
+      const resp=await fetch('/api/goals/get',{
+        method:'POST',credentials:'same-origin',
+        headers:{'content-type':'application/json'},
+        body:JSON.stringify({type:'client-request',rpcId:'picket-file-goal-read',
+          method:'goals/get',payload:{args:{agentId:sessionId}}}),
+      })
+      return ((await resp.json()) as any).result?.value
+    },created.sessionId)
+    assert.equal(status?.phase,'blocked',
+      'Human file submission must not implicitly resume an autonomous Goal')
+    console.log('PICKET_HUMAN_FILE_DURABLE_DURING_GOAL_BLOCK '+JSON.stringify(proof))
+   }
    if(process.env.PICKET_GOAL_RESTART_E2E==='1'){
      // Production-owned persistence: terminate official DSH Web Host *after*
      // a real work-limit Goal block and restart from precisely the same
@@ -344,6 +437,13 @@ test('real DSH Web: one informed first-run click atomically confirms union and G
        signal:AbortSignal.timeout(10_000),
      }).then(r=>r.json()) as any
      const persisted=replayGoal?.result?.value
+     if(fileTrial){
+      const durable=await verifyUploadedFileInHostHistory(
+        base,cookieText,created.sessionId,fileTrial.requestId,fileTrial.attachmentId)
+      assert.deepEqual(durable,{messages:1,files:1},
+        'Official cold Session history must retain one exact human file ref')
+      console.log('PICKET_HUMAN_FILE_COLD_RESTART_SURVIVED '+JSON.stringify(durable))
+     }
      assert.equal(replayGoal?.result?.ok,true)
      assert.equal(persisted?.phase,'blocked','Durable Goal block must survive official Host restart')
      assert.equal(persisted?.blockedReason?.code,'picket-work-limit')
