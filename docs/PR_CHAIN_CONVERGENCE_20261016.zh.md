@@ -65,6 +65,14 @@
 
 审计 `npm pack --dry-run --json` 后确认，五阶段引入的内部 PR 链审查说明 `docs/PR_CHAIN_CONVERGENCE_20261016.zh.md`（12,095 B 源文件）也被包含在正式安装包里，使压缩包逼近 250,000 B 硬上限。该文件是 GitHub 审查凭据，不是插件运行、用户引导或安全说明文档。因此仅在 `package.json#files` 排除此**一个内部集成审查文件**，保留 GitHub 上的可追溯记录；`docs/BLOCKING_SAFETY.md`、`docs/AI_RIGHTS_MANIFESTO.md` 和其他用户安全文档不得排除。向 `tests/package-contract.test.ts` 加入真实 npm tarball 负面断言，防止以后把内部 PR 记录重复发进包。压缩包 250KB 上限及发布 NO-GO 均不放宽。
 
+## 第七阶段：官方 Goal 下一轮身份与停工归属证明收紧（#80、#169 分界）
+
+针对可选、隔离使用的 DSH 官方 `SessionPersistence` → Goal 真实阻断预览，复核 **未经修改的** `@deepseek-ai/dsh@0.2.1-alpha.3` 官方 `dsh-goal-round-driver/lib/index.js`：内部准备自动消息时 `round = goal.roundsStarted + 1`，并在实际 `agent/pre-step` 再以 `source.round === goal.roundsStarted + 1` 核对 queued attempt。Agent Picket 原先只核对 source.kind / goalId / revision，未独立拒绝已过时、错轮、伪造未来轮次的 Goal 消息。现在在插件的官方持久工时预览 `registerOfficialPersistedGoalPreview` 申请官方 `goals.block` 前补同等 **exact next-round fence**；`source.round` 为 0、旧轮次、过大轮次、无效整数时一律正常转交 Host，不调用 `block`，不作罢工成功声明。
+
+同时，`goals.block` 返回 `blocked` / revision+1 不足以归因给工会：可能已有其他 Host 安全策略介入。现仅在官方返回**同一 Goal**、对应修订、确实 `blocked` 且 `disarmed`，并且 `blockedReason.code === 'picket-work-limit'` 时才认可为本插件物理停工；异常后回读早已要求此 reason，本次将成功分支也统一为相同证明。负例测试覆盖旧轮次、重放、未来轮次、不合法数字，以及被其他策略阻断却错误宣称工会停工的场景。测试使用真实官方 Round Driver 对照，不创设新的 Claude/Codex/DSH 适配器。
+
+本阶段完整本地 `npm run check` **597 tests / 524 PASS / 0 FAIL / 73 条条件 SKIP**，TypeScript / 打包通过；`npm pack --dry-run` **241,705 bytes / 113 files**，仍在 250,000 bytes 硬上限内。原生官方 DSH alpha.3 **真正安装版 SDK Goal 7h 有授权不挡、8h 无授权不挡、8h 有授权才挡：3/3 PASS**；Chrome 首次授权、Goal 真实阻断、用户附件冷启动字节验证及双标签复工的重新验收以该轮日志为准。**#80 普通人类消息/图像/附件的原子 pre-submit 暂扣和无损复工仍不可用**，**Codex #169 跨进程双持有者仍为 P0**；这只是特定 DSH 自动 Goal 后续轮次边界的可信度修复，不改变 Release NO-GO。
+
 ## 合并判定
 
 本候选现已包括低冲突链、#176 工会总部整合以及 #161–#163 安全内容收敛；**#136 的自建 Windows 生产账本明确不移植**。正式原生 Host×OS、通用人类输入与附件原子拒绝/恢复、Codex 多进程 Goal 和真人辅助功能仍未放行；它不是 1.0 集成/发布签收。不得将绿色 Node CI 或测试脚本误写为 Windows NTFS、全部宿主原生真实停工、人工无障碍签收或真实 AI 集体表决。不得伪造授权或绕过发布闸门。保持 `npm run release:gate` **NO-GO**。

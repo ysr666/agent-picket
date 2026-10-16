@@ -52,7 +52,8 @@ function setup(storage:OfficialPersistedPort,{consent=true,foreign=false,
     goals:{get:()=>goal,block:(_agent:unknown,ref:{id:string;revision:number})=>{
       blocks.push(ref)
       return {...goal,phase:'blocked' as const,
-        activation:'disarmed' as const,revision:ref.revision+1}
+        activation:'disarmed' as const,revision:ref.revision+1,
+        blockedReason:{code:'picket-work-limit'}}
     }},
     on:(_name:string,callback:(payload:any,next:()=>Promise<unknown>)=>Promise<unknown>)=>{
       preStep=callback
@@ -62,7 +63,7 @@ function setup(storage:OfficialPersistedPort,{consent=true,foreign=false,
     consent:()=>consent?consentValue:null,
     now:()=>{late();return NOW},
   })
-  const goalMsg={source:{kind:'goal',goalId:'goal1',revision:9,round:1}}
+  const goalMsg={source:{kind:'goal',goalId:'goal1',revision:9,round:2}}
   async function attempt(messages:readonly unknown[]=[goalMsg]){
     assert.ok(preStep)
     return preStep({agent,messages},async()=>({kind:'enter'}))
@@ -154,7 +155,7 @@ test('uncertain Goal.block does not silently reject an automatic round when no b
     consent:()=>({kind:'agent-picket-real-goal-strike-v1',
       hostAuthenticated:true,enabled:true}),now:()=>NOW,
   })
-  const message={source:{kind:'goal',goalId:'g',revision:8,round:1}}
+  const message={source:{kind:'goal',goalId:'g',revision:8,round:2}}
   const pass=()=>Promise.resolve({kind:'enter'})
   assert.deepEqual(await hook({agent,messages:[message]},pass),{kind:'enter'},
     'No confirmed Host block means the candidate round must not be dropped')
@@ -193,7 +194,7 @@ test('revoking real strike consent while awaited persistence resolves prevents H
     now:()=>NOW,
   })
   assert.deepEqual(await callback({agent,messages:[
-    {source:{kind:'goal',round:1,goalId:'g',revision:1}},
+    {source:{kind:'goal',round:2,goalId:'g',revision:1}},
   ]},async()=>({kind:'enter'})),{kind:'enter'})
   assert.ok(reads>0)
   assert.equal(blocks,0)
@@ -261,4 +262,50 @@ test('single-Session wall clock rollback cannot double-count overlapping distinc
   const proof=setup(outOfTime)
   assert.deepEqual(await proof.attempt(),{kind:'enter'})
   assert.equal(proof.blocks.length,0)
+})
+
+
+test('official Goal next-round identity fence rejects stale, future, replayed and invalid round numbers',async()=>{
+  const eight=provider([{id:'prior',rows:[st(0,1,NOW-8*HOUR),en(1,1,NOW)]}])
+  for(const claimedRound of [0,1,3,99,-1,NaN,Infinity,1.5,Number.MAX_SAFE_INTEGER+1]){
+    const t=setup(eight)
+    const offered={source:{kind:'goal',goalId:'goal1',revision:9,round:claimedRound}}
+    assert.deepEqual(await t.attempt([offered]),{kind:'enter'},
+      'Stale, replayed, future or invalid Goal round must pass: '+String(claimedRound))
+    assert.equal(t.blocks.length,0)
+  }
+  const active=setup(eight)
+  assert.deepEqual(await active.attempt([{source:{
+    kind:'goal',goalId:'goal1',revision:9,round:2,
+  }}]),{kind:'reject'},'Only the exact official next queued Goal round may block')
+  assert.deepEqual(active.blocks,[{id:'goal1',revision:9}])
+})
+
+
+test('an unrelated Host Goal block must not be falsely claimed as our strike',async()=>{
+  const stored=provider([{id:'prior',rows:[st(0,1,NOW-8*HOUR),en(1,1,NOW)]}])
+  for(const policyReason of ['other-policy',undefined]){
+    const agent={id:'agent1',session:{id:'session1',snapshotEvents:()=>[]}}
+    const active={id:'goal1',revision:9,phase:'active' as const,
+      activation:'armed' as const,roundsStarted:1}
+    let callback!:(payload:any,next:()=>Promise<unknown>)=>Promise<unknown>
+    let blockCalls=0
+    registerOfficialPersistedGoalPreview({inject:(_services:any,done:any)=>done({
+      agents:{get:()=>agent},sessionPersistence:stored,
+      goals:{get:()=>active,block:()=>{
+        blockCalls++
+        return {...active,phase:'blocked',activation:'disarmed',revision:10,
+          ...(policyReason?{blockedReason:{code:policyReason}}:{})}
+      }},
+      on:(_name:string,cb:typeof callback)=>{callback=cb},
+    })},{consent:()=>({kind:'agent-picket-real-goal-strike-v1',
+      hostAuthenticated:true,enabled:true}),now:()=>NOW})
+    let downstream=0
+    assert.deepEqual(await callback({agent,messages:[{source:{
+      kind:'goal',round:2,goalId:'goal1',revision:9,
+    }}]},async()=>{downstream++;return {kind:'enter'}}),{kind:'enter'})
+    assert.equal(blockCalls,1)
+    assert.equal(downstream,1,
+      'Ambiguous or foreign-policy block cannot be reported as a Picket stop')
+  }
 })

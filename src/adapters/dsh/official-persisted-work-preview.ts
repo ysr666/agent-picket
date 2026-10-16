@@ -136,7 +136,9 @@ interface GoalOwner {
   readonly goals:{
     get(agent:AutoGoalAgent):(HostGoalSnapshot&{readonly blockedReason?:{readonly code?:string}})|undefined
     block(agent:AutoGoalAgent,ref:{id:string;revision:number},
-      reason:{code:string;message:string}):HostGoalSnapshot
+      reason:{code:string;message:string}):HostGoalSnapshot&{
+        readonly blockedReason?:{readonly code?:string}
+      }
   }
   readonly sessionPersistence:OfficialPersistedPort
   on(name:'agent/pre-step',callback:(payload:{
@@ -188,6 +190,12 @@ export function registerOfficialPersistedGoalPreview(
       if(!goal||goal.id!==source.goalId||goal.revision!==source.revision||
         goal.phase!=='active'||goal.activation!=='armed'||
         !Number.isSafeInteger(goal.roundsStarted)||goal.roundsStarted<0||
+        // Official DSH goal-round-driver requires source.round exactly one
+        // ahead of the persisted Goal's roundsStarted. A replayed, stale or
+        // future-round message must not cause Picket to block a live Goal.
+        // The Host checks this too, but the plugin cannot promote a stale
+        // message to its own physical strike before verifying this witness.
+        source.round!==goal.roundsStarted+1||
         alreadyBlockedGoalToday(agent.session.snapshotEvents(),goal.id,after))
         return next()
       // Rejecting an automatic round WITHOUT a verified official Goal block
@@ -201,7 +209,10 @@ export function registerOfficialPersistedGoalPreview(
           message:'Agent Picket: confirmed completed Turn work limit reached. Review and explicitly resume the Goal.',
         })
         committed=result.id===goal.id&&result.phase==='blocked'&&
-          result.activation==='disarmed'&&result.revision===goal.revision+1
+          result.activation==='disarmed'&&result.revision===goal.revision+1&&
+          // A different Host policy may win the Goal CAS first. Only a
+          // matching *official reason* can authorize rejection as OUR strike.
+          result.blockedReason?.code==='picket-work-limit'
       }catch{/* Recheck the official projection below before deciding. */}
       if(!committed){
         try{
