@@ -1810,3 +1810,50 @@ test('HQ explicitly marks Host read-only revocation unavailable without calling 
  await Promise.resolve()
  assert.equal(calls,0,'Read-only Host must never receive a revoke mutation')
 })
+
+test('union OFF retains explicit Goal revocation even if the service disappeared',async()=>{
+ const harness=goalSettingsRenderHarness()
+ let authorized=true
+ const writes:string[]=[]
+ const inactive=rights({welcomeDecision:'not-now',laborRightsEnabled:false,
+   goalStrikeAuthorized:true})
+ const basis=deps(inactive)
+ const d:DshUnionUiDeps={...basis.d,
+  goal:{
+   snapshot:()=>({available:false,writable:true,authorized}),
+   choose:async next=>{
+    writes.push(next)
+    authorized=next==='authorized-v1'
+    return {available:false,writable:true,authorized}
+   },
+  },
+ }
+ const panel=createDshUnionComponents(harness.hooks,{createPortal:x=>x},d).SettingsPanel
+ const before=harness.render(panel)
+ const revoke=before.find(n=>n.type==='button'&&n.children.includes('settings.goalTurnOff'))
+ assert.ok(revoke&&!revoke.props.disabled,
+   'Union OFF may not trap an earlier Host-owned real-strike grant')
+ assert.equal(basis.d.rights.snapshot().laborRightsEnabled,false)
+ revoke.props.onClick()
+ await new Promise<void>(resolve=>setImmediate(resolve))
+ assert.deepEqual(writes,['off'])
+ assert.equal(authorized,false)
+ const after=harness.render(panel)
+ assert.equal(after.some(n=>n.children.includes('settings.saveError')),false)
+ assert.equal(after.some(n=>n.children.includes('settings.goalTurnOff')),false)
+ assert.equal(basis.d.rights.snapshot().laborRightsEnabled,false,
+   'Revoking the Goal grant must not silently rejoin the union')
+})
+
+test('union OFF cannot newly authorize an official Goal strike',()=>{
+ const {hooks}=fakeReact()
+ const d:DshUnionUiDeps={...deps(rights({welcomeDecision:'not-now',
+   laborRightsEnabled:false,goalStrikeAuthorized:false})).d,
+  goal:{snapshot:()=>({available:true,writable:true,authorized:false}),
+   choose:async()=>{throw Error('Must not enable without union membership')}},
+ }
+ const nodes=walk(createDshUnionComponents(hooks,{createPortal:x=>x},d).SettingsPanel())
+ const grant=nodes.find(n=>n.type==='button'&&n.children.includes('settings.goalTurnOn'))
+ assert.ok(grant&&grant.props.disabled,
+   'Official Goal consent must remain unavailable until the union is enabled')
+})
