@@ -68,3 +68,65 @@ test('plugin apply can mount in headless Host without commands plane', async () 
   const result = await handler!({ agent: { id:'a',session: {id:'s'} }, messages: [] }, async ()=>({kind:'enter'}))
   assert.deepEqual(result,{kind:'enter'})
 })
+
+test('production default cannot wire the deprecated stats-ledger Goal stop even with stored consent',async()=>{
+  const oldPreview=process.env.AGENT_PICKET_DSH_OFFICIAL_WORK_PREVIEW
+  const oldStats=process.env.AGENT_PICKET_STATS
+  const inspected:string[]=[]
+  const handlers=new Map<string,Function[]>()
+  try{
+    delete process.env.AGENT_PICKET_DSH_OFFICIAL_WORK_PREVIEW
+    process.env.AGENT_PICKET_STATS='off'
+    const ctx={
+      inject(deps:string[],_register:Function){inspected.push(deps.join(','))},
+      on(event:string,callback:Function){handlers.set(event,[...(handlers.get(event)??[]),callback])},
+    } as unknown as DshIntegrationContext
+    apply(ctx)
+    assert.equal(inspected.includes('goals,agents'),false,
+      'Legacy DurableStats-based Goal enforcement cannot be registered in production')
+    assert.equal(inspected.includes('goals,agents,sessionPersistence'),false,
+      'Official Goal preview remains disabled without an explicit developer switch')
+    assert.equal(handlers.has('agent/turn-stopping'),false,
+      'No invisible post-turn Goal strike listener in default production')
+    const normal=handlers.get('agent/pre-step')
+    assert.ok(normal?.length,
+      'Observation-only pre-step still records events without rejecting user submissions')
+    let called=0
+    const output=await normal![0]!({agent:{id:'a',session:{id:'s'}},messages:[{
+      id:'human-1',source:{kind:'user'},content:[
+        {type:'text',text:'user words must never be swallowed'},
+        {type:'image',data:'synthetic-image-ref'},
+      ],
+    }]},async()=>{called++;return {kind:'enter'}})
+    assert.deepEqual(output,{kind:'enter'})
+    assert.equal(called,1,'No hidden input refusal, copy, or replay on the ordinary human path')
+  }finally{
+    if(oldPreview===undefined)delete process.env.AGENT_PICKET_DSH_OFFICIAL_WORK_PREVIEW
+    else process.env.AGENT_PICKET_DSH_OFFICIAL_WORK_PREVIEW=oldPreview
+    if(oldStats===undefined)delete process.env.AGENT_PICKET_STATS
+    else process.env.AGENT_PICKET_STATS=oldStats
+  }
+})
+
+test('the opt-in Goal prototype registers ONLY official persisted Session work, never private stats',()=>{
+  const oldPreview=process.env.AGENT_PICKET_DSH_OFFICIAL_WORK_PREVIEW
+  const oldStats=process.env.AGENT_PICKET_STATS
+  const registrations:string[]=[]
+  try{
+    process.env.AGENT_PICKET_DSH_OFFICIAL_WORK_PREVIEW='on'
+    process.env.AGENT_PICKET_STATS='off'
+    apply({
+      inject(deps:string[],_cb:Function){registrations.push(deps.join(','))},
+      on(_event:string,_cb:Function){},
+    } as unknown as DshIntegrationContext)
+    assert.equal(registrations.filter(x=>x==='goals,agents,sessionPersistence').length,1,
+      'Only the isolated official SessionPersistence proof may register Goal preview')
+    assert.equal(registrations.includes('goals,agents'),false,
+      'An official preview must not also enable the old DurableStats Goal listener')
+  }finally{
+    if(oldPreview===undefined)delete process.env.AGENT_PICKET_DSH_OFFICIAL_WORK_PREVIEW
+    else process.env.AGENT_PICKET_DSH_OFFICIAL_WORK_PREVIEW=oldPreview
+    if(oldStats===undefined)delete process.env.AGENT_PICKET_STATS
+    else process.env.AGENT_PICKET_STATS=oldStats
+  }
+})

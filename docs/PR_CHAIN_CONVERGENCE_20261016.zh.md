@@ -49,6 +49,12 @@
 - Mac `npm run check`：**591 tests / 518 PASS / 0 FAIL / 73 opt-in SKIP**（含最新 Host no-op、重放写令牌、Session 切换、无 Host 能力回退、stale 工时与结案再申诉）。真正 DSH Chrome 源码/离线安装包回归需以本阶段重跑日志及新的 GitHub CI 为准；之前第二阶段的 2/2 不能替代本阶段签收。
 - #136 在本次审查记录为「早期研究性故障停工账本分支，和官方 SessionPersistence 主线不兼容，暂不合入」，其 **故障 fail-closed 原则保留**；不创建 SQLite/NTFS WAL、不更改官方 Host、不擅自关闭该 PR。仍要审核 Windows 真正 Host 工作的异常处理。
 
+## 第四阶段：#80/#136 的实际生产阻断来源收口（2026-10-16）
+
+审计发现默认插件 `apply()` 在官方持久 Session 预览开关为 OFF 时，仍旧自动注册了从私有 `DurableStats.snapshotDays()` 取得工时的 `agent/turn-stopping` Goal 停工处理器。这与维护者「只有官方 Host 已完成 Turn 可作为停工工时证据，不建第二套停工账本」原则不符。单独用户授权也不能弥补证据来源无保证问题。**现直接移除默认生产路径的旧停工注册**，但保留 DurableStats 的纯观测、工时展示及本地清理功能，避免授权状态意外绕过官方证据限制。
+
+只有在**隔离 DSH Host** 上明确开启 `AGENT_PICKET_DSH_OFFICIAL_WORK_PREVIEW=on`，并已另行获得 Host 持久授权，才注册原有 `SessionPersistence` 已完成 Turn 下界 → 官方 Goal 自动续轮阻断。不会触及普通用户输入、图片与附件。#80 普通消息 pre-submit reject 仍 **OFF/NO-GO**；#169 Codex 多所有者 Goal 仍 **NO-GO**。保留旧 `registerDshGoalWorkEnforcement` 独立研究测试/fixture，但不再由正式 `plugin.ts` 注册。新增两项真正注册路径 + 普通用户输入不吞消息的运行时测试，不靠文档声明安全。
+
 ## 合并判定
 
 本候选现已包括低冲突链、#176 工会总部整合以及 #161–#163 安全内容收敛；**#136 的自建 Windows 生产账本明确不移植**。正式原生 Host×OS、通用人类输入与附件原子拒绝/恢复、Codex 多进程 Goal 和真人辅助功能仍未放行；它不是 1.0 集成/发布签收。不得将绿色 Node CI 或测试脚本误写为 Windows NTFS、全部宿主原生真实停工、人工无障碍签收或真实 AI 集体表决。不得伪造授权或绕过发布闸门。保持 `npm run release:gate` **NO-GO**。
