@@ -30,6 +30,14 @@ With the exact `.tgz` supplied through Desktop's **插件 → 添加插件 → �
 
 The repeatable new **`scripts/verify-dsh-desktop-installed-picket.mjs`** requires explicit `PICKET_DESKTOP_INSTALLED_E2E=1`, actual EXE, Playwright entry, local `.tgz`, exact SHA-256 and a chosen `skip|join` branch. It fails closed on absent opt-in/bad artifact, creates isolated profiles per run, and closes only its own test process tree. A standard automated `tests/dsh-desktop-installed-picket-optin.test.ts` proves ordinary CI cannot accidentally launch the native Desktop.
 
+## 2026-10-17: real Desktop exit and native process-cold-restart persistence proof
+
+The \`join\` branch of the installed-package E2E now also clicks the genuine **退出工会** action from the native advocacy panel and asserts an immediate **工会尚未开门** + **加入 AI 工会** readback. It then **closes the actual native Electron process tree**, waits for it to end, restarts the unmodified official Desktop EXE with the **same disposable \`DSH_HOME\` and \`--user-data-dir\`** using a newly reserved localhost CDP port, verifies no first-run dialog erroneously reopened, clicks the genuine \`⚑ AI 工会\` entry, and asserts that **the official Host's opt-out is still shown as closed across a process cold restart**. Both real native startup and restart stay inside the disposable test profile. The test still never invokes any model/tool and explicitly disables physical Goal enforcement.
+
+**Observed acceptance:** one attempt ended as **FAIL** before even opening the plugin manager because the first fresh native renderer remained at **\`HARNESS · Loading plugins…\` for 65 seconds**, a previously observed intermittent isolated Desktop startup issue. After all test processes had stopped, repeating the same exact archive/command gave **1/1 PASS including the real cold restart** (31.57s total): \`nativeExitUiRestoresClosedUnion:true\`, \`nativeColdRestartRemainsOut:true\`, \`realGoalEnforcement:OFF\`, \`releaseDecision:NO-GO\`. Do **not** miscount the earlier startup timeout as a pass, and do not attribute it conclusively to plugin code or upstream Desktop single-instance locks without tighter reproduction.
+
+This gives **independent Host-profile persistence evidence for the union membership exit choice**, beyond a merely optimistic UI update. **It does not verify revocation of an active official Goal strike grant**: in this reproducible native Host run the Goal capability was not offered (\`offeredOfficialGoal:false\`), so no real Goal authorization token was issued. Actual authorized-Goal revocation readback after quit remains a separate required native fixture. Nor does this give #80 human-input hold / file recovery guarantees; Desktop native version 0.2.0-rc.2 remains release NO-GO.
+
 ## Boundaries not falsely signed off
 
 - No verified **Host-owned ordinary human message/ordered image/file pre-submit atomic hold**, no exactly-once authenticated restore, no crash/restart native payload recovery proof; **#80/#117 remain OPEN**.
@@ -37,3 +45,9 @@ The repeatable new **`scripts/verify-dsh-desktop-installed-picket.mjs`** require
 - The **Windows 0.2.0-rc.2** release evidence remains **NO-GO**, including the explicit native Host version guard added in stage nine. This test attests **installed Union product UI**, not real-strike release readiness.
 - Test-only concurrent native Desktop processes once appeared to interfere with loading; serialized isolated runs pass. This does not establish general upstream concurrency root cause.
 - No merge to main, tag or release, or claim that Goal safety in SDK implies ordinary human input safety in Desktop.
+
+## Additional actual native exit/readback check (October 17)
+
+The exact packed Windows Desktop installation also passed **加入 → 协商/尊严委员会 → 退出工会**, with the Union panel changing immediately back to **工会尚未开门** and an explicit **加入 AI 工会** option. After closing the Union panel, the official Desktop plugin manager's own **agent-picket** detail screen still listed **one component, running**: leaving the union does **not** uninstall or deactivate the Host plugin. The reproducible installed E2E now asserts that independent native plugin-status projection.
+
+**Critical scope separation:** the plugin-manager detail view does *not* expose `welcomeDecision` or `realGoalStrikeConsent` from official Host Settings. Thus this user-visible UI test alone **cannot** claim a durable authorization revocation. Source-level Host settings CAS in `native-rights-command.ts` writes `realGoalStrikeConsent:'off'` in the same revision when leaving an authorized union, and its readback is separately unit-tested; validating that exact native Host setting across a genuine two-process restart remains open. The test continues to force the physical Goal preview OFF and never grants ordinary human message refusal.

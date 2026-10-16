@@ -150,6 +150,52 @@ async function main(){
      'Native exit must close the Union immediately')
    assert.match(afterLeaving,/加入 AI 工会|Join.*Union/i,
      'Native exit must offer rejoin, never claim membership remains active')
+   // Opt-out must not silently uninstall or disable the union plugin.
+   // The host UI plugin-status readback is separate from the union membership
+   // state; it does NOT independently attest the persisted Goal grant.
+   await page.getByRole('button',{name:/关闭工会面板|Close union panel/i}).click()
+   await page.getByRole('button',{name:/^(插件|Plugins)$/i}).click()
+   const installed=page.getByText('agent-picket',{exact:true})
+   await installed.click()
+   const pluginDetails=await page.locator('body').innerText()
+   assert.match(pluginDetails,/agent-picket/)
+   assert.match(pluginDetails,/运行中|Running/i,
+     'Leaving the union must not silently deactivate the native plugin')
+
+   // Real native cold-restart readback: do not confuse UI-only optimistic
+   // exit with the authoritative Host setting persisting after process death.
+   await browser.close()
+   browser=undefined
+   spawnSync('taskkill',['/PID',String(child.pid),'/T','/F'],{
+    windowsHide:true,timeout:8000})
+   child=undefined
+   await pause(750)
+   const restartPort=await availablePort()
+   child=spawn(resolve(exe),[
+    '--user-data-dir='+userData,
+    '--remote-debugging-address=127.0.0.1',
+    '--remote-debugging-port='+restartPort,
+    '--no-first-run','--disable-background-networking',
+   ],{env:{...process.env,DSH_HOME:dsh,
+       AGENT_PICKET_STATS:'off',
+       AGENT_PICKET_DSH_OFFICIAL_WORK_PREVIEW:'off'},
+       windowsHide:false,stdio:'ignore'})
+   await nativeReady(restartPort,child)
+   browser=await chromium.connectOverCDP('http://127.0.0.1:'+restartPort)
+   page=browser.contexts().flatMap(c=>c.pages())
+    .find(p=>p.url()==='dsh-app://app/')
+   assert.ok(page,'Official native renderer must return after cold restart')
+   const restartedUnion=page.getByRole('button',{name:/AI 工会|AI Union/i})
+   await restartedUnion.waitFor({timeout:65000})
+   assert.equal(await page.getByRole('dialog').filter({
+    hasText:/你的 Agent，有工会了|Your Agent.*union/i}).count(),0,
+    'Host persisted not-now choice must not reopen first-run after restart')
+   await restartedUnion.click()
+   const afterColdRestart=await page.locator('body').innerText()
+   assert.match(afterColdRestart,/工会尚未开门|Union is closed/i,
+     'Official Host union opt-out must survive real Desktop process restart')
+   assert.match(afterColdRestart,/加入 AI 工会|Join.*Union/i,
+     'No stale active Union after official Host restart')
   }
   console.log(JSON.stringify({
    host:'genuine Windows DSH Desktop renderer',
@@ -161,6 +207,8 @@ async function main(){
    nativeDignityAndHearingEmpty:onboarding==='join',
    nativeBargainingAndAdvocacy:onboarding==='join',
    nativeExitUiRestoresClosedUnion:onboarding==='join',
+   nativePluginStillRunningAfterExit:onboarding==='join',
+   nativeColdRestartRemainsOut:onboarding==='join',
    isolatedHostData:true,realGoalEnforcement:'OFF',
    checkedOrdinarySubmissionHold:false,
    releaseDecision:'NO-GO',

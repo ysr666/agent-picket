@@ -27,4 +27,8 @@ test('native installed Picket E2E authenticates the tarball and never enables st
   assert.match(source,/DSH_HOME:dsh/)
   assert.match(source,/checkedOrdinarySubmissionHold:false/)
   assert.match(source,/releaseDecision:'NO-GO'/)
+  assert.match(source,/nativeColdRestartRemainsOut/)
+  assert.match(source,/await nativeReady\(restartPort,child\)/)
+  assert.match(source,/afterColdRestart/)
+  assert.match(source,/Official Host union opt-out must survive real Desktop process restart/)
 })
