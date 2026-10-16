@@ -142,7 +142,14 @@ test('DSH 0.2 Host commits first-run union + real Goal permission in one CAS rev
   assert.equal(x.writes(),1)
   assert.equal(x.scope.getSnapshot().value?.realGoalStrikeConsent,'authorized-v1')
   assert.equal(x.scope.getSnapshot().value?.welcomeDecision,'enabled')
+  const beforeLeaving=x.revision()
+  const beforeLeavingWrites=x.writes()
   await rights.choose('not-now')
+  assert.equal(x.revision(),beforeLeaving+1,
+    'Leaving must revoke Goal + union rights in one official Host CAS revision')
+  assert.equal(x.writes(),beforeLeavingWrites+1,
+    'No gap between physical Goal revocation and union opt-out')
+  assert.equal(x.scope.getSnapshot().value?.welcomeDecision,'not-now')
   assert.equal(x.scope.getSnapshot().value?.realGoalStrikeConsent,'off')
   await rights.choose('enabled')
   assert.equal(rights.snapshot().goalStrikeAuthorized,false,

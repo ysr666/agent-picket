@@ -157,3 +157,90 @@ test('legacy single-field Host one-click path fails closed on second-write failu
   assert.equal(state.welcomeDecision,'enabled')
   assert.equal(createDshClientRightsScope(provider).snapshot().goalStrikeAuthorized,false)
 })
+
+test('modern official Host revokes union and physical Goal grant with exactly one CAS batch',async()=>{
+  let value:RightsSection={welcomeDecision:'enabled',realGoalStrikeConsent:'authorized-v1'}
+  const patches:Readonly<Record<string,unknown>>[]=[]
+  const singles:string[]=[]
+  const provider:DshSettingsScope<RightsSection>={
+    getSnapshot:()=>({status:'ready',mode:'host',writable:true,revision:patches.length+singles.length+1,value}),
+    subscribe:()=>()=>{},
+    async set(field,next){singles.push(field);value={...value,[field]:next}},
+    async setMany(patch){patches.push(patch);value={...value,...patch}},
+  }
+  const rights=createDshClientRightsScope(provider)
+  assert.equal(rights.snapshot().goalStrikeAuthorized,true)
+  const result=await rights.choose('not-now')
+  assert.equal(result.goalStrikeAuthorized,false)
+  assert.equal(value.welcomeDecision,'not-now')
+  assert.equal(value.realGoalStrikeConsent,'off')
+  assert.deepEqual(patches,[{welcomeDecision:'not-now',realGoalStrikeConsent:'off'}])
+  assert.deepEqual(singles,[], 'Revocation cannot use an intermediate one-field Host write')
+  await rights.choose('enabled')
+  assert.equal(rights.snapshot().goalStrikeAuthorized,false)
+})
+
+test('rejoining a stale OFF-union + ON-Goal Host record must atomically clear the grant',async()=>{
+  let value:RightsSection={welcomeDecision:'not-now',realGoalStrikeConsent:'authorized-v1'}
+  const batches:Readonly<Record<string,unknown>>[]=[]
+  const modern:DshSettingsScope<RightsSection>={
+    getSnapshot:()=>({status:'ready',mode:'host',writable:true,revision:batches.length+1,value}),
+    subscribe:()=>()=>{},
+    async set(){assert.fail('Stale grant must never rearm via one-field rejoin')},
+    async setMany(patch){batches.push(patch);value={...value,...patch}},
+  }
+  await createDshClientRightsScope(modern).choose('enabled')
+  assert.deepEqual(batches,[{welcomeDecision:'enabled',realGoalStrikeConsent:'off'}])
+  assert.equal(value.realGoalStrikeConsent,'off')
+  assert.equal(createDshClientRightsScope(modern).snapshot().goalStrikeAuthorized,false)
+})
+
+test('legacy Host revokes stale grant first on rejoin, or refuses unverified revocation',async()=>{
+  let value:RightsSection={welcomeDecision:'not-now',realGoalStrikeConsent:'authorized-v1'}
+  const fields:string[]=[]
+  const old:DshSettingsScope<RightsSection>={
+    getSnapshot:()=>({status:'ready',mode:'host',writable:true,revision:fields.length+1,value}),
+    subscribe:()=>()=>{},
+    async set(field,next){fields.push(field);value={...value,[field]:next}},
+  }
+  await createDshClientRightsScope(old).choose('enabled')
+  assert.deepEqual(fields,['realGoalStrikeConsent','welcomeDecision'])
+  assert.equal(value.realGoalStrikeConsent,'off')
+  assert.equal(createDshClientRightsScope(old).snapshot().goalStrikeAuthorized,false)
+})
+
+test('neither a fake modern batch nor a legacy peer race can announce safe revocation',async()=>{
+  const original:RightsSection={welcomeDecision:'enabled',realGoalStrikeConsent:'authorized-v1'}
+  let broken={...original}
+  const badModern:DshSettingsScope<RightsSection>={
+    getSnapshot:()=>({status:'ready',mode:'host',writable:true,revision:1,value:broken}),
+    subscribe:()=>()=>{},
+    async set(){assert.fail('Should use atomic batch')},
+    async setMany(patch){
+      // A broken Host writer acknowledges membership exit but drops revocation.
+      broken={...broken,welcomeDecision:patch.welcomeDecision as 'not-now'}
+    },
+  }
+  await assert.rejects(createDshClientRightsScope(badModern).choose('not-now'),
+    /Goal revocation/)
+  assert.equal(broken.realGoalStrikeConsent,'authorized-v1')
+
+  let raced={...original}
+  const old:DshSettingsScope<RightsSection>={
+    getSnapshot:()=>({status:'ready',mode:'host',writable:true,revision:1,value:raced}),
+    subscribe:()=>()=>{},
+    async set(field,next){
+      raced={...raced,[field]:next}
+      if(field==='welcomeDecision'){
+        // Simulate a peer resurrecting an old grant between separate writes.
+        raced.realGoalStrikeConsent='authorized-v1'
+      }
+    },
+  }
+  await assert.rejects(createDshClientRightsScope(old).choose('not-now'),
+    /Goal revocation/)
+  assert.equal(raced.welcomeDecision,'not-now')
+  assert.equal(raced.realGoalStrikeConsent,'authorized-v1')
+  assert.equal(createDshClientRightsScope(old).snapshot().goalStrikeAuthorized,false,
+    'An orphaned grant is NOT active while membership is OFF')
+})
