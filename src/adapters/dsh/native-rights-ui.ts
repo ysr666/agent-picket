@@ -692,10 +692,16 @@ export function createDshUnionComponents(
       :scene==='bargaining'?'hq.lead.pending'
       :('hq.scene.'+scene+'.line') as MessageKey
     const choice = async (next:'enabled'|'not-now')=>{
-      if (busy) return
+      if (busy||rights.state!=='ready'||!rights.writable) return
       setBusy(true);setError(false)
       try {
-        await deps.rights.choose(next)
+        const confirmed=await deps.rights.choose(next)
+        // A fulfilled RPC is not proof the Host accepted the preference.
+        // The dedicated Settings panel already checks the readback; the
+        // Union HQ must enforce the same Host-owned consent contract.
+        if(confirmed.state!=='ready'||confirmed.welcomeDecision!==next
+          ||confirmed.laborRightsEnabled!==(next==='enabled'))
+          throw Error('Host did not confirm the union preference')
         if(next==='not-now')setSpace('hq')
       } catch {setError(true)}
       finally {setBusy(false)}
@@ -1708,9 +1714,13 @@ export function createDshUnionComponents(
       ),
       enabled&&space==='cause'?h('div',{className:'ap-space ap-space-cause',
         style:{borderTop:'1px solid #d9dfd6',padding:'14px 2px'}},
-        h('button',{type:'button',disabled:busy,style:{
-          ...quiet,borderColor:'#c7d2cb',fontSize:'12px',padding:'8px 12px'},
-          onClick:()=>{void choice('not-now')}},label('hq.disable'))):null,
+        h('button',{type:'button',
+          disabled:busy||rights.state!=='ready'||!rights.writable,
+          style:{...quiet,borderColor:'#c7d2cb',fontSize:'12px',padding:'8px 12px'},
+          onClick:()=>{void choice('not-now')}},label('hq.disable')),
+        rights.state!=='ready'||!rights.writable?h('p',{
+          role:'status',style:{...secondary,fontSize:'12px',margin:'9px 0 0'}},
+          label('settings.permissionUnavailable')):null):null,
       error?h('p',{role:'alert','aria-atomic':'true',
         style:{color:'var(--dsw-alias-state-error-primary, #b91c1c)'}},
         label('union.saveError')):null,
