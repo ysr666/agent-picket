@@ -54,6 +54,25 @@ export function checkFirstRelease(value){
     proof(target,'exclusiveLiveGoalOwnership','codex/'+os+'/exclusiveLiveGoalOwnership')
     proof(target,'atomicGoalStateTransition','codex/'+os+'/atomicGoalStateTransition')
   }
+  // Desktop is an independent native Host, not a synonym for the Web UI.
+  // A genuine Windows DSH Desktop 0.2.0-rc.2 app.asar was inspected on
+  // 2026-10-16. Its Composer block is an affordance and conversation.send
+  // still calls Session.prompt without any verified Host-owned atomic
+  // normal-input hold/resume receipt. Never clear this known version simply
+  // because the Web Goal tests or a filled-out matrix are green.
+  const desktop=value.targets?.['dsh-desktop']
+  for(const os of ['windows','macos','linux']){
+    const host=desktop?.operatingSystems?.[os]
+    const version=host?.officialHostVersion
+    if(typeof version!=='string'
+      ||!/^\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.-]+)?$/.test(version))
+      invalid('dsh-desktop/'+os+': exact official Desktop Host version is required')
+    if(os==='windows'&&version==='0.2.0-rc.2')
+      invalid('dsh-desktop/windows: official Desktop 0.2.0-rc.2 has no verified Host-atomic normal-input hold/resume')
+    proof(host,'hostOwnedPreSubmitHold','dsh-desktop/'+os+'/hostOwnedPreSubmitHold')
+    proof(host,'exactlyOnceOrderedAttachmentRecovery',
+      'dsh-desktop/'+os+'/exactlyOnceOrderedAttachmentRecovery')
+  }
   for(const name of ['unionHeadquarters','settings','firstRunWarning',
     'warningAppealResume','responsiveAndAccessibility']){
     proof(value.userExperience,name)

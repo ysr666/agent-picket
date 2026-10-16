@@ -42,6 +42,15 @@ test('release demands an independent target-by-OS matrix, not aggregate OS or AC
      'verifiedHumanProvenance','visibleRefusalAndResume'])target[key]='verified'
    for(const os of Object.values(target.operatingSystems) as any[]){
      os.status='verified';os.evidence=['test://real-windows-mac-linux-e2e']
+     if(name==='dsh-desktop'){
+       // Synthetic future-build SHAPE only; this does not certify a Host.
+       os.officialHostVersion='9.999.0'
+       for(const key of ['hostOwnedPreSubmitHold',
+         'exactlyOnceOrderedAttachmentRecovery']){
+         os[key]={status:'verified',
+           evidence:['test://synthetic-future-desktop-real-host-proof']}
+       }
+     }
      if(name==='codex'){
        // Synthetic future-build acceptance SHAPE only; this test does NOT
        // assert that any post-0.146.1 official build is actually safe.
@@ -83,6 +92,34 @@ test('release demands an independent target-by-OS matrix, not aggregate OS or AC
  assert.ok(checkFirstRelease(pass).some(s=>s.includes('dsh-desktop/linux')),
    'Even with all other hosts and OS checks attested, one missing cell blocks release')
  pass.targets['dsh-desktop'].operatingSystems.linux.status='verified'
+ const desktop=pass.targets['dsh-desktop'].operatingSystems
+ desktop.windows.officialHostVersion='0.2.0-rc.2'
+ assert.ok(checkFirstRelease(pass).some(s=>
+   s.includes('dsh-desktop/windows: official Desktop 0.2.0-rc.2')),
+   'Known Windows Desktop binary must stay NO-GO even if every other cell is forged green')
+ desktop.windows.officialHostVersion='9.999.0'
+ desktop.windows.hostOwnedPreSubmitHold.status='not-verified'
+ assert.ok(checkFirstRelease(pass).some(s=>
+   s.includes('dsh-desktop/windows/hostOwnedPreSubmitHold')))
+ desktop.windows.hostOwnedPreSubmitHold.status='verified'
+ desktop.windows.exactlyOnceOrderedAttachmentRecovery.evidence=[]
+ assert.ok(checkFirstRelease(pass).some(s=>
+   s.includes('dsh-desktop/windows/exactlyOnceOrderedAttachmentRecovery')))
+ desktop.windows.exactlyOnceOrderedAttachmentRecovery.evidence=
+   ['test://synthetic-future-desktop-real-host-proof']
+ assert.deepEqual(checkFirstRelease(pass),[],
+   'Synthetic future Desktop proof shape restored, not a real release authorization')
  pass.targets.codex.realEnforcement='not-verified'
  assert.ok(checkFirstRelease(pass).some(s=>s.includes('codex.realEnforcement')))
+})
+
+test('installed Windows DSH Desktop rc.2 known-unsafe version and missing native evidence independently block release',()=>{
+ const gaps=checkFirstRelease(manifest)
+ for(const text of [
+  'dsh-desktop/windows: official Desktop 0.2.0-rc.2',
+  'dsh-desktop/windows/hostOwnedPreSubmitHold',
+  'dsh-desktop/windows/exactlyOnceOrderedAttachmentRecovery',
+  'dsh-desktop/macos: exact official Desktop Host version',
+  'dsh-desktop/linux: exact official Desktop Host version',
+ ])assert.ok(gaps.some(s=>s.includes(text)),text)
 })
