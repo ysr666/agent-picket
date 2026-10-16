@@ -1,0 +1,69 @@
+name: DSH Web Real Official-Work Goal and HQ Recovery
+
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/dsh-web-official-work-hq.yml'
+      - 'tests/fixtures/offline-web-official-work/**'
+      - 'tests/dsh-goal-welcome.real.test.ts'
+      - 'src/adapters/dsh/official-persisted-work-preview.ts'
+      - 'src/adapters/dsh/plugin.ts'
+      - 'tests/dsh-official-persisted-work-preview.test.ts'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  official-web-goal:
+    name: Chrome real Web / DSH ${{ matrix.dsh }} / HQ & human file
+    runs-on: ubuntu-latest
+    timeout-minutes: 23
+    strategy:
+      fail-fast: false
+      matrix:
+        dsh: ['0.2.0-rc.2', '0.2.1-alpha.3']
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - name: Build real Agent Picket distributable
+        run: |
+          npm ci --ignore-scripts --no-audit --no-fund
+          npm run build
+      - name: Install published DSH and actual browser driver
+        run: |
+          npm install -g pnpm@11.7.0 --no-audit --no-fund
+          npm install --prefix .dsh-web-host --no-save --no-package-lock --no-audit --no-fund @deepseek-ai/dsh@${{ matrix.dsh }}
+          npm install --prefix .dsh-web-browser --no-save --no-package-lock --no-audit --no-fund playwright-core@1.58.2
+      - name: Verify native Chrome is installed
+        shell: bash
+        run: |
+          command -v google-chrome >/dev/null
+          echo "AGENT_PICKET_CHROME_BIN=$(command -v google-chrome)" >> "$GITHUB_ENV"
+      - name: Real Web UI grants consent then official persisted work blocks Goal and HQ resumes
+        env:
+          PICKET_GOAL_WELCOME_E2E: '1'
+          PICKET_GOAL_RECOVERY_E2E: '1'
+          PICKET_GOAL_REAL_PERSISTED_E2E: '1'
+          PICKET_GOAL_RESTART_E2E: '1'
+          PICKET_GOAL_RACE_E2E: '1'
+          PICKET_GOAL_HUMAN_ATTACHMENT_E2E: '1'
+          PICKET_GOAL_FILE_BYTE_READBACK_E2E: '1'
+          PICKET_GOAL_CAPTURE_DIR: /tmp/picket-goal-web-evidence
+          AGENT_PICKET_DSH_BIN: ${{ github.workspace }}/.dsh-web-host/node_modules/.bin/dsh
+          AGENT_PICKET_DSH_HOST: ${{ github.workspace }}/.dsh-web-host/node_modules
+          AGENT_PICKET_PLAYWRIGHT_ENTRY: ${{ github.workspace }}/.dsh-web-browser/node_modules/playwright-core/index.mjs
+        run: >
+          node --experimental-strip-types --test --test-reporter=tap
+          --test-name-pattern="real DSH Web: one informed first-run click"
+          tests/dsh-goal-welcome.real.test.ts
+      - name: Save isolated real Chrome 320px and Goal recovery UX screenshots
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: dsh-real-web-goal-ui-${{ runner.os }}-${{ matrix.dsh }}
+          path: /tmp/picket-goal-web-evidence/
+          if-no-files-found: ignore
+          retention-days: 7
