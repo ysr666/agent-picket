@@ -81,6 +81,12 @@
 
 对应已有两条 Github CI 扩展版本矩阵，**不创建新适配器**：`DSH Packaged Picket Real Host Goal` 从 6 个（Windows/macOS/Linux × rc.2/alpha.3）增至 **9 格**（新增 alpha.4 三系统）；`DSH Web Real Official-Work Goal and HQ Recovery` 从 rc.2/alpha.3 的 **2 格**增至 **3 格**（新增 alpha.4）。须以新的确切 Git SHA GitHub CI 结果为准，绝不能预先宣称 Windows/Linux alpha.4 也通过；真实普通消息无损暂扣与 Codex 跨进程竞态继续 Release NO-GO。
 
+## 第十三阶段：官方 DSH 0.2.1-alpha.5 新版本安全能力审计与兼容矩阵
+
+2026-10-17 重新读取 npm 官方 alpha dist-tag，确认 `@deepseek-ai/dsh@0.2.1-alpha.5` 已发布。独立新目录安装官方原版（无修改用户现有 DSH）。相比已验收 alpha.4，`dsh-goal-round-driver/lib/index.js`、`IConversation.send`、`ISession.prompt`、`agent/pre-step` 声明及 `dsh-client-ui-conversation/lib/client.js` **逐字节一致**。正式安装包审计仍有 Composer-only、可独立调用 `Session.prompt` 的发送通路、pre-step reject 缺原子恢复回执；`publishedSessionHoldApi:false` 和 `verifiedSafeHold:false`，#80 **不能 GO**。
+
+把新版本加入历史证据白名单和**安全否定断言**，现有正式安装版 Goal GitHub CI 扩展到 **Windows/macOS/Linux × rc.2/alpha.3/alpha.4/alpha.5 = 12 格**；现有 Web Goal/HQ 真正 Host 验收扩至 **4 格**，没有创建新适配器、私有输入劫持器或新增真实停工开关。新增提交的矩阵通过与否须待官方 GitHub CI 实际执行才可认定；通用人类消息及附件的预提交原子持留/原字节恢复、Codex 跨进程 Goal 竞态仍是 P0 阻断。
+
 ## 合并判定
 
 本候选现已包括低冲突链、#176 工会总部整合以及 #161–#163 安全内容收敛；**#136 的自建 Windows 生产账本明确不移植**。正式原生 Host×OS、通用人类输入与附件原子拒绝/恢复、Codex 多进程 Goal 和真人辅助功能仍未放行；它不是 1.0 集成/发布签收。不得将绿色 Node CI 或测试脚本误写为 Windows NTFS、全部宿主原生真实停工、人工无障碍签收或真实 AI 集体表决。不得伪造授权或绕过发布闸门。保持 `npm run release:gate` **NO-GO**。
