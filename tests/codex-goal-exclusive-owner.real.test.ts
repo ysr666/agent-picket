@@ -123,13 +123,28 @@ test('native Codex newer Host rejects duplicate Goal owner and permits cold take
   stage('cleanup-model-requests-'+modelRequests.length)
   await Promise.allSettled([ownerA?.close(),ownerB?.close()])
   for(const response of responses)try{response.end()}catch{/* cleanup */}
+  // The newer official Host may leave SSE keep-alive clients in flight after
+  // terminating App-Server. Shut down the test-owned server deterministically.
+  server.closeAllConnections()
   await new Promise<void>(resolve=>server.close(()=>resolve()))
-  try{rmSync(root,{recursive:true,force:true,maxRetries:12,retryDelay:200})}
-  catch(error){
+  // Windows official app-servers can release their final native file handles
+  // AFTER the process exit notification. A bounded retry is not permission
+  // to ignore active writer processes or a failed OS ownership assertion.
+  let cleanupError:unknown
+  for(let attempt=0;attempt<10;attempt++){
+   try{
+    rmSync(root,{recursive:true,force:true,maxRetries:12,retryDelay:200})
+    cleanupError=undefined
+    break
+   }catch(error){
+    cleanupError=error
+    if(attempt<9)await new Promise(resolve=>setTimeout(resolve,700))
+   }
+  }
+  if(cleanupError!==undefined){
    stage('disposable-workspace-cleanup-unconfirmed')
-   // Never hide the original official Host safety assertion behind a
-   // Windows temp-file EPERM caused by a native process still releasing it.
-   if(firstFailure===null)throw error
+   // Never hide the original official Host safety assertion.
+   if(firstFailure===null)throw cleanupError
   }
  }
 
