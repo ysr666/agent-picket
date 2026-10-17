@@ -45,6 +45,7 @@ jobs:
       - name: Real Web UI grants consent then official persisted work blocks Goal and HQ resumes
         env:
           PICKET_GOAL_WELCOME_E2E: '1'
+          PICKET_GOAL_EXIT_E2E: '1'
           PICKET_GOAL_RECOVERY_E2E: '1'
           PICKET_GOAL_REAL_PERSISTED_E2E: '1'
           PICKET_GOAL_RESTART_E2E: '1'

@@ -21,3 +21,24 @@ For legacy single-field Hosts, the plugin revokes Goal consent FIRST, reads it b
 ## Limitations
 
 The real Windows Desktop test did not receive an authorized-v1 physical Goal token because that Host capability was not offered in the isolated run. It proves membership exit persisted, not independently a Windows physical Goal token revocation under a live multi-owner race. The Host authenticated CAS negative/positive tests and published alpha.4 Chrome checks support the narrower write protocol guarantee. Human ordinary text/image/file lossless pre-submit hold (#80), full Desktop Host × OS matrix (#117) and Codex multi-process Goal ownership (#169) remain release blockers. No main merge, tag or publish, and no general-message refusal enabled.
+
+
+## Follow-up: real issued Goal grant revoked by browser click (2026-10-18)
+
+The PICKET_GOAL_EXIT_E2E=1 extension to the existing **real official DSH Web + Chrome** first-run test proves a stronger boundary than the prior isolated Windows Desktop "not offered" case:
+
+1. The **actual informed first-run UI click** issues and persists realGoalStrikeConsent=authorized-v1 with welcomeDecision=enabled via the official Host namespace.
+2. The user opens the real Union HQ's cause room and clicks **Leave the union**, not a direct test API mutation. The authenticated official settings/describe readback reports realGoalStrikeConsent=off and welcomeDecision=not-now in exactly **one** Host CAS revision.
+3. After terminating and cold-restarting the **entire disposable official DSH Web Host process** with the exact same isolated DSH_HOME, both settings remain off/not-now.
+4. A normal **Join the AI union** UI click restores welcomeDecision=enabled but must leave the real Goal strike grant **off**, without replaying the informed first-run consent dialog.
+
+The test uses a locally npm-packed Agent Picket archive installed through the official DSH plugin manager, plus a separately installed offline fixture. No user profile, credentials, online model or live user prompt is involved. Its Host readbacks, revision and cold-start are not inferred from displayed UI state. The existing Web Goal recovery E2E remains intact (authorized synthetic prior work, native Goal block, cold restart human file SHA-256 proof and two-tab resume).
+
+- Actual published **DSH 0.2.1-alpha.5 + macOS Chrome** with all Goal/restart/file/race options AND new physical-grant exit option: **1/1 PASS**, including REAL_HOST_ATOMIC_UNION_EXIT and REAL_HOST_REVOKED_GOAL_COLD_REJOIN.
+- Actual published **DSH 0.2.1-alpha.4 + macOS Chrome** with new exit/rejoin option: **1/1 PASS**.
+- Actual published **DSH 0.2.1-alpha.3 + macOS Chrome** with new exit/rejoin option: **1/1 PASS**.
+- Actual published **DSH 0.2.0-rc.2 + macOS Chrome** with new exit/rejoin option: **1/1 PASS**.
+- Mac TypeScript/build/unit npm run check: **610 tests / 536 PASS / 0 FAIL / 74 conditional SKIP**, package dry-run **242,327 bytes / 113 entries**.
+- Existing GitHub CI on safety-fix SHA fcabbab was **7/7 SUCCESS**; any later commit that enables this browser regression requires its **own exact-SHA CI verification**.
+
+PICKET_GOAL_EXIT_E2E=1 is enabled in the two **existing**, not duplicated, GitHub official Web E2E workflows. This proves the observed Web official Host versions; **Windows Desktop's live issued token revocation and the release-wide Host/OS matrix are still not attested**. No ordinary human pre-submit atomic hold (#80), Codex cross-process exclusive Goal ownership (#169), or general real strikes are claimed. Release remains **NO-GO**.

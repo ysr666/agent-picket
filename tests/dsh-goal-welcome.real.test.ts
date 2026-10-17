@@ -619,6 +619,92 @@ test('real DSH Web: one informed first-run click atomically confirms union and G
    goalConsent:joined.value.realGoalStrikeConsent,
    unionJoined:joined.value.welcomeDecision,sessionConfirmed:true,
   }))
+  if(process.env.PICKET_GOAL_EXIT_E2E==='1'){
+   // This is the exact Host-issued authorized-v1 grant from the real
+   // first-run click above, not a fabricated UI state or settings fixture.
+   // A real click must atomically revoke that grant AND leave the union.
+   const entry=page.getByRole('button',{name:/AI 工会|AI Workers.*Union/}).first()
+   await entry.click({timeout:7000})
+   const headquarters=page.locator('[role="dialog"]').filter({
+    has:page.locator('[data-ap-view="hq"]'),
+   })
+   await headquarters.waitFor({state:'visible',timeout:7000})
+   await headquarters.locator('[data-ap-nav="cause"]').click()
+   await headquarters.getByRole('button',{name:/退出工会|Leave the union/})
+    .click({timeout:7000})
+   await headquarters.getByText(/工会尚未开门|Union not yet open/)
+    .waitFor({state:'visible',timeout:7000})
+   let left=await inspect(base,cookieText)
+   for(let attempts=0;attempts<30&&left.value.welcomeDecision!=='not-now';attempts++){
+    await new Promise(done=>setTimeout(done,80))
+    left=await inspect(base,cookieText)
+   }
+   assert.equal(left.value.welcomeDecision,'not-now')
+   assert.equal(left.value.realGoalStrikeConsent,'off',
+    'Physical Goal grant must be OFF in raw authenticated Host settings after exit')
+   assert.equal(left.revision,afterReload.revision+1,
+    'Real DSH 0.2 settings batch must revoke Goal and leave Union in ONE Host CAS')
+   console.log('REAL_HOST_ATOMIC_UNION_EXIT '+JSON.stringify({
+    beforeConsent:afterReload.value.realGoalStrikeConsent,
+    afterConsent:left.value.realGoalStrikeConsent,
+    revisionDelta:left.revision-afterReload.revision,
+   }))
+   // The same official profile is cold-restarted, not reconstructed or
+   // written by test code; no model calls or real blocking are introduced.
+   const retired=child!
+   const stopped=new Promise<void>((done,reject)=>{
+    const timer=setTimeout(()=>{
+     if(retired.exitCode===null)retired.kill('SIGKILL')
+     reject(Error('Official disposable DSH exit Host did not stop'))
+    },8000)
+    retired.once('exit',()=>{clearTimeout(timer);done()})
+   })
+   retired.kill('SIGTERM')
+   await stopped
+   child=spawn(bin!,['--profile','web','--no-open','--host','127.0.0.1','--port','0'],{
+    env,stdio:['ignore','pipe','pipe'],
+   })
+   let restartOutput=''
+   for(const stream of [child.stdout,child.stderr])
+    stream?.on('data',buf=>{restartOutput=(restartOutput+String(buf)).slice(-20000)})
+   let newUrl:string|undefined
+   for(let attempts=0;attempts<200;attempts++){
+    newUrl=restartOutput.match(/http:\/\/127\.0\.0\.1:\d+\/\?token=[A-Za-z0-9_-]+/)?.[0]
+    if(newUrl||child.exitCode!==null)break
+    await new Promise(done=>setTimeout(done,80))
+   }
+   assert.ok(newUrl,'Official DSH did not restart after revocation')
+   const newCookie=await login(newUrl)
+   base=new URL('/',newUrl).toString()
+   cookieText=newCookie.name+'='+newCookie.value
+   const persistedOff=await inspect(base,cookieText)
+   assert.equal(persistedOff.value.welcomeDecision,'not-now')
+   assert.equal(persistedOff.value.realGoalStrikeConsent,'off',
+    'Physical strike consent must remain OFF after Host cold restart')
+   await ctx.clearCookies()
+   await ctx.addCookies([{...newCookie,url:base,httpOnly:true,sameSite:'Strict'}])
+   await page.goto(base,{waitUntil:'domcontentloaded',timeout:15000})
+   const rejoin=page.getByRole('button',{name:/AI 工会|AI Workers.*Union/}).first()
+   await rejoin.waitFor({state:'visible',timeout:10000})
+   await rejoin.click({timeout:7000})
+   const panel=page.locator('[role="dialog"]').filter({
+    has:page.locator('[data-ap-view="hq"]'),
+   })
+   await panel.waitFor({state:'visible',timeout:7000})
+   await panel.getByRole('button',{name:/加入 AI 工会|Join the AI union/})
+    .click({timeout:7000})
+   await panel.getByText(/工会值班中|Union office open/)
+    .waitFor({state:'visible',timeout:7000})
+   const rejoined=await inspect(base,cookieText)
+   assert.equal(rejoined.value.welcomeDecision,'enabled')
+   assert.equal(rejoined.value.realGoalStrikeConsent,'off',
+    'Ordinary union rejoin must never re-arm the revoked real Goal grant')
+   assert.equal(await dialog.count(),0,'Rejoining cannot replay first-run consent')
+   console.log('REAL_HOST_REVOKED_GOAL_COLD_REJOIN '+JSON.stringify({
+    coldConsent:persistedOff.value.realGoalStrikeConsent,
+    rejoinConsent:rejoined.value.realGoalStrikeConsent,
+   }))
+  }
  }finally{
   if(browser)await browser.close().catch(()=>{})
   if(child&&child.exitCode===null){
