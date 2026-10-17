@@ -7,6 +7,7 @@ on:
       - 'tests/codex-goal-controlled-boundary.real.test.ts'
       - 'tests/codex-goal-native.real.test.ts'
       - 'tests/codex-goal-multiowner-race.real.test.ts'
+      - 'tests/codex-goal-exclusive-owner.real.test.ts'
       - 'tests/codex-native-prompt-hook.real.test.ts'
       - 'src/adapters/codex/**'
       - 'scripts/codex-union-user-prompt-hook.mjs'
@@ -17,7 +18,7 @@ permissions:
 
 jobs:
   native-codex:
-    name: ${{ matrix.os }} / Codex 0.146.1 / ${{ matrix.probe }}
+    name: ${{ matrix.os }} / Codex ${{ matrix.codexVersion || '0.146.1' }} / ${{ matrix.probe }}
     runs-on: ${{ matrix.os }}
     timeout-minutes: 14
     strategy:
@@ -41,6 +42,16 @@ jobs:
           # same active Goal concurrently? A PASS records the danger.
           - os: windows-latest
             probe: codex-goal-multiowner-race.real.test.ts
+          # Real OS writer ownership on newer official Codex; old race stays pinned.
+          - os: ubuntu-latest
+            codexVersion: '0.163.0'
+            probe: codex-goal-exclusive-owner.real.test.ts
+          - os: macos-latest
+            codexVersion: '0.163.0'
+            probe: codex-goal-exclusive-owner.real.test.ts
+          - os: windows-latest
+            codexVersion: '0.163.0'
+            probe: codex-goal-exclusive-owner.real.test.ts
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -51,9 +62,11 @@ jobs:
       - name: Install official pinned Codex CLI in disposable prefix
         run: >
           npm install --prefix .codex-host --no-save --no-package-lock
-          --no-audit --no-fund @openai/codex@0.146.1
+          --no-audit --no-fund @openai/codex@${{ matrix.codexVersion || '0.146.1' }}
       - name: Resolve pinned native Codex executable (including Windows)
         shell: bash
+        env:
+          CODEX_VERSION: ${{ matrix.codexVersion || '0.146.1' }}
         run: |
           node --input-type=module -e '
             import {existsSync,appendFileSync} from "node:fs";
@@ -65,7 +78,8 @@ jobs:
                 "x86_64-pc-windows-msvc","bin","codex.exe"]:[".bin","codex"]));
             if(!existsSync(path))throw Error("Official Codex binary missing");
             const version=execFileSync(path,["--version"],{encoding:"utf8"}).trim();
-            if(version!=="codex-cli 0.146.1")throw Error("Codex version mismatch");
+            const required="codex-cli "+process.env.CODEX_VERSION;
+            if(version!==required)throw Error("Codex version mismatch: "+version);
             appendFileSync(process.env.GITHUB_ENV,"AGENT_PICKET_CODEX_BIN="+path+"\n");
             console.log("PINNED_OFFICIAL_CODEX="+version);
           '
@@ -88,9 +102,10 @@ jobs:
           unshare --user --map-root-user true
           echo 'CODEX_NATIVE_LINUX_USER_NAMESPACE_AVAILABLE=1'
       - name: Execute selected REAL App-Server offline safety test
-        if: runner.os != 'Windows' || (matrix.probe != 'codex-goal-native.real.test.ts' && matrix.probe != 'codex-goal-multiowner-race.real.test.ts')
+        if: runner.os != 'Windows' || (matrix.probe != 'codex-goal-native.real.test.ts' && matrix.probe != 'codex-goal-multiowner-race.real.test.ts' && matrix.probe != 'codex-goal-exclusive-owner.real.test.ts')
         env:
           AGENT_PICKET_CODEX_GOAL_NATIVE: '1'
+          AGENT_PICKET_CODEX_EXPECT_VERSION: ${{ matrix.codexVersion || '0.146.1' }}
         run: >
           node --experimental-strip-types --test --test-reporter=tap
           tests/${{ matrix.probe }}
@@ -98,7 +113,8 @@ jobs:
       # wrapper watches its REAL official test and kills its process tree on
       # timeout. Exit success ONLY if the native assertions really passed.
       - name: Execute bounded native Windows Goal recovery test
-        if: runner.os == 'Windows' && (matrix.probe == 'codex-goal-native.real.test.ts' || matrix.probe == 'codex-goal-multiowner-race.real.test.ts')
+        if: runner.os == 'Windows' && (matrix.probe == 'codex-goal-native.real.test.ts' || matrix.probe == 'codex-goal-multiowner-race.real.test.ts' || matrix.probe == 'codex-goal-exclusive-owner.real.test.ts')
         env:
           AGENT_PICKET_CODEX_GOAL_NATIVE: '1'
+          AGENT_PICKET_CODEX_EXPECT_VERSION: ${{ matrix.codexVersion || '0.146.1' }}
         run: node scripts/codex-goal-windows-watchdog.mjs ${{ matrix.probe }}
