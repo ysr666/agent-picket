@@ -13,10 +13,9 @@ import { createNativeUnionCommandPort, type NativeUnionCommandPort } from './nat
 import { registerDshLifetimeWorkFetch, type LifetimeHostContext } from './lifetime-work-rpc.ts'
 import { createVolatileDignityLedger } from './dignity-live.ts'
 import { registerDshDignityFetch } from './dignity-fetch.ts'
-import {
-  registerDshGoalWorkEnforcement,readHostGoalStrikeConsent,completedUtcDayWork,
-} from './goal-work-enforcement.ts'
+import {readHostGoalStrikeConsent} from './goal-work-enforcement.ts'
 import type {NativeSettingsProvider} from './native-rights-command.ts'
+import { registerOfficialPersistedGoalPreview } from './official-persisted-work-preview.ts'
 
 /**
  * Native DeepSeek Harness/Cordis plugin entry. Node 22.19+ TypeScript stripping
@@ -41,15 +40,19 @@ export function apply(ctx: DshIntegrationContext): void {
       nativeUnion = createNativeUnionCommandPort(provider)
     },
   )
-  // Goal mode alone has an official non-destructive blocking API. No Hook
-  // refusal, prompt replay or cancellation: only the next autonomous round
-  // is disarmed. Legacy simulation consent cannot enable this path.
-  registerDshGoalWorkEnforcement(ctx as unknown as Parameters<typeof registerDshGoalWorkEnforcement>[0],{
-    consent:()=>readHostGoalStrikeConsent(nativeSettings),
-    todayWork:now=>{
-      try{return completedUtcDayWork(lifetime?.snapshotDays(31),now)}catch{return null}
-    },
-  })
+  // OFF by default: a previously authorized Goal setting is NOT permission
+  // to activate the obsolete DurableStats-based work source. That local store
+  // is analytics only; it is not the official Host completed-Turn evidence.
+  // The only opt-in research path reads DSH SessionPersistence directly and
+  // holds ONLY an autonomously queued Goal round, never human input/files.
+  // Even this preview requires independent real Host settings authorization.
+  // This is NOT a shipping 1.0 enforcement capability (#80/#121 NO-GO).
+  if(process.env.AGENT_PICKET_DSH_OFFICIAL_WORK_PREVIEW==='on'){
+    registerOfficialPersistedGoalPreview(
+      ctx as unknown as Parameters<typeof registerOfficialPersistedGoalPreview>[0],{
+        consent:()=>readHostGoalStrikeConsent(nativeSettings),
+      })
+  }
   const rules = new LocalRuleDetector()
   // Work-only lifetime summaries are local and ON by default, as expected
   // from a session analytics plugin. All text/classification persistence is

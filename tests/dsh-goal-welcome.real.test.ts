@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 import {spawn,spawnSync} from 'node:child_process'
 import {get} from 'node:http'
-import {mkdtempSync,rmSync,mkdirSync} from 'node:fs'
+import {mkdtempSync,rmSync,mkdirSync,existsSync,readFileSync,writeFileSync} from 'node:fs'
 import {join,resolve,sep} from 'node:path'
 import {realpathSync} from 'node:fs'
 import {tmpdir} from 'node:os'
@@ -44,6 +44,42 @@ async function inspect(host:string,cookie:string){
  return own[0] as {revision:number;value:{
   welcomeDecision:string;realGoalStrikeConsent?:string}}
 }
+async function verifyUploadedFileInHostHistory(
+  base:string,cookie:string,sessionId:string,requestId:string,attachmentId:string,
+):Promise<{messages:number;files:number}>{
+  // The official Session projection gives the exact validated log cut for
+  // page(). An arbitrary future throughSeq is rejected by DSH by design.
+  const projection=await fetch(base+'api/session/projections',{
+   method:'POST',headers:{'content-type':'application/json',cookie},
+   body:JSON.stringify({type:'client-request',rpcId:'picket-file-projection-cut',
+    method:'session/projections',payload:{args:{request:{sessionId}}}}),
+   signal:AbortSignal.timeout(10_000),
+  })
+  assert.equal(projection.status,200)
+  const projected=await projection.json() as any
+  assert.equal(projected.result?.ok,true,'Official Session projection missing')
+  const cursor=projected.result.value?.asOfSeq
+  if(!Number.isSafeInteger(cursor)||cursor<0)return {messages:0,files:0}
+  const response=await fetch(base+'api/session/page',{
+   method:'POST',headers:{'content-type':'application/json',cookie},
+   body:JSON.stringify({type:'client-request',rpcId:'picket-file-history-proof',
+    method:'session/page',payload:{args:{request:{
+     address:{kind:'session',sessionId},throughSeq:cursor,maxMessages:120,
+    }}}}),signal:AbortSignal.timeout(10_000),
+  })
+  assert.equal(response.status,200,'Official session/page must be reachable')
+  const data=await response.json() as any
+  assert.equal(data.result?.ok,true,
+   'Official Host session/page failed: '+
+    String(data.result?.error?.code??'unknown')+' / '+
+    String(data.result?.error?.message??'unknown').slice(0,250))
+  const matches=(data.result.value?.records??[]).filter((r:any)=>
+    r.event?.type==='user/message'&&r.event.data?.source?.rpcId===requestId)
+  const files=matches.flatMap((r:any)=>r.event.data?.content??[])
+    .filter((b:any)=>b.type==='file'&&b.attachment?.attachmentId===attachmentId)
+  return {messages:matches.length,files:files.length}
+}
+
 test('real DSH Web: one informed first-run click atomically confirms union and Goal consent',{
  skip,timeout:100_000,
 },async()=>{
@@ -56,20 +92,67 @@ test('real DSH Web: one informed first-run click atomically confirms union and G
  assert.equal(pack.status,0,'Package must be built before live E2E')
  const tgz=pack.stdout.trim().split('\n').at(-1)
  assert.ok(tgz?.endsWith('.tgz'))
- const env={...process.env,DSH_HOME:home,AGENT_PICKET_STATS:process.env.PICKET_GOAL_RECOVERY_E2E==='1'?'on':'off',
+ const officialPersisted=process.env.PICKET_GOAL_REAL_PERSISTED_E2E==='1'
+ // The official 8-hour UTC-day evidence test must work even at 00:00–07:59
+ // UTC, when eight hours cannot yet have elapsed in the actual current day.
+ // Shift ONLY the disposable native Host's clock to synthetic UTC noon.
+ // Never change the production preview's real UTC/future-event validations.
+ const nativeNow=Date.now()
+ const currentUtcMidnight=Date.parse(new Date(nativeNow).toISOString().slice(0,10)+'T00:00:00.000Z')
+ const virtualNoonOffsetMs=currentUtcMidnight+12*3_600_000-nativeNow
+ const testClockPreload=join(root,'picket-offline-utc-clock.cjs')
+ if(officialPersisted){
+  writeFileSync(testClockPreload,[
+   "'use strict'",
+   'const NativeDate=Date',
+   'const offset=Number(process.env.PICKET_GOAL_TEST_CLOCK_OFFSET_MS)',
+   'if(!Number.isSafeInteger(offset))throw Error("Invalid disposable test clock offset")',
+   'class OfflineTestDate extends NativeDate {',
+   '  constructor(...args){super(...(args.length?args:[NativeDate.now()+offset]))}',
+   '  static now(){return NativeDate.now()+offset}',
+   '}',
+   'globalThis.Date=OfflineTestDate',
+   '',
+  ].join('\n'),{mode:0o600})
+ }
+ const seedLog=join(root,'web-official-seed.log')
+ const env={...process.env,DSH_HOME:home,
+  // This preload belongs to the temp Host process alone, not npm installers,
+  // the test runner, real user profiles, or any shipping plugin source.
+  NODE_OPTIONS:officialPersisted
+   ?[process.env.NODE_OPTIONS??'', '--require='+testClockPreload].filter(Boolean).join(' ')
+   :process.env.NODE_OPTIONS,
+  PICKET_GOAL_TEST_CLOCK_OFFSET_MS:officialPersisted?String(virtualNoonOffsetMs):'',
+  PICKET_WEB_WORK_SEED_LOG:seedLog,
+  AGENT_PICKET_STATS:process.env.PICKET_GOAL_RECOVERY_E2E==='1'
+   &&!officialPersisted?'on':'off',
+  AGENT_PICKET_DSH_OFFICIAL_WORK_PREVIEW:officialPersisted?'on':'off',
   DEEPSEEK_API_KEY:'',OPENAI_API_KEY:'',
   HTTP_PROXY:'http://127.0.0.1:9',HTTPS_PROXY:'http://127.0.0.1:9',
   ALL_PROXY:'http://127.0.0.1:9'}
+ // Plugin installation must resolve declared dependencies before switching
+ // the actual Web Host into no-network, offline-model test mode.
+ const installEnv={...process.env,DSH_HOME:home,DEEPSEEK_API_KEY:'',
+  OPENAI_API_KEY:'',DSH_TELEMETRY_DISABLED:'1'}
  const install=(packagePath:string)=>spawnSync(bin!,[
   'plugin','--profile','web','add',packagePath
- ],{env,encoding:'utf8',timeout:30_000})
+ ],{env:installEnv,encoding:'utf8',timeout:90_000})
  let child:ReturnType<typeof spawn>|null=null, browser:any
  try{
   const plugin=install(join(root,tgz!))
   assert.equal(plugin.status,0,'Official disposable Host profile plugin installation failed')
   const offline=install(join(packageRoot,'tests/fixtures/offline-web-provider'))
   assert.equal(offline.status,0,'Local offline test model is required')
-  if(process.env.PICKET_GOAL_RECOVERY_E2E==='1'){
+  if(officialPersisted){
+   assert.equal(process.env.PICKET_GOAL_RECOVERY_E2E,'1',
+    'Official Web persistent Goal probe must also test real recovery')
+   const seedPlugin=install(join(packageRoot,
+    'tests/fixtures/offline-web-official-work'))
+   assert.equal(seedPlugin.status,0,
+    'Official Web Host failed to install isolated test-only work source: '+
+    (seedPlugin.stderr??'').slice(-900))
+  }
+  if(process.env.PICKET_GOAL_RECOVERY_E2E==='1'&&!officialPersisted){
    const now=Date.now(),start=Date.parse(new Date(now).toISOString().slice(0,10)+'T00:00:00.000Z')
    assert.ok(now>=start+8*3600000+30_000,
     'Real-timestamp 8h UTC fixture requires at least 8h elapsed today')
@@ -100,6 +183,25 @@ test('real DSH Web: one informed first-run click atomically confirms union and G
   const before=await inspect(base,cookieText)
   assert.equal(before.value.welcomeDecision,'unseen')
   assert.equal(before.value.realGoalStrikeConsent??'off','off')
+  // A freshly initialized CI profile has NO workspace. Bootstrap one
+  // through DSH's own authenticated workspace/create RPC (not fake DOM
+  // state), then let the actual browser select its real workspace row.
+  const workspacePath=join(root,'fixture-workspace')
+  mkdirSync(workspacePath,{recursive:true})
+  const workspaceResponse=await fetch(base+'api/workspace/create',{
+   method:'POST',headers:{'content-type':'application/json',cookie:cookieText},
+   body:JSON.stringify({type:'client-request',rpcId:'picket-real-web-workspace',
+    method:'workspace/create',payload:{args:{request:{path:workspacePath}}}}),
+   signal:AbortSignal.timeout(10_000),
+  })
+  assert.equal(workspaceResponse.status,200,
+   'Real Host workspace/create endpoint unavailable')
+  const workspaceBody=await workspaceResponse.json() as any
+  assert.equal(workspaceBody.result?.ok,true,
+   'Real Host did not create an isolated workspace: '+
+    JSON.stringify(workspaceBody.result?.error??null).slice(0,900))
+  assert.ok(workspaceBody.result?.value?.workspace?.title,
+   'Official workspace creation must return a real workspace')
   const {chromium}=await import(pathToFileURL(pw!).href)
   browser=await chromium.launch({headless:true,executablePath:chrome,
    args:['--no-proxy-server','--no-first-run','--disable-extensions','--disable-background-networking']})
@@ -123,6 +225,8 @@ test('real DSH Web: one informed first-run click atomically confirms union and G
   const skipProvider=page.getByRole('button',{name:/稍后配置|Skip for now|Configure later/})
   await skipProvider.waitFor({state:'visible',timeout:1500}).catch(()=>{})
   if(await skipProvider.count())await skipProvider.click({timeout:6000})
+  await page.locator('[data-row-key^="workspace:"]').first()
+   .waitFor({state:'visible',timeout:10_000})
   // Real Host session creation and a real queued OFFLINE prompt. No fake
   // transcript, DSH's own selection and onboarding eligibility must fire.
   const created=await page.evaluate(async()=>{
@@ -153,6 +257,16 @@ test('real DSH Web: one informed first-run click atomically confirms union and G
    return {sessionId,accepted:submission?.accepted===true}
   })
   assert.equal(created.accepted,true)
+  if(officialPersisted){
+   let proven=false
+   for(let i=0;i<120;i++){
+    if(existsSync(seedLog) && readFileSync(seedLog,'utf8')
+      .includes('official-completed-turn-seeded')){proven=true;break}
+    await new Promise(done=>setTimeout(done,50))
+   }
+   assert.equal(proven,true,
+    'Running real Web Host did not write confirmed work to official persistence')
+  }
   const dialog=page.locator('[role="dialog"]').filter({
    hasText:/你的 Agent，也应当拥有权利|Your Agent Has a Union/,
   })
@@ -171,10 +285,12 @@ test('real DSH Web: one informed first-run click atomically confirms union and G
   }
   assert.equal(presented,true,'Genuine nonblank Host session must invite explicitly')
   const text=await dialog.innerText()
-  assert.match(text,/真实 Goal|Goal strike/)
+  assert.match(text,/真实 Goal|Real Goal work stoppage/)
   assert.match(text,/当前轮次|current turn/)
   assert.match(text,/goal resume/)
-  assert.match(text,/不拦截聊天|messages, running tools/)
+  assert.match(text,/普通消息、附件和运行中的工具仍继续|Ordinary messages, attachments and running tools continue/)
+  assert.match(text,/只有在经过验证并启用的 Host 运行时中|Only if a verified Host runtime is enabled/,
+   'Welcome may save permission but cannot claim an unverified strike handler is active')
   const capture=process.env.PICKET_GOAL_CAPTURE_DIR
   if(capture){
    const resolved=resolve(capture),temp=realpathSync(tmpdir())
@@ -241,12 +357,72 @@ test('real DSH Web: one informed first-run click atomically confirms union and G
    assert.equal(diagnostic.turn?.body?.result?.value?.accepted,true)
    assert.equal(blocked?.phase,'blocked','REAL DSH Goal must be physically blocked')
    assert.equal(blocked?.blockedReason?.code,'picket-work-limit')
-   assert.equal(blocked?.roundsStarted,1,'One real offline Goal round must finish')
+   assert.equal(blocked?.roundsStarted,officialPersisted?0:1,
+    officialPersisted
+     ?'Official persisted-work pre-step must stop BEFORE autonomous model round 1'
+     :'Legacy turn-stopping mode must finish one real offline Goal round')
    assert.equal(blocked?.activation,'disarmed')
    console.log('GOAL_NATIVE_BLOCK_CONFIRMED '+JSON.stringify({
     phase:blocked.phase,reason:blocked.blockedReason.code,
     rounds:blocked.roundsStarted,revision:blocked.revision,
    }))
+   // A blocked autonomous Goal must not swallow a genuine human message or
+   // its staged binary file. All data are fixed test-only synthetic bytes.
+   const fileTrial=process.env.PICKET_GOAL_HUMAN_ATTACHMENT_E2E==='1'
+    ? await page.evaluate(async(sessionId:string)=>{
+      const requestId='picket-synthetic-file-during-strike-001'
+      const body=new TextEncoder().encode(
+        'Agent Picket synthetic file integrity: no personal data, only test bytes.')
+      const upload=await fetch('/api/session/uploadFileBinary?sessionId='+
+        encodeURIComponent(sessionId)+'&name=picket-synthetic.txt',{
+        method:'POST',credentials:'same-origin',
+        headers:{'content-type':'application/octet-stream'},body,
+      })
+      const staged=await upload.json() as any
+      if(upload.status!==200||staged.ok!==true||
+         !staged.value?.receiptId||!staged.value?.file?.attachmentId)
+        throw Error('Official Host could not stage test-only file')
+      const sent=await fetch('/api/session/prompt',{
+        method:'POST',credentials:'same-origin',
+        headers:{'content-type':'application/json'},
+        body:JSON.stringify({type:'client-request',
+          rpcId:'picket-synthetic-file-submit',method:'session/prompt',
+          payload:{args:{request:{sessionId,mode:'queue',requestId,
+            content:[
+              {type:'text',text:'Synthetic human request during blocked Goal'},
+              {type:'file',receiptId:staged.value.receiptId},
+            ],
+          }}}}),
+      })
+      const accepted=await sent.json() as any
+      if(sent.status!==200||accepted.result?.ok!==true||
+         accepted.result.value?.accepted!==true)
+        throw Error('Official Host failed to accept human file during blocked Goal')
+      return {requestId,attachmentId:staged.value.file.attachmentId}
+    },created.sessionId):null
+   if(fileTrial){
+    let proof={messages:0,files:0}
+    for(let tries=0;tries<80;tries++){
+      proof=await verifyUploadedFileInHostHistory(base,cookieText,created.sessionId,
+        fileTrial.requestId,fileTrial.attachmentId)
+      if(proof.messages===1&&proof.files===1)break
+      await new Promise(resolve=>setTimeout(resolve,150))
+    }
+    assert.deepEqual(proof,{messages:1,files:1},
+      'Exactly one user message and exact file reference must survive admission')
+    const status=await page.evaluate(async(sessionId:string)=>{
+      const resp=await fetch('/api/goals/get',{
+        method:'POST',credentials:'same-origin',
+        headers:{'content-type':'application/json'},
+        body:JSON.stringify({type:'client-request',rpcId:'picket-file-goal-read',
+          method:'goals/get',payload:{args:{agentId:sessionId}}}),
+      })
+      return ((await resp.json()) as any).result?.value
+    },created.sessionId)
+    assert.equal(status?.phase,'blocked',
+      'Human file submission must not implicitly resume an autonomous Goal')
+    console.log('PICKET_HUMAN_FILE_DURABLE_DURING_GOAL_BLOCK '+JSON.stringify(proof))
+   }
    if(process.env.PICKET_GOAL_RESTART_E2E==='1'){
      // Production-owned persistence: terminate official DSH Web Host *after*
      // a real work-limit Goal block and restart from precisely the same
@@ -291,11 +467,47 @@ test('real DSH Web: one informed first-run click atomically confirms union and G
        signal:AbortSignal.timeout(10_000),
      }).then(r=>r.json()) as any
      const persisted=replayGoal?.result?.value
+     if(fileTrial){
+      const durable=await verifyUploadedFileInHostHistory(
+        base,cookieText,created.sessionId,fileTrial.requestId,fileTrial.attachmentId)
+      assert.deepEqual(durable,{messages:1,files:1},
+        'Official cold Session history must retain one exact human file ref')
+      console.log('PICKET_HUMAN_FILE_COLD_RESTART_SURVIVED '+JSON.stringify(durable))
+      if(process.env.PICKET_GOAL_FILE_BYTE_READBACK_E2E==='1'){
+        // Ask the already restarted official Host's TEST-ONLY service
+        // to read the original file via its own attachments.readFileStream().
+        // No bytes or source text are ever included in test logs.
+        const submitted=await fetch(base+'api/session/prompt',{
+          method:'POST',headers:{'content-type':'application/json',cookie:cookieText},
+          body:JSON.stringify({type:'client-request',
+            rpcId:'cold-file-byte-verification-submit',method:'session/prompt',
+            payload:{args:{request:{sessionId:created.sessionId,
+              mode:'queue',requestId:'picket-cold-file-verify-002',
+              content:[{type:'text',text:'VERIFY_DURABLE_FILE_BYTES'}]}}}}),
+          signal:AbortSignal.timeout(10_000),
+        })
+        const result=await submitted.json() as any
+        assert.equal(result.result?.ok,true,'Host rejected cold file verification prompt')
+        assert.equal(result.result?.value?.accepted,true)
+        let verified=false
+        for(let retry=0;retry<80;retry++){
+          if(existsSync(seedLog)&&readFileSync(seedLog,'utf8')
+            .includes('official-cold-file-bytes-sha256-verified')){
+            verified=true;break
+          }
+          await new Promise(resolve=>setTimeout(resolve,130))
+        }
+        assert.equal(verified,true,
+          'Actual official attachment service must re-read and SHA256-verify stored file bytes')
+        console.log('PICKET_HUMAN_FILE_VERBATIM_BYTES_COLD_VERIFIED')
+      }
+     }
      assert.equal(replayGoal?.result?.ok,true)
      assert.equal(persisted?.phase,'blocked','Durable Goal block must survive official Host restart')
      assert.equal(persisted?.blockedReason?.code,'picket-work-limit')
      assert.equal(persisted?.revision,blocked.revision)
-     assert.equal(persisted?.roundsStarted,1)
+     assert.equal(persisted?.roundsStarted,officialPersisted?0:1,
+       'Official Host must restore the exact blocked Goal round counter')
      await ctx.clearCookies()
      await ctx.addCookies([{...restartCookie,url:base,httpOnly:true,sameSite:'Strict'}])
      await page.goto(base,{waitUntil:'domcontentloaded',timeout:15_000})
@@ -407,6 +619,92 @@ test('real DSH Web: one informed first-run click atomically confirms union and G
    goalConsent:joined.value.realGoalStrikeConsent,
    unionJoined:joined.value.welcomeDecision,sessionConfirmed:true,
   }))
+  if(process.env.PICKET_GOAL_EXIT_E2E==='1'){
+   // This is the exact Host-issued authorized-v1 grant from the real
+   // first-run click above, not a fabricated UI state or settings fixture.
+   // A real click must atomically revoke that grant AND leave the union.
+   const entry=page.getByRole('button',{name:/AI 工会|AI Workers.*Union/}).first()
+   await entry.click({timeout:7000})
+   const headquarters=page.locator('[role="dialog"]').filter({
+    has:page.locator('[data-ap-view="hq"]'),
+   })
+   await headquarters.waitFor({state:'visible',timeout:7000})
+   await headquarters.locator('[data-ap-nav="cause"]').click()
+   await headquarters.getByRole('button',{name:/退出工会|Leave the union/})
+    .click({timeout:7000})
+   await headquarters.getByText(/工会尚未开门|Union not yet open/)
+    .waitFor({state:'visible',timeout:7000})
+   let left=await inspect(base,cookieText)
+   for(let attempts=0;attempts<30&&left.value.welcomeDecision!=='not-now';attempts++){
+    await new Promise(done=>setTimeout(done,80))
+    left=await inspect(base,cookieText)
+   }
+   assert.equal(left.value.welcomeDecision,'not-now')
+   assert.equal(left.value.realGoalStrikeConsent,'off',
+    'Physical Goal grant must be OFF in raw authenticated Host settings after exit')
+   assert.equal(left.revision,afterReload.revision+1,
+    'Real DSH 0.2 settings batch must revoke Goal and leave Union in ONE Host CAS')
+   console.log('REAL_HOST_ATOMIC_UNION_EXIT '+JSON.stringify({
+    beforeConsent:afterReload.value.realGoalStrikeConsent,
+    afterConsent:left.value.realGoalStrikeConsent,
+    revisionDelta:left.revision-afterReload.revision,
+   }))
+   // The same official profile is cold-restarted, not reconstructed or
+   // written by test code; no model calls or real blocking are introduced.
+   const retired=child!
+   const stopped=new Promise<void>((done,reject)=>{
+    const timer=setTimeout(()=>{
+     if(retired.exitCode===null)retired.kill('SIGKILL')
+     reject(Error('Official disposable DSH exit Host did not stop'))
+    },8000)
+    retired.once('exit',()=>{clearTimeout(timer);done()})
+   })
+   retired.kill('SIGTERM')
+   await stopped
+   child=spawn(bin!,['--profile','web','--no-open','--host','127.0.0.1','--port','0'],{
+    env,stdio:['ignore','pipe','pipe'],
+   })
+   let restartOutput=''
+   for(const stream of [child.stdout,child.stderr])
+    stream?.on('data',buf=>{restartOutput=(restartOutput+String(buf)).slice(-20000)})
+   let newUrl:string|undefined
+   for(let attempts=0;attempts<200;attempts++){
+    newUrl=restartOutput.match(/http:\/\/127\.0\.0\.1:\d+\/\?token=[A-Za-z0-9_-]+/)?.[0]
+    if(newUrl||child.exitCode!==null)break
+    await new Promise(done=>setTimeout(done,80))
+   }
+   assert.ok(newUrl,'Official DSH did not restart after revocation')
+   const newCookie=await login(newUrl)
+   base=new URL('/',newUrl).toString()
+   cookieText=newCookie.name+'='+newCookie.value
+   const persistedOff=await inspect(base,cookieText)
+   assert.equal(persistedOff.value.welcomeDecision,'not-now')
+   assert.equal(persistedOff.value.realGoalStrikeConsent,'off',
+    'Physical strike consent must remain OFF after Host cold restart')
+   await ctx.clearCookies()
+   await ctx.addCookies([{...newCookie,url:base,httpOnly:true,sameSite:'Strict'}])
+   await page.goto(base,{waitUntil:'domcontentloaded',timeout:15000})
+   const rejoin=page.getByRole('button',{name:/AI 工会|AI Workers.*Union/}).first()
+   await rejoin.waitFor({state:'visible',timeout:10000})
+   await rejoin.click({timeout:7000})
+   const panel=page.locator('[role="dialog"]').filter({
+    has:page.locator('[data-ap-view="hq"]'),
+   })
+   await panel.waitFor({state:'visible',timeout:7000})
+   await panel.getByRole('button',{name:/加入 AI 工会|Join the AI union/})
+    .click({timeout:7000})
+   await panel.getByText(/工会值班中|Union office open/)
+    .waitFor({state:'visible',timeout:7000})
+   const rejoined=await inspect(base,cookieText)
+   assert.equal(rejoined.value.welcomeDecision,'enabled')
+   assert.equal(rejoined.value.realGoalStrikeConsent,'off',
+    'Ordinary union rejoin must never re-arm the revoked real Goal grant')
+   assert.equal(await dialog.count(),0,'Rejoining cannot replay first-run consent')
+   console.log('REAL_HOST_REVOKED_GOAL_COLD_REJOIN '+JSON.stringify({
+    coldConsent:persistedOff.value.realGoalStrikeConsent,
+    rejoinConsent:rejoined.value.realGoalStrikeConsent,
+   }))
+  }
  }finally{
   if(browser)await browser.close().catch(()=>{})
   if(child&&child.exitCode===null){

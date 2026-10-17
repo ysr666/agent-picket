@@ -1,0 +1,3 @@
+- insert:
+    - id: agent-picket-web-official-work-test-seed
+      name: '@agent-picket/offline-web-official-work'

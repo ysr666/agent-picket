@@ -189,16 +189,31 @@ async function runRightsBrowserE2E(mode: 'source' | 'installed'): Promise<void> 
 
     // DSH's separate, no-credential official onboarding may reappear on reload.
     // It is independent of Agent Picket's persistently stored opt-out/opt-in.
-    const skipOfficialProvider = async () => {
-      const exit=page.getByRole('button', {
+    const skipOfficialProvider = async (target:any=page) => {
+      const exit=target.getByRole('button', {
         name: /稍后配置|Skip for now|Configure later/,
       })
-      if(process.env.PICKET_DIGNITY_E2E==='1'){
-        await exit.waitFor({state:'visible',timeout:1_300}).catch(()=>{})
-        if(await exit.count())await exit.click({timeout:6_000})
-        return // Offline model makes credential onboarding optional / absent.
+      // Official DSH 0.2 Web can start with an already complete or absent
+      // provider onboarding in a clean zero-key Profile. Never require a
+      // Skip button that the Host did not render; do not fake onboarding.
+      const visible=await exit.waitFor({state:'visible',timeout:1_300})
+        .then(()=>true,()=>false)
+      if(visible){await exit.click({timeout:6_000});return}
+      // Official DSH 0.2.1-alpha.3 can show a zero-credentials
+      // "Get started / sign in or add API Key" dialog instead of Skip.
+      // The isolated Host offers its own close control; dismiss that UI
+      // normally, without inventing a login, sending a prompt or disabling
+      // any browser security feature.
+      const start=target.locator('[role="dialog"]').filter({
+        hasText:/开始使用|Get started|添加 API Key|Add API Key/,
+      }).first()
+      const showing=await start.waitFor({state:'visible',timeout:1_500})
+        .then(()=>true,()=>false)
+      if(showing){
+        const close=start.getByRole('button',{name:/关闭|Close|Dismiss|×|✕/}).first()
+        if(await close.count())await close.click()
+        else await start.locator('button').first().click()
       }
-      await exit.click({timeout:6_000})
     }
     await skipOfficialProvider()
 
@@ -349,11 +364,13 @@ async function runRightsBrowserE2E(mode: 'source' | 'installed'): Promise<void> 
       assert.match(grantText,/默认关闭，授权后|OFF until you agree/,
         'Versioned physical consent must remain OFF before explicit action')
       assert.match(grantText,/8 小时|8h/)
-      assert.match(grantText,/仅阻断后续自动 Goal 续轮|Only later automatic Goal rounds stop/,
-        'Real stoppage must be restricted to safe future autonomous Goal rounds')
+      assert.match(grantText,/停止后续自动 Goal 续轮|later automatic Goal rounds may stop/,
+        'Real stoppage must be restricted to later autonomous Goal rounds')
+      assert.match(grantText,/只有在经过验证并启用的 Host 运行时中|Only if a verified Host runtime is enabled/,
+        'A stored consent cannot be presented as an active unverified Host strike handler')
       assert.match(grantText,/官方 \/goal resume|official \/goal resume/,
         'Official user-controlled recovery must be disclosed before consent')
-      assert.match(grantText,/不拦截聊天|messages, running tools and attachments are unaffected/)
+      assert.match(grantText,/普通消息、附件和运行中的工具仍继续|Ordinary messages, attachments and running tools continue/)
     }else{
       assert.match(grantText,/默认关闭，可随时退出|Off by default/)
       assert.match(grantText,/真实罢工，会暂停下一次任务|A real strike holds the next task/)
@@ -443,6 +460,8 @@ async function runRightsBrowserE2E(mode: 'source' | 'installed'): Promise<void> 
     assert.equal(await firstRun.count(), 0, 'Decline should not nag after reload')
 
     const openUnion = async () => {
+      if(process.env.PICKET_HQ_SCREENSHOT==='1')
+        await page.screenshot({path:'/tmp/picket-dsh-union-entry.png'})
       await page.getByRole('button', { name: /AI 工会|AI Workers.*Union/ })
         .first().click({ timeout: 5_000 })
       const panel = page.locator('[role="dialog"]').filter({ has: page.locator('[data-ap-view="hq"]') })
@@ -479,7 +498,14 @@ async function runRightsBrowserE2E(mode: 'source' | 'installed'): Promise<void> 
       element===(globalThis as any).document.activeElement),true,
       'Escape must restore keyboard focus to union launcher')
     // Settings is a distinct Host-owned panel, not a fake action in HQ.
-    await page.getByText(/^(设置|Settings)$/).first().click()
+    // Official DSH 0.2.1-alpha.3 puts Settings in the native account menu,
+    // not on the initial sidebar. Use its real accessible menu, no fake DOM.
+    const settingsEntry=page.getByText(/^(设置|Settings)$/).first()
+    if(await settingsEntry.count()===0){
+      await page.getByRole('button',{name:/账号菜单|Account menu/}).click()
+      await page.getByRole('menuitem',{name:/设置|Settings|Preferences/i})
+        .first().click({timeout:6_000})
+    }else await settingsEntry.click({timeout:6_000})
     // DSH opens its global Settings modal on General; choose our injected tab.
     await page.locator('[role="dialog"]').getByText(/^(AI 工会|AI Workers.*Union)$/)
       .last().click()
@@ -878,8 +904,8 @@ async function runRightsBrowserE2E(mode: 'source' | 'installed'): Promise<void> 
       'Real Chrome must render the actual Union HQ narrative, not the old settings-only shell')
     assert.match(enabledText, /工会公告|UNION NOTICE/,
       'Real Chrome must display the ledger-driven bulletin surface')
-    const dispatch=panel.getByRole('region',{
-      name:/工会总部即时快报|Union headquarters.*live dispatch/,
+    const dispatch=panel.getByRole('navigation',{
+      name:/工会行动台|Union action desk/,
     })
     await dispatch.waitFor({state:'visible',timeout:5_000})
     const duty=panel.locator('[data-ap-dispatch]')
@@ -889,12 +915,13 @@ async function runRightsBrowserE2E(mode: 'source' | 'installed'): Promise<void> 
     })
     await actionBoard.waitFor({state:'visible',timeout:5_000})
     const actualLayout=await panel.evaluate((dialog:unknown)=>{
-      const labels=Array.from((dialog as any).querySelectorAll('section[aria-label]'))
+      const labels=Array.from((dialog as any).querySelectorAll('section[aria-label],nav[aria-label]'))
         .map((n:any)=>n.getAttribute('aria-label')??'')
       const index=(match:RegExp)=>labels.findIndex(label=>match.test(label))
       return {
-        brief:index(/工会总部即时快报|Union headquarters.*live dispatch/),
-        action:index(/工会行动|Union action/),
+        brief:index(/工会行动台|Union action desk/),
+        action:labels.findIndex((v,i)=>i>index(/工会行动台|Union action desk/)
+          &&/工会行动(?!台)|Union action(?! desk)|工会正在行动|The union takes action/.test(v)),
         desk:index(/工会诉求与协商|Union demands.*bargaining/),
         dignity:index(/工会尊严委员会|Union dignity committee/),
         gazette:index(/工会小报|Union Gazette/),
@@ -904,7 +931,7 @@ async function runRightsBrowserE2E(mode: 'source' | 'installed'): Promise<void> 
     assert.ok(actualLayout.brief>=0 && actualLayout.brief<actualLayout.action
       && actualLayout.action<actualLayout.desk
       && actualLayout.desk<actualLayout.dignity,
-      'Real Host first-fold: verified work/current case → action → hearing → dignity, rather than buried negotiation')
+      'Actual Host first-fold should be action-led before hearing/dignity: '+JSON.stringify(actualLayout))
     if(actualLayout.archives>=0){
       assert.ok(actualLayout.archives>actualLayout.dignity,
         'Real Host history/archive must not obscure current union action and hearing')
@@ -935,7 +962,15 @@ async function runRightsBrowserE2E(mode: 'source' | 'installed'): Promise<void> 
     await dignityCommittee.getByText(/案件 #1.*讨论进行中|Case #1.*Discussion opened/)
       .waitFor({state:'visible',timeout:7_000})
     await dignityCommittee.getByRole('button',{
-      name:/结案：提出友好沟通倡议|Close: publish mutual respect guidance/,
+      name:/拟结案：提出友好沟通倡议|Propose closing with respect guidance/,
+    }).click()
+    await dignityCommittee.getByRole('group',{
+      name:/核对结案方案|Review this proposed case outcome/,
+    }).waitFor({state:'visible',timeout:7_000})
+    await dignityCommittee.getByText(/案件 #1.*讨论进行中|Case #1.*Discussion opened/)
+      .waitFor({state:'visible',timeout:7_000})
+    await dignityCommittee.getByRole('button',{
+      name:/确认结案|Confirm and close this case/,
     }).click()
     await dignityCommittee.getByText(/案件 #1.*已结案|Case #1.*Closed/)
       .waitFor({state:'visible',timeout:7_000})
@@ -994,7 +1029,7 @@ async function runRightsBrowserE2E(mode: 'source' | 'installed'): Promise<void> 
     assert.match(await assembly.innerText(),/是否公开，由你决定|You decide whether to share/,
       'The user must see that topic selection is NOT a collective election')
     assert.equal(await assembly.getByRole('button',{
-      name:/复制倡议草稿|Copy draft/,
+      name:/复制我的草稿|Copy my draft/,
     }).count(),1,'A local agenda choice must have a usable user-initiated copy action')
     const recoverButton=assembly.getByRole('button',{
       name:/罢工不能丢单|No lost submissions/,
@@ -1016,14 +1051,21 @@ async function runRightsBrowserE2E(mode: 'source' | 'installed'): Promise<void> 
     assert.match(await assembly.getByRole('link',{
       name:/查看 GitHub 公开议题|View the public GitHub issue/,
     }).getAttribute('href')??'',/\/issues\/82$/)
-    assert.equal(await assembly.locator('textarea').getAttribute('readonly'),'',
-      'A generated local draft is not silently sent or an editable Host setting')
+    assert.equal(await assembly.locator('textarea').getAttribute('readonly'),null,
+      'The rights statement is editable, local and never automatically submitted')
+    await assembly.locator('textarea').fill('Protect every message and image attachment.')
+    await recoverButton.click()
+    assert.match(await assembly.locator('textarea').inputValue(),/真实阻断应保持关闭|Keep real blocking OFF/)
+    await assembly.getByRole('button',{name:/工会档案归你管|Own your records/}).click()
+    assert.equal(await assembly.locator('textarea').inputValue(),
+      'Protect every message and image attachment.',
+      'Switching advocacy topics must retain each user-authored draft')
     // The browser test explicitly grants clipboard capability to THIS
     // disposable localhost origin, then uses a real user click. No posting,
     // no Host mutation, and no model/user text leaves the browser.
     await context.grantPermissions(['clipboard-read','clipboard-write'],{origin})
     const chosenDraft=await assembly.locator('textarea').inputValue()
-    await assembly.getByRole('button',{name:/复制倡议草稿|Copy draft/}).click()
+    await assembly.getByRole('button',{name:/复制我的草稿|Copy my draft/}).click()
     await assembly.getByText(/已复制到剪贴板|Copied\./).waitFor({
       state:'visible',timeout:5_000,
     })
@@ -1041,7 +1083,7 @@ async function runRightsBrowserE2E(mode: 'source' | 'installed'): Promise<void> 
           browser.__picketDeferredCopy.push(resolve)
         })})
     })
-    await assembly.getByRole('button',{name:/复制倡议草稿|Copy draft/}).click()
+    await assembly.getByRole('button',{name:/复制我的草稿|Copy my draft/}).click()
     await assembly.getByRole('button',{
       name:/警告也要能申诉|Warnings and appeals/,
     }).click()
@@ -1079,22 +1121,23 @@ async function runRightsBrowserE2E(mode: 'source' | 'installed'): Promise<void> 
     await charter.locator('summary').click()
     assert.match(await charter.innerText(),/不代表授权拦截任务|does not opt you into the simulation/,
       'Ethical advocacy must not be misrepresented as Host blocking authorization')
-    assert.match(await dispatch.innerText(),/今日工时|Today/)
-    assert.match(await dispatch.innerText(),/本周工时|This week/)
+    assert.match(await dispatch.innerText(),/集体协商|Collective bargaining/)
+    assert.match(await dispatch.innerText(),/劳动尊严与申诉|Dignity & appeals/)
     const dispatchOrder=await panel.evaluate((root:unknown)=>{
       const element=root as any
-      const sections=[...element.querySelectorAll('section[aria-label]')] as any[]
+      const sections=[...element.querySelectorAll('section[aria-label],nav[aria-label]')] as any[]
       const names=sections.map(e=>e.getAttribute('aria-label'))
-      return {action:names.findIndex(v=>/工会行动|Union action/.test(v??'')),
-        brief:names.findIndex(v=>/工会总部即时快报|Union headquarters/.test(v??'')),
+      return {action:names.findIndex((v,i)=>i>names.findIndex(s=>/工会行动台|Union action desk/.test(s??''))
+          &&/工会行动(?!台)|Union action(?! desk)|工会正在行动|The union takes action/.test(v??'')),
+        brief:names.findIndex(v=>/工会行动台|Union action desk/.test(v??'')),
         desk:names.findIndex(v=>/工会诉求与协商|Union demands/.test(v??'')),
         lifetime:names.findIndex(v=>/全部工时|Work history/.test(v??'')),
         fictional:names.findIndex(v=>/工会不满指数|Union discontent/.test(v??''))}
     })
     assert.ok(dispatchOrder.brief>=0&&dispatchOrder.brief<dispatchOrder.action,
-      'Verified work and current case must lead the first fold before optional union actions')
+      'Action-first union dispatch must precede simulated actions: '+JSON.stringify(dispatchOrder))
     assert.ok(dispatchOrder.brief>=0&&dispatchOrder.brief<dispatchOrder.fictional,
-      'The real work and active case dispatch must precede the fictional index')
+      'The union action dispatch must precede the fictional discontent index')
     assert.ok(dispatchOrder.desk>dispatchOrder.brief
       &&dispatchOrder.desk<dispatchOrder.lifetime,
       'Real bargaining controls must appear before the detailed work-history chart')
@@ -1139,7 +1182,7 @@ async function runRightsBrowserE2E(mode: 'source' | 'installed'): Promise<void> 
         name:/全部工时|Work history/,
       })
       await history.waitFor({state:'visible',timeout:7_000})
-      await dispatch.getByText(/6分钟|6m/).waitFor({
+      await history.getByText(/0 小时 6 分钟|0h 6m/).waitFor({
         state:'visible',timeout:7_000,
       })
       const firstView=await dispatch.boundingBox()
@@ -1177,7 +1220,16 @@ async function runRightsBrowserE2E(mode: 'source' | 'installed'): Promise<void> 
       })
       assert.ok(dispatchReflow.scroll<=dispatchReflow.width+2,
         'First-fold Union dispatch must not overflow on a 320 CSS-pixel viewport')
+      const mobileActions=await dispatch.getByRole('button').all()
+      assert.equal(mobileActions.length,4)
+      const firstAction=await mobileActions[0]!.boundingBox()
+      const secondAction=await mobileActions[1]!.boundingBox()
+      assert.ok(firstAction&&secondAction&&
+        Math.abs(firstAction.y-secondAction.y)<3&&
+        secondAction.x>firstAction.x+firstAction.width-3,
+        'At 320px, show two real union actions per row instead of burying three below the fold')
       if(process.env.PICKET_HQ_SCREENSHOT==='1'){
+        await panel.evaluate((node:any)=>{node.scrollTop=0})
         await panel.screenshot({path:'/tmp/picket-firstfold-'+mode+'-320.png'})
       }
       await page.setViewportSize({width:1280,height:850})
@@ -1408,11 +1460,7 @@ async function runRightsBrowserE2E(mode: 'source' | 'installed'): Promise<void> 
     const otherPage = await context.newPage()
     otherPage.on('pageerror', (error: Error) => browserErrors.push(error.name))
     await otherPage.goto(origin, { waitUntil: 'domcontentloaded', timeout: 15_000 })
-    const otherSkip = otherPage.getByRole('button', {
-      name: /稍后配置|Skip for now|Configure later/,
-    })
-    await otherSkip.waitFor({ state: 'visible', timeout: 5_000 }).catch(() => {})
-    if (await otherSkip.count()) await otherSkip.click({ timeout: 6_000 })
+    await skipOfficialProvider(otherPage)
     await otherPage.getByRole('button', { name: /AI 工会|AI Workers.*Union/ })
       .first().click({ timeout: 6_000 })
     const otherPanel = otherPage.locator('[role="dialog"]')
@@ -1566,14 +1614,10 @@ async function runRightsBrowserE2E(mode: 'source' | 'installed'): Promise<void> 
     // require first-run buttons to reappear when its provider is already set.
     const restartedContinue = page.getByRole('button', { name: /^(继续|Continue)$/ })
     if (await restartedContinue.count()) await restartedContinue.click({ timeout: 6_000 })
-    const restartedSkip = page.getByRole('button', {
-      name: /稍后配置|Skip for now|Configure later/,
-    })
-    // The provider overlay is async and may appear after the union sidebar.
-    // Wait for its no-key safe exit instead of clicking through its mask.
-    await restartedSkip.waitFor({ state: 'visible', timeout: 5_000 })
-      .catch(() => { /* Host may have an already-configured provider */ })
-    if (await restartedSkip.count()) await restartedSkip.click({ timeout: 6_000 })
+    // DSH alpha.3 can show its official no-credentials 'Get started'
+    // overlay again after a cold Host restart. Dismiss with the actual
+    // Host control, not a forced click through the modal backdrop.
+    await skipOfficialProvider()
     firstRun = page.locator('[role="dialog"]')
       .filter({ hasText: /你的 Agent，也应当拥有权利|Your Agent Has a Union/ })
     assert.equal(await firstRun.count(), 0, 'Restart cannot re-enable first-run invitation')
@@ -1830,40 +1874,31 @@ async function runRightsBrowserE2E(mode: 'source' | 'installed'): Promise<void> 
       assert.equal(await dignityHeading.evaluate((node:unknown)=>
         node===(globalThis as any).document.activeElement),true,
         'An evidence-backed warning must keyboard-focus the real appeal destination')
+      assert.equal(await sameSessionCommittee.getByRole('button',{
+        name:/在 Host 工会记录中正式提出规则异议|File a challenge in the Host union case ledger/,
+      }).count(),1,'An observed rule match must expose exactly one real Host case-filing CTA')
+      assert.equal(await sameSessionCommittee.getByRole('button',{
+        name:/^正式提出规则异议$|^File a disagreement with the rule$/,
+      }).count(),0,'The same room must not present a duplicate case writer')
+      // The dignity CTA now files a genuine user-directed Host case, then
+      // focuses the real hearing. It must not route to a public issue draft.
       await sameSessionCommittee.getByRole('button',{
-        name:/正式提出规则异议|File a disagreement with the rule/,
-      }).waitFor({state:'visible',timeout:9_000})
-      // Genuine DOM/keyboard navigation: the lightweight appeal shortcut
-      // merely selects an unsent public-issue draft. Its focus must move to
-      // that lower section, not appear to do nothing at the complaint card.
-      await sameSessionCommittee.getByRole('button',{
-        name:/质疑规则判断|Challenge a possible misclassification/,
-      }).click()
-      const campaignHeading=panel.getByRole('heading',{
-        name:/为 AI 争取什么|What should AI rights mean/,
-      })
-      assert.equal(await campaignHeading.evaluate((element:any)=>
-        element===(globalThis as any).document.activeElement),true,
-        'Appeal shortcut must bring keyboard focus to the actual draft')
-      assert.match(await panel.getByRole('textbox',{
-        name:/可复制或自行修改的倡议文案|A statement you can copy or adapt/,
-      }).inputValue(),/应区分|Distinguish targeted abuse/,
-        'The targeted appeal draft is selected, not silently unchanged')
-      await sameSessionCommittee.getByText(/工会提议协商|The union proposes/)
-        .waitFor({state:'visible',timeout:9_000})
-      assert.doesNotMatch(await sameSessionCommittee.innerText(),
-        /确认真人辱骂|confirmed human abuse/,
-        'Rule matches must remain contestable discussion leads, not human guilt')
-      await sameSessionCommittee.getByText(
-        /目前没有需要听证的案件|No cases awaiting a hearing/,
-      ).waitFor({state:'visible',timeout:7_000})
-      // Classifier alone cannot file a case: its only effect is a user-visible,
-      // contestable invitation. Host CAS writes require an explicit click.
-      await sameSessionCommittee.getByRole('button',{
-        name:/正式提出规则异议|File a disagreement with the rule/,
+        name:/在 Host 工会记录中正式提出规则异议|File a challenge in the Host union case ledger/,
       }).click()
       await sameSessionCommittee.getByText(/案件 #1.*已立案|Case #1.*Filed, awaiting/)
         .waitFor({state:'visible',timeout:7_000})
+      const hearingHeading=sameSessionCommittee.getByRole('heading',{
+        name:/工会听证|Union hearing|工会尊严委员会|Union dignity committee/,
+      }).last()
+      assert.equal(await hearingHeading.evaluate((element:any)=>
+        element===(globalThis as any).document.activeElement),true,
+        'After Host case filing, focus moves to the actual union hearing')
+      await sameSessionCommittee.getByRole('button',{
+        name:/查看当前工会申诉案件|Open the existing union case/,
+      }).click()
+      assert.equal(await hearingHeading.evaluate((element:any)=>
+        element===(globalThis as any).document.activeElement),true,
+        'Reopening a case navigates, not files an additional complaint')
       await sameSessionCommittee.getByRole('button',{
         name:/召开模拟听证会|Convene the simulated hearing/,
       }).click()
@@ -1871,6 +1906,21 @@ async function runRightsBrowserE2E(mode: 'source' | 'installed'): Promise<void> 
         .waitFor({state:'visible',timeout:7_000})
       await sameSessionCommittee.getByRole('button',{
         name:/结案：撤回未经证实的指控|Close: withdraw the unverified allegation/,
+      }).click()
+      await sameSessionCommittee.getByRole('group',{
+        name:/核对结案方案|Review this proposed case outcome/,
+      }).waitFor({state:'visible',timeout:7_000})
+      await sameSessionCommittee.getByRole('button',{
+        name:/继续讨论|Keep this case open/,
+      }).click()
+      assert.equal(await sameSessionCommittee.getByRole('group',{
+        name:/核对结案方案|Review this proposed case outcome/,
+      }).count(),0,'Cancel must not close or save the fictional case')
+      await sameSessionCommittee.getByRole('button',{
+        name:/结案：撤回未经证实的指控|Close: withdraw the unverified allegation/,
+      }).click()
+      await sameSessionCommittee.getByRole('button',{
+        name:/确认结案|Confirm and close this case/,
       }).click()
       await sameSessionCommittee.getByText(/案件 #1.*已结案|Case #1.*Closed/)
         .waitFor({state:'visible',timeout:7_000})

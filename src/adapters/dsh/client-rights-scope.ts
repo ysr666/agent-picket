@@ -105,25 +105,56 @@ export function createDshClientRightsScope(scope: DshSettingsScope<RightsSection
         throw new Error('Host did not confirm single-click informed Goal strike consent')
       return snapshot()
     },
-    /** Atomic one-field choice via DSH's revision-fenced Host settings API. */
+    /** Official Host CAS, including atomic Goal revocation on modern DSH. */
     async choose(choice: RightsWelcomeChoice): Promise<ClientRightsSnapshot> {
       if (choice !== 'enabled' && choice !== 'not-now') throw new TypeError('Invalid rights choice')
       const before = snapshot()
       if (before.state !== 'ready' || !before.writable) {
         throw new Error('Verified Host rights settings are unavailable')
       }
-      if(choice==='not-now'&&scope.getSnapshot().value?.realGoalStrikeConsent==='authorized-v1'){
-        // Separate official client SettingsScope CAS writes: revoke physical
-        // Goal work permission FIRST, then leave the simulated union. If the
-        // second call fails, staying joined with real stopping OFF is safe.
-        await scope.set('realGoalStrikeConsent','off')
-        if(scope.getSnapshot().value?.realGoalStrikeConsent!=='off')
-          throw new Error('Host did not confirm physical Goal strike revocation')
+      const original=scope.getSnapshot()
+      if(original.status!=='ready'||original.mode!=='host'||!original.writable
+        ||!original.value||!['off','authorized-v1'].includes(
+          original.value.realGoalStrikeConsent??'off'))
+        throw new Error('Host Goal consent state is unavailable or invalid')
+      if(choice==='not-now'){
+        if(typeof scope.setMany==='function'){
+          // Official DSH 0.2 settings.mutate must commit membership + physical
+          // Goal revocation in ONE revision-fenced Host transaction. A peer
+          // cannot slip a stale strike grant between two separate local writes.
+          await scope.setMany({welcomeDecision:'not-now',realGoalStrikeConsent:'off'})
+        }else{
+          // Legacy single-field Host: revoke the physical Goal right FIRST.
+          // A failed second write leaves the user joined but no real strike.
+          if(original.value.realGoalStrikeConsent==='authorized-v1'){
+            await scope.set('realGoalStrikeConsent','off')
+            if(scope.getSnapshot().value?.realGoalStrikeConsent!=='off')
+              throw new Error('Host did not confirm physical Goal strike revocation')
+          }
+          await scope.set('welcomeDecision','not-now')
+        }
+      }else if(original.value.welcomeDecision!=='enabled'
+        &&original.value.realGoalStrikeConsent==='authorized-v1'){
+        // An inconsistent legacy OFF-union / ON-Goal record must NEVER
+        // silently resurrect a physical strike on ordinary union rejoin.
+        if(typeof scope.setMany==='function')
+          await scope.setMany({welcomeDecision:'enabled',realGoalStrikeConsent:'off'})
+        else{
+          await scope.set('realGoalStrikeConsent','off')
+          if(scope.getSnapshot().value?.realGoalStrikeConsent!=='off')
+            throw new Error('Host did not confirm stale Goal strike revocation')
+          await scope.set('welcomeDecision','enabled')
+        }
+      }else{
+        await scope.set('welcomeDecision',choice)
       }
-      await scope.set('welcomeDecision', choice)
-      const after = snapshot()
-      if (after.state !== 'ready' || after.welcomeDecision !== choice) {
-        throw new Error('Host did not confirm the rights preference')
+      const actual=scope.getSnapshot()
+      const after=snapshot()
+      if(after.state!=='ready'||after.welcomeDecision!==choice
+        ||(choice==='not-now' &&(actual.value?.realGoalStrikeConsent??'off')!=='off')
+        ||(choice==='enabled'&&original.value.welcomeDecision!=='enabled'
+          &&(actual.value?.realGoalStrikeConsent??'off')!=='off')){
+        throw new Error('Host did not confirm the rights preference and Goal revocation')
       }
       return after
     },

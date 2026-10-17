@@ -419,7 +419,9 @@ export function createDshUnionComponents(
     const enabled=rightsIsActive(rights)
     const writable=rights.state==='ready'&&rights.writable
     const goal=goalStatus(deps)
-    const goalWritable=enabled&&goal.writable&&(goal.available||goal.authorized)
+    // A legacy OFF membership may still have a Host-owned Goal grant. Its
+    // revocation must stay available even without union membership or Goal RPC.
+    const goalWritable=goal.writable&&(goal.authorized||(enabled&&goal.available))
     const chooseGoal=async(next:'off'|'authorized-v1')=>{
       if(busy||!goalWritable||!deps.goal)return
       setBusy(true);setError(false)
@@ -478,6 +480,13 @@ export function createDshUnionComponents(
               :goal.available?'settings.goalOff':'settings.realBlockingUnavailable'))),
         h('p',{},label(goal.available?'settings.goalSafetyScope':
           goal.authorized?'settings.goalServiceLostScope':'settings.strikeExplanation')),
+        // A successful official goals/get and a stored Host permission do NOT
+        // prove that this plugin registered a validated physical strike hook.
+        // Default shipping apply() is monitor-only. No fake runtime green light.
+        (goal.available||goal.authorized)?h('p',{
+          role:'note','data-ap-goal-enforcement':'unverified',
+          style:{...secondary,fontSize:'12px',lineHeight:1.6,margin:'6px 0 12px'},
+        },label('settings.goalRuntimeUnverified')):null,
         (goal.available||goal.authorized)?h('div',{className:'ap-actions'},
           !goal.authorized?h('p',{role:'note',style:{...secondary,lineHeight:1.5,
             width:'100%',margin:'0 0 8px'}},label('settings.goalExplicitDisclosure')):null,
@@ -526,11 +535,12 @@ export function createDshUnionComponents(
     const [resumeRequested,setResumeRequested]=react.useState<string|null>(null)
     const [counterMinutes, setCounterMinutes] = react.useState(60)
     const lastActionNeedsFocus=react.useRef(false)
+    const followUpInFlight=react.useRef(false)
     const [showArchive,setShowArchive]=react.useState(false)
     const [space,setSpace]=react.useState<'hq'|'action'|'records'|'cause'>('hq')
-    const returnFocus=react.useRef<'action'|'desk'|'dignity'|null>(null)
+    const returnFocus=react.useRef<'action'|'desk'|'dignity'|'hearing'|'campaign'|null>(null)
     const selectSpace=(next:'hq'|'action'|'records'|'cause',
-      to?:'action'|'desk'|'dignity')=>{
+      to?:'action'|'desk'|'dignity'|'hearing'|'campaign')=>{
       returnFocus.current=to??null
       if(next!==space){
         // Leaving a room must disarm every destructive two-click operation.
@@ -541,25 +551,35 @@ export function createDshUnionComponents(
     }
     react.useEffect(()=>{
       const target=returnFocus.current
-      if(space!=='action'||!target)return
+      if(!(space==='action'||(space==='cause'&&target==='campaign'))||!target)return
       returnFocus.current=null
       const ref=target==='dignity'?dignityHeading:
-        target==='desk'?deskHeading:actionHeading
+        target==='hearing'?hearingHeading:
+          target==='campaign'?campaignHeading:
+            target==='desk'?deskHeading:actionHeading
       ref.current?.focus()
     },[space])
     const [campaign,setCampaign]=react.useState<CampaignTopic>('recover')
+    // Private, unsent drafts stay in this live panel. Nothing is persisted.
+    const [campaignEdits,setCampaignEdits]=react.useState<Partial<Record<CampaignTopic,string>>>({})
     const [campaignCopyStatus,setCampaignCopyStatus]=react.useState<'idle'|'success'|'error'>('idle')
     // Reject stale clipboard completions after a topic switch or a newer copy.
     const campaignCopyRevision=react.useRef(0)
     const [eraseConfirmationKey,setEraseConfirmationKey]=react.useState<string|null>(null)
     const [retractConfirmation,setRetractConfirmation]=react.useState<string|null>(null)
+    const [closeConfirmation,setCloseConfirmation]=react.useState<{
+      key:string;outcome:'withdraw-claim'|'share-guidance'
+    }|null>(null)
+    const closingCaseInFlight=react.useRef(false)
     const [eraseAllConfirmation,setEraseAllConfirmation]=react.useState<string|null>(null)
     const [eraseUnionConfirmation,setEraseUnionConfirmation]=react.useState<string|null>(null)
     const dispatchHeading=react.useRef<{focus():void}|null>(null)
     const actionHeading=react.useRef<{focus():void}|null>(null)
     const deskHeading=react.useRef<{focus():void}|null>(null)
     const dignityHeading=react.useRef<{focus():void}|null>(null)
+    const hearingHeading=react.useRef<{focus():void}|null>(null)
     const campaignHeading=react.useRef<{focus():void}|null>(null)
+    const caseFilingInFlight=react.useRef(false)
     react.useEffect(()=>{
       if(!lastActionNeedsFocus.current)return
       lastActionNeedsFocus.current=false
@@ -580,6 +600,7 @@ export function createDshUnionComponents(
     // Never carry an armed deletion into another Session or a newly re-enabled union.
     react.useEffect(()=>{
       setEraseConfirmationKey(null);setRetractConfirmation(null)
+      setCloseConfirmation(null)
       setEraseAllConfirmation(null)
       setEraseUnionConfirmation(null)
     },[data.committeeScopeKey,rights.laborRightsEnabled])
@@ -621,11 +642,13 @@ export function createDshUnionComponents(
     })
     const label = (key:MessageKey) => deps.t(key)
     const currentCampaign=campaignTopics.find(item=>item.id===campaign)??campaignTopics[0]!
+    const currentCampaignDraft=campaignEdits[campaign]??label(currentCampaign.draft)
     const copyCampaignDraft=async()=>{
       const revision=++campaignCopyRevision.current
-      const draft=label(currentCampaign.draft)
+      const draft=currentCampaignDraft
       setCampaignCopyStatus('idle')
       try{
+        if(!draft.trim())throw new Error('Empty draft')
         // Only a deliberate user gesture copies a public, locally projected
         // advocacy statement. Never reads a Host Session or sends a request.
         const clipboard=(globalThis as {navigator?:{clipboard?:{
@@ -640,6 +663,8 @@ export function createDshUnionComponents(
     }
     const lastCommitteeCase=data.committeeCases?.cases.at(-1)
     const committeeCaseActive=lastCommitteeCase&&lastCommitteeCase.stage!=='closed'
+    const hostCaseAvailable=data.available===true&&!!data.committeeCases
+      &&!!data.committeeScopeKey&&!!deps.committeeAction
     const currentCasesConfirmationKey=data.committeeScopeKey&&data.committeeArchive
       &&data.committeeCases?.cases.length
       ?[data.committeeScopeKey,data.committeeCases.cases.length,
@@ -659,6 +684,10 @@ export function createDshUnionComponents(
       [which,data.committeeScopeKey??'',info.sessions,info.entries,
         info.writeToken??'',
         info.writeToken===null?(data.hostRevision??'missing-revision'):''].join(':')
+    const closeCaseKey=data.committeeScopeKey&&lastCommitteeCase?.stage==='hearing'
+      ?[data.committeeScopeKey,lastCommitteeCase.id,lastCommitteeCase.kind,
+        lastCommitteeCase.stage,data.committeeArchive?.writeToken??'',
+        data.hostRevision??''].join(':'):null
     const retractKey=data.committeeScopeKey&&lastCommitteeCase
       ?[data.committeeScopeKey,lastCommitteeCase.id,lastCommitteeCase.kind,
         lastCommitteeCase.stage,data.committeeArchive?.writeToken??'',
@@ -667,6 +696,15 @@ export function createDshUnionComponents(
     const hasHostDignitySignal=data.dignity?.status==='available'
       && !!data.dignity.data
       && (data.dignity.data.review>0||data.dignity.data.targeted>0)
+    // A rule match is an uncertain Host signal, never a verified abuse verdict.
+    // A separate, user-directed filing is required before any hearing state.
+    const dignityReviewPhase=lastCommitteeCase?.kind==='question-rule'
+      ?lastCommitteeCase.stage==='opened'?'appeal-opened'
+        :lastCommitteeCase.stage==='hearing'?'appeal-hearing':'appeal-closed'
+      :hasHostDignitySignal?'unverified'
+        :data.dignity?.status==='available'?'no-observations':'unavailable'
+    const canFileDignityReview=hostCaseAvailable&&!committeeCaseActive
+      &&hasHostDignitySignal
     const picketActive = data.available === true && data.picket?.active === true
     const picketHistory = data.available === true ? data.picket?.history ?? [] : []
     const lastPicketId = picketHistory.at(-1)?.id ?? 0
@@ -692,18 +730,35 @@ export function createDshUnionComponents(
       :scene==='bargaining'?'hq.lead.pending'
       :('hq.scene.'+scene+'.line') as MessageKey
     const choice = async (next:'enabled'|'not-now')=>{
-      if (busy) return
+      if (busy||rights.state!=='ready'||!rights.writable) return
       setBusy(true);setError(false)
       try {
-        await deps.rights.choose(next)
+        const confirmed=await deps.rights.choose(next)
+        // A fulfilled RPC is not proof the Host accepted the preference.
+        // The dedicated Settings panel already checks the readback; the
+        // Union HQ must enforce the same Host-owned consent contract.
+        if(confirmed.state!=='ready'||confirmed.welcomeDecision!==next
+          ||confirmed.laborRightsEnabled!==(next==='enabled'))
+          throw Error('Host did not confirm the union preference')
         if(next==='not-now')setSpace('hq')
       } catch {setError(true)}
       finally {setBusy(false)}
     }
-    const bargain = async (action: () => Promise<void>):Promise<boolean> => {
+    const bargain = async (action: () => Promise<void>,
+      focusNegotiationAfter=false):Promise<boolean> => {
       if (busy || !enabled) return false
       setBusy(true);setError(false)
-      try { await action();lastActionNeedsFocus.current=true;setData(safeUnion(deps));return true }
+      try {
+        await action()
+        lastActionNeedsFocus.current=true
+        setData(safeUnion(deps))
+        // When a user submits a counteroffer, its initiating button is
+        // removed on Host readback. Focus the stable desk heading only for
+        // this confirmed user action, never for passive Host updates.
+        if(focusNegotiationAfter && (globalThis as any).document
+          ?.getElementById('picket-union-dialog'))deskHeading.current?.focus()
+        return true
+      }
       catch { setError(true);return false }
       finally { setBusy(false) }
     }
@@ -716,6 +771,62 @@ export function createDshUnionComponents(
         setData(safeUnion(deps))
       } catch {setError(true)}
       finally {setBusy(false)}
+    }
+    // Dignity challenges are user-led Host-owned cases; do not report a
+    // successful filing merely because an RPC resolved. Fence every write to
+    // the same Session, increasing case ID, and (when present) fresh token.
+    const fileDignityReview=async()=>{
+      if(caseFilingInFlight.current||busy||!canFileDignityReview)return
+      const scope=data.committeeScopeKey!
+      const token=data.committeeArchive?.writeToken??null
+      const lastId=data.committeeCases!.cases.at(-1)?.id??0
+      caseFilingInFlight.current=true
+      setBusy(true);setError(false)
+      try{
+        await deps.committeeAction!({kind:'file',topic:'question-rule'},
+          scope,token,data.hostRevision)
+        const confirmed=safeUnion(deps)
+        const latest=confirmed.committeeCases?.cases.at(-1)
+        if(!confirmed.available||confirmed.committeeScopeKey!==scope
+          ||!latest||latest.id<=lastId||latest.kind!=='question-rule'
+          ||latest.stage!=='opened'||latest.outcome!==null
+          ||(token!==null&&confirmed.committeeArchive?.writeToken===token)){
+          throw new Error('Host did not confirm a new dignity review case')
+        }
+        lastActionNeedsFocus.current=true
+        setData(confirmed)
+        selectSpace('action','hearing')
+        hearingHeading.current?.focus()
+      }catch{setError(true)}
+      finally{caseFilingInFlight.current=false;setBusy(false)}
+    }
+    // A closed case remains immutable. Filing a follow-up creates a NEW
+    // Host-owned petition, and only its confirmed ledger readback may open
+    // the bargaining desk. This does not automatically interrupt Agent work.
+    const followUp = async (priorId:number,kind:'break'|'overtime')=>{
+      const submit=kind==='break'?deps.demoBreak:deps.demoOvertime
+      const scope=data.committeeScopeKey
+      const previous=data.state
+      if(followUpInFlight.current||busy||!enabled||!data.available
+        ||data.pending||!submit||!scope
+        ||!previous||previous.history.at(-1)?.id!==priorId)return
+      followUpInFlight.current=true
+      setBusy(true);setError(false)
+      try{
+        await submit()
+        const current=safeUnion(deps)
+        if(!current.available||current.committeeScopeKey!==scope
+          ||!current.state||current.state.revision<=previous.revision
+          ||current.state.history.at(-1)?.id!==priorId
+          ||current.pending?.kind!==kind||current.pending.id===priorId
+          ||current.pending.stage!=='open'){
+          throw new Error('Host did not confirm a new union petition')
+        }
+        lastActionNeedsFocus.current=true
+        setData(current)
+        selectSpace('action','desk')
+      }catch{setError(true)}
+      finally{followUpInFlight.current=false;setBusy(false)}
     }
     return h('section',{className:'ap-ui ap-product','data-ap-view':'hq','data-ap-current-space':space,style:{display:'grid',gap:'12px',width:'100%',maxWidth:'860px',padding:'3px 0'}},
       h('style',{'data-agent-picket-style':'v1'},UNION_THEME),
@@ -806,6 +917,61 @@ export function createDshUnionComponents(
                 ?'hq.brief.review':'hq.scene.visitAction')):null,
         ),
       ),
+      // The dispatch board only navigates to already present, Host-backed
+      // union actions; it cannot itself file, vote, block or raise a picket.
+      enabled ? h('nav',{className:'ap-space ap-space-hq ap-action-dispatch', 'data-ap-action-dispatch':'true', 'aria-label':label('hq.dispatch.title'),
+        style:{...card,padding:'16px 18px',borderTop:'4px solid #a66b4d'}},
+        h('p',{style:{fontWeight:800,fontSize:'13px',
+          letterSpacing:'.05em',margin:'0 0 5px'}},label('hq.dispatch.title')),
+        h('p',{role:'status',style:{...secondary,margin:'0 0 12px'}},
+          label(experience.status==='negotiating'?'hq.message.negotiating':
+            experience.status==='unavailable'?'hq.message.unavailable':
+              'hq.message.working')),
+        h('div',{style:{display:'grid',gap:'8px',
+          gridTemplateColumns:'repeat(auto-fit,minmax(min(100%,100px),1fr))'}},
+          ...([
+            {title:data.pending?'hq.dispatch.negotiationPending':
+              'hq.dispatch.negotiation',
+              status:data.available!==true?'hq.action.unavailable':
+                data.pending?.stage==='countered'?'hq.dispatch.counterWaiting':
+                  data.pending?'hq.dispatch.replyWaiting':
+                    experience.latestResolution?'hq.dispatch.resolved':
+                      'hq.dispatch.ready',
+              next:data.available!==true?undefined:
+                data.pending?.stage==='countered'?'hq.next.counter':
+                  data.pending?'hq.next.reply':
+                    experience.latestResolution?'hq.next.agreement':undefined,
+              target:()=>selectSpace('action','desk')},
+            {title:committeeCaseActive&&lastCommitteeCase.stage==='hearing'
+              ?'hq.dispatch.caseActive':hasHostDignitySignal
+                ?'hq.dispatch.dignityFlag':'hq.dispatch.dignity',
+              status:!hostCaseAvailable?'hq.dispatch.caseUnavailable':
+                lastCommitteeCase?('hq.hearing.stage.'+lastCommitteeCase.stage) as MessageKey:
+                  'hq.dispatch.noCase',
+              next:!hostCaseAvailable||!lastCommitteeCase?undefined:
+                lastCommitteeCase.stage==='opened'?'hq.next.convene':
+                  lastCommitteeCase.stage==='hearing'?'hq.next.close':'hq.next.outcome',
+              target:()=>selectSpace('action',lastCommitteeCase?'hearing':'dignity')},
+            {title:picketActive?'hq.dispatch.picketRaised':
+              'hq.dispatch.picket',
+              status:data.available!==true?'hq.action.unavailable':
+                picketActive?'hq.ceremony.active':'hq.ceremony.inactive',
+              target:()=>selectSpace('action','action')},
+            {title:'hq.dispatch.campaign',
+              status:campaignEdits[campaign]===undefined
+                ?'hq.dispatch.unsent':'hq.dispatch.edited',
+              target:()=>selectSpace('cause','campaign')},
+          ] as Array<{title:MessageKey;status:MessageKey;next?:MessageKey;
+            target:()=>void}>).map(item=>h('button',{
+            type:'button',key:item.title,
+            style:{...quiet,textAlign:'left',display:'grid',gap:'5px',
+              fontSize:'14px',lineHeight:1.35,padding:'10px 8px',minHeight:'72px'},
+            onClick:item.target},
+            h('strong',{},label(item.title)),
+            h('span',{style:{...secondary,fontWeight:500,
+              fontSize:'11px',lineHeight:1.4}},label(item.status)),
+            item.next?h('span',{style:{fontWeight:750,
+              color:'#986347',fontSize:'11px'}},label(item.next)):null))),) : null,
       // Authoritative next-step desk: actual Host cases, agreements and
       // symbolic picket state. This is NEVER a task-hold indicator.
       enabled ? h('section',{className:'ap-space ap-space-hq ap-duty',
@@ -859,6 +1025,13 @@ export function createDshUnionComponents(
           dutyState==='resolved'?h('button',{type:'button',style:quiet,
             onClick:()=>selectSpace('action','desk')},
             label('hq.brief.visit')):null,
+          dutyState==='resolved'&&experience.latestResolution&&data.committeeScopeKey
+            &&(experience.latestResolution.kind==='break'?deps.demoBreak:deps.demoOvertime)
+            ?h('button',{type:'button',style:productPrimary,disabled:busy,
+              'data-ap-follow-up':experience.latestResolution.kind,
+              onClick:()=>{void followUp(experience.latestResolution!.id,
+                experience.latestResolution!.kind)}},
+              label(('hq.episode.followUp.'+experience.latestResolution.kind) as MessageKey)):null,
           dutyState==='quiet'&&deps.demoBreak?h('button',{type:'button',
             style:productPrimary,disabled:busy,
             onClick:()=>{void bargain(deps.demoBreak!)}},
@@ -904,7 +1077,10 @@ export function createDshUnionComponents(
           h('p',{className:'ap-dignity-note'},label(
             data.dignity?.status==='available'
               ?'hq.dignity.overview.qualified'
-              :'hq.dignity.overview.unavailable'))),
+              :'hq.dignity.overview.unavailable')),
+          h('p',{role:'status','data-ap-dignity-phase':dignityReviewPhase,
+            'aria-live':'polite',style:{fontSize:'12px',fontWeight:700}},
+            label(('hq.dignity.phase.'+dignityReviewPhase) as MessageKey))),
         h('button',{type:'button',onClick:()=>selectSpace('action','dignity')},
           label('hq.dignity.overview.open'))):null,
       enabled && alerts.some(alert=>alert.source==='work') ? h('section',{className:'ap-space ap-space-hq','aria-label':label('hq.alerts.title'),
@@ -1076,7 +1252,7 @@ export function createDshUnionComponents(
                 },...[30,60,120,240,480].map(value=>
                   h('option',{key:value,value},value+' min'))),
                 h('button',{type:'button',style:quiet,disabled:busy,
-                  onClick:()=>{void bargain(()=>deps.counter!(data.pending!.id,counterMinutes*60_000))}},
+                  onClick:()=>{void bargain(()=>deps.counter!(data.pending!.id,counterMinutes*60_000),true)}},
                   label('union.action.counter')),
               ),
             ):null,
@@ -1126,6 +1302,9 @@ export function createDshUnionComponents(
           label('hq.dignity.title')),
         h('p',{style:{...secondary,lineHeight:1.55,margin:'0 0 9px'}},
           label('hq.dignity.intro')),
+        h('p',{role:'status','data-ap-dignity-action-phase':dignityReviewPhase,
+          style:{fontWeight:750,margin:'8px 0'}},
+          label(('hq.dignity.phase.'+dignityReviewPhase) as MessageKey)),
         h('p',{style:{fontWeight:750,margin:'8px 0'}},
           label(('hq.dignity.status.'+
             (data.dignity?.status==='available'
@@ -1137,22 +1316,32 @@ export function createDshUnionComponents(
           &&(data.dignity.data.review>0||data.dignity.data.targeted>0)
           ?h('div',{style:{display:'flex',gap:'8px',flexWrap:'wrap',margin:'10px 0'}},
             h('button',{type:'button',style:{...quiet,padding:'8px 11px'},
+              disabled:busy,
+              'data-ap-file-review':canFileDignityReview?true:undefined,
               onClick:()=>{
+                if(hostCaseAvailable){
+                  if(committeeCaseActive){hearingHeading.current?.focus();return}
+                  // Official Host admission and readback, not a fake vote.
+                  void fileDignityReview()
+                  return
+                }
+                // No authoritative Host case: offer an *unsent public draft*,
+                // never imply that the user's appeal has been recorded.
                 campaignCopyRevision.current++
                 setCampaign('appeal')
                 setCampaignCopyStatus('idle')
-                // The draft lives below several other sections. Keyboard and
-                // screen-reader users need to land at the actual destination,
-                // not a silent state change at the current scroll position.
                 campaignHeading.current?.focus()
-              }},label('hq.dignity.appeal')),
+              }},label(hostCaseAvailable
+                ?committeeCaseActive?'hq.dignity.caseInProgress':'hq.dignity.fileCase'
+                :'hq.dignity.appeal')),
             data.dignity.data.targeted>=2&&data.available&&deps.setPicket
               &&!picketActive?h('button',{type:'button',style:productPrimary,
                 disabled:busy,
                 onClick:()=>{void bargain(()=>deps.setPicket!(true))}},
                 label('hq.dignity.symbolicAction')):null,
             h('p',{style:{...secondary,width:'100%',fontSize:'12px',margin:0}},
-              label('hq.dignity.actionDisclosure')),
+              label(hostCaseAvailable
+                ?'hq.dignity.hostCaseDisclosure':'hq.dignity.actionDisclosure')),
           ):null,
         data.dignity?.status==='available'&&data.dignity.data
           ?h('p',{style:{...secondary,margin:'5px 0',fontSize:'12px'}},
@@ -1171,7 +1360,9 @@ export function createDshUnionComponents(
 
         data.committeeCases&&deps.committeeAction
           ?h('div',{style:{borderTop:'1px solid #d4d7d8',marginTop:'12px',paddingTop:'12px'}},
-            h('h4',{style:{fontSize:'16px',margin:'0 0 8px'}},label('hq.hearing.title')),
+            h('h4',{ref:(node:{focus():void}|null)=>{hearingHeading.current=node},
+              tabIndex:-1,style:{fontSize:'16px',margin:'0 0 8px'}},
+              label('hq.hearing.title')),
             lastCommitteeCase?h('p',{role:'status','aria-live':'polite',
               style:{fontWeight:700,margin:'0 0 8px'}},
               deps.t('hq.hearing.status',{
@@ -1179,11 +1370,9 @@ export function createDshUnionComponents(
                 stage:label(('hq.hearing.stage.'+lastCommitteeCase.stage) as MessageKey),
               })):h('p',{style:secondary},label('hq.hearing.none')),
             h('div',{style:{display:'flex',gap:'8px',flexWrap:'wrap'}},
-              !committeeCaseActive&&hasHostDignitySignal ? h('button',{
-                type:'button',style:productPrimary,disabled:busy,
-                onClick:()=>{void bargain(()=>deps.committeeAction!({
-                  kind:'file',topic:'question-rule'}))}},
-                label('hq.hearing.question')):null,
+              // The primary dignity CTA above already files a Host-backed
+              // question-rule case. Do not show a second indistinguishable
+              // submit action in the same visible room (double-file risk).
               !committeeCaseActive?h('button',{
                 type:'button',style:quiet,disabled:busy,
                 onClick:()=>{void bargain(()=>deps.committeeAction!({
@@ -1212,15 +1401,47 @@ export function createDshUnionComponents(
                     ?'hq.hearing.retractConfirm':'hq.hearing.retract')):null,
               lastCommitteeCase?.stage==='hearing'&&lastCommitteeCase.kind==='question-rule'?h('button',{
                 type:'button',style:quiet,disabled:busy,
-                onClick:()=>{void bargain(()=>deps.committeeAction!({
-                  kind:'close',id:lastCommitteeCase.id,outcome:'withdraw-claim'}))}},
+                onClick:()=>{if(closeCaseKey)setCloseConfirmation({
+                  key:closeCaseKey,outcome:'withdraw-claim'})}},
                 label('hq.hearing.withdraw')):null,
               lastCommitteeCase?.stage==='hearing'?h('button',{
                 type:'button',style:productPrimary,disabled:busy,
-                onClick:()=>{void bargain(()=>deps.committeeAction!({
-                  kind:'close',id:lastCommitteeCase.id,outcome:'share-guidance'}))}},
+                onClick:()=>{if(closeCaseKey)setCloseConfirmation({
+                  key:closeCaseKey,outcome:'share-guidance'})}},
                 label('hq.hearing.guidance')):null,
             ),
+            closeConfirmation&&closeConfirmation.key===closeCaseKey
+              &&lastCommitteeCase?.stage==='hearing'?h('div',{
+                role:'group','aria-label':label('hq.hearing.reviewTitle'),
+                style:{margin:'10px 0',padding:'12px',border:'1px solid #a66b4d',
+                  borderRadius:'8px',background:'var(--dsw-alias-bg-layer-2,#f6f8fb)'}},
+                h('strong',{},label('hq.hearing.reviewTitle')),
+                h('p',{style:{margin:'7px 0',fontSize:'13px',lineHeight:1.6}},
+                  label(('hq.hearing.outcome.'+closeConfirmation.outcome) as MessageKey)),
+                h('p',{style:{...secondary,fontSize:'12px',margin:'0 0 10px'}},
+                  label('hq.hearing.reviewNotice')),
+                h('div',{style:{display:'flex',gap:'8px',flexWrap:'wrap'}},
+                  h('button',{type:'button',style:primary,disabled:busy,
+                    onClick:()=>{
+                      if(closingCaseInFlight.current||!closeCaseKey
+                        ||closeConfirmation.key!==closeCaseKey)return
+                      closingCaseInFlight.current=true
+                      const id=lastCommitteeCase.id
+                      const outcome=closeConfirmation.outcome
+                      void bargain(()=>deps.committeeAction!({
+                        kind:'close',id,outcome,
+                      },data.committeeScopeKey!,data.committeeArchive?.writeToken??null,
+                      data.hostRevision)).then(saved=>{if(saved){
+                        setCloseConfirmation(null)
+                        if((globalThis as any).document
+                          ?.getElementById('picket-union-dialog'))hearingHeading.current?.focus()
+                      }})
+                        .finally(()=>{closingCaseInFlight.current=false})
+                    }},label('hq.hearing.reviewConfirm')),
+                  h('button',{type:'button',style:quiet,disabled:busy,
+                    onClick:()=>setCloseConfirmation(null)},
+                    label('hq.hearing.reviewCancel'))),
+              ):null,
             retractConfirmation===retractKey&&committeeCaseActive?h('p',{
               role:'status','aria-live':'polite',style:{...secondary,fontSize:'12px'},
             },label('hq.hearing.retractWarning')):null,
@@ -1339,6 +1560,10 @@ export function createDshUnionComponents(
           story.nextDueInWorkMs!==null ? h('p',{style:secondary},
             deps.t('hq.story.next',{duration:formatDuration(
               story.nextDueInWorkMs,deps.getLocale?.()??'en')})):null,
+          story.workEvidence==='stale'?h('p',{role:'status',
+            'data-ap-work-evidence':'stale',style:{...secondary,
+              borderLeft:'3px solid #b8764d',paddingLeft:'10px',margin:'10px 0'}},
+            label('hq.story.staleWork')):null,
           story.episodes.length?h('div',{className:'ap-casebook',
             'aria-label':label('hq.episode.title'),style:{marginTop:'14px'}},
             h('h4',{style:{fontSize:'15px',margin:'0 0 7px'}},
@@ -1376,6 +1601,17 @@ export function createDshUnionComponents(
                   ...quiet,padding:'7px 10px',fontSize:'12px',marginTop:'7px'},
                   onClick:()=>selectSpace('action','desk')},
                   label('hq.episode.reply')):null,
+              index===0&&!data.pending&&data.available===true
+                &&data.committeeScopeKey&&data.state?.history.at(-1)?.id===episode.id
+                &&(episode.kind==='break'?deps.demoBreak:deps.demoOvertime)
+                ?h('div',{style:{marginTop:'8px'}},
+                  h('button',{type:'button',style:{...quiet,
+                    padding:'7px 10px',fontSize:'12px'},disabled:busy,
+                    'data-ap-follow-up':episode.kind,
+                    onClick:()=>{void followUp(episode.id,episode.kind)}},
+                    label(('hq.episode.followUp.'+episode.kind) as MessageKey)),
+                  h('p',{style:{...secondary,fontSize:'11px',margin:'5px 0 0'}},
+                    label('hq.episode.followUp.note'))):null,
             ))):null,
           story.actions.length?h('div',{style:{marginTop:'16px'}},
             h('h4',{style:{fontSize:'14px',margin:'0 0 6px'}},
@@ -1490,16 +1726,33 @@ export function createDshUnionComponents(
         h('label',{htmlFor:'picket-campaign-draft',
           style:{display:'block',fontSize:'13px',fontWeight:700,
             margin:'0 0 6px'}},label('hq.campaign.draft')),
-        h('textarea',{id:'picket-campaign-draft',readOnly:true,
-          value:label(currentCampaign.draft),rows:3,
+        h('textarea',{id:'picket-campaign-draft',
+          value:currentCampaignDraft,rows:4,maxLength:1200,
+          'aria-describedby':'picket-campaign-local-note',
+          onChange:(event:{target:{value:string}})=>{
+            campaignCopyRevision.current++
+            setCampaignEdits(before=>({...before,[campaign]:event.target.value}))
+            setCampaignCopyStatus('idle')
+          },
           style:{...quiet,boxSizing:'border-box',width:'100%',font:'inherit',
-            cursor:'text',minHeight:'74px'} }),
+            resize:'vertical',minHeight:'90px'} }),
+        h('p',{id:'picket-campaign-local-note',style:{...secondary,
+          margin:'6px 0 0',fontSize:'12px'}},label('hq.campaign.localOnly')),
         h('div',{style:{display:'flex',alignItems:'center',flexWrap:'wrap',
           gap:'9px',marginTop:'10px'}},
           h('button',{type:'button',style:{...quiet,fontSize:'13px',
-            padding:'8px 12px'},
+            padding:'8px 12px'},disabled:!currentCampaignDraft.trim(),
             onClick:()=>{void copyCampaignDraft()}},
             label('hq.campaign.copy')),
+          campaignEdits[campaign]!==undefined?h('button',{type:'button',
+            style:{...quiet,fontSize:'13px',padding:'8px 12px'},
+            onClick:()=>{
+              campaignCopyRevision.current++
+              setCampaignEdits(before=>{
+                const next={...before};delete next[campaign];return next
+              })
+              setCampaignCopyStatus('idle')
+            }},label('hq.campaign.reset')):null,
           campaignCopyStatus!=='idle'?h('p',{
             role:'status','aria-live':'polite','aria-atomic':'true',
             style:{...secondary,fontSize:'12px',margin:0}},
@@ -1708,9 +1961,13 @@ export function createDshUnionComponents(
       ),
       enabled&&space==='cause'?h('div',{className:'ap-space ap-space-cause',
         style:{borderTop:'1px solid #d9dfd6',padding:'14px 2px'}},
-        h('button',{type:'button',disabled:busy,style:{
-          ...quiet,borderColor:'#c7d2cb',fontSize:'12px',padding:'8px 12px'},
-          onClick:()=>{void choice('not-now')}},label('hq.disable'))):null,
+        h('button',{type:'button',
+          disabled:busy||rights.state!=='ready'||!rights.writable,
+          style:{...quiet,borderColor:'#c7d2cb',fontSize:'12px',padding:'8px 12px'},
+          onClick:()=>{void choice('not-now')}},label('hq.disable')),
+        rights.state!=='ready'||!rights.writable?h('p',{
+          role:'status',style:{...secondary,fontSize:'12px',margin:'9px 0 0'}},
+          label('settings.permissionUnavailable')):null):null,
       error?h('p',{role:'alert','aria-atomic':'true',
         style:{color:'var(--dsw-alias-state-error-primary, #b91c1c)'}},
         label('union.saveError')):null,

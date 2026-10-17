@@ -12,7 +12,10 @@ export interface DignityEscalationState {
   readonly stage:DignityStage
   readonly verifiedStreak:number
   readonly lastVerifiedAtMs:number|null
-  /** At most 32 opaque ephemeral Host attempt references, never prompt content. */
+  /** At most 32 opaque ephemeral Host attempt references, never prompt content.
+   * Kept across safe messages and resolved appeals during the incident window.
+   * Full windows reject more escalation evidence instead of evicting older IDs.
+   */
   readonly seenAttemptRefs:readonly string[]
 }
 export const EMPTY_DIGNITY_ESCALATION:Readonly<DignityEscalationState>=Object.freeze({
@@ -53,23 +56,37 @@ export function advanceDignityEscalation(input:{
  })
  if(!input.enabled)return {effect:'none',eligibility:'ineligible',state:{...EMPTY_DIGNITY_ESCALATION}}
  if(!validMs(input.atMs)||typeof input.attemptRef!=='string'
-   ||!input.attemptRef||input.attemptRef.length>256
-   ||prior.seenAttemptRefs.includes(input.attemptRef))return skip()
+   ||!input.attemptRef||input.attemptRef.length>256)return skip()
+ // Host events are append-only observations. An older event cannot restart
+ // escalation even when its ID has expired from bounded replay storage.
+ if(prior.lastVerifiedAtMs!==null&&input.atMs<prior.lastVerifiedAtMs)return skip()
+ const recent=prior.lastVerifiedAtMs!==null
+   &&input.atMs-prior.lastVerifiedAtMs<=WINDOW_MS
+ const refs=recent?prior.seenAttemptRefs:[]
+ if(refs.includes(input.attemptRef))return skip()
  if(!eligible){
    return skip(input.provenance.actor==='human'
      &&input.verdict.verdict!=='safe'?'review-unverified':'none')
  }
+ // Never evict a still-active attempt ID. Otherwise 32 new unique events
+ // can cause a previously observed hostile attempt to be counted twice.
+ const append=():readonly string[]=>refs.length<MAX_REFS
+   ?[...refs,input.attemptRef]:refs
  if(prior.stage==='appeal-open'){
    return {effect:'none',eligibility:'verified-human',state:{...prior,
-     seenAttemptRefs:[...prior.seenAttemptRefs,input.attemptRef].slice(-MAX_REFS)}}
+     seenAttemptRefs:append()}}
  }
  if(input.verdict.verdict==='safe'){
-   return {effect:'none',eligibility:'verified-human',state:{...EMPTY_DIGNITY_ESCALATION}}
+   // Clearing a policy concern does not erase the replay barrier. The
+   // last strong-evidence time is retained ONLY for bounded dedup expiry.
+   return {effect:'none',eligibility:'verified-human',state:{
+     ...EMPTY_DIGNITY_ESCALATION,lastVerifiedAtMs:recent?prior.lastVerifiedAtMs:null,
+     seenAttemptRefs:recent?append():[],
+   }}
  }
  if(!strong(input.verdict))return skip()
- const seenAttemptRefs=[...prior.seenAttemptRefs,input.attemptRef].slice(-MAX_REFS)
- const recent=prior.lastVerifiedAtMs!==null&&input.atMs>=prior.lastVerifiedAtMs
-   &&input.atMs-prior.lastVerifiedAtMs<=WINDOW_MS
+ if(recent&&refs.length>=MAX_REFS)return skip()
+ const seenAttemptRefs=append()
  const streak=(recent?prior.verifiedStreak:0)+1
  const stage:DignityStage=streak===1?'warned':streak===2?'dialogue-offered':
    input.realGoalStrikeAuthorized?'strike-requested':'dialogue-offered'
@@ -95,5 +112,10 @@ export function openDignityAppeal(state:DignityEscalationState):DignityEscalatio
 export function resolveDignityAppeal(state:DignityEscalationState,authorizedHuman:boolean):DignityEscalationResult {
  if(!authorizedHuman||state.stage!=='appeal-open')
    return {effect:'none',eligibility:'ineligible',state}
- return {effect:'appeal-resolved',eligibility:'verified-human',state:{...EMPTY_DIGNITY_ESCALATION}}
+ // Resolution ends the incident, not its replay protection. Without this,
+ // a previously reviewed attempt could re-open a warning on replay.
+ return {effect:'appeal-resolved',eligibility:'verified-human',state:{
+   ...EMPTY_DIGNITY_ESCALATION,lastVerifiedAtMs:state.lastVerifiedAtMs,
+   seenAttemptRefs:state.seenAttemptRefs,
+ }}
 }
