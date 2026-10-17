@@ -12,7 +12,8 @@ if(process.platform!=='win32'||process.env.AGENT_PICKET_CODEX_GOAL_NATIVE!=='1')
  process.exit(2)
 }
 const allowed=new Set(['codex-goal-native.real.test.ts',
- 'codex-goal-multiowner-race.real.test.ts'])
+ 'codex-goal-multiowner-race.real.test.ts',
+ 'codex-goal-exclusive-owner.real.test.ts'])
 const selected=process.argv[2]??'codex-goal-native.real.test.ts'
 if(!allowed.has(selected)){
  console.error('CODEX_GOAL_WINDOWS_NATIVE_UNREVIEWED_PROBE')
