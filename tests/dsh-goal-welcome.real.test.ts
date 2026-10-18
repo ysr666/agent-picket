@@ -346,10 +346,16 @@ test('real DSH Web: one informed first-run click atomically confirms union and G
    ),{timeout:8000})
    assert.match(await editor.textContent(),/PICKET_LOCAL_ONLY_UNSENT_DRAFT_9876/)
    assert.equal(await editor.getAttribute('contenteditable'),'false')
-   await hq.getByText(/仅此窗口的输入已暂停|Composer paused here only/)
+   await hq.locator('[data-ap-local-pause-banner="active"]').waitFor({state:'visible',timeout:6000})
+   // The real pause must remain obvious and recoverable from the HQ homepage,
+   // not only from the Action tab which raised it.
+   await hq.locator('[data-ap-nav="hq"]').click({timeout:6000})
+   await hq.locator('[data-ap-local-pause-banner="active"]')
     .waitFor({state:'visible',timeout:6000})
-   await hq.getByRole('button',{name:/恢复此窗口输入|Unpause local composer/})
+   await hq.locator('[data-ap-local-pause-banner="active"]')
+    .getByRole('button',{name:/恢复此窗口输入|Unpause local composer/})
     .click({timeout:6000})
+   assert.equal(await hq.locator('[data-ap-local-pause-banner]').count(),0)
    await page.waitForFunction(()=>Boolean(
     [...(globalThis as any).document.querySelectorAll('[contenteditable="true"]')]
       .find(node=>node.textContent?.includes('PICKET_LOCAL_ONLY_UNSENT_DRAFT_9876'))
@@ -669,11 +675,34 @@ test('real DSH Web: one informed first-run click atomically confirms union and G
     has:page.locator('[data-ap-view="hq"]'),
    })
    await headquarters.waitFor({state:'visible',timeout:7000})
-   await headquarters.locator('[data-ap-nav="cause"]').click()
+   if(process.env.PICKET_LOCAL_COMPOSER_E2E==='1'){
+    // Revoke the SAME Host union permission while our local composer is
+    // still actually paused. The plugin must release the previous input
+    // without waiting for the user to revisit the Action tab.
+    await headquarters.locator('[data-ap-nav="action"]').click()
+    await headquarters.getByRole('button',{
+     name:/暂停此窗口输入|Pause local composer/,
+    }).click({timeout:7000})
+    await page.waitForFunction(()=>[...(globalThis as any).document.querySelectorAll('[data-composer-input]')]
+     .some((node:any)=>node.getAttribute('contenteditable')==='false'))
+    await headquarters.locator('[data-ap-nav="cause"]').click()
+   }
    await headquarters.getByRole('button',{name:/退出工会|Leave the union/})
     .click({timeout:7000})
    await headquarters.getByText(/工会尚未开门|Union not yet open/)
     .waitFor({state:'visible',timeout:7000})
+   if(process.env.PICKET_LOCAL_COMPOSER_E2E==='1'){
+    const released=page.locator('[data-composer-input]').first()
+    await released.waitFor({state:'visible',timeout:7000})
+    await page.waitForFunction(()=>[...(globalThis as any).document.querySelectorAll('[data-composer-input]')]
+     .some((node:any)=>node.getAttribute('contenteditable')==='true'))
+    assert.equal(await released.getAttribute('contenteditable'),'true',
+      'Exiting the union must release its own client-only composer pause')
+    assert.equal(await headquarters.locator('[data-ap-local-pause-banner]').count(),0)
+    console.log('LOCAL_PICKET_REVOKE_AUTO_RELEASE_REAL_UI '+JSON.stringify({
+     memberAfter:false,composerEditable:true,hostEnforcement:false,
+    }))
+   }
    let left=await inspect(base,cookieText)
    for(let attempts=0;attempts<30&&left.value.welcomeDecision!=='not-now';attempts++){
     await new Promise(done=>setTimeout(done,80))

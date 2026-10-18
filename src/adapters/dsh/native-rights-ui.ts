@@ -617,6 +617,15 @@ export function createDshUnionComponents(
       setEraseUnionConfirmation(null)
     },[data.committeeScopeKey,rights.laborRightsEnabled])
     const enabled = rightsIsActive(rights)
+    const toggleLocalComposer=()=>{
+      if(busy||!deps.localComposer)return
+      try{
+        const release=localPicket?.state==='active'
+          ||localPicket?.state==='release-unconfirmed'
+        const result=release?deps.localComposer.stop():deps.localComposer.start()
+        setLocalPicket(result)
+      }catch{setLocalPicket(deps.localComposer.snapshot())}
+    }
     const held=data.goalHold??null
     const holdKey=held?[held.sessionId,held.goalId,held.revision].join(':'):null
     const resumeHeldGoal=async()=>{
@@ -875,6 +884,24 @@ export function createDshUnionComponents(
             held.canResume?'hq.goalHold.caveat':'hq.goalHold.unavailable')),
         error?h('p',{role:'alert',style:{color:'#b91c1c',margin:'8px 0 0'}},
           label('hq.goalHold.error')):null):null,
+      (localPicket?.state==='active'||localPicket?.state==='release-unconfirmed')
+        ?h('section',{className:'ap-surface ap-local-pause-recovery',
+          'data-ap-local-pause-banner':localPicket.state,
+          'aria-label':label('hq.localPicket.title'),
+          style:{...card,borderLeft:'5px solid #9b7145',
+            padding:'12px 16px'}},
+          h('h3',{style:{margin:'0 0 6px',fontSize:'16px'}},
+            label('hq.localPicket.title')),
+          h('p',{role:'status','aria-live':'polite',
+            style:{fontSize:'13px',fontWeight:700,margin:'0 0 6px'}},
+            label(localPicket.state==='active'
+              ?'hq.localPicket.active':'hq.localPicket.release-unconfirmed')),
+          h('p',{style:{...secondary,fontSize:'12px',lineHeight:1.5,
+            margin:'0 0 9px'}},label('hq.localPicket.hqNotice')),
+          h('button',{type:'button',style:quiet,disabled:busy,
+            onClick:toggleLocalComposer},
+            label(localPicket.state==='active'
+              ?'hq.localPicket.resume':'hq.localPicket.retry'))):null,
       enabled&&space==='action'?h('header',{
         className:'ap-space ap-space-action ap-space-intro ap-room-head'},
         h('h2',{},label('hq.spaces.actionTitle')),
@@ -1160,9 +1187,6 @@ export function createDshUnionComponents(
         // symbolic Host picket ledger or the real autonomous Goal strike.
         deps.localComposer?h('section',{
           'data-ap-local-composer':localPicket?.state??'unavailable',
-          'data-ap-local-session':localPicket?.sessionId?'yes':'no',
-          'data-ap-local-service':localPicket?.serviceAvailable?'yes':'no',
-          'data-ap-local-member':localPicket?.memberActive?'yes':'no',
           'aria-label':label('hq.localPicket.title'),
           style:{border:'1px solid var(--dsw-alias-border-l1,#d7ded5)',
             borderRadius:'10px',padding:'12px 14px',margin:'12px 0',
@@ -1176,21 +1200,18 @@ export function createDshUnionComponents(
             h('button',{type:'button',style:quiet,
               'aria-pressed':localPicket?.state==='active',
               disabled:busy||!localPicket||
-                !['active','ready'].includes(localPicket.state),
-              onClick:()=>{
-                try{
-                  const result=localPicket?.state==='active'
-                    ?deps.localComposer!.stop():deps.localComposer!.start()
-                  setLocalPicket(result??null)
-                }catch{setLocalPicket(deps.localComposer?.snapshot()??null)}
-              }},
-              label(localPicket?.state==='active'
-                ?'hq.localPicket.resume':'hq.localPicket.pause')),
+                !['active','ready','release-unconfirmed'].includes(localPicket.state),
+              onClick:toggleLocalComposer},
+              label(localPicket?.state==='active'?'hq.localPicket.resume':
+                localPicket?.state==='release-unconfirmed'?'hq.localPicket.retry':
+                  'hq.localPicket.pause')),
             h('span',{role:'status','aria-live':'polite',
               style:{...secondary,fontSize:'12px'}},
               label(localPicket?.state==='active'?'hq.localPicket.active':
                 localPicket?.state==='ready'?'hq.localPicket.ready':
                 localPicket?.state==='occupied'?'hq.localPicket.occupied':
+                localPicket?.state==='release-unconfirmed'
+                  ?'hq.localPicket.release-unconfirmed':
                   'hq.localPicket.unavailable'))),
         ):null,
         // The poster is a scene driven entirely by the confirmed Host snapshot.

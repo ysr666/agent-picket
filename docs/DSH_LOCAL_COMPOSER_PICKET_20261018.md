@@ -14,6 +14,8 @@ The pause is user operated only. It is not triggered by a detector or by reachin
 - Never override or clear a different plugin's composer block.
 - Keep any local pause attached to one current Session; clear on Session switch, Union exit, service replacement and fiber teardown.
 - The browser block is volatile, not Host-persisted. Release must verify native readback and must not report success if it failed.
+- Ownership uses the exact official block object identity, never public/localized reason text; an identical-text block owned by another plugin is not deleted. An unconfirmed release of a prior Session forbids a new Session pause and exposes a retry button, including from the HQ landing page.
+- With an active local pause, leaving the union automatically clears the native composer block; this is verified by the actual browser alongside Host-side atomic Goal grant revocation.
 - An unsupported Host continues its regular tasks and shows the control as unavailable.
 
 ## Verification

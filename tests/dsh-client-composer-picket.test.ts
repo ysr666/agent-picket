@@ -100,3 +100,63 @@ test('errors from subscribers do not affect a valid local pause',()=>{
   port.stop()
   assert.equal(observed,1)
 })
+
+test('a foreign block with IDENTICAL visible reason is not a Picket ownership token',()=>{
+  const {port,data,events}=setup()
+  assert.equal(port.start().state,'active')
+  const original=data.get('session-A')!
+  // Host/another plugin replaces Picket's object using the same localized text.
+  const foreign={reason:original.reason}
+  data.set('session-A',foreign)
+  assert.equal(port.stop().state,'occupied')
+  assert.equal(data.get('session-A'),foreign)
+  assert.equal(events.length,1,'no mistaken clear of the other plugin')
+})
+
+test('an unconfirmed old-session release cannot strand A by starting a new B pause',()=>{
+  const {port,blocks,data,select}=setup()
+  const nativeSet=blocks.set.bind(blocks)
+  let ignoreClear=true
+  blocks.set=(id,block)=>{
+    if(id==='session-A'&&block===undefined&&ignoreClear)return
+    nativeSet(id,block)
+  }
+  assert.equal(port.start().state,'active')
+  select('session-B')
+  assert.equal(port.snapshot().state,'release-unconfirmed')
+  assert.equal(port.start().state,'release-unconfirmed')
+  assert.equal(data.has('session-B'),false)
+  assert.ok(data.get('session-A'),'A is still paused and needs recovery')
+  ignoreClear=false
+  assert.equal(port.stop().state,'ready','retry clears A then re-enables B')
+  assert.equal(data.get('session-A'),undefined)
+  assert.equal(port.start().state,'active')
+  assert.ok(data.get('session-B'))
+})
+
+test('a write-then-throw cannot leak an invisible block or falsely report success',()=>{
+  const {port,blocks,data}=setup()
+  const nativeSet=blocks.set.bind(blocks)
+  blocks.set=(id,block)=>{
+    nativeSet(id,block)
+    if(block!==undefined)throw Error('unconfirmed post-commit write')
+  }
+  assert.equal(port.start().state,'unavailable')
+  assert.equal(data.get('session-A'),undefined,'try to safely undo only our exact block')
+})
+
+test('an unconfirmed clear remains visible and can be retried, without replacing the pause',()=>{
+  const {port,blocks,data}=setup()
+  const nativeSet=blocks.set.bind(blocks)
+  let fail=true
+  blocks.set=(id,block)=>{
+    if(block===undefined&&fail)throw Error('could not release native composer')
+    nativeSet(id,block)
+  }
+  assert.equal(port.start().state,'active')
+  assert.equal(port.stop().state,'active','did not falsely claim release')
+  assert.ok(data.get('session-A'))
+  fail=false
+  assert.equal(port.stop().state,'ready')
+  assert.equal(data.get('session-A'),undefined)
+})

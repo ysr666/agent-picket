@@ -1,7 +1,7 @@
 /**
  * User-operated LOCAL composer pause using DSH's published ComposerBlocks.
  *
- * This is an actual inert textarea in ONE client, NOT a Host admission veto:
+ * This disables the DSH Lexical input in ONE client, NOT a Host admission veto:
  * direct Session.prompt(), conversation.send(), another tab and Goal execution
  * remain possible. Unlike pre-step.reject, it never accepts/claims/drops input,
  * uploads, copies, or retries a message. It is intentionally not persistent.
@@ -14,10 +14,8 @@ export interface DshComposerBlocks {
   storeFor(sessionId: string): { getSnapshot(): DshComposerBlock | undefined }
 }
 export interface LocalComposerPicketState {
-  readonly state: 'unavailable'|'ready'|'active'|'occupied'
+  readonly state: 'unavailable'|'ready'|'active'|'occupied'|'release-unconfirmed'
   readonly sessionId: string|null
-  readonly serviceAvailable:boolean
-  readonly memberActive:boolean
   readonly clientOnly: true
   readonly hostEnforcement: false
   readonly interceptsMessages: false
@@ -28,7 +26,7 @@ export function createDshLocalComposerPicket(options:{
   readonly reason:()=>string
 }) {
   let blocks: DshComposerBlocks|null=null
-  let own:{sessionId:string;reason:string}|null=null
+  let own:{sessionId:string;block:DshComposerBlock}|null=null
   let disposed=false
   const observers=new Set<()=>void>()
   let notifying=false
@@ -46,9 +44,12 @@ export function createDshLocalComposerPicket(options:{
   }
   const member=()=>{try{return options.member()===true}catch{return false}}
   const read=(id:string)=>blocks?.storeFor(id).getSnapshot()
+  // The official DSH ComposerBlockRegistry returns the SAME snapshot object
+  // that the owner set. The reason is public localized copy and is NOT a
+  // security/ownership token: a different plugin may use identical wording.
   const ours=()=>{
     if(!own||!blocks)return false
-    try{return read(own.sessionId)?.reason===own.reason}
+    try{return read(own.sessionId)===own.block}
     catch{return false}
   }
   const clear=()=>{
@@ -57,7 +58,7 @@ export function createDshLocalComposerPicket(options:{
     if(!blocks)return
     try {
       // A block owned by another plugin must never be removed.
-      if(read(previous.sessionId)?.reason!==previous.reason){
+      if(read(previous.sessionId)!==previous.block){
         own=null
         notify()
         return
@@ -65,7 +66,7 @@ export function createDshLocalComposerPicket(options:{
       blocks.set(previous.sessionId,undefined)
       // A transport/mirror may silently drop a reset. Without readback
       // keep ownership, allowing the user to retry instead of lying.
-      if(read(previous.sessionId)?.reason===previous.reason)return
+      if(read(previous.sessionId)===previous.block)return
       own=null
       notify()
     } catch{
@@ -76,17 +77,22 @@ export function createDshLocalComposerPicket(options:{
     if(disposed)return
     if(own && (!member()||session()!==own.sessionId))clear()
     if(own && blocks)try{
-      if(read(own.sessionId)?.reason!==own.reason){own=null;notify()}
+      if(read(own.sessionId)!==own.block){own=null;notify()}
     }catch{/* Unknown Host state cannot erase a recovery handle. */}
   }
   const snapshot=():LocalComposerPicketState=>{
     if(!disposed)refresh()
     const id=disposed?null:session()
-    const base={sessionId:id,serviceAvailable:!!blocks,memberActive:member(),
-      clientOnly:true,hostEnforcement:false,
+    const base={sessionId:id,clientOnly:true,hostEnforcement:false,
       interceptsMessages:false} as const
+    // A failed release of Session A MUST NOT allow a second block in Session
+    // B. Preserve the recovery handle, even when membership has been revoked.
+    if(own && blocks && !disposed && own.sessionId!==id)
+      return {...base,state:'release-unconfirmed'}
+    if(own && blocks && !disposed && own.sessionId===id && ours())
+      return {...base,state:member()?'active':'release-unconfirmed'}
     if(!id||!member()||!blocks||disposed)return {...base,state:'unavailable'}
-    if(own&&own.sessionId===id&&ours())return {...base,state:'active'}
+    if(own)return {...base,state:'release-unconfirmed'}
     try{
       // A different plugin's block belongs to it; Picket never overwrites it.
       if(read(id)!==undefined)return {...base,state:'occupied'}
@@ -104,9 +110,10 @@ export function createDshLocalComposerPicket(options:{
       // Recheck: a foreign plugin may have installed a block since snapshot().
       if(read(before.sessionId)!==undefined)return {...before,state:'occupied'}
       // Claim responsibility BEFORE write: a write can commit and then throw.
-      own={sessionId:before.sessionId,reason}
-      blocks.set(before.sessionId,{reason})
-      if(read(before.sessionId)?.reason!==reason){
+      const block={reason}
+      own={sessionId:before.sessionId,block}
+      blocks.set(before.sessionId,block)
+      if(read(before.sessionId)!==block){
         own=null
         return {...before,state:'unavailable'}
       }
