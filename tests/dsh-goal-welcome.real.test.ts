@@ -701,6 +701,11 @@ test('real DSH Web: one informed first-run click atomically confirms union and G
     has:page.locator('[data-ap-view="hq"]'),
    })
    await headquarters.waitFor({state:'visible',timeout:7000})
+   // On older official DSH builds the settings mirror may settle AFTER the
+   // drawer itself is mounted. Only interact after the verified Host consent
+   // becomes visible, not just after the dialog element appears.
+   await headquarters.getByText(/工会值班中|Union office open/).first()
+    .waitFor({state:'visible',timeout:12000})
    if(process.env.PICKET_LOCAL_COMPOSER_E2E==='1'){
     // A cold-reloaded Web client may have no selected Session even though
     // the native Goal exists. Re-select through the actual DSH UI before
@@ -725,9 +730,11 @@ test('real DSH Web: one informed first-run click atomically confirms union and G
     }).click({timeout:7000})
     await page.waitForFunction(()=>[...(globalThis as any).document.querySelectorAll('[data-composer-input]')]
      .some((node:any)=>node.getAttribute('contenteditable')==='false'))
-    await headquarters.locator('[data-ap-nav="cause"]').click()
    }
-   await headquarters.getByRole('button',{name:/退出工会|Leave the union/})
+   // Global revocation cannot be hidden by a stale Cause-tab navigation
+   // state after older official Hosts cold-restore an authorized Union.
+   await headquarters.locator('[data-ap-global-union-exit="true"]')
+    .getByRole('button',{name:/退出工会|Leave the union/})
     .click({timeout:7000})
    await headquarters.getByText(/工会尚未开门|Union not yet open/)
     .waitFor({state:'visible',timeout:7000})

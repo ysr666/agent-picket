@@ -43,3 +43,13 @@ A confirmed work-limit stop now also uses the already-published DSH conversation
 One shared per-client union notification gate serves both background and visible-HQ subscribers, suppressing duplicate toasts from two listeners. The initial Host projection is seeded rather than toasted on a cold restart or Session navigation. Consents, fake placards, data refreshes, or a Goal blocked by some *other* reason never generate a union-stop notice. No goal objective or user message is used in the notification.
 
 Native proof: in published DSH 0.2.1-alpha.5 + headless Chrome, the actual Session is selected before the offline synthetic Goal enters the real Host blocked phase, and the localized user-visible notice appears. The native Goal's durable restart, concurrent-tab recovery, input and attachment integrity assertions pass in the same E2E run. In older published Hosts, the notice E2E is not promoted to a claimed version-independent guarantee; normal blocking and recovery matrix still runs.
+
+## Global Leave Union recovery across official DSH generations
+
+A regression in the published official DSH 0.2.0-rc.2 Web client after cold restart made its Cause tab sometimes stay on the HQ homepage, leaving the old room-scoped Leave Union button unreachable. The official Goal block, cold persistence and resume were healthy, so the user-facing recovery was defective even though the Host state itself remained safe.
+
+The product fix exposes exactly ONE always-visible Leave Union action in the Union HQ global footer, outside the CSS room filters. It calls the same Host-owned atomic revoke, updates Union membership and real Goal permission in one verified SettingsScope revision, releases the Picket-owned local composer pause and does not implicitly resume a previously blocked Goal. It preserves read-only Host checks and cannot falsely claim a failed revoke succeeded.
+
+Actual published DSH 0.2.0-rc.2 + macOS Chrome: authorized first run, real Goal block, exact human file bytes across cold restart, concurrent two-tab Goal resume, global footer revoke, Host atomic settings change, cold restart and rejoin without regrant: 1/1 PASS. Published alpha.5 plus genuine macOS Chrome: full previous chain, real editable local composer, official visible Goal-stop notification and automatic local unpause on exit: 1/1 PASS.
+
+The rc.2 native CI matrix tests the official durable Goal chain and global exit, rather than an optional client-only ComposerBlocks interaction when no selected Session is restored. More recent alpha.3 through alpha.5 additionally test local editor recovery. Neither suite waives any official Goal safety or human-file integrity assertions.

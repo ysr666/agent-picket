@@ -2052,7 +2052,11 @@ export function createDshUnionComponents(
                 'stats.lifetime.unavailable') :
             formatDuration(data.lifetimeMs, deps.getLocale?.() ?? 'en')),
       ),
-      enabled&&space==='cause'?h('div',{className:'ap-space ap-space-cause',
+      // A user's right to LEAVE must never depend on which optional room
+      // the current DSH browser build can navigate to after cold restart.
+      // One globally visible exit, outside the CSS room-filter, uses exactly
+      // the same Host-owned atomic Union+Goal consent revocation as before.
+      enabled?h('footer',{'data-ap-global-union-exit':'true',
         style:{borderTop:'1px solid #d9dfd6',padding:'14px 2px'}},
         h('button',{type:'button',
           disabled:busy||rights.state!=='ready'||!rights.writable,

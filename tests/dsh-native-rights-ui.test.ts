@@ -635,8 +635,9 @@ test('Union HQ case dossier is readable, uses recorded ID, and preserves actiona
  assert.equal(texts.filter(x=>x==='union.demand.break').length,1,
    'Case cover must not duplicate the screen-reader live petition announcement')
  assert.ok(nodes.some(n=>n.props.className?.startsWith('ap-seal')&&n.props['aria-hidden']==='true'))
- assert.equal(nodes.some(n=>n.type==='button'&&n.children.includes('hq.disable')),false,
-   'Exit belongs in Union cause/settings rather than beside the primary bargaining action')
+ assert.equal(nodes.filter(n=>n.type==='button'&&n.children.includes('hq.disable')).length,1,
+   'Always provide exactly one Host-owned leave action even when the cause room is inaccessible')
+ assert.ok(nodes.some(n=>n.type==='footer'&&n.props['data-ap-global-union-exit']==='true'))
 })
 
 test('case archive button appears only if genuine Host ledger history exists',()=>{
