@@ -249,17 +249,18 @@ export function createDshBrowserUnionDesk(options: {
         if(!before)throw new Error('Authenticated, opted-in union committee unavailable')
         if(expectedKey!==undefined&&expectedKey!==before.key)
           throw new Error('Committee Session changed; re-confirm action')
-        if(action.kind==='retract'){
-          // Retraction is a two-click destructive act. A different newly
-          // filed case may reuse the same numeric ID and stage after its
-          // predecessor is retracted. Bind approval to the Host ledger,
-          // not merely to the Session, ID or current UI stage.
+        if(action.kind==='retract'||action.kind==='close'){
+          // BOTH deletion and irreversible hearing closure require the
+          // exact Host ledger the person reviewed. After another tab
+          // retracts/re-files, the new case may reuse the same numeric ID,
+          // kind and hearing stage. Those fields alone are not authorization.
           const actualToken=before.caseLedger.writeToken??null
           if(expectedWriteToken===undefined||expectedWriteToken!==actualToken
             ||(actualToken===null
               &&(!Number.isSafeInteger(expectedHostRevision)
                 ||before.view.revision!==expectedHostRevision)))
-            throw new Error('Committee archive changed; re-confirm retraction')
+            throw new Error('Committee archive changed; re-confirm '+(
+              action.kind==='close'?'case closure':'retraction'))
         }
         const prior=before.caseLedger.sessions[before.key]??{cases:[]}
         const next=advanceDignityCase(prior,action)

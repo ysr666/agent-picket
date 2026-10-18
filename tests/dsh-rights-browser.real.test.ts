@@ -1916,6 +1916,16 @@ async function runRightsBrowserE2E(mode: 'source' | 'installed'): Promise<void> 
       assert.equal(await sameSessionCommittee.getByRole('group',{
         name:/核对结案方案|Review this proposed case outcome/,
       }).count(),0,'Cancel must not close or save the fictional case')
+      // A pending case disposition must be disarmed after browsing another
+      // Union room. Return cannot silently revive an irreversible approval.
+      await sameSessionCommittee.getByRole('button',{
+        name:/结案：撤回未经证实的指控|Close: withdraw the unverified allegation/,
+      }).click()
+      await panel.locator('[data-ap-nav="cause"]').click()
+      await panel.locator('[data-ap-nav="action"]').click()
+      assert.equal(await sameSessionCommittee.getByRole('group',{
+        name:/核对结案方案|Review this proposed case outcome/,
+      }).count(),0,'Changing rooms must disarm the pending Host case closure')
       await sameSessionCommittee.getByRole('button',{
         name:/结案：撤回未经证实的指控|Close: withdraw the unverified allegation/,
       }).click()

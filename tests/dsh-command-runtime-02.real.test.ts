@@ -114,7 +114,7 @@ test('real DSH 0.2 CommandRuntime routes shared symbolic pickets without model c
     assert.equal(revision,oldRevision,'Repeated strike must not write another Host event')
     assert.match((await call('/union status')).text,/symbolic strike in progress|象征性罢工进行中/)
     await browser.setPicket(false)
-    assert.match((await call('/union status')).text,/no current symbolic strike|目前没有(?:正在进行的)?象征性罢工|当前没有象征性罢工/)
+    assert.match((await call('/union status')).text,/no current symbolic strike|目前没有(?:正在进行的)?象征性罢工|当前没有象征性罢工|当前没有象征性举牌/)
     assert.deepEqual(parsePicketLedger(value.unionPicketLedger)!.sessions[key]?.history.map(x=>x.kind),
       ['picket-raised','picket-lowered'])
     await browser.setPicket(true)

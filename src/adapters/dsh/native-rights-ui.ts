@@ -585,6 +585,7 @@ export function createDshUnionComponents(
       if(next!==space){
         // Leaving a room must disarm every destructive two-click operation.
         setEraseConfirmationKey(null);setRetractConfirmation(null)
+        setCloseConfirmation(null)
         setEraseAllConfirmation(null);setEraseUnionConfirmation(null)
       }
       setSpace(next)
@@ -1452,7 +1453,10 @@ export function createDshUnionComponents(
                 campaignCopyRevision.current++
                 setCampaign('appeal')
                 setCampaignCopyStatus('idle')
-                campaignHeading.current?.focus()
+                // The campaign draft lives in the separate Cause room.
+                // Focusing its hidden heading cannot be a substitute for
+                // actually navigating there after a user asks to appeal.
+                selectSpace('cause','campaign')
               }},label(hostCaseAvailable
                 ?committeeCaseActive?'hq.dignity.caseInProgress':'hq.dignity.fileCase'
                 :'hq.dignity.appeal')),

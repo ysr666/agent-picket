@@ -925,36 +925,41 @@ test('current-session erase confirmation expires on another tab’s case update'
   'Only a fresh exact-Host-version confirmation can call the erasure port')
 })
 
-test('without a Host committee record, dignity action opens only the unsent draft',()=>{
- const {hooks}=fakeReact()
- const d=deps(rights({welcomeDecision:'enabled',laborRightsEnabled:true})).d
- const withDignity:DshUnionUiDeps={...d,readUnion:()=>({
+test('without Host case storage the dignity appeal opens the visible Cause draft, never files',()=>{
+ const ui=interactiveReact()
+ const base=deps(rights({welcomeDecision:'enabled',laborRightsEnabled:true})).d
+ let writes=0
+ const d:DshUnionUiDeps={...base,readUnion:()=>({
   pending:null,available:true,completedTurnMs:null,coverage:'not-loaded',lifetimeMs:null,
   dignity:{status:'available',data:{
    schemaVersion:1,source:'dsh-host-volatile-dignity',
    origin:'claimed-user-source',persistence:'memory-only',enforcement:false,
    checked:2,safe:0,review:1,targeted:1,latest:'review',
   }},
- })}
- const nodes=walk(createDshUnionComponents(hooks,{createPortal:child=>child},
-  withDignity).UnionPanel())
- const appeal=nodes.find(n=>n.type==='button'
-  &&n.children.includes('hq.dignity.appeal'))
- const heading=nodes.find(n=>n.type==='h3'
-  &&n.children.includes('hq.campaign.title'))
- assert.ok(appeal)
- assert.ok(heading)
- assert.equal(heading.props.tabIndex,-1,
-  'Campaign heading must be focusable without adding a tab stop')
- assert.equal(typeof heading.props.ref,'function',
-  'The actual destination must receive a focus ref')
- let moved=0
- heading.props.ref({focus(){moved++}})
+ }),committeeAction:async()=>{writes++}}
+ const panel=createDshUnionComponents(ui.hooks,{createPortal:x=>x},d).UnionPanel
+ let nodes=ui.render(panel)
+ nodes.find(n=>n.type==='button'&&n.props['data-ap-nav']==='action')!.props.onClick()
+ nodes=ui.render(panel)
+ assert.equal(nodes.find(n=>n.props['data-ap-view']==='hq')!.props['data-ap-current-space'],'action')
+ const appeal=nodes.find(n=>n.type==='button'&&n.children.includes('hq.dignity.appeal'))
+ const heading=nodes.find(n=>n.type==='h3'&&n.children.includes('hq.campaign.title'))
+ assert.ok(appeal&&heading)
+ assert.equal(heading.props.tabIndex,-1)
+ assert.equal(typeof heading.props.ref,'function')
+ let focused=0
+ heading.props.ref({focus(){focused++}})
  appeal.props.onClick()
- assert.equal(moved,1,
-  'Without a Host ledger the button only reveals and focuses the unsent draft')
+ assert.equal(writes,0,'An unavailable Host case must never be faked by the draft fallback')
+ nodes=ui.render(panel)
+ assert.equal(nodes.find(n=>n.props['data-ap-view']==='hq')!.props['data-ap-current-space'],'cause',
+  'The actual unsent appeal draft must be visible, not just focused in a hidden room')
+ assert.equal(nodes.find(n=>n.type==='textarea'&&n.props.id==='picket-campaign-draft')!.props.value,
+  'hq.campaign.appealDraft')
+ ui.flushEffects()
+ assert.equal(focused,1,'The newly visible Cause heading receives keyboard focus after navigation')
  assert.ok(nodes.some(n=>n.children.includes('hq.dignity.actionDisclosure')))
- assert.ok(!nodes.some(n=>n.children.includes('hq.dignity.fileCase')))
+ assert.equal(writes,0,'Navigation and focusing a draft cannot file a Host case')
 })
 
 test('legacy tokenless committee delete button expires when Host revision changes without case-count change',async()=>{
@@ -2267,6 +2272,41 @@ test('Host-backed next steps open the correct V12 room and never mutate the Host
  ui.flushEffects()
  assert.equal(hearingFocus,2,'Closed cases open the actual recorded results, not a generic intro')
  assert.equal(writes,0,'Next-step navigation cannot file or settle a case')
+})
+
+test('leaving a hearing disarms its pending irreversible case closure',()=>{
+ const ui=interactiveReact()
+ let writes=0
+ const base=deps(rights({welcomeDecision:'enabled',laborRightsEnabled:true})).d
+ const d:DshUnionUiDeps={...base,readUnion:()=>({
+  available:true,pending:null,coverage:'partial',completedTurnMs:null,lifetimeMs:null,
+  committeeScopeKey:'hearing-session',
+  committeeArchive:{sessions:1,cases:1,writeToken:'b'.repeat(32)},
+  committeeCases:{cases:[{id:31,kind:'question-rule',stage:'hearing',outcome:null}]},
+ }),committeeAction:async()=>{writes++}}
+ const panel=createDshUnionComponents(ui.hooks,{createPortal:x=>x},d).UnionPanel
+ const find=(nodes:Node[],key:string)=>nodes.find(n=>
+  n.type==='button'&&n.children.includes(key))
+ let nodes=ui.render(panel)
+ find(nodes,'hq.hearing.guidance')!.props.onClick()
+ nodes=ui.render(panel)
+ assert.ok(find(nodes,'hq.hearing.reviewConfirm'),
+  'Original user gesture can arm a confirmed Host case closure')
+ // The real navigation control uses native data-ap-nav, not a fake test route.
+ nodes=ui.render(panel)
+ nodes.find(n=>n.type==='button'&&n.props['data-ap-nav']==='cause')!.props.onClick()
+ nodes=ui.render(panel)
+ assert.equal(nodes.find(n=>n.props['data-ap-view']==='hq')!.props['data-ap-current-space'],'cause')
+ nodes.find(n=>n.type==='button'&&n.props['data-ap-nav']==='action')!.props.onClick()
+ nodes=ui.render(panel)
+ assert.equal(nodes.find(n=>n.props['data-ap-view']==='hq')!.props['data-ap-current-space'],'action')
+ assert.equal(find(nodes,'hq.hearing.reviewConfirm'),undefined,
+  'Returning to a hearing must NOT revive an old closure confirmation')
+ assert.equal(writes,0,'Room navigation must not close a Host case')
+ find(nodes,'hq.hearing.guidance')!.props.onClick()
+ nodes=ui.render(panel)
+ assert.ok(find(nodes,'hq.hearing.reviewConfirm'),
+  'A new explicit choice is required after returning')
 })
 
 test('hearing closure is reviewable, cancelable and Host-confirmed exactly once',async()=>{

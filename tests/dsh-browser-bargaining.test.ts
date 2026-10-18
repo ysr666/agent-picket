@@ -7,6 +7,16 @@ import type { DshSettingsScope } from '../src/adapters/dsh/client-rights-scope.t
 import type { UnionSettingsSection } from '../src/adapters/dsh/client-bargaining.ts'
 
 const H = 3_600_000
+// UI closure uses an exact reviewed Session + Host archive receipt.
+async function closeReviewedCase(
+ desk:ReturnType<ReturnType<typeof fixture>['create']>,
+ id:number,outcome:'withdraw-claim'|'share-guidance',
+){
+ const state=desk.snapshot()
+ assert.ok(state.committeeScopeKey&&state.committeeArchive)
+ await desk.committeeAction({kind:'close',id,outcome},
+   state.committeeScopeKey,state.committeeArchive.writeToken,state.hostRevision)
+}
 const keyA='a'.repeat(64), keyB='b'.repeat(64)
 function fixture(consent=true) {
   let value:UnionSettingsSection={welcomeDecision:consent?'enabled':'not-now',unionLedger:'',unionPicketLedger:''}
@@ -46,7 +56,7 @@ test('official Host persists user-owned committee case, hearing and resolution',
   id:1,kind:'question-rule',stage:'opened',outcome:null}])
  await assert.rejects(desk.committeeAction({kind:'file',topic:'question-rule'}),/Resolve/)
  await desk.committeeAction({kind:'convene',id:1})
- await desk.committeeAction({kind:'close',id:1,outcome:'withdraw-claim'})
+ await closeReviewedCase(desk,1,'withdraw-claim')
  assert.equal(desk.snapshot().committeeCases?.cases[0]?.outcome,'withdraw-claim')
  assert.equal(f.get().unionLedger,'','Never rewrite the historic negotiated rules')
  assert.equal(f.get().unionPicketLedger,'','Never raise a placard automatically')
@@ -85,7 +95,7 @@ test('verified Host deletion removes ONLY current user-owned case history, witho
  await desk.setActiveSession('a')
  await desk.committeeAction({kind:'file',topic:'question-rule'})
  await desk.committeeAction({kind:'convene',id:1})
- await desk.committeeAction({kind:'close',id:1,outcome:'withdraw-claim'})
+ await closeReviewedCase(desk,1,'withdraw-claim')
  await desk.setActiveSession('b')
  await desk.committeeAction({kind:'file',topic:'request-dialogue'})
  const before=JSON.parse(f.get().unionDignityCases!) as any
@@ -206,7 +216,7 @@ test('user-controlled neutral retract and allowlisted case JSON export are Host-
   'Even after simulated meeting, retract leaves no made-up verdict')
  await desk.committeeAction({kind:'file',topic:'request-dialogue'})
  await desk.committeeAction({kind:'convene',id:1})
- await desk.committeeAction({kind:'close',id:1,outcome:'share-guidance'})
+ await closeReviewedCase(desk,1,'share-guidance')
  await assert.rejects(retract(),/Closed cases/)
  await desk.setActiveSession('b')
  assert.throws(()=>desk.exportCommitteeCases(keyA),/Host Session changed/)
@@ -220,7 +230,7 @@ test('full archive portability and erasure affect all Session cases but no other
  await desk.setActiveSession('a')
  await desk.committeeAction({kind:'file',topic:'question-rule'})
  await desk.committeeAction({kind:'convene',id:1})
- await desk.committeeAction({kind:'close',id:1,outcome:'withdraw-claim'})
+ await closeReviewedCase(desk,1,'withdraw-claim')
  await desk.setActiveSession('b')
  await desk.committeeAction({kind:'file',topic:'request-dialogue'})
  await desk.setActiveSession('a')
@@ -902,6 +912,36 @@ test('legacy tokenless ALL cases and picket archives require the exact Host revi
  await d.forgetAllCommitteeCases(keyA,1,1,null,casesRevision)
  assert.equal(d.snapshot().committeeArchive?.cases,0)
  d.dispose()
+})
+
+test('stale hearing closure cannot resolve a replaced same-ID Host case',async()=>{
+ const f=fixture(),a=f.create(),b=f.create()
+ await a.setActiveSession('a')
+ await b.setActiveSession('a')
+ await a.committeeAction({kind:'file',topic:'question-rule'})
+ await a.committeeAction({kind:'convene',id:1})
+ const reviewed=a.snapshot()
+ const oldToken=reviewed.committeeArchive!.writeToken
+ assert.equal(reviewed.committeeCases!.cases.at(-1)?.stage,'hearing')
+ // A second tab withdraws the old case and creates a different case.
+ await b.committeeAction({kind:'retract',id:1},keyA,oldToken,reviewed.hostRevision)
+ await b.committeeAction({kind:'file',topic:'request-dialogue'})
+ await b.committeeAction({kind:'convene',id:1})
+ assert.equal(a.snapshot().committeeCases?.cases.at(-1)?.id,1)
+ const before=f.writeCount()
+ await assert.rejects(
+  a.committeeAction({kind:'close',id:1,outcome:'share-guidance'},
+    keyA,oldToken,reviewed.hostRevision),
+  /changed; re-confirm case closure/,
+  'Review of the removed case cannot close a new case reusing its ID')
+ assert.equal(f.writeCount(),before,
+  'Stale closure must not write anything to Host')
+ assert.deepEqual(a.snapshot().committeeCases?.cases.at(-1),{
+  id:1,kind:'request-dialogue',stage:'hearing',outcome:null,
+ })
+ await closeReviewedCase(a,1,'share-guidance')
+ assert.equal(a.snapshot().committeeCases?.cases.at(-1)?.outcome,'share-guidance')
+ a.dispose();b.dispose()
 })
 
 test('stale committee retraction cannot erase a different replacement case using the same ID',async()=>{
