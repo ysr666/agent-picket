@@ -25,3 +25,13 @@ The pause is user operated only. It is not triggered by a detector or by reachin
 - The real browser extension is opted in with PICKET_LOCAL_COMPOSER_E2E=1 in the existing DSH Web official Host CI workflows.
 
 This does NOT satisfy the release-wide Host-owned atomic normal human text/ordered attachments admission gate (#80) or cross-API interception, or Codex remote conditional Goal mutation (#169). Agent Picket 1.0 release remains NO-GO; no production physical strikes are enabled.
+
+## Verified distinction between Goal stop, saved consent and local pause
+
+The Union HQ Action room shows one small read-only official-Goal scope card when there is NO current Host-confirmed union Goal stoppage. Saving consent, enabling labor rights or raising a symbolic placard NEVER displays a stopped-work claim. The card distinguishes Host Goal service unavailable, missing permission, and permission saved but execution not confirmed. It makes no enforcement calls.
+
+An actual union-specific official Goal block is still shown across HQ rooms only when its Host projection matches the current Session/Goal, valid revision and the official picket-work-limit reason. Only this confirmed block offers official Goal Resume. The card explicitly says ordinary human messages, attachments and tools already running remain unaffected. Upon real recovery and native projection update it disappears without asserting success from client-local state.
+
+The separate local composer pause is scoped to one browser editor. Its recovery button is not a Goal Resume, and a symbolic placard is neither.
+
+Unit UI assertions in tests/dsh-native-rights-ui.test.ts cover saved-but-unconfirmed consent, unavailable official service, and valid blocked projection. In the genuine DSH alpha.5 + Chrome E2E, the Action room has no physical-stop claim until a real Host Goal block; after durable block/restart, the confirmed card has truthful scope and resumes through the native revision CAS. Existing human file-byte and local editor-preservation E2E also pass.

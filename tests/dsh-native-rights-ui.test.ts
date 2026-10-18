@@ -1700,6 +1700,9 @@ test('real Host-blocked Goal shows official restore button even after exiting th
  const nodes=walk(createDshUnionComponents(hooks,{createPortal:x=>x},d).UnionPanel())
  assert.ok(nodes.some(n=>n.children.includes('hq.goalHold.blocked')))
  assert.ok(nodes.some(n=>n.children.includes('hq.goalHold.reason')))
+ assert.ok(nodes.some(n=>n.children.includes('hq.goalHold.unaffected')))
+ assert.ok(nodes.some(n=>n.props['data-ap-goal-truth']==='host-blocked'))
+ assert.equal(nodes.some(n=>n.props['data-ap-goal-truth']==='no-confirmed-stop'),false)
  const action=nodes.find(n=>n.type==='button'&&n.children.includes('hq.goalHold.resume'))
  assert.ok(action&&!action.props.disabled)
  action.props.onClick()
@@ -1743,6 +1746,46 @@ function interactiveReact(){
  return {hooks,render(component:()=>unknown){cursor=0;deferred=[];return walk(component())},
   flushEffects(){const batch=deferred;deferred=[];for(const effect of batch)effect()}}
 }
+
+test('Action room distinguishes a saved official Goal grant from a real Host stop',()=>{
+ const ui=interactiveReact()
+ const source=deps(rights({welcomeDecision:'enabled',laborRightsEnabled:true}))
+ const d:DshUnionUiDeps={...source.d,
+  goal:{snapshot:()=>({available:true,writable:true,authorized:true}),
+   choose:async()=>({available:true,writable:true,authorized:true})},
+ }
+ const panel=createDshUnionComponents(ui.hooks,{createPortal:x=>x},d).UnionPanel
+ let nodes=ui.render(panel)
+ assert.equal(nodes.some(n=>n.props['data-ap-goal-truth']),false,
+   'The HQ landing screen should lead with the union, not a work-status wall')
+ const action=nodes.find(n=>n.props['data-ap-nav']==='action')
+ assert.ok(action)
+ action.props.onClick()
+ nodes=ui.render(panel)
+ assert.ok(nodes.some(n=>n.props['data-ap-goal-truth']==='no-confirmed-stop'))
+ assert.ok(nodes.some(n=>n.children.includes('hq.goalHold.authorizedButUnconfirmed')))
+ assert.ok(nodes.some(n=>n.children.includes('hq.goalHold.unaffected')))
+ assert.equal(nodes.some(n=>n.children.includes('hq.goalHold.blocked')),false)
+ assert.equal(nodes.some(n=>n.children.includes('hq.goalHold.resume')),false,
+   'A saved permission must NEVER fabricate an actionable Host resume')
+})
+
+test('Action room never confuses unsupported Goal service or symbolic picket with physical stop',()=>{
+ const ui=interactiveReact()
+ const base=deps(rights({welcomeDecision:'enabled',laborRightsEnabled:true}))
+ const d:DshUnionUiDeps={...base.d,
+  goal:{snapshot:()=>({available:false,writable:true,authorized:true}),
+   choose:async()=>{throw Error('Unsupported')}},
+ }
+ const panel=createDshUnionComponents(ui.hooks,{createPortal:x=>x},d).UnionPanel
+ const nav=ui.render(panel).find(n=>n.props['data-ap-nav']==='action')
+ assert.ok(nav)
+ nav.props.onClick()
+ const nodes=ui.render(panel)
+ assert.ok(nodes.some(n=>n.children.includes('hq.goalHold.serviceUnavailable')))
+ assert.equal(nodes.some(n=>n.props['data-ap-goal-truth']==='host-blocked'),false)
+ assert.equal(nodes.some(n=>n.children.includes('hq.goalHold.resume')),false)
+})
 
 test('HQ never silently accepts a fulfilled-but-unconfirmed official enable grant',async()=>{
  const ui=interactiveReact()

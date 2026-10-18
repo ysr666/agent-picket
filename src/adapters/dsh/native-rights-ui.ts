@@ -867,13 +867,16 @@ export function createDshUnionComponents(
             onClick:()=>selectSpace(id)},
             label(('hq.spaces.'+id) as MessageKey)))),
       held?h('section',{className:'ap-surface ap-real-goal-hold',
-        'data-ap-real-goal':'blocked','aria-label':label('hq.goalHold.title'),
+        'data-ap-real-goal':'blocked','data-ap-goal-truth':'host-blocked',
+        'aria-label':label('hq.goalHold.title'),
         style:{...card,borderLeft:'5px solid #c76e42',padding:'14px 18px'}},
         h('h3',{style:{fontSize:'18px',margin:'0 0 5px'}},label('hq.goalHold.title')),
         h('p',{role:'status','aria-live':'polite',
           style:{fontWeight:750,margin:'0 0 6px'}},label('hq.goalHold.blocked')),
         h('p',{style:{...secondary,margin:'0 0 10px',lineHeight:1.5}},
           label('hq.goalHold.reason')),
+        h('p',{style:{...secondary,fontSize:'12px',lineHeight:1.5,
+          margin:'0 0 10px'}},label('hq.goalHold.unaffected')),
         held.canResume&&deps.resumeGoal?h('button',{type:'button',
           style:primary,disabled:busy||resumeRequested===holdKey,
           onClick:()=>{void resumeHeldGoal()}},
@@ -884,6 +887,26 @@ export function createDshUnionComponents(
             held.canResume?'hq.goalHold.caveat':'hq.goalHold.unavailable')),
         error?h('p',{role:'alert',style:{color:'#b91c1c',margin:'8px 0 0'}},
           label('hq.goalHold.error')):null):null,
+      // Neither consent nor the symbolic placard proves a stopped Goal.
+      // Only the matched official Host Goal projection above does.
+      enabled && space==='action' && !held ? h('section',{
+        'data-ap-goal-truth':'no-confirmed-stop',
+        className:'ap-surface ap-goal-work-scope',
+        'aria-label':label('hq.goalHold.scopeTitle'),
+        style:{...card,borderLeft:'4px solid #829789',padding:'12px 16px'}},
+        h('h3',{style:{fontSize:'15px',margin:'0 0 7px'}},
+          label('hq.goalHold.scopeTitle')),
+        h('p',{role:'status',style:{fontSize:'13px',fontWeight:700,
+          margin:'0 0 7px'}},label('hq.goalHold.notStopped')),
+        h('p',{style:{...secondary,fontSize:'12px',lineHeight:1.55,
+          margin:'0 0 7px'}},label(goalStatus(deps).authorized
+          ? goalStatus(deps).available
+            ? 'hq.goalHold.authorizedButUnconfirmed'
+            : 'hq.goalHold.serviceUnavailable'
+          : 'hq.goalHold.noGrant')),
+        h('p',{style:{...secondary,fontSize:'12px',lineHeight:1.55,
+          margin:0}},label('hq.goalHold.unaffected'))
+      ) : null,
       (localPicket?.state==='active'||localPicket?.state==='release-unconfirmed')
         ?h('section',{className:'ap-surface ap-local-pause-recovery',
           'data-ap-local-pause-banner':localPicket.state,

@@ -337,6 +337,11 @@ test('real DSH Web: one informed first-run click atomically confirms union and G
    })
    await hq.waitFor({state:'visible',timeout:8000})
    await hq.locator('[data-ap-nav="action"]').click()
+   const claim=hq.locator('section[data-ap-goal-truth="no-confirmed-stop"]')
+   await claim.waitFor({state:'visible',timeout:6000})
+   assert.match(await claim.innerText(),
+     /当前会话尚无经官方 Host 确认|No official union Goal stoppage confirmed/)
+   assert.equal(await hq.locator('section[data-ap-goal-truth="host-blocked"]').count(),0)
    const pause=hq.getByRole('button',{name:/暂停此窗口输入|Pause local composer/})
    await pause.waitFor({state:'visible',timeout:8000})
    await pause.click({timeout:6000})
@@ -579,6 +584,11 @@ test('real DSH Web: one informed first-run click atomically confirms union and G
    await union.waitFor({state:'visible',timeout:7000})
    const goalCard=union.locator('section[data-ap-real-goal="blocked"]')
    await goalCard.waitFor({state:'visible',timeout:7000})
+   assert.equal(await goalCard.getAttribute('data-ap-goal-truth'),'host-blocked')
+   assert.match(await goalCard.innerText(),
+     /普通用户消息、附件和正在运行的工具|New human messages, attached files and running tools/)
+   assert.equal(await union.locator('section[data-ap-goal-truth="no-confirmed-stop"]').count(),0,
+     'Verified union-stop and no-confirmed-stop must never be shown simultaneously')
    const resume=union.getByRole('button',{name:/恢复此 Goal 的自动工作|Resume this Goal/})
    await resume.waitFor({state:'visible',timeout:7000})
    if(capture){
