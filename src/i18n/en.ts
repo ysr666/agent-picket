@@ -327,6 +327,7 @@ export const en = defineEnglish({
   'hq.localPicket.active': 'Composer paused here only',
   'hq.localPicket.ready': 'Available, currently unpaused',
   'hq.localPicket.occupied': 'Another plugin controls the composer; not overridden',
+  'hq.localPicket.selectSession': 'Select a real DSH conversation in the sidebar to use this local pause; a highlighted row after restart may not yet be connected.',
   'hq.localPicket.unavailable': 'Unavailable for this session or Host',
   'hq.localPicket.hqNotice': 'Only this window’s composer is affected. Other clients, tools, and Goal rounds may still proceed.',
   'hq.localPicket.retry': 'Retry unpausing prior Session',

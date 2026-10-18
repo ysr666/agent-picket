@@ -1263,7 +1263,8 @@ export function createDshUnionComponents(
                 localPicket?.state==='occupied'?'hq.localPicket.occupied':
                 localPicket?.state==='release-unconfirmed'
                   ?'hq.localPicket.release-unconfirmed':
-                  'hq.localPicket.unavailable'))),
+                  !localPicket?.sessionId?'hq.localPicket.selectSession':
+                    'hq.localPicket.unavailable'))),
         ):null,
         // The poster is a scene driven entirely by the confirmed Host snapshot.
         // In particular, its placard never claims an Agent actually stopped.

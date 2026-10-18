@@ -324,6 +324,7 @@ export const zhCN: Readonly<Record<keyof typeof en, string>> = {
   'hq.localPicket.active': '仅此窗口的输入已暂停',
   'hq.localPicket.ready': '可以暂停，当前仍可输入',
   'hq.localPicket.occupied': '其他插件已控制输入框，工会不会覆盖',
+  'hq.localPicket.selectSession': '请在 DSH 左侧重新点选一个真实会话以使用本窗口暂停；重启后高亮的会话可能尚未建立连接。',
   'hq.localPicket.unavailable': '当前会话或 Host 不支持此功能',
   'hq.localPicket.hqNotice': '仅影响本窗口的输入框；其他客户端、工具和 Goal 自动任务仍可能运行。',
   'hq.localPicket.retry': '重试解除上一会话的暂停',

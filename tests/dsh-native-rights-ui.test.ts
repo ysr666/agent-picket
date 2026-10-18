@@ -1193,6 +1193,25 @@ test('UX #120: informed first run has bounded dialog, warning and both explicit 
  } finally {(globalThis as any).document=old}
 })
 
+test('local pause refuses missing current DSH Session and explains how to reselect it',()=>{
+ const {hooks}=fakeReact()
+ const base=deps(rights({welcomeDecision:'enabled',laborRightsEnabled:true}))
+ const notSelected={
+  state:'unavailable' as const,sessionId:null,
+  clientOnly:true as const,hostEnforcement:false as const,
+  interceptsMessages:false as const,
+ }
+ const d:DshUnionUiDeps={...base.d,localComposer:{
+  snapshot:()=>notSelected,start:()=>notSelected,stop:()=>notSelected,
+  subscribe:()=>()=>{},
+ }}
+ const nodes=walk(createDshUnionComponents(hooks,{createPortal:x=>x},d).UnionPanel())
+ assert.ok(nodes.some(n=>n.children.includes('hq.localPicket.selectSession')))
+ const pause=nodes.find(n=>n.type==='button'&&n.children.includes('hq.localPicket.pause'))
+ assert.ok(pause&&pause.props.disabled===true,
+   'Never turn a visually highlighted but unretained Session into a false safe pause')
+})
+
 test('UX #120: Host-verified OFF never becomes an operable real strike control',()=>{
  const {hooks}=fakeReact()
  const {d}=deps(rights({welcomeDecision:'enabled',laborRightsEnabled:true}))

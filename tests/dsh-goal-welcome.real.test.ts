@@ -723,12 +723,44 @@ test('real DSH Web: one informed first-run click atomically confirms union and G
       await entry.click({timeout:7000})
       await headquarters.waitFor({state:'visible',timeout:7000})
     }
+    // The selected-row ARIA state on a cold-restarted DSH browser may be
+    // restored before the authoritative main-view Session retainer (which
+    // the client-only ComposerBlocks adapter correctly requires). Re-select
+    // via the *real Host UI*, never loosen the adapter's no-Session guard.
+    const pause=headquarters.getByRole('button',{
+      name:/暂停此窗口输入|Pause local composer/,
+    })
+    const openAction=()=>headquarters.locator('[data-ap-nav="action"]').click()
+    await openAction()
+    for(let attempt=0;attempt<2&&!(await pause.isEnabled());attempt++){
+      await headquarters.getByRole('button',{name:/关闭|Close/}).first()
+       .click({timeout:6000})
+      if(attempt===1){
+        // Force an unambiguous main-view transition if re-clicking a
+        // visually selected Session alone did not restore its retainer.
+        await page.locator('[data-row-key^="workspace:"]').first()
+         .click({timeout:7000})
+      }
+      await row.waitFor({state:'visible',timeout:10000})
+      await row.click({timeout:7000})
+      await page.waitForFunction((id:string)=>(globalThis as any).document.querySelector(
+       '[data-row-key="session:'+id+'"]')?.getAttribute('aria-selected')==='true',
+       created.sessionId,{timeout:7000})
+      await entry.click({timeout:7000})
+      await headquarters.waitFor({state:'visible',timeout:7000})
+      await openAction()
+    }
+    const actual=await headquarters.locator('[data-ap-local-composer]')
+     .getAttribute('data-ap-local-composer')
+    console.log('LOCAL_COMPOSER_AFTER_REAL_DSH_RESELECT '+JSON.stringify({
+      state:actual,enabled:await pause.isEnabled(),
+      selected:await row.getAttribute('aria-selected'),
+    }))
+    assert.equal(await pause.isEnabled(),true,
+     'Actual selected DSH Session and official ComposerBlocks must be ready')
     // Exit with the official pause actually active, then verify automatic
     // release without manually revisiting the Action room.
-    await headquarters.locator('[data-ap-nav="action"]').click()
-    await headquarters.getByRole('button',{
-     name:/暂停此窗口输入|Pause local composer/,
-    }).click({timeout:7000})
+    await pause.click({timeout:7000})
     await page.waitForFunction(()=>[...(globalThis as any).document.querySelectorAll('[data-composer-input]')]
      .some((node:any)=>node.getAttribute('contenteditable')==='false'))
    }
