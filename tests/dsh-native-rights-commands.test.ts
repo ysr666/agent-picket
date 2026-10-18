@@ -233,12 +233,20 @@ test('native Chinese technical commands localize only text, never model/Host pol
   ] as const
   for(const [command,expected] of checks)
     assert.match((await h.call(command)).text,expected,command)
+  const chineseStatus=(await h.call('status')).text
+  assert.match(chineseStatus,/普通消息.*仅观察.*Goal/,
+    'Chinese status may not falsely claim all real Goal stoppage is OFF')
+  assert.match(chineseStatus,/自动轮次/,
+    'Native status must distinguish official Goal from symbolic picket')
   assert.equal(h.revision(),before,'Localized read-only commands must not write consent')
   assert.equal(h.read().welcomeDecision,'unseen')
   const beforeSnapshot=JSON.parse((await h.call('snapshot')).text)
   assert.equal(beforeSnapshot.modes.laborRights,'disabled')
   await h.call('language en')
-  assert.match((await h.call('status')).text,/monitor-only/)
+  const englishStatus=(await h.call('status')).text
+  assert.match(englishStatus,/monitor-only/)
+  assert.match(englishStatus,/v2 Goal work-limit/,
+    'English status must not misrepresent real Goal stoppage as globally disabled')
   const afterSnapshot=JSON.parse((await h.call('snapshot')).text)
   // Each snapshot gets an independent wall-clock timestamp. Compare only
   // locale-invariant data, not generatedAtMs.
