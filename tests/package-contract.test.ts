@@ -110,5 +110,11 @@ test('npm dry-run tarball contains prebuilt plugin and no source, tests, or runt
     'Browser UI is already inline in client.js; never package a second copy')
   assert.ok(files.has('dist/adapters/dsh/native-rights-ui.d.ts'),
     'Keep the internal native React Slot types referenced by client.d.ts')
+  assert.equal(files.has('dist/adapters/dsh/client-composer-picket.js'),false,
+    'Local composer control must only ship once, in the prebuilt browser bundle')
+  assert.ok(files.has('dist/adapters/dsh/client-composer-picket.d.ts'),
+    'Keep composer control types referenced by public client.d.ts')
+  assert.equal(files.has('docs/DSH_LOCAL_COMPOSER_PICKET_20261018.md'),false,
+    'Internal native E2E evidence stays in Git rather than the npm runtime tarball')
   assert.ok(meta.size < 250_000, `Package unexpectedly large: ${meta.size} bytes; 250000-byte strict budget`)
 })
