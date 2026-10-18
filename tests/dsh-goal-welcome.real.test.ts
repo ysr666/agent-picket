@@ -376,6 +376,17 @@ test('real DSH Web: one informed first-run click atomically confirms union and G
     .click({timeout:6000})
   }
   if(process.env.PICKET_GOAL_RECOVERY_E2E==='1'){
+   if(process.env.PICKET_GOAL_NOTICE_E2E==='1'){
+    // Bind the genuine visible Session BEFORE Host emits goal/change. A late
+    // navigation may correctly seed an existing block without replaying toast.
+    const preselect=page.locator('[data-row-key="session:'+created.sessionId+'"]')
+    await preselect.waitFor({state:'visible',timeout:10000})
+    if(await preselect.getAttribute('aria-selected')!=='true')
+      await preselect.click({timeout:7000})
+    await page.waitForFunction((id:string)=>(globalThis as any).document.querySelector(
+      '[data-row-key="session:'+id+'"]')?.getAttribute('aria-selected')==='true',
+      created.sessionId,{timeout:7000})
+   }
    const diagnostic=await page.evaluate(async(sessionId:string)=>{
     let count=0
     const call=async(method:string,args:Record<string,unknown>):Promise<{http:number;body:any}>=>{
@@ -417,6 +428,11 @@ test('real DSH Web: one informed first-run click atomically confirms union and G
     phase:blocked.phase,reason:blocked.blockedReason.code,
     rounds:blocked.roundsStarted,revision:blocked.revision,
    }))
+   if(process.env.PICKET_GOAL_NOTICE_E2E==='1'){
+    const notice=page.getByText(/工会已停止此 Goal 的后续自动工作|The union has stopped this Goal/)
+    await notice.first().waitFor({state:'visible',timeout:8000})
+    console.log('GOAL_NATIVE_UNION_WORK_STOP_NOTICE_VISIBLE')
+   }
    // A blocked autonomous Goal must not swallow a genuine human message or
    // its staged binary file. All data are fixed test-only synthetic bytes.
    const fileTrial=process.env.PICKET_GOAL_HUMAN_ATTACHMENT_E2E==='1'
@@ -686,9 +702,23 @@ test('real DSH Web: one informed first-run click atomically confirms union and G
    })
    await headquarters.waitFor({state:'visible',timeout:7000})
    if(process.env.PICKET_LOCAL_COMPOSER_E2E==='1'){
-    // Revoke the SAME Host union permission while our local composer is
-    // still actually paused. The plugin must release the previous input
-    // without waiting for the user to revisit the Action tab.
+    // A cold-reloaded Web client may have no selected Session even though
+    // the native Goal exists. Re-select through the actual DSH UI before
+    // expecting a scoped ComposerBlocks pause to become available.
+    const row=page.locator('[data-row-key="session:'+created.sessionId+'"]')
+    await row.waitFor({state:'visible',timeout:10000})
+    if(await row.getAttribute('aria-selected')!=='true'){
+      await headquarters.getByRole('button',{name:/关闭|Close/}).first()
+       .click({timeout:6000})
+      await row.click({timeout:7000})
+      await page.waitForFunction((id:string)=>(globalThis as any).document.querySelector(
+       '[data-row-key="session:'+id+'"]')?.getAttribute('aria-selected')==='true',
+       created.sessionId,{timeout:7000})
+      await entry.click({timeout:7000})
+      await headquarters.waitFor({state:'visible',timeout:7000})
+    }
+    // Exit with the official pause actually active, then verify automatic
+    // release without manually revisiting the Action room.
     await headquarters.locator('[data-ap-nav="action"]').click()
     await headquarters.getByRole('button',{
      name:/暂停此窗口输入|Pause local composer/,

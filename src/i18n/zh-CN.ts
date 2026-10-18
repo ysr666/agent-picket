@@ -186,6 +186,7 @@ export const zhCN: Readonly<Record<keyof typeof en, string>> = {
   'settings.goalTurnOff': '撤销未来 Goal 停工授权',
   'settings.goalResumeScope': '撤销只防止未来停工。已停 Goal 请在工会总部点击复工或使用官方 /goal resume。',
   'settings.goalOtherEnforcementOff': '其他真实任务阻断尚未通过安全认证，不拒绝或丢弃新提交。',
+  'hq.goalHold.toast': '工会已停止此 Goal 的后续自动工作。当前工具和新消息不受影响；打开工会总部可查看原因或复工。',
   'hq.goalHold.title': '真实 Goal 停工',
   'hq.goalHold.blocked': 'DSH 已按工会工时上限阻断当前 Goal。',
   'hq.goalHold.reason': '本轮已完成，后续自动续轮停止；这不是象征性举牌。',

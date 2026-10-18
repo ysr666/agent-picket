@@ -11,9 +11,9 @@ import { registerDshNativeRightsSlots, type ReactForDsh, type PortalForDsh, type
 import { formatMessage, resolveLocale, type MessageKey } from '../../i18n/index.ts'
 
 /**
- * DSH Web CLIENT companion. Listens only to the public command/executed event;
- * does not touch the composer, manipulate the Session, or trigger a model call.
- * The one local helper is explicitly inlined at build time; the emitted browser factory is self-contained.
+ * DSH Web CLIENT companion. Uses official Session/Goal projections for
+ * read-only notices; the user's optional local composer pause is client-only.
+ * No model call, prompt interception, arbitrary Host block or tool cancellation.
  */
 export const inject = ['sessions', 'commandUi']
 
@@ -48,6 +48,29 @@ export interface UnionGoalHold {
   readonly goalId:string
   readonly revision:number
   readonly canResume:boolean
+}
+
+/** Show one notice only when a NEW, verified Host Goal block is observed.
+ * Seed each Session's initial projection without replaying old notices on
+ * browser reload or Session navigation; never infer a strike from consent. */
+export function createDshGoalStopNoticeGate(){
+  let sessionId:string|null=null
+  let last:string|null=null
+  const key=(hold:UnionGoalHold|null)=>hold?
+    [hold.sessionId,hold.goalId,hold.revision].join(':'):null
+  return {
+    seed(id:string|null,hold:UnionGoalHold|null){
+      sessionId=id
+      last=id&&hold?.sessionId===id?key(hold):null
+    },
+    change(id:string|null,hold:UnionGoalHold|null){
+      if(!id||id!==sessionId)return false
+      const next=hold?.sessionId===id?key(hold):null
+      const notify=next!==null&&next!==last
+      last=next
+      return notify
+    },
+  }
 }
 export function createDshGoalRecoveryPort(options:{
   currentSession:()=>string|undefined
@@ -253,6 +276,10 @@ export function apply(ctx: ClientContext, react?: ReactForDsh, portal?: PortalFo
       localComposer.refresh()
     }
     const shouldRefreshLifetime=createCompletedTurnRefreshGate()
+    // Shared across the background observer and every visible HQ panel.
+    // Multiple subscribers must not produce duplicate native toast notices.
+    const goalNotice=createDshGoalStopNoticeGate()
+    let noticeSession:string|null=null
     const readUnion = () => {
       bindLocalComposer()
       const id = activeId()
@@ -279,11 +306,22 @@ export function apply(ctx: ClientContext, react?: ReactForDsh, portal?: PortalFo
         lifetime?.setScope(owner.snapshot().laborRightsEnabled,
           activeId()??'agent-picket:global-work')
         const data = readUnion()
+        const id=activeId()
+        if(goalNotice.change(id??null,data.goalHold??null)
+          &&owner.snapshot().laborRightsEnabled&&id){
+          // This is a REAL Host projection transition, not a synthetic
+          // picket or the act of saving consent. Notification is best effort;
+          // never mutate/re-submit work or print raw Goal text.
+          try {
+            const scope=scoped.sessions.scope(id)
+            if(scope)scope.get('conversation')?.input.for(scope).notify('info',
+              formatMessage(uiLocale(),'hq.goalHold.toast'))
+          }catch{/* Unsupported UI channel must not alter Host work. */}
+        }
         void desk.observe(data.completedTurnMs, data.coverage)
         // Refresh the work-only ledger on a VERIFIED new completed turn,
         // not on tool activity, render, arbitrary settings changes or timers.
         // This shared gate deduplicates background and open-panel listeners.
-        const id=activeId()
         const hostWork=id?bridge?.getSnapshot(id):undefined
         const currentConsent=owner.snapshot().laborRightsEnabled
         if(!currentConsent){
@@ -310,6 +348,10 @@ export function apply(ctx: ClientContext, react?: ReactForDsh, portal?: PortalFo
         stopEvents()
         stopGoal()
         const id = activeId()
+        if(noticeSession!==(id??null)){
+          noticeSession=id??null
+          goalNotice.seed(noticeSession,recovery.read())
+        }
         lastTurnStart=-1;lastTurnEnd=-1
         dignity?.setScope(owner.snapshot().laborRightsEnabled,id??null)
         stopEvents = id && bridge ? bridge.subscribe(id, onWork) : () => {}

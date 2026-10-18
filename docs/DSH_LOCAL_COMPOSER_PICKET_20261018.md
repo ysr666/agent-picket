@@ -35,3 +35,11 @@ An actual union-specific official Goal block is still shown across HQ rooms only
 The separate local composer pause is scoped to one browser editor. Its recovery button is not a Goal Resume, and a symbolic placard is neither.
 
 Unit UI assertions in tests/dsh-native-rights-ui.test.ts cover saved-but-unconfirmed consent, unavailable official service, and valid blocked projection. In the genuine DSH alpha.5 + Chrome E2E, the Action room has no physical-stop claim until a real Host Goal block; after durable block/restart, the confirmed card has truthful scope and resumes through the native revision CAS. Existing human file-byte and local editor-preservation E2E also pass.
+
+## One-time user-visible notification after native Goal block
+
+A confirmed work-limit stop now also uses the already-published DSH conversation input notification channel. When an active, selected Goal's official projection first changes to the union-specific blocked state, a local bilingual notice directs the user to Union HQ for review/resume. It states that existing tools and new human messages still run. This is not an independent adapter, Host RPC, fabricated union vote or additional consent channel.
+
+One shared per-client union notification gate serves both background and visible-HQ subscribers, suppressing duplicate toasts from two listeners. The initial Host projection is seeded rather than toasted on a cold restart or Session navigation. Consents, fake placards, data refreshes, or a Goal blocked by some *other* reason never generate a union-stop notice. No goal objective or user message is used in the notification.
+
+Native proof: in published DSH 0.2.1-alpha.5 + headless Chrome, the actual Session is selected before the offline synthetic Goal enters the real Host blocked phase, and the localized user-visible notice appears. The native Goal's durable restart, concurrent-tab recovery, input and attachment integrity assertions pass in the same E2E run. In older published Hosts, the notice E2E is not promoted to a claimed version-independent guarantee; normal blocking and recovery matrix still runs.

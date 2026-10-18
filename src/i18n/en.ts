@@ -189,6 +189,7 @@ export const en = defineEnglish({
   'settings.goalTurnOff': 'Revoke future Goal stoppages',
   'settings.goalResumeScope': 'Revocation prevents future stops. To restart a blocked Goal use the Union HQ button or official /goal resume.',
   'settings.goalOtherEnforcementOff': 'Other task-blocking modes are not yet qualified; no new submissions are rejected or discarded.',
+  'hq.goalHold.toast': 'The union has stopped this Goal’s next automatic round. Current tools and new messages are unaffected. Open Union HQ to review or resume.',
   'hq.goalHold.title': 'Real Goal stoppage',
   'hq.goalHold.blocked': 'DSH blocked this Goal under the union work limit.',
   'hq.goalHold.reason': 'The current round finished; subsequent automatic Goal rounds stopped. This is not a symbolic picket.',
