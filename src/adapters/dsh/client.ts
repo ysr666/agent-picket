@@ -2,6 +2,7 @@ import { createBrowserDashboardBridge } from './client-dashboard.ts'
 import { createBrowserLifetimeWorkReader, createCompletedTurnRefreshGate } from './client-lifetime.ts'
 import { createBrowserDignityReader } from './client-dignity.ts'
 import { createDshBrowserUnionDesk, type UnionSettingsSection } from './client-bargaining.ts'
+import {createDshLocalComposerPicket,type DshComposerBlocks} from './client-composer-picket.ts'
 import { createDshClientRightsScope, type DshSettingsScope } from './client-rights-scope.ts'
 import {createDshRealGoalConsentControl} from './client-goal-consent.ts'
 import {createDshGoalServiceWitness} from './client-goal-capability.ts'
@@ -19,6 +20,7 @@ export const inject = ['sessions', 'commandUi']
 interface Scope {
   get(name: 'conversation'): {
     input: { for(context: Scope): { notify(level: 'info' | 'error', message: string): void } }
+    blocks?:DshComposerBlocks
   } | undefined
 }
 /** DSH 0.1.2 exposes `current`; DSH 0.1.7 exposes main-view retainers.
@@ -114,6 +116,8 @@ interface ClientContext {
   configForms?: { describe(): OfficialHostMirror }
   remote?: OfficialHostSettings & {goals?:{get:(sessionId:string)=>Promise<unknown>;resume:(sessionId:string,ref:{id:string;revision:number})=>Promise<unknown>}}
   locale?: { getLocale(): { active: string }; subscribe(listener:()=>void):()=>void }
+  conversation?:{blocks?:DshComposerBlocks}
+  get?(name:'conversation'):{blocks?:DshComposerBlocks}|undefined
   /** Public Cordis service registration; removed with the client plugin fiber. */
   provide?(name: string, value: unknown): () => void
   on(name: 'command/executed', cb: (
@@ -171,6 +175,21 @@ export function apply(ctx: ClientContext, react?: ReactForDsh, portal?: PortalFo
       if(goalRemote===granted){goalRemote=undefined;goalWitness.invalidate()}
     })
   })
+  // Optional official root conversation service. Capturing its public blocks
+  // face never alters a Host submission or causes implicit input blocking.
+  let rootComposerBlocks:DshComposerBlocks|null=null
+  const localComposerPorts=new Set<ReturnType<typeof createDshLocalComposerPicket>>()
+  ctx.inject?.(['conversation'],child=>{
+    const provider=child.conversation?.blocks??child.get?.('conversation')?.blocks
+    if(!provider)return
+    rootComposerBlocks=provider
+    for(const port of localComposerPorts)port.attach(provider)
+    child.effect?.(()=>()=>{
+      if(rootComposerBlocks!==provider)return
+      rootComposerBlocks=null
+      for(const port of localComposerPorts)port.attach(null)
+    })
+  })
   // Native React Slots are installed only when DSH's own services are present.
   // Their settings writes use the Host's authenticated settingsScope, never
   // the read-only agentPicketDashboard service.
@@ -207,8 +226,35 @@ export function apply(ctx: ClientContext, react?: ReactForDsh, portal?: PortalFo
     })
     const uiLocale = () => resolveLocale({ hostLocale: scoped.locale?.getLocale().active })
     const activeId = () => currentDshUnionSession(scoped.sessions.list?.getSnapshot())
+    const localComposer=createDshLocalComposerPicket({
+      currentSession:()=>activeId(),
+      member:()=>owner.snapshot().laborRightsEnabled,
+      reason:()=>formatMessage(uiLocale(),'hq.localPicket.placeholder'),
+    })
+    localComposerPorts.add(localComposer)
+    if(rootComposerBlocks)localComposer.attach(rootComposerBlocks)
+    // Official ComposerBlocks is a per-Web-client affordance. It never gets
+    // promoted to Host admission safety or the real Goal authorization flag.
+    scoped.inject?.(['conversation'],child=>{
+      const provider=child.conversation?.blocks??child.get?.('conversation')?.blocks
+      if(!provider)return
+      localComposer.attach(provider)
+      child.effect?.(()=>()=>localComposer.attach(null))
+    })
+    const bindLocalComposer=()=>{
+      // The real DSH conversation service is a root singleton exposed through
+      // each official Session Scope. Do not depend on a newly invented RPC.
+      try{
+        const id=activeId()
+        const fromScope=(id?scoped.sessions.scope(id)?.get('conversation')?.blocks:undefined)
+          ??scoped.get?.('conversation')?.blocks
+        if(fromScope)localComposer.attach(fromScope)
+      }catch{/* Unsupported scope: client-only pause stays unavailable. */}
+      localComposer.refresh()
+    }
     const shouldRefreshLifetime=createCompletedTurnRefreshGate()
     const readUnion = () => {
+      bindLocalComposer()
       const id = activeId()
       const data = id ? bridge?.getSnapshot(id) : undefined
       return {
@@ -259,6 +305,7 @@ export function apply(ctx: ClientContext, react?: ReactForDsh, portal?: PortalFo
         listener()
       }
       const rebind = () => {
+        bindLocalComposer() // A→B navigation must not strand A's input.
         const epoch = ++currentEpoch
         stopEvents()
         stopGoal()
@@ -279,6 +326,7 @@ export function apply(ctx: ClientContext, react?: ReactForDsh, portal?: PortalFo
       const stopDignity = dignity?.subscribe(listener) ?? (()=>{})
       const stopDesk = desk.subscribe(listener)
       const stopSettings = owner.subscribe(()=>{
+        bindLocalComposer() // Leaving the union releases the local block.
         dignity?.setScope(owner.snapshot().laborRightsEnabled,activeId()??null)
         onWork()
       })
@@ -308,6 +356,8 @@ export function apply(ctx: ClientContext, react?: ReactForDsh, portal?: PortalFo
         lifetime?.dispose()
         dignity?.dispose()
         desk.dispose()
+        localComposer.dispose()
+        localComposerPorts.delete(localComposer)
         // Both native settings scopes are lifecycle-owned. Silently drain
         // their pending writes on unload rather than leak Host subscriptions.
         void rightsScope.dispose?.().catch(() => {})
@@ -330,6 +380,7 @@ export function apply(ctx: ClientContext, react?: ReactForDsh, portal?: PortalFo
       subscribeLocale: listener => scoped.locale!.subscribe(listener),
       readUnion,
       resumeGoal:hold=>recovery.resume(hold).then(()=>{}),
+      localComposer,
       subscribeUnion,
       refreshLifetime:days=>lifetime?.refresh(days),
       shouldAutoWelcome: () => isDshUnionAutoWelcomeEligible(scoped.sessions.list?.getSnapshot()),

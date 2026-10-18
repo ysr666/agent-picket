@@ -24,6 +24,7 @@ const modules = [
   'product/union-story.js',
   'product/union-cadence.js',
   'product/union-alerts.js',
+  'adapters/dsh/client-composer-picket.js',
   'adapters/dsh/client-bargaining.js',
   'adapters/dsh/native-rights-ui.js',
   'adapters/dsh/lifetime-work-contract.js',
@@ -45,6 +46,7 @@ const allowedImports = new Map([
   ['adapters/dsh/client-lifetime.js', new Set(['./lifetime-work-contract.js'])],
   ['adapters/dsh/client-dignity.js', new Set(['./dignity-contract.js'])],
   ['adapters/dsh/client.js', new Set([
+    './client-composer-picket.js',
     './client-dashboard.js', './client-rights-scope.js', './client-goal-consent.js', './client-goal-capability.js', './client-bargaining.js',
     './native-rights-ui.js', './client-host-settings-017.js', './client-lifetime.js', './client-dignity.js', '../../i18n/index.js',
   ])],

@@ -4,6 +4,7 @@
  * the Host. No dependency on Host-private UI internals, DOM scraping or RPC.
  */
 import type { ClientRightsSnapshot } from './client-rights-scope.ts'
+import type {LocalComposerPicketState} from './client-composer-picket.ts'
 import { getWelcomeState } from './client-rights-scope.ts'
 import { projectUnionExperience } from '../../product/union-experience.ts'
 import { projectUnionStory } from '../../product/union-story.ts'
@@ -81,6 +82,13 @@ export interface DshUnionUiDeps {
   readonly getLocale?: () => string
   readonly readUnion?: () => UnionPanelData
   readonly resumeGoal?:(hold:UnionGoalHold)=>Promise<void>
+  /** Explicit USER gesture, client-only DSH ComposerBlocks; never Host veto. */
+  readonly localComposer?:{
+    snapshot():LocalComposerPicketState
+    start():LocalComposerPicketState
+    stop():LocalComposerPicketState
+    subscribe(listener:()=>void):()=>void
+  }
   readonly subscribeUnion?: (listener: () => void) => () => void
   readonly refreshLifetime?: (windowDays:7|30)=>Promise<void>|undefined
   readonly shouldAutoWelcome?: () => boolean
@@ -532,6 +540,10 @@ export function createDshUnionComponents(
     const [data, setData] = react.useState(() => safeUnion(deps))
     const [error, setError] = react.useState(false)
     const [busy, setBusy] = react.useState(false)
+    const [localPicket,setLocalPicket]=react.useState<LocalComposerPicketState|null>(
+      ()=>deps.localComposer?.snapshot()??null)
+    react.useEffect(()=>deps.localComposer?.subscribe(()=>
+      setLocalPicket(deps.localComposer?.snapshot()??null)),[])
     const [resumeRequested,setResumeRequested]=react.useState<string|null>(null)
     const [counterMinutes, setCounterMinutes] = react.useState(60)
     const lastActionNeedsFocus=react.useRef(false)
@@ -1144,6 +1156,43 @@ export function createDshUnionComponents(
           fontSize:'13px',fontWeight:650,margin:'0 0 8px'}},
           label(data.available !== true?'hq.action.unavailable'
             :picketActive?'hq.action.placardOn':'hq.action.placardOff')),
+        // Separate, explicit CLIENT-ONLY input pause. Does not alter the
+        // symbolic Host picket ledger or the real autonomous Goal strike.
+        deps.localComposer?h('section',{
+          'data-ap-local-composer':localPicket?.state??'unavailable',
+          'data-ap-local-session':localPicket?.sessionId?'yes':'no',
+          'data-ap-local-service':localPicket?.serviceAvailable?'yes':'no',
+          'data-ap-local-member':localPicket?.memberActive?'yes':'no',
+          'aria-label':label('hq.localPicket.title'),
+          style:{border:'1px solid var(--dsw-alias-border-l1,#d7ded5)',
+            borderRadius:'10px',padding:'12px 14px',margin:'12px 0',
+            background:'var(--dsw-alias-bg-layer-1,#fff)'}},
+          h('h4',{style:{fontSize:'14px',margin:'0 0 7px'}},
+            label('hq.localPicket.title')),
+          h('p',{style:{...secondary,fontSize:'12px',lineHeight:1.6,
+            margin:'0 0 8px'}},label('hq.localPicket.scope')),
+          h('div',{style:{display:'flex',alignItems:'center',gap:'9px',
+            flexWrap:'wrap'}},
+            h('button',{type:'button',style:quiet,
+              'aria-pressed':localPicket?.state==='active',
+              disabled:busy||!localPicket||
+                !['active','ready'].includes(localPicket.state),
+              onClick:()=>{
+                try{
+                  const result=localPicket?.state==='active'
+                    ?deps.localComposer!.stop():deps.localComposer!.start()
+                  setLocalPicket(result??null)
+                }catch{setLocalPicket(deps.localComposer?.snapshot()??null)}
+              }},
+              label(localPicket?.state==='active'
+                ?'hq.localPicket.resume':'hq.localPicket.pause')),
+            h('span',{role:'status','aria-live':'polite',
+              style:{...secondary,fontSize:'12px'}},
+              label(localPicket?.state==='active'?'hq.localPicket.active':
+                localPicket?.state==='ready'?'hq.localPicket.ready':
+                localPicket?.state==='occupied'?'hq.localPicket.occupied':
+                  'hq.localPicket.unavailable'))),
+        ):null,
         // The poster is a scene driven entirely by the confirmed Host snapshot.
         // In particular, its placard never claims an Agent actually stopped.
         h('div',{className:'ap-stage',role:'group','aria-label':label('hq.ceremony.stage'),style:{

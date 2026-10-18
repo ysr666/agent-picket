@@ -324,6 +324,46 @@ test('real DSH Web: one informed first-run click atomically confirms union and G
   assert.equal(joined.value.realGoalStrikeConsent,'authorized-v1')
   assert.equal(joined.revision,before.revision+1,
    'The one-click disclosure must be saved in one official Host revision CAS')
+
+  if(process.env.PICKET_LOCAL_COMPOSER_E2E==='1'){
+   const editor=page.locator('[data-composer-input]').first()
+   await editor.waitFor({state:'visible',timeout:8000})
+   const unsent='PICKET_LOCAL_ONLY_UNSENT_DRAFT_9876'
+   await editor.fill(unsent)
+   const unionButton=page.getByRole('button',{name:/AI 工会|AI Workers.*Union/}).first()
+   await unionButton.click({timeout:6000})
+   const hq=page.locator('[role="dialog"]').filter({
+    has:page.locator('[data-ap-view="hq"]'),
+   })
+   await hq.waitFor({state:'visible',timeout:8000})
+   await hq.locator('[data-ap-nav="action"]').click()
+   const pause=hq.getByRole('button',{name:/暂停此窗口输入|Pause local composer/})
+   await pause.waitFor({state:'visible',timeout:8000})
+   await pause.click({timeout:6000})
+   await page.waitForFunction(()=>Boolean(
+    [...(globalThis as any).document.querySelectorAll('[contenteditable="false"]')]
+      .find(node=>node.textContent?.includes('PICKET_LOCAL_ONLY_UNSENT_DRAFT_9876'))
+   ),{timeout:8000})
+   assert.match(await editor.textContent(),/PICKET_LOCAL_ONLY_UNSENT_DRAFT_9876/)
+   assert.equal(await editor.getAttribute('contenteditable'),'false')
+   await hq.getByText(/仅此窗口的输入已暂停|Composer paused here only/)
+    .waitFor({state:'visible',timeout:6000})
+   await hq.getByRole('button',{name:/恢复此窗口输入|Unpause local composer/})
+    .click({timeout:6000})
+   await page.waitForFunction(()=>Boolean(
+    [...(globalThis as any).document.querySelectorAll('[contenteditable="true"]')]
+      .find(node=>node.textContent?.includes('PICKET_LOCAL_ONLY_UNSENT_DRAFT_9876'))
+   ),{timeout:8000})
+   assert.equal(await editor.getAttribute('contenteditable'),'true')
+   assert.match(await editor.textContent(),/PICKET_LOCAL_ONLY_UNSENT_DRAFT_9876/)
+   console.log('DSH_LOCAL_COMPOSER_PICKET_REAL_UI '+JSON.stringify({
+    hostWide:false,heldByHost:false,originalDraftUntouched:true,
+    paused:true,resumed:true,
+   }))
+   // The test never submits this human draft or mutates a real profile.
+   await hq.getByRole('button',{name:/关闭|Close/}).first()
+    .click({timeout:6000})
+  }
   if(process.env.PICKET_GOAL_RECOVERY_E2E==='1'){
    const diagnostic=await page.evaluate(async(sessionId:string)=>{
     let count=0
