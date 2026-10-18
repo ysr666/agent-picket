@@ -53,6 +53,7 @@ jobs:
           PICKET_GOAL_RECOVERY_E2E: '1'
           # Published alpha.5 is the tested native Host/toast integration.
           PICKET_GOAL_NOTICE_E2E: ${{ matrix.dsh == '0.2.1-alpha.5' && '1' || '0' }}
+          PICKET_GOAL_UPGRADE_E2E: ${{ matrix.dsh == '0.2.1-alpha.5' && '1' || '0' }}
           PICKET_GOAL_REAL_PERSISTED_E2E: '1'
           PICKET_GOAL_RESTART_E2E: '1'
           PICKET_GOAL_RACE_E2E: '1'

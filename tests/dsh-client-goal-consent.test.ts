@@ -58,3 +58,53 @@ test('saved v1 grant stays inactive until fresh, informed v2 settings upgrade',a
  assert.equal(control.snapshot().activated,false)
  assert.equal(control.snapshot().authorized,false)
 })
+
+test('a pending v2 upgrade must not override cross-tab union exit or consent change',async()=>{
+ let consent:'off'|'authorized-v1'|'authorized-v2'='authorized-v1'
+ let membership:'enabled'|'not-now'='enabled'
+ let revision=12,writes=0
+ let resumeQualification!:()=>void
+ const qualification=new Promise<void>(done=>{resumeQualification=done})
+ const scope:DshSettingsScope<{
+  welcomeDecision:'enabled'|'not-now',
+  realGoalStrikeConsent:'off'|'authorized-v1'|'authorized-v2'
+ }> ={
+   getSnapshot:()=>({status:'ready',mode:'host',writable:true,revision,
+     value:{welcomeDecision:membership,realGoalStrikeConsent:consent}}),
+   subscribe:()=>()=>{},
+   async set(_field,value){writes++;consent=value as typeof consent},
+ }
+ const controller=createDshRealGoalConsentControl(scope,{
+  snapshot:()=>true,subscribe:()=>()=>{},
+  qualify:async()=>{await qualification;return true},
+ })
+ const pending=controller.choose('authorized-v2','goal-safe-boundary-v2')
+ membership='not-now';consent='off';revision++
+ resumeQualification()
+ await assert.rejects(pending,/Host consent changed/)
+ assert.equal(writes,0,'Pending upgrade cannot write after another tab exits')
+ assert.equal(controller.snapshot().activated,false)
+})
+
+test('even a successful stale Host write cannot report activation after membership is revoked',async()=>{
+ let membership:'enabled'|'not-now'='enabled'
+ let value:'off'|'authorized-v2'='off'
+ const scope:DshSettingsScope<{
+  welcomeDecision:'enabled'|'not-now',
+  realGoalStrikeConsent:'off'|'authorized-v2'
+ }> ={
+   getSnapshot:()=>({status:'ready',mode:'host',writable:true,revision:2,
+     value:{welcomeDecision:membership,realGoalStrikeConsent:value}}),
+   subscribe:()=>()=>{},
+   async set(_field,next){
+    membership='not-now' // Simulated concurrent external Host change during write
+    value=next as typeof value
+   },
+ }
+ const control=createDshRealGoalConsentControl(scope,{
+  snapshot:()=>true,qualify:async()=>true,subscribe:()=>()=>{},
+ })
+ await assert.rejects(control.choose('authorized-v2','goal-safe-boundary-v2'),
+   /Host did not confirm/)
+ assert.equal(control.snapshot().activated,false)
+})

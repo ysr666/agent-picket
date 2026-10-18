@@ -821,6 +821,84 @@ test('real DSH Web: one informed first-run click atomically confirms union and G
     coldConsent:persistedOff.value.realGoalStrikeConsent,
     rejoinConsent:rejoined.value.realGoalStrikeConsent,
    }))
+   if(process.env.PICKET_GOAL_UPGRADE_E2E==='1'){
+    // The only direct settings mutation in this scenario is the TEST SETUP:
+    // emulate an existing v1 user's persisted official Host state. Every
+    // upgrade/cancel/revoke after this is a real human Chrome Settings click.
+    await panel.getByRole('button',{name:/关闭|Close/}).first().click()
+    const legacy=await page.evaluate(async(revision:number)=>{
+     const response=await fetch('/api/settings/mutate',{
+      method:'POST',credentials:'same-origin',
+      headers:{'content-type':'application/json'},
+      body:JSON.stringify({type:'client-request',
+       rpcId:'picket-synthetic-legacy-v1-migration',
+       method:'settings/mutate',payload:{args:{
+        ns:'agent-picket',expectedRevision:revision,
+        ops:[{op:'set',path:['realGoalStrikeConsent'],value:'authorized-v1'}],
+       }}}),
+     })
+     const data=await response.json() as any
+     if(response.status!==200||data.result?.ok!==true)
+      throw Error('Official Host rejected isolated legacy-v1 setup')
+     return data.result.value as any
+    },rejoined.revision)
+    assert.equal(legacy?.revision,rejoined.revision+1)
+    assert.equal(legacy.value.realGoalStrikeConsent,'authorized-v1')
+    // Open REAL DSH Settings through the Host's accessible menu.
+    const settingsEntry=page.getByText(/^(设置|Settings)$/).first()
+    if(await settingsEntry.count()===0){
+     await page.getByRole('button',{name:/账号菜单|Account menu/}).click({timeout:7000})
+     await page.getByRole('menuitem',{name:/设置|Settings|Preferences/i})
+      .first().click({timeout:7000})
+    }else await settingsEntry.click({timeout:7000})
+    await page.locator('[role="dialog"]')
+     .getByText(/^(AI 工会|AI Workers.*Union)$/).last().click({timeout:7000})
+    const settings=page.locator('[data-ap-view="settings"]')
+    await settings.waitFor({state:'visible',timeout:9000})
+    const upgrade=settings.getByRole('button',{
+     name:/重新授权启用真实 Goal 工作边界停工|Upgrade earlier Goal permission/,
+    })
+    await upgrade.waitFor({state:'visible',timeout:9000})
+    assert.equal(await upgrade.getAttribute('aria-expanded'),'false')
+    assert.equal(await settings.locator('[data-ap-goal-upgrade-review]').count(),0)
+    assert.equal((await inspect(base,cookieText)).value.realGoalStrikeConsent,'authorized-v1',
+     'Merely opening Settings cannot auto-activate legacy v1 permission')
+    await upgrade.click()
+    const review=settings.locator('[data-ap-goal-upgrade-review]')
+    await review.waitFor({state:'visible',timeout:7000})
+    await review.getByText(/8 小时|8 hours/).first().waitFor({state:'visible',timeout:5000})
+    assert.equal((await inspect(base,cookieText)).value.realGoalStrikeConsent,'authorized-v1',
+     'Opening v2 warning cannot silently write new Host permission')
+    await review.getByRole('button',{name:/保留旧版授权|Keep old consent/}).click()
+    await review.waitFor({state:'detached',timeout:5000})
+    assert.equal((await inspect(base,cookieText)).value.realGoalStrikeConsent,'authorized-v1',
+     'Cancel must preserve historical v1 permission exactly')
+    await upgrade.click({timeout:7000})
+    await review.getByRole('button',{name:/确认启用真实 Goal 工时停工|Confirm: enable real Goal/})
+     .click({timeout:7000})
+    let upgraded=await inspect(base,cookieText)
+    for(let tries=0;tries<35&&upgraded.value.realGoalStrikeConsent!=='authorized-v2';tries++){
+     await new Promise(done=>setTimeout(done,80))
+     upgraded=await inspect(base,cookieText)
+    }
+    assert.equal(upgraded.value.realGoalStrikeConsent,'authorized-v2')
+    assert.equal(upgraded.revision,legacy.revision+1,
+     'Real v2 upgrade must use exactly one official Host CAS')
+    await settings.getByRole('button',{name:/撤销未来 Goal 停工授权|Revoke future Goal stoppages/})
+     .click({timeout:7000})
+    let revoked=await inspect(base,cookieText)
+    for(let tries=0;tries<35&&revoked.value.realGoalStrikeConsent!=='off';tries++){
+     await new Promise(done=>setTimeout(done,80))
+     revoked=await inspect(base,cookieText)
+    }
+    assert.equal(revoked.value.realGoalStrikeConsent,'off')
+    assert.equal(revoked.revision,upgraded.revision+1)
+    console.log('REAL_HOST_LEGACY_V1_UPGRADE_REVIEW_CANCEL_V2_CAS_REVOKE '+JSON.stringify({
+     oldConsent:legacy.value.realGoalStrikeConsent,
+     userConfirmed:true,cancelNoWrite:true,upgraded:upgraded.value.realGoalStrikeConsent,
+     revoked:revoked.value.realGoalStrikeConsent,
+    }))
+   }
   }
  }finally{
   if(browser)await browser.close().catch(()=>{})

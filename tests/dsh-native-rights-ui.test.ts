@@ -1679,30 +1679,59 @@ test('legacy simulation remains nonblocking until a new explicit settings action
  assert.equal(grant,true)
 })
 
-test('legacy Host Goal grant exposes distinct explicit upgrade and safe revoke actions',async()=>{
- const {hooks}=fakeReact()
- const base=deps(rights({welcomeDecision:'enabled',laborRightsEnabled:true,goalStrikeAuthorized:true}))
+test('legacy Goal upgrade requires visible risk notice and a separate confirmation, with Cancel preserving v1',async()=>{
+ const ui=goalSettingsRenderHarness()
+ const basis=deps(rights({welcomeDecision:'enabled',laborRightsEnabled:true,
+   goalStrikeAuthorized:true}))
+ let granted:'authorized-v1'|'authorized-v2'|'off'='authorized-v1'
  const calls:string[]=[]
- const d:DshUnionUiDeps={...base.d,
+ const d:DshUnionUiDeps={...basis.d,
   goal:{
-   snapshot:()=>({available:true,writable:true,authorized:true,activated:false}),
+   snapshot:()=>({available:true,writable:true,authorized:granted!=='off',
+     activated:granted==='authorized-v2'}),
    choose:async(choice,version)=>{
     calls.push(choice+':'+String(version))
-    return {available:true,writable:true,
-      authorized:choice!=='off',activated:choice==='authorized-v2'}
+    granted=choice
+    return {available:true,writable:true,authorized:granted!=='off',
+      activated:granted==='authorized-v2'}
    },
   },
  }
- const nodes=walk(createDshUnionComponents(hooks,{createPortal:x=>x},d).SettingsPanel())
+ const panel=createDshUnionComponents(ui.hooks,{createPortal:x=>x},d).SettingsPanel
+ const getButton=(nodes:Node[],key:string)=>nodes.find(n=>
+   n.type==='button'&&n.children.includes(key))
+ let nodes=ui.render(panel)
  assert.ok(nodes.some(n=>n.children.includes('settings.goalLegacy')))
- const upgrade=nodes.find(n=>n.type==='button'&&n.children.includes('settings.goalUpgrade'))
- const revoke=nodes.find(n=>n.type==='button'&&n.children.includes('settings.goalTurnOff'))
+ assert.ok(nodes.some(n=>n.children.includes('settings.goalExplicitDisclosure')),
+   'Existing v1 consent is NOT informed approval of the new physical v2 behavior')
+ assert.ok(getButton(nodes,'settings.goalTurnOff'),
+   'Exit and revoke must stay available before, during and after upgrade review')
+ const upgrade=getButton(nodes,'settings.goalUpgrade')
  assert.ok(upgrade&&!upgrade.props.disabled)
- assert.ok(revoke&&!revoke.props.disabled)
- assert.equal(calls.length,0,'Merely loading a legacy profile cannot upgrade its old consent')
+ assert.equal(upgrade.props['aria-expanded'],false)
+ assert.equal(calls.length,0,'Rendering the old profile must never upgrade consent')
  upgrade.props.onClick()
+ nodes=ui.render(panel)
+ assert.equal(getButton(nodes,'settings.goalUpgrade')?.props['aria-expanded'],true)
+ assert.ok(nodes.some(n=>n.props['data-ap-goal-upgrade-review']==='true'))
+ assert.ok(nodes.some(n=>n.children.includes('settings.goalUpgradeWarning')))
+ assert.ok(getButton(nodes,'settings.goalUpgradeConfirm'))
+ assert.ok(getButton(nodes,'settings.goalUpgradeCancel'))
+ assert.deepEqual(calls,[],'Opening a disclosure does not modify Host permissions')
+ getButton(nodes,'settings.goalUpgradeCancel')!.props.onClick()
+ nodes=ui.render(panel)
+ assert.equal(getButton(nodes,'settings.goalUpgrade')?.props['aria-expanded'],false)
+ assert.deepEqual(calls,[],'Cancel keeps old permission without activation')
+ getButton(nodes,'settings.goalUpgrade')!.props.onClick()
+ nodes=ui.render(panel)
+ getButton(nodes,'settings.goalUpgradeConfirm')!.props.onClick()
  await new Promise<void>(resolve=>setImmediate(resolve))
  assert.deepEqual(calls,['authorized-v2:goal-safe-boundary-v2'])
+ nodes=ui.render(panel)
+ assert.ok(nodes.some(n=>n.children.includes('settings.goalAuthorized')))
+ assert.equal(getButton(nodes,'settings.goalUpgrade'),undefined)
+ assert.ok(getButton(nodes,'settings.goalTurnOff'),
+   'New version remains directly revocable')
 })
 
 test('unsupported Host never displays an operable physical Goal consent button',()=>{

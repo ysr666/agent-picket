@@ -423,6 +423,7 @@ export function createDshUnionComponents(
     useLanguage()
     const [busy,setBusy]=react.useState(false)
     const [error,setError]=react.useState(false)
+    const [upgradeReview,setUpgradeReview]=react.useState(false)
     const label=(key:MessageKey)=>deps.t(key)
     const enabled=rightsIsActive(rights)
     const writable=rights.state==='ready'&&rights.writable
@@ -444,6 +445,7 @@ export function createDshUnionComponents(
           ||(next==='authorized-v2'&&(!result.available||!result.activated))
           ||goalStatus(deps).authorized!==result.authorized)
           throw Error('Host did not confirm Goal consent')
+        if(next==='authorized-v2')setUpgradeReview(false)
       }catch{setError(true)}finally{setBusy(false)}
     }
     const choose=async(next:'enabled'|'not-now')=>{
@@ -498,16 +500,36 @@ export function createDshUnionComponents(
           style:{...secondary,fontSize:'12px',lineHeight:1.6,margin:'6px 0 12px'},
         },label('settings.goalRuntimeUnverified')):null,
         (goal.available||goal.authorized)?h('div',{className:'ap-actions'},
-          !goal.authorized?h('p',{role:'note',style:{...secondary,lineHeight:1.5,
+          !goal.activated?h('p',{role:'note',style:{...secondary,lineHeight:1.5,
             width:'100%',margin:'0 0 8px'}},label('settings.goalExplicitDisclosure')):null,
           h('button',{type:'button',style:goal.authorized?quiet:primary,
             disabled:busy||!goalWritable,'aria-pressed':goal.authorized,
             onClick:()=>{void chooseGoal(goal.authorized?'off':'authorized-v2')}},
             label(goal.authorized?'settings.goalTurnOff':'settings.goalTurnOn')),
           goal.authorized&&!goal.activated&&goal.available
-            ?h('button',{type:'button',style:primary,disabled:busy||!goalWritable,
-              onClick:()=>{void chooseGoal('authorized-v2')}},
-              label('settings.goalUpgrade')):null,
+            ?h('div',{style:{width:'100%',display:'grid',gap:'8px'}},
+              h('button',{type:'button',style:quiet,
+                disabled:busy||!goalWritable,
+                'aria-expanded':upgradeReview,
+                'aria-controls':'picket-goal-upgrade-review',
+                onClick:()=>setUpgradeReview(!upgradeReview)},
+                label('settings.goalUpgrade')),
+              upgradeReview?h('section',{
+                id:'picket-goal-upgrade-review',
+                'data-ap-goal-upgrade-review':'true',
+                role:'group','aria-label':label('settings.goalUpgrade'),
+                style:{padding:'12px',border:'1px solid #b97732',
+                  borderRadius:'9px',display:'grid',gap:'9px'}},
+                h('p',{role:'note',style:{margin:0,lineHeight:1.6}},
+                  label('settings.goalUpgradeWarning')),
+                h('div',{className:'ap-actions'},
+                  h('button',{type:'button',style:primary,
+                    disabled:busy||!goalWritable,
+                    onClick:()=>{void chooseGoal('authorized-v2')}},
+                    label('settings.goalUpgradeConfirm')),
+                  h('button',{type:'button',style:quiet,disabled:busy,
+                    onClick:()=>setUpgradeReview(false)},
+                    label('settings.goalUpgradeCancel')))):null):null,
           h('p',{role:'note',style:{...secondary,width:'100%',margin:'6px 0 0'}},
             label('settings.goalResumeScope'))):null,
         h('div',{className:'ap-settings-sequence','aria-label':label('settings.strikeFlow')},
