@@ -6,7 +6,7 @@ import { createDshClientRightsScope } from '../src/adapters/dsh/client-rights-sc
 
 type Choice = 'unseen'|'enabled'|'not-now'
 function fixture(initial: Choice = 'unseen', loopback = true) {
-  let saved = {welcomeDecision:initial, realGoalStrikeConsent:'off' as 'off'|'authorized-v1',unionLedger:'',unionPicketLedger:''}
+  let saved = {welcomeDecision:initial, realGoalStrikeConsent:'off' as 'off'|'authorized-v1'|'authorized-v2',unionLedger:'',unionPicketLedger:''}
   let revision = 1
   let row: HostNamespaceView = {ns:'agent-picket',revision,value:{...saved}}
   const listeners = new Set<()=>void>()
@@ -29,7 +29,7 @@ function fixture(initial: Choice = 'unseen', loopback = true) {
           assert.equal(op.op,'set')
           assert.equal(op.path.length,1)
           if(op.path[0]==='welcomeDecision')saved={...saved,welcomeDecision:op.value as Choice}
-          else if(op.path[0]==='realGoalStrikeConsent')saved={...saved,realGoalStrikeConsent:op.value as 'off'|'authorized-v1'}
+          else if(op.path[0]==='realGoalStrikeConsent')saved={...saved,realGoalStrikeConsent:op.value as 'off'|'authorized-v1'|'authorized-v2'}
           else if(op.path[0]==='unionLedger')saved={...saved,unionLedger:op.value as string}
           else if(op.path[0]==='unionPicketLedger')saved={...saved,unionPicketLedger:op.value as string}
           else throw Error('Invalid Host field')
@@ -43,6 +43,16 @@ function fixture(initial: Choice = 'unseen', loopback = true) {
     writes:()=>writes,revision:()=>revision,
     reject:()=>{rejected=true}}
 }
+
+test('Host v2 Goal consent is accepted and revocable through the same official CAS mirror',async()=>{
+ const x=fixture()
+ await x.scope.set('welcomeDecision','enabled')
+ await x.scope.set('realGoalStrikeConsent','authorized-v2')
+ assert.equal(x.scope.getSnapshot().value?.realGoalStrikeConsent,'authorized-v2')
+ assert.equal(createDshClientRightsScope(x.scope).snapshot().goalStrikeAuthorized,true)
+ await createDshClientRightsScope(x.scope).choose('not-now')
+ assert.equal(x.scope.getSnapshot().value?.realGoalStrikeConsent,'off')
+})
 
 test('new official Host scope starts OFF and never creates real blocking consent',()=>{
   const x=fixture()

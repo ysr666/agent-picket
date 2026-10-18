@@ -30,12 +30,12 @@ export interface DshRightsPort {
   snapshot(): ClientRightsSnapshot
   subscribe(listener: () => void): () => void
   choose(choice: 'enabled' | 'not-now'): Promise<ClientRightsSnapshot>
-  chooseFirstRun?(disclosureVersion:'goal-safe-boundary-v1'):Promise<ClientRightsSnapshot>
+  chooseFirstRun?(disclosureVersion:'goal-safe-boundary-v1'|'goal-safe-boundary-v2'):Promise<ClientRightsSnapshot>
 }
 export interface DshGoalConsentPort {
-  snapshot():{readonly available:boolean;readonly writable:boolean;readonly authorized:boolean}
-  choose(choice:'off'|'authorized-v1',disclosureVersion?:'goal-safe-boundary-v1'):
-    Promise<{readonly available:boolean;readonly writable:boolean;readonly authorized:boolean}>
+  snapshot():{readonly available:boolean;readonly writable:boolean;readonly authorized:boolean;readonly activated?:boolean}
+  choose(choice:'off'|'authorized-v1'|'authorized-v2',disclosureVersion?:'goal-safe-boundary-v1'|'goal-safe-boundary-v2'):
+    Promise<{readonly available:boolean;readonly writable:boolean;readonly authorized:boolean;readonly activated?:boolean}>
   qualify?(fresh?:boolean):Promise<boolean>
   subscribe?(listener:()=>void):()=>void
 }
@@ -330,7 +330,7 @@ export function createDshUnionComponents(
           &&(!await deps.goal?.qualify?.(true)||!goalStatus(deps).available))
           throw Error('Official Goal service is unavailable or Session changed')
         const result=choice==='enabled'&&firstGoal
-          ?await deps.rights.chooseFirstRun!('goal-safe-boundary-v1')
+          ?await deps.rights.chooseFirstRun!('goal-safe-boundary-v2')
           :await deps.rights.choose(choice)
         if(result.state!=='ready'||result.welcomeDecision!==choice
           ||(choice==='enabled'&&firstGoal&&(result.goalStrikeAuthorized!==true
@@ -430,18 +430,18 @@ export function createDshUnionComponents(
     // A legacy OFF membership may still have a Host-owned Goal grant. Its
     // revocation must stay available even without union membership or Goal RPC.
     const goalWritable=goal.writable&&(goal.authorized||(enabled&&goal.available))
-    const chooseGoal=async(next:'off'|'authorized-v1')=>{
+    const chooseGoal=async(next:'off'|'authorized-v2')=>{
       if(busy||!goalWritable||!deps.goal)return
       setBusy(true);setError(false)
       try{
         const result=await deps.goal.choose(next,
-          next==='authorized-v1'?'goal-safe-boundary-v1':undefined)
+          next==='authorized-v2'?'goal-safe-boundary-v2':undefined)
         // Revocation is Host-owned and must remain possible even if the
         // official Goal RPC service has disappeared. Only NEW consent needs
         // current service availability; either choice still requires Host
         // authorization readback to match the requested setting.
-        if(result.authorized!==(next==='authorized-v1')
-          ||(next==='authorized-v1'&&!result.available)
+        if(result.authorized!==(next==='authorized-v2')
+          ||(next==='authorized-v2'&&(!result.available||!result.activated))
           ||goalStatus(deps).authorized!==result.authorized)
           throw Error('Host did not confirm Goal consent')
       }catch{setError(true)}finally{setBusy(false)}
@@ -484,13 +484,15 @@ export function createDshUnionComponents(
           h('h3',{},label('settings.realBlocking')),
           h('span',{className:'ap-real-strike-pill'},
             label(goal.authorized
-              ?goal.available?'settings.goalAuthorized':'settings.goalServiceLost'
+              ?goal.available?(goal.activated?'settings.goalAuthorized':'settings.goalLegacy')
+                :'settings.goalServiceLost'
               :goal.available?'settings.goalOff':'settings.realBlockingUnavailable'))),
         h('p',{},label(goal.available?'settings.goalSafetyScope':
           goal.authorized?'settings.goalServiceLostScope':'settings.strikeExplanation')),
         // A successful official goals/get and a stored Host permission do NOT
         // prove that this plugin registered a validated physical strike hook.
-        // Default shipping apply() is monitor-only. No fake runtime green light.
+        // Even active v2 Host permission cannot prove every required official
+        // runtime service is installed; don't show a fabricated green status.
         (goal.available||goal.authorized)?h('p',{
           role:'note','data-ap-goal-enforcement':'unverified',
           style:{...secondary,fontSize:'12px',lineHeight:1.6,margin:'6px 0 12px'},
@@ -500,8 +502,12 @@ export function createDshUnionComponents(
             width:'100%',margin:'0 0 8px'}},label('settings.goalExplicitDisclosure')):null,
           h('button',{type:'button',style:goal.authorized?quiet:primary,
             disabled:busy||!goalWritable,'aria-pressed':goal.authorized,
-            onClick:()=>{void chooseGoal(goal.authorized?'off':'authorized-v1')}},
+            onClick:()=>{void chooseGoal(goal.authorized?'off':'authorized-v2')}},
             label(goal.authorized?'settings.goalTurnOff':'settings.goalTurnOn')),
+          goal.authorized&&!goal.activated&&goal.available
+            ?h('button',{type:'button',style:primary,disabled:busy||!goalWritable,
+              onClick:()=>{void chooseGoal('authorized-v2')}},
+              label('settings.goalUpgrade')):null,
           h('p',{role:'note',style:{...secondary,width:'100%',margin:'6px 0 0'}},
             label('settings.goalResumeScope'))):null,
         h('div',{className:'ap-settings-sequence','aria-label':label('settings.strikeFlow')},

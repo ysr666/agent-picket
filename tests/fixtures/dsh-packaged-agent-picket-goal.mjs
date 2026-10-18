@@ -75,7 +75,8 @@ export function apply(ctx){
       const authorized=process.env.PICKET_PACKAGED_CONSENT==='on'
       if(authorized){
         await ctx.settings.update('agent-picket',{
-          welcomeDecision:'enabled',realGoalStrikeConsent:'authorized-v1',
+          welcomeDecision:'enabled',
+          realGoalStrikeConsent:process.env.PICKET_PACKAGED_GOAL_GRANT_MODE||'authorized-v1',
         },initial.revision)
       }
       const confirmed=namespace(ctx.settings)

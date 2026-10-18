@@ -69,7 +69,7 @@ test('plugin apply can mount in headless Host without commands plane', async () 
   assert.deepEqual(result,{kind:'enter'})
 })
 
-test('production default cannot wire the deprecated stats-ledger Goal stop even with stored consent',async()=>{
+test('production wires only the official Goal service; v1 consent cannot activate physical enforcement',async()=>{
   const oldPreview=process.env.AGENT_PICKET_DSH_OFFICIAL_WORK_PREVIEW
   const oldStats=process.env.AGENT_PICKET_STATS
   const inspected:string[]=[]
@@ -84,8 +84,8 @@ test('production default cannot wire the deprecated stats-ledger Goal stop even 
     apply(ctx)
     assert.equal(inspected.includes('goals,agents'),false,
       'Legacy DurableStats-based Goal enforcement cannot be registered in production')
-    assert.equal(inspected.includes('goals,agents,sessionPersistence'),false,
-      'Official Goal preview remains disabled without an explicit developer switch')
+    assert.equal(inspected.filter(x=>x==='goals,agents,sessionPersistence').length,1,
+      'Production must have the same official Goal hook, gated by NEW v2 Host consent')
     assert.equal(handlers.has('agent/turn-stopping'),false,
       'No invisible post-turn Goal strike listener in default production')
     const normal=handlers.get('agent/pre-step')

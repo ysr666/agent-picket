@@ -108,7 +108,7 @@ export function apply(ctx){
  // Isolated test-only consent & synthetic work readings. Crucially, use the
  // EXACT same production registration code with official Host Goal service.
  registerDshGoalWorkEnforcement(ctx,{
-   consent:()=>ledgerMode?readHostGoalStrikeConsent(settings)
+   consent:()=>ledgerMode?readHostGoalStrikeConsent(settings,true)
     :({kind:'agent-picket-real-goal-strike-v1',hostAuthenticated:true,enabled:true}),
    todayWork:now=>stats?completedUtcDayWork(stats.snapshotDays(31),now):8*3_600_000,
    now:()=>ledgerMode?syntheticNow:Date.now(),

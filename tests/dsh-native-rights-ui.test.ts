@@ -1522,7 +1522,7 @@ test('one first-run informed click uses versioned Host Goal CAS and requires ver
   assert.ok(join)
   join.props.onClick()
   await new Promise<void>(resolve=>setImmediate(resolve))
-  assert.deepEqual(calls,['version:goal-safe-boundary-v1'])
+  assert.deepEqual(calls,['version:goal-safe-boundary-v2'])
   assert.equal(complete,1)
  }finally{(globalThis as any).document=prev}
 })
@@ -1662,7 +1662,7 @@ test('legacy simulation remains nonblocking until a new explicit settings action
   goal:{qualify:async()=>true,snapshot:()=>({available:true,writable:true,authorized:grant}),
    choose:async(mode,version)=>{
     calls.push(mode+':'+String(version))
-    if(mode==='authorized-v1'&&version==='goal-safe-boundary-v1')grant=true
+    if(mode==='authorized-v2'&&version==='goal-safe-boundary-v2')grant=true
     return {available:true,writable:true,authorized:grant}
    }}}
  const ui=createDshUnionComponents(hooks,{createPortal:x=>x},d)
@@ -1675,8 +1675,34 @@ test('legacy simulation remains nonblocking until a new explicit settings action
  assert.ok(button&&!button.props.disabled)
  button.props.onClick()
  await new Promise<void>(resolve=>setImmediate(resolve))
- assert.deepEqual(calls,['authorized-v1:goal-safe-boundary-v1'])
+ assert.deepEqual(calls,['authorized-v2:goal-safe-boundary-v2'])
  assert.equal(grant,true)
+})
+
+test('legacy Host Goal grant exposes distinct explicit upgrade and safe revoke actions',async()=>{
+ const {hooks}=fakeReact()
+ const base=deps(rights({welcomeDecision:'enabled',laborRightsEnabled:true,goalStrikeAuthorized:true}))
+ const calls:string[]=[]
+ const d:DshUnionUiDeps={...base.d,
+  goal:{
+   snapshot:()=>({available:true,writable:true,authorized:true,activated:false}),
+   choose:async(choice,version)=>{
+    calls.push(choice+':'+String(version))
+    return {available:true,writable:true,
+      authorized:choice!=='off',activated:choice==='authorized-v2'}
+   },
+  },
+ }
+ const nodes=walk(createDshUnionComponents(hooks,{createPortal:x=>x},d).SettingsPanel())
+ assert.ok(nodes.some(n=>n.children.includes('settings.goalLegacy')))
+ const upgrade=nodes.find(n=>n.type==='button'&&n.children.includes('settings.goalUpgrade'))
+ const revoke=nodes.find(n=>n.type==='button'&&n.children.includes('settings.goalTurnOff'))
+ assert.ok(upgrade&&!upgrade.props.disabled)
+ assert.ok(revoke&&!revoke.props.disabled)
+ assert.equal(calls.length,0,'Merely loading a legacy profile cannot upgrade its old consent')
+ upgrade.props.onClick()
+ await new Promise<void>(resolve=>setImmediate(resolve))
+ assert.deepEqual(calls,['authorized-v2:goal-safe-boundary-v2'])
 })
 
 test('unsupported Host never displays an operable physical Goal consent button',()=>{
@@ -2605,6 +2631,6 @@ test('English and Chinese Goal authorization copy distinguish stored permission 
   assert.match(messages['welcome.goalGrantText'],/Host|执行/)
   assert.match(messages['welcome.goalBody'],/Host|执行/)
  }
- assert.match(en['settings.goalRuntimeUnverified'],/observation-only/)
- assert.match(zhCN['settings.goalRuntimeUnverified'],/默认只观测/)
+ assert.match(en['settings.goalRuntimeUnverified'],/not proof/)
+ assert.match(zhCN['settings.goalRuntimeUnverified'],/不代表已经停工/)
 })

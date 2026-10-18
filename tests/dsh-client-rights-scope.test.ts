@@ -133,6 +133,33 @@ test('one disclosed first-run click consents to real Goal strike via one Host CA
   assert.equal(writes.length,1)
 })
 
+test('new v2 first-run authorization is one Host CAS and old v1 cannot be upgraded silently',async()=>{
+ let state:RightsSection={welcomeDecision:'unseen',realGoalStrikeConsent:'off'}
+ const writes:Readonly<Record<string,unknown>>[]=[]
+ const native:DshSettingsScope<RightsSection>={
+  getSnapshot:()=>({status:'ready',mode:'host',writable:true,revision:1+writes.length,value:state}),
+  subscribe:()=>()=>{},
+  set:async(field,value)=>{
+   assert.equal(field,'welcomeDecision',
+     'Ordinary rejoin must not write or restore a Goal grant')
+   state={...state,welcomeDecision:value as RightsSection['welcomeDecision']}
+  },
+  setMany:async fields=>{writes.push(fields);state={...state,...fields}},
+ }
+ const rights=createDshClientRightsScope(native)
+ assert.equal(rights.snapshot().goalStrikeAuthorized,false)
+ await rights.chooseFirstRun('goal-safe-boundary-v2')
+ assert.deepEqual(writes,[{
+  welcomeDecision:'enabled',realGoalStrikeConsent:'authorized-v2',
+ }])
+ assert.equal(rights.snapshot().goalStrikeAuthorized,true)
+ await rights.choose('not-now')
+ assert.deepEqual(writes[1],{welcomeDecision:'not-now',realGoalStrikeConsent:'off'})
+ await rights.choose('enabled')
+ assert.equal(rights.snapshot().goalStrikeAuthorized,false,
+   'Rejoining an existing union cannot silently activate new Goal enforcement')
+})
+
 test('old simulation consent is never silently upgraded by first-run or rejoin',async()=>{
   const fixture={welcomeDecision:'enabled' as const,realGoalStrikeConsent:'off' as const}
   const provider:DshSettingsScope<typeof fixture>={getSnapshot:()=>({status:'ready',mode:'host',writable:true,revision:1,value:fixture}),

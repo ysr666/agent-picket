@@ -22,8 +22,8 @@ import { registerOfficialPersistedGoalPreview } from './official-persisted-work-
  * is required for this source-install preview. No remote service or daemon.
  *
  * Human submissions always remain untouched. A separate explicit Host-backed
- * consent may stop a *future automatic DSH Goal round* at turn-stopping.
- * All other Host admission, pre-step and work hooks remain monitor-only.
+ * consent may stop a *future automatic DSH Goal round* through the verified
+ * official Goal pre-step CAS. Human inputs always pass through.
  */
 export const name = 'agent-picket'
 /** DSH 0.1.7+ officially extracts live settings from this Config export. */
@@ -40,19 +40,17 @@ export function apply(ctx: DshIntegrationContext): void {
       nativeUnion = createNativeUnionCommandPort(provider)
     },
   )
-  // OFF by default: a previously authorized Goal setting is NOT permission
-  // to activate the obsolete DurableStats-based work source. That local store
-  // is analytics only; it is not the official Host completed-Turn evidence.
-  // The only opt-in research path reads DSH SessionPersistence directly and
-  // holds ONLY an autonomously queued Goal round, never human input/files.
-  // Even this preview requires independent real Host settings authorization.
-  // This is NOT a shipping 1.0 enforcement capability (#80/#121 NO-GO).
-  if(process.env.AGENT_PICKET_DSH_OFFICIAL_WORK_PREVIEW==='on'){
-    registerOfficialPersistedGoalPreview(
-      ctx as unknown as Parameters<typeof registerOfficialPersistedGoalPreview>[0],{
-        consent:()=>readHostGoalStrikeConsent(nativeSettings),
-      })
-  }
+  // Official Goal service is always available for capability injection, but
+  // NONE of the old saved v1 grants activate new production behavior.
+  // V2 grants require a fresh versioned user gesture and authenticated Host
+  // readback, plus official Goal+Agent+SessionPersistence and verified work.
+  // The legacy developer-preview switch permits v1 ONLY in isolated testing.
+  // Ordinary human messages and attachments never enter the reject path.
+  registerOfficialPersistedGoalPreview(
+    ctx as unknown as Parameters<typeof registerOfficialPersistedGoalPreview>[0],{
+      consent:()=>readHostGoalStrikeConsent(nativeSettings,
+        process.env.AGENT_PICKET_DSH_OFFICIAL_WORK_PREVIEW==='on'),
+    })
   const rules = new LocalRuleDetector()
   // Work-only lifetime summaries are local and ON by default, as expected
   // from a session analytics plugin. All text/classification persistence is

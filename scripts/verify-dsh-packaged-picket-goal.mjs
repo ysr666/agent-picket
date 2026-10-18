@@ -23,7 +23,13 @@ assert.equal(tarballs.length,1,
   'GitHub Actions must npm pack exactly one built Agent Picket tarball')
 const archive=join(repo,tarballs[0])
 try{
-  for(const [hours,consent] of [[7,true],[8,false],[8,true]]){
+  for(const [hours,consent,kind,preview] of [
+    [7,true,'authorized-v1',true],
+    [8,false,'off',false],
+    [8,true,'authorized-v1',true],
+    [8,true,'authorized-v1',false], // old stored consent does NOT auto-activate
+    [8,true,'authorized-v2',false], // fresh consent activates without env switch
+  ]){
     const temp=mkdtempSync(join(parent,'host-'))
     const home=join(temp,'home')
     const log=join(temp,'events.log')
@@ -58,9 +64,10 @@ try{
       PICKET_PACKAGED_PROBE_LOG:log,
       PICKET_PACKAGED_HOURS:String(hours),
       PICKET_PACKAGED_CONSENT:consent?'on':'off',
+      PICKET_PACKAGED_GOAL_GRANT_MODE:kind,
       PICKET_PACKAGED_CLOCK_OFFSET_MS:String(offset),
       AGENT_PICKET_STATS:'off',
-      AGENT_PICKET_DSH_OFFICIAL_WORK_PREVIEW:'on',
+      AGENT_PICKET_DSH_OFFICIAL_WORK_PREVIEW:preview?'on':'off',
       DSH_TELEMETRY_DISABLED:'1',
       DEEPSEEK_API_KEY:'',OPENAI_API_KEY:'',
       HTTP_PROXY:'http://127.0.0.1:9',HTTPS_PROXY:'http://127.0.0.1:9',
@@ -134,7 +141,7 @@ try{
         s.includes('installed-settings:present')&&
         s.includes('real-goal:created:active'),
       'installed Picket must expose settings and create real Goal')
-      if(hours===8&&consent){
+      if(hours===8&&consent&&(preview||kind==='authorized-v2')){
         await until(s=>s.some(row=>row.startsWith('official-goal:block:blocked:')),
           'actual packaged plugin must durably record official blocked Goal')
         await sleep(250)
@@ -162,12 +169,12 @@ try{
         assert.equal(snapshot().filter(s=>s.startsWith('official-goal:block:')).length,0)
       }
       assert.equal(snapshot().includes('effective-consent:'+
-        (consent?'authorized-v1':'off')),true,
+        (consent?kind:'off')),true,
       'Host-owned persisted settings must reflect the synthetic consent setup')
       await rpc('shutdown',{})
       process.stdout.write(JSON.stringify({
         scope:'installed-agent-picket-in-official-sdk-profile',
-        os:process.platform,hours,consent,
+        os:process.platform,hours,consent,consentVersion:kind,developerPreview:preview,
         blocked:snapshot().some(s=>s.startsWith('official-goal:block:')),
       })+'\n')
     }finally{

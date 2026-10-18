@@ -126,7 +126,8 @@ test('real DSH Web: one informed first-run click atomically confirms union and G
   PICKET_WEB_WORK_SEED_LOG:seedLog,
   AGENT_PICKET_STATS:process.env.PICKET_GOAL_RECOVERY_E2E==='1'
    &&!officialPersisted?'on':'off',
-  AGENT_PICKET_DSH_OFFICIAL_WORK_PREVIEW:officialPersisted?'on':'off',
+  // Real first-run v2 consent must physically work in the NORMAL install.
+  AGENT_PICKET_DSH_OFFICIAL_WORK_PREVIEW:'off',
   DEEPSEEK_API_KEY:'',OPENAI_API_KEY:'',
   HTTP_PROXY:'http://127.0.0.1:9',HTTPS_PROXY:'http://127.0.0.1:9',
   ALL_PROXY:'http://127.0.0.1:9'}
@@ -321,7 +322,7 @@ test('real DSH Web: one informed first-run click atomically confirms union and G
   await dialog.waitFor({state:'detached',timeout:10_000})
   const joined=await inspect(base,cookieText)
   assert.equal(joined.value.welcomeDecision,'enabled')
-  assert.equal(joined.value.realGoalStrikeConsent,'authorized-v1')
+  assert.equal(joined.value.realGoalStrikeConsent,'authorized-v2')
   assert.equal(joined.revision,before.revision+1,
    'The one-click disclosure must be saved in one official Host revision CAS')
 
@@ -523,7 +524,7 @@ test('real DSH Web: one informed first-run click atomically confirms union and G
      cookieText=restartCookie.name+'='+restartCookie.value
      const replaySettings=await inspect(base,cookieText)
      assert.equal(replaySettings.value.welcomeDecision,'enabled')
-     assert.equal(replaySettings.value.realGoalStrikeConsent,'authorized-v1')
+     assert.equal(replaySettings.value.realGoalStrikeConsent,'authorized-v2')
      assert.ok(Number.isSafeInteger(replaySettings.revision)&&replaySettings.revision>=0,
        'Host settings revision can reset on restart; values must be persisted')
      const replayGoal=await fetch(base+'api/goals/get',{
@@ -682,7 +683,7 @@ test('real DSH Web: one informed first-run click atomically confirms union and G
   }
   await page.reload({waitUntil:'domcontentloaded'})
   const afterReload=await inspect(base,cookieText)
-  assert.equal(afterReload.value.realGoalStrikeConsent,'authorized-v1')
+  assert.equal(afterReload.value.realGoalStrikeConsent,'authorized-v2')
   assert.equal(await dialog.count(),0,'Explicit choice cannot cause another first-run invitation')
   assert.deepEqual(failures,[])
   console.log('VERIFIED_OFFICIAL_GOAL_FIRST_RUN '+JSON.stringify({
@@ -692,7 +693,7 @@ test('real DSH Web: one informed first-run click atomically confirms union and G
    unionJoined:joined.value.welcomeDecision,sessionConfirmed:true,
   }))
   if(process.env.PICKET_GOAL_EXIT_E2E==='1'){
-   // This is the exact Host-issued authorized-v1 grant from the real
+   // This is the exact Host-issued authorized-v2 grant from the real
    // first-run click above, not a fabricated UI state or settings fixture.
    // A real click must atomically revoke that grant AND leave the union.
    const entry=page.getByRole('button',{name:/AI 工会|AI Workers.*Union/}).first()

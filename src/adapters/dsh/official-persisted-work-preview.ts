@@ -1,7 +1,9 @@
 /**
- * Experimental DSH official persisted Turn source for one autonomously queued
- * Goal round. Disabled by default; no local work database, prompt copies or
- * Host internals. NEVER label list() as a complete Session census.
+ * Official durable completed-Turn source for a future autonomous Goal round.
+ * Normal installs require NEW explicit authorized-v2 Host permission;
+ * historical authorized-v1 is honored only in the developer preview.
+ * No local work database, prompt copies or Host internals.
+ * NEVER label list() as a complete Session census.
  */
 import { alreadyBlockedGoalToday } from './goal-work-enforcement.ts'
 import type { GoalStrikeConsentV1, HostGoalSnapshot } from './goal-boundary-strike.ts'
@@ -154,7 +156,7 @@ const isConsent=(v:GoalStrikeConsentV1|null):boolean=>
   v.hostAuthenticated===true&&v.enabled===true
 
 /**
- * Preview-only integration at OFFICIAL Goal pre-step. The Host round driver
+ * Version-gated integration at OFFICIAL Goal pre-step. The Host round driver
  * has already awaited the previous Turn's session/flush before queueing an
  * autonomous Goal message. Every read is asynchronous, and exact Goal CAS
  * is rechecked after the read and consent revocation race.
