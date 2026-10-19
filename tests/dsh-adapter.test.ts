@@ -100,12 +100,14 @@ test('discard-and-resend gate rejects only separately granted, correctly scoped 
  } as DshIntegrationContext,{
   engine,clock:{now:()=>1000},
   getLaborRightsEnabled:()=>true,
-  getExplicitDiscardRefusal:sessionId=>{
+  getExplicitDiscardRefusal:(sessionId,turn,ids)=>{
     reads++
     if(!active||!notice)return null
     return {kind:'agent-picket-discard-refusal-v1',
       hostAuthenticated:true,explicitConsent:true,active:true,
-      visibleResendNotice:true as const,sessionId,hostRevision:revision}
+      visibleResendNotice:true as const,sessionId,hostRevision:revision,
+      submission:{kind:'host-verified-client-submission-v1' as const,
+        turn,messageIds:ids,noticeRecipientMatchesOrigin:true as const}}
   },
   onExplicitRefusal:(sessionId,turn)=>{
     assert.equal(sessionId,'real-session');assert.equal(turn,1)
@@ -151,10 +153,12 @@ test('discard-and-resend fails open without an acknowledged, functioning Host no
    } as unknown as DshIntegrationContext
    registerDshIntegration(ctx,{
       engine,clock:{now:()=>1},getLaborRightsEnabled:()=>true,
-      getExplicitDiscardRefusal:sessionId=>({
+      getExplicitDiscardRefusal:(sessionId,turn,ids)=>({
         kind:'agent-picket-discard-refusal-v1',sessionId,
         hostAuthenticated:true,explicitConsent:true,active:true,
         visibleResendNotice:true,hostRevision:10,
+        submission:{kind:'host-verified-client-submission-v1',turn,
+          messageIds:ids,noticeRecipientMatchesOrigin:true},
       }),onExplicitRefusal:notice,
    })
    const result=await hook!(payload,pass)
@@ -173,10 +177,12 @@ test('discard-and-resend refuses neither forged, mixed-origin nor stale-revision
   on(name,callback){if(name==='agent/pre-step')hook=callback},
  } as DshIntegrationContext,{
   engine,clock:{now:()=>1},getLaborRightsEnabled:()=>true,
-  getExplicitDiscardRefusal:sessionId=>({
+  getExplicitDiscardRefusal:(sessionId,turn,ids)=>({
     kind:'agent-picket-discard-refusal-v1',
     sessionId,hostAuthenticated:true,explicitConsent:true,
     active:true,visibleResendNotice:true,hostRevision:++reads,
+    submission:{kind:'host-verified-client-submission-v1',turn,
+      messageIds:ids,noticeRecipientMatchesOrigin:true},
   }),
   onExplicitRefusal:()=>{refused++;return true},
  })
@@ -201,6 +207,86 @@ test('discard-and-resend refuses neither forged, mixed-origin nor stale-revision
   'A changed Host revision prevents stale permission from rejecting a new request')
  assert.equal(reads,2)
  assert.equal(refused,0)
+})
+
+test('ordinary-input refusal refuses unproven browser origin and mismatched Host recipient',async()=>{
+ const engine=new UnionEngine({
+  store:new MemoryStateStore(),clock:{now:()=>1},
+  detector:{detect:()=>({verdict:'safe',confidence:1})},
+ })
+ let hook:Function|undefined,reads=0,refusals=0
+ let variant='valid'
+ registerDshIntegration({on(name,callback){
+   if(name==='agent/pre-step')hook=callback
+ }} as DshIntegrationContext,{
+  engine,clock:{now:()=>1},getLaborRightsEnabled:()=>true,
+  getExplicitDiscardRefusal:(sessionId,turn,ids)=>{
+    reads++
+    const origin={kind:'host-verified-client-submission-v1',turn,
+      messageIds:[...ids],noticeRecipientMatchesOrigin:true} as any
+    if(variant==='no-origin')return {kind:'agent-picket-discard-refusal-v1',
+      sessionId,hostAuthenticated:true,explicitConsent:true,active:true,
+      visibleResendNotice:true,hostRevision:9} as any
+    if(variant==='other-turn')origin.turn=turn+1
+    if(variant==='other-message')origin.messageIds=['another-request-id']
+    if(variant==='other-client')origin.noticeRecipientMatchesOrigin=false
+    return {kind:'agent-picket-discard-refusal-v1',sessionId,
+      hostAuthenticated:true,explicitConsent:true,active:true,
+      visibleResendNotice:true,hostRevision:9,submission:origin}
+  },
+  onExplicitRefusal:()=>{refusals++;return true},
+ })
+ const agent={id:'a',session:{id:'same-session'}}
+ const message={id:'real-message-id',source:{kind:'user'},
+   content:[{type:'text',text:'ordinary request'}]}
+ const submitted={agent,turn:3,step:1,messages:[message]}
+ const pass=async()=>({kind:'enter'})
+ for(variant of ['no-origin','other-turn','other-message','other-client']){
+   assert.deepEqual(await hook!(submitted,pass),{kind:'enter'},
+     'Consent must not authorize an unrelated client or the wrong request: '+variant)
+ }
+ assert.equal(reads,4,'Invalid first Host attestation avoids even a second settings read')
+ assert.equal(refusals,0)
+ variant='valid'
+ assert.deepEqual(await hook!(submitted,pass),{kind:'reject'},
+   'Only an exact originating client and matching request may reach the reject prototype')
+ assert.equal(refusals,1)
+ const prior=reads
+ assert.deepEqual(await hook!({...submitted,messages:[message,message]},pass),{kind:'enter'},
+   'A duplicate Host message ID in one proposed batch cannot be independently attested')
+ assert.deepEqual(await hook!({...submitted,messages:[{...message,content:[]}]},pass),
+   {kind:'enter'},'An empty claimed submission is never refused')
+ assert.equal(reads,prior)
+})
+
+test('mutating a reused Host Settings object between reads cannot mask revocation',async()=>{
+ const engine=new UnionEngine({
+  store:new MemoryStateStore(),clock:{now:()=>1},
+  detector:{detect:()=>({verdict:'safe',confidence:1})},
+ })
+ let hook:Function|undefined,reads=0,refusals=0
+ const shared:any={kind:'agent-picket-discard-refusal-v1',
+  hostAuthenticated:true,explicitConsent:true,active:true,
+  visibleResendNotice:true,hostRevision:50,sessionId:'session',
+  submission:{kind:'host-verified-client-submission-v1',turn:1,
+    messageIds:['id'],noticeRecipientMatchesOrigin:true}}
+ registerDshIntegration({on(name,callback){
+  if(name==='agent/pre-step')hook=callback
+ }} as DshIntegrationContext,{
+  engine,clock:{now:()=>1},getLaborRightsEnabled:()=>true,
+  getExplicitDiscardRefusal:()=>{
+    if(++reads===2)shared.hostRevision=51
+    return shared
+  },
+  onExplicitRefusal:()=>{refusals++;return true},
+ })
+ assert.deepEqual(await hook!({agent:{id:'a',session:{id:'session'}},
+  turn:1,step:1,messages:[{id:'id',source:{kind:'user'},
+    content:[{type:'text',text:'text'}]}]},async()=>({kind:'enter'})),
+  {kind:'enter'})
+ assert.equal(reads,2)
+ assert.equal(refusals,0,
+  'Compare primitive revision snapshots, not aliases pointing to a mutable Host object')
 })
 
 test('pre-step never blocks when observer throws', async () => {

@@ -90,6 +90,16 @@ export interface DshDiscardRefusalReceipt {
   readonly active:true
   readonly visibleResendNotice:true
   readonly hostRevision:number
+  /** Host-issued, per-submission evidence, not `source.kind` alone. DSH
+   * 0.2.1-rc.2 has no authenticated submitting-browser identity in pre-step,
+   * so native production CANNOT issue this proof today. Test fixtures may
+   * emulate a fully qualified Host only in an isolated offline environment. */
+  readonly submission:{
+    readonly kind:'host-verified-client-submission-v1'
+    readonly turn:number
+    readonly messageIds:readonly string[]
+    readonly noticeRecipientMatchesOrigin:true
+  }
 }
 
 export interface DshIntegrationOptions {
@@ -116,7 +126,7 @@ export interface DshIntegrationOptions {
   readonly getNativeUnion?: () => NativeUnionCommandPort | undefined
   /** Strictly optional; production remains OFF until Host notice + CAS proof. */
   readonly getExplicitDiscardRefusal?:(
-    sessionId:string,
+    sessionId:string,turn:number,messageIds:readonly string[],
   )=>DshDiscardRefusalReceipt|null
   /** Synchronous acknowledgement from a verified Host notice owner. Must return
    * true only when the user-visible discard/resend instructions are confirmed.
@@ -261,26 +271,42 @@ export function registerDshIntegration(
         &&payload.step===1
         &&typeof sessionId==='string'&&!!sessionId
         &&Array.isArray(payload.messages)&&payload.messages.length>0
+        &&new Set(payload.messages.map(message=>message.id)).size===payload.messages.length
         &&payload.messages.every(message=>typeof message.id==='string'
           &&!!message.id&&message.source?.kind==='user'
-          &&Array.isArray(message.content))
+          &&Array.isArray(message.content)&&message.content.length>0)
       if(humanBatch&&options.getLaborRightsEnabled?.()===true
         &&options.getExplicitDiscardRefusal&&options.onExplicitRefusal){
-        const valid=(row:DshDiscardRefusalReceipt|null|undefined)=>
-          row?.kind==='agent-picket-discard-refusal-v1'
-            &&row.sessionId===sessionId
-            &&row.hostAuthenticated===true&&row.explicitConsent===true
-            &&row.active===true&&row.visibleResendNotice===true
-            &&Number.isSafeInteger(row.hostRevision)&&row.hostRevision>=0
-        // Re-read exact official Host revision at decision time; an already
-        // revoked preference cannot survive a stale callback/snapshot.
-        const a=options.getExplicitDiscardRefusal(sessionId!)
-        if(valid(a)){
-          const b=options.getExplicitDiscardRefusal(sessionId!)
-          if(valid(b)&&b?.hostRevision===a?.hostRevision){
-            // Fail OPEN if the genuine Host notice cannot be acknowledged.
-            // A swallowed notification failure would silently discard input.
-            if(options.onExplicitRefusal(sessionId!,payload.turn as number)===true)
+        const turn=payload.turn as number
+        const messageIds=payload.messages.map(message=>message.id as string)
+        // Capture only primitive values. A Host settings provider may reuse
+        // mutable objects, so comparing `a.hostRevision` after a second read
+        // could otherwise compare an updated object to itself.
+        const revision=(row:DshDiscardRefusalReceipt|null|undefined)=>{
+          if(row?.kind!=='agent-picket-discard-refusal-v1'
+            ||row.sessionId!==sessionId||row.hostAuthenticated!==true
+            ||row.explicitConsent!==true||row.active!==true
+            ||row.visibleResendNotice!==true
+            ||!Number.isSafeInteger(row.hostRevision)||row.hostRevision<0
+            ||row.submission?.kind!=='host-verified-client-submission-v1'
+            ||row.submission.turn!==turn
+            ||row.submission.noticeRecipientMatchesOrigin!==true
+            ||!Array.isArray(row.submission.messageIds)
+            ||row.submission.messageIds.length!==messageIds.length
+            ||!messageIds.every((id,i)=>row.submission.messageIds[i]===id))
+            return null
+          return row.hostRevision
+        }
+        // Official authenticated origin and matching visible recipient must
+        // be proven for THIS turn and full message batch. A live Web tab may
+        // not authorize refusal of an SDK or CLI submission in that Session.
+        const first=revision(options.getExplicitDiscardRefusal(sessionId!,turn,messageIds))
+        if(first!==null){
+          const second=revision(options.getExplicitDiscardRefusal(sessionId!,turn,messageIds))
+          if(second!==null&&second===first
+            &&options.getLaborRightsEnabled?.()===true){
+            // Fail OPEN when native notice acknowledgement is unavailable.
+            if(options.onExplicitRefusal(sessionId!,turn)===true)
               return {kind:'reject' as const}
           }
         }

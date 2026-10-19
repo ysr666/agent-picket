@@ -94,13 +94,15 @@ export function apply(ctx) {
     // settings* for this callback and remains OFF without an explicit opt-in.
     // Never make the real Adapter's default consent true to satisfy a test.
     getLaborRightsEnabled: () => process.env.AGENT_PICKET_TEST_LOCAL_CONSENT === 'on',
-    getExplicitDiscardRefusal:sessionId=>
+    getExplicitDiscardRefusal:(sessionId,turn,ids)=>
       process.env.AGENT_PICKET_TEST_LOCAL_CONSENT==='on' &&
       ['picket-offline-test-session','picket-discard-without-reupload']
         .includes(sessionId)&&!deliberatelyRefused.has(sessionId)
         ?{kind:'agent-picket-discard-refusal-v1',
           sessionId,hostAuthenticated:true,explicitConsent:true,
-          active:true,visibleResendNotice:true,hostRevision:7}
+          active:true,visibleResendNotice:true,hostRevision:7,
+          submission:{kind:'host-verified-client-submission-v1',turn,
+            messageIds:ids,noticeRecipientMatchesOrigin:true}}
         :null,
     onExplicitRefusal:(sessionId,turn)=>{
       deliberatelyRefused.add(sessionId)

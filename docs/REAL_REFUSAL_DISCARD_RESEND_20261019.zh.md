@@ -28,11 +28,21 @@
 
 **当前仍是 NO-GO**，因为生产可见拒绝通知和各客户端真实授权闭环并未验证。自动 Goal 的官方安全停工继续保持已验收的范围。不得据此启用当前旧版 `agent/pre-step.reject`，不得假设被拒输入会自动恢复。
 
+## 2026-10-19 下一步 P0 阻塞：官方请求来源与可见通知必须是同一客户端
+
+复核官方 DSH `dsh-v0.2.1-rc.2` `packages/core/agent/src/runtime-types.ts` 的 `agent/pre-step` 精确签名：只提供 `agent`、`messages`、`turn`、`step`、`signal`。`message.source.kind === 'user'` 仅指 **claimed user role**，不能区分 Web 标签页、桌面客户端、SDK 或 CLI，也不能确认某一条请求来自**实际看到警告的那个窗口**。因此，**给任一 Web 窗口弹过提示，不足以证明来自同一个 Session 的其他入口也看到提示**。单靠预先显示的横幅、简单 Web 心跳、`sessionId` 或 `hostRevision` 不能解决跨窗口误拒绝，也不能作为真实拒绝的生产授权依据。
+
+此次将隔离拒绝原型进一步加固为必须同时取得 **同轮次、同一有序消息 ID 批次、已认证提交客户端与告知接收者完全一致** 的 Host 原生来源凭据。新增 `submission.kind = 'host-verified-client-submission-v1'`、`submission.turn`、`submission.messageIds`、`submission.noticeRecipientMatchesOrigin === true` 的强制校验；再读官方 Host 设置时捕获**不可变的数值 revision**，避免复用可变引用导致撤销被掩盖。重复消息 ID、空消息、缺少来源、错轮次、错客户端、两次 revision 不一致都只能 `next()` 放行。测试夹具仅模拟这一资格；官方 DSH rc.2 尚不能从该 Hook 直接生成可信来源凭据，生产不接线。
+
+**真正打通 #80 所需的上游能力**：官方 Host 提供和每一次 `pre-step` 绑定的 authenticated initiating-client/request provenance（可区分 Web/CLI 等），以及该客户端与**同一条请求**的可见警告收讫确认，客户端断开、设置撤销和跨标签抢占时仍可安全同步校验。无法确认时就保持放行正常工作，不能静默丢弃。
+
+通知展示额外补了防旧结果：只认官方事件窗里**最新已开始且已结束的真实轮次**被阻断；后续正常/正在执行的轮次马上使旧拒绝失效，异步旧查询不能把旧警报重新挂回 UI。Host 和 Browser 两侧都设置 30 分钟有效期，异常未来时间也被拒绝，浏览器刷新/切换 Session 不复用旧结果。
+
 ## 2026-10-19 新增：官方阻断事件 × Host 工会拒绝凭据（仍非生产拒绝）
 
 在既有 DSH `connection.fetch.register` 和 `sessions.binding(id).eventSource` 之上，已实现**用户可见通知的归因管道**：Host 暂存 30 分钟、最多 24 个 Session 的有限元数据，仅包含拒绝轮次与时间；官方 GET 使用 SHA-256 Session 指纹，输出字段白名单不含提示词、附件、原始 Session ID、消息 ID。客户端只有在官方 Session 历史完整可见、精确轮次拥有唯一 `turn/start`、`turn/end.reason.kind='blocked'`，并且该轮无任何 `step/start` 或 `step/end`，同时取得该 Session 与同一轮次的官方 Host 工会凭据，才显示专门的工会拒绝说明。未匹配的 Host `blocked`、缺少历史、跨 Session 切换、旧请求的异步响应，都不能冒充工会罢工。
 
-匹配后，原生工会 HQ/设置页会显示永久（仅当前凭据存活期内）的明示说明，符合可读要求时还能使用 DSH 原生 `conversation.input.notify` 作轻提示。拒绝被证明后不作模型生成，也不自动重发。**生产仍没有凭据写入者**：`plugin.ts` 只注册只读路由，`getExplicitDiscardRefusal` 和 `onExplicitRefusal` 均未连接。现阶段普通消息继续正常执行，任何设置或符号举牌都不会产生 Host 工会拒绝凭据。这一步是通知管道的安全前置，并非已经完成了真实罢工的最终通知端到端验收。
+匹配后，原生工会 HQ/设置页会显示在当前受阻轮次有效期内的明示说明，符合可读要求时还能使用 DSH 原生 `conversation.input.notify` 作轻提示。拒绝被证明后不作模型生成，也不自动重发。**生产仍没有凭据写入者**：`plugin.ts` 只注册只读路由，`getExplicitDiscardRefusal` 和 `onExplicitRefusal` 均未连接。现阶段普通消息继续正常执行，任何设置或符号举牌都不会产生 Host 工会拒绝凭据。这一步是通知管道的安全前置，并非已经完成了真实罢工的最终通知端到端验收。
 
 ## 2026-10-19 安全边界复核：只能拒绝真实轮次的首次候选步骤
 
@@ -48,7 +58,7 @@
 
 Host 正式设置命名空间加入默认 `off` 的 `realInputStrikeConsent`（版本 `discard-resend-v1`）。这一许可与 `realGoalStrikeConsent` 独立，旧欢迎、模拟举牌及 Goal v1/v2 授权不会意外升级成普通请求拒绝。对应的官方 Host CAS/镜像校验、披露版本、通知能力验证及读取双 revision 的权限读者都有隔离单测。用户退出工会时，现代 DSH 通过单次 CAS 同时撤销 Goal 和普通输入授权；旧版本按「先撤销输入 → 撤销 Goal → 退出」执行并核对，重新加入也不得使遗留输入授权复活。
 
-**重要**：独立授权字段和选择控制目前仍是待接线的底层组件，没有生产 UI 按钮、官方可见通知确认，也没有把收据接进 `agent/pre-step`。**拥有授权字段不等于真的罢工**，默认没有拒绝消息。后续需要明确通知能力和真实 Chrome 原生验收后才能进入实际执行。
+**重要**：独立授权字段、选择控制与正式设置页的说明已接线，但生产授权按钮仍由 `verifiedNoticeCapability=false` 锁定；尚无官方可见通知/同客户端来源证明，也没有把收据接进 `agent/pre-step`。**拥有授权字段不等于真的罢工**，默认没有拒绝消息。后续需要明确通知能力和真实 Chrome 原生验收后才能进入实际执行。
 
 ## 2026-10-19 Chrome rc.2 真实环境修复
 

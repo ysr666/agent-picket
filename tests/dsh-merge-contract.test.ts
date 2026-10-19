@@ -96,3 +96,19 @@ test('ordinary-input attribution must combine official blocked turn with a separ
  assert.doesNotMatch(observer,/session\/prompt|session\/resume|automaticReplay\s*:\s*true/,
    'Notice projection cannot submit or replay refused input')
 })
+
+
+test('unverified Host client identity can never authorize human submission refusal',()=>{
+ const integration=read('src/adapters/dsh/integration.ts')
+ const host=read('src/adapters/dsh/plugin.ts')
+ const client=read('src/adapters/dsh/client.ts')
+ assert.match(integration,/host-verified-client-submission-v1/)
+ assert.match(integration,/noticeRecipientMatchesOrigin/)
+ assert.match(integration,/row\.submission\.turn!==turn/)
+ assert.match(integration,/messageIds\.every/)
+ assert.match(integration,/new Set\(payload\.messages\.map/)
+ assert.doesNotMatch(host,/getExplicitDiscardRefusal\s*:/,
+  'Native Host cannot prove which client owned this submission in DSH 0.2.1-rc.2')
+ assert.match(client,/createDshInputRefusalConsentControl\(rightsScope,\(\)=>false\)/,
+  'Consent preference must remain unwritable until native same-client notice proof exists')
+})
