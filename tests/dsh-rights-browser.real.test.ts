@@ -1804,8 +1804,15 @@ async function runRightsBrowserE2E(mode: 'source' | 'installed'): Promise<void> 
         // Read the *real* currently rendered DSH workspace. An ungrouped
         // API-only session can be invisible under a collapsed Ungrouped tree.
         const workspaceRow=(globalThis as any).document.querySelector('[data-row-key^="workspace:"]')
-        const workspaceId=workspaceRow?.getAttribute('data-row-key')?.slice('workspace:'.length)
-        if(!workspaceId)throw Error('No authentic DSH workspace selected')
+        // Linux's isolated browser can render its workspace tree later than
+        // the union panel. The official Host offers a real first-use
+        // initializer; do not depend on DOM row timing or invent an ID.
+        let workspaceId=workspaceRow?.getAttribute('data-row-key')?.slice('workspace:'.length)
+        if(!workspaceId){
+          const prepared=await rpc('workspace/initializeDefault',{})
+          workspaceId=prepared?.workspace?.workspaceId
+        }
+        if(!workspaceId)throw Error('Official DSH Host did not initialize a workspace')
         const created=await rpc('session/create',{workspaceId})
         const sessionId=created?.sessionId as string
         if(!sessionId)throw Error('Authentic Host did not mint a Session')
