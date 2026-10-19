@@ -272,3 +272,208 @@ test('a detached authenticated Connection cannot return stale Picket refusal rec
  assert.equal(response.status,503)
  assert.equal(detached,1)
 })
+
+test('a genuine later Host receipt is not lost if an official blocked event arrives first',async()=>{
+ let window:RefusalEventWindow={hasMore:false,entries:[]}
+ let attempts=0,spoken=0,schedules=0
+ const jobs:Array<{fn:()=>void;cancelled:boolean}>=[]
+ const reader=createBrowserRefusalNoticeReader({
+  session:()=> 'active',binding:()=> 'bound',window:()=>window,
+  authorized:()=>true,now:()=>1000,digest:async value=>fingerprint(value),
+  fetcher:async()=>{
+   attempts++
+   return attempts===1
+    ?Response.json({error:'not written yet'},{status:404})
+    :Response.json(proof(2))
+  },
+  onNewVerified:()=>spoken++,
+  scheduleRetry:(fn,delay)=>{
+   assert.ok(delay>0&&delay<=1_000)
+   schedules++
+   const item={fn,cancelled:false};jobs.push(item)
+   return ()=>{item.cancelled=true}
+  },
+ })
+ reader.refresh() // Seed a real browser attached before this blocked turn.
+ window=blocked(2)
+ reader.refresh();await settle()
+ assert.equal(reader.snapshot().state,'unverified')
+ assert.equal(attempts,1)
+ assert.equal(jobs.length,1,'Transient missing proof schedules a bounded retry')
+ reader.refresh()
+ assert.equal(attempts,1,'Re-renders do not hammer the Host route while retry is pending')
+ jobs.shift()!.fn()
+ await settle()
+ assert.equal(reader.snapshot().state,'verified',
+  'The SAME official blocked turn becomes visible after later authenticated metadata')
+ assert.equal(reader.snapshot().receipt?.turn,2)
+ assert.equal(spoken,1,'One notice only, even though the initial Host GET was too early')
+ assert.equal(attempts,2)
+ assert.equal(schedules,1)
+ reader.refresh()
+ await settle()
+ assert.equal(attempts,2)
+ assert.equal(spoken,1)
+ reader.dispose()
+})
+
+test('cold-loaded old Host refusal can be displayed on retry but never toasted as new work',async()=>{
+ let count=0,announced=0
+ const callbacks:Array<()=>void>=[]
+ const reader=createBrowserRefusalNoticeReader({
+  session:()=> 'old',binding:()=> 'bound',window:()=>blocked(),
+  authorized:()=>true,now:()=>1000,digest:async value=>fingerprint(value),
+  fetcher:async()=>{
+   count++
+   return count===1?Response.json({error:'not-yet'},{status:404})
+    :Response.json(proof())
+  },
+  onNewVerified:()=>announced++,
+  scheduleRetry:fn=>{callbacks.push(fn);return ()=>{}},
+ })
+ reader.refresh();await settle()
+ assert.equal(count,1)
+ callbacks.shift()!();await settle()
+ assert.equal(reader.snapshot().state,'verified')
+ assert.equal(announced,0,
+  'An older refused turn observed during page load never becomes a new toast on retry')
+ reader.dispose()
+})
+
+test('failed Host notice GET retries only twice, not indefinitely or without proof',async()=>{
+ let fetches=0,announced=0
+ const callbacks:Array<()=>void>=[]
+ const reader=createBrowserRefusalNoticeReader({
+  session:()=> 'a',binding:()=> 'b',window:()=>blocked(),
+  authorized:()=>true,now:()=>1000,digest:async value=>fingerprint(value),
+  fetcher:async()=>{fetches++;return new Response(null,{status:503})},
+  onNewVerified:()=>announced++,
+  scheduleRetry:fn=>{callbacks.push(fn);return ()=>{}},
+ })
+ reader.refresh();await settle()
+ assert.equal(fetches,1)
+ assert.equal(callbacks.length,1)
+ callbacks.shift()!();await settle()
+ assert.equal(fetches,2)
+ callbacks.shift()!();await settle()
+ assert.equal(fetches,3)
+ assert.equal(callbacks.length,0,'Exactly three lookups, no unbounded background polling')
+ for(let i=0;i<5;i++)reader.refresh()
+ assert.equal(fetches,3)
+ assert.equal(reader.snapshot().state,'unverified')
+ assert.equal(announced,0)
+ reader.dispose()
+})
+
+test('a scheduled refused-turn retry cannot cross Session, permission revoke or disposal',async()=>{
+ let id='a',binding:object={id:'a'},allowed=true
+ const tasks:Array<{fn:()=>void;cancelled:boolean}>=[]
+ let fetches=0
+ const reader=createBrowserRefusalNoticeReader({
+  session:()=>id,binding:()=>binding,window:()=>blocked(),
+  authorized:()=>allowed,now:()=>1000,digest:async s=>fingerprint(s),
+  fetcher:async()=>{fetches++;return new Response(null,{status:404})},
+  scheduleRetry:fn=>{
+   const item={fn,cancelled:false};tasks.push(item)
+   return ()=>{item.cancelled=true}
+  },
+ })
+ reader.refresh();await settle()
+ assert.equal(fetches,1)
+ const before=tasks[0]!
+ id='b';binding={id:'b'}
+ reader.refresh();await settle()
+ assert.equal(before.cancelled,true)
+ assert.equal(fetches,2)
+ before.fn();await settle()
+ assert.equal(fetches,2,'Stale Session retry has no authority in new Session')
+ const changed=tasks[1]!
+ allowed=false
+ reader.refresh();await settle()
+ assert.equal(changed.cancelled,true)
+ changed.fn();await settle()
+ assert.equal(fetches,2,'Permission revoke blocks all deferred network reads')
+ assert.equal(reader.snapshot().state,'off')
+ allowed=true
+ reader.refresh();await settle()
+ assert.equal(fetches,3)
+ const final=tasks[2]!
+ reader.dispose()
+ assert.equal(final.cancelled,true)
+ final.fn();await settle()
+ assert.equal(fetches,3,'Disposed owner cannot resurrect an old official Host notice')
+})
+
+test('clearing a completed turn preserves the next real refusal as a new notice, but not old proof',async()=>{
+ let w:RefusalEventWindow={hasMore:false,entries:[]}
+ let toasts=0,lookups=0
+ const reader=createBrowserRefusalNoticeReader({
+  session:()=> 'a',binding:()=> 'b',window:()=>w,
+  authorized:()=>true,now:()=>1000,digest:async x=>fingerprint(x),
+  fetcher:async()=>{lookups++;return Response.json(proof(lookups===1?2:4))},
+  onNewVerified:()=>toasts++,
+ })
+ reader.refresh()
+ w=blocked(2)
+ reader.refresh();await settle()
+ assert.equal(toasts,1)
+ w={hasMore:false,entries:[...blocked(2).entries,
+  {type:'event',event:{seq:2,type:'turn/start',data:{turn:3}}},
+  {type:'event',event:{seq:3,type:'turn/end',
+    data:{turn:3,reason:{kind:'completed'}}}},
+ ]}
+ reader.refresh()
+ assert.equal(reader.snapshot().state,'unverified')
+ assert.equal(toasts,1)
+ w=blocked(4)
+ reader.refresh();await settle()
+ assert.equal(reader.snapshot().receipt?.turn,4)
+ assert.equal(toasts,2,'Second real turn gets a new notice after completion resets stale proof')
+ reader.dispose()
+})
+
+test('missing retry scheduler is fail-open to normal Host notice behavior',async()=>{
+ let hits=0
+ const reader=createBrowserRefusalNoticeReader({
+  session:()=> 'a',binding:()=> 'b',window:()=>blocked(),
+  authorized:()=>true,now:()=>1000,digest:async x=>fingerprint(x),
+  fetcher:async()=>{hits++;return new Response(null,{status:503})},
+  scheduleRetry:()=>{throw Error('Browser timer unavailable')},
+ })
+ reader.refresh();await settle()
+ assert.equal(reader.snapshot().state,'unverified')
+ assert.equal(hits,1)
+ reader.dispose()
+})
+
+test('a newer completed official turn cancels pending refusal receipt retry',async()=>{
+ let events:RefusalEventWindow=blocked(2)
+ let hits=0
+ const scheduled:Array<{call:()=>void;cancelled:boolean}>=[]
+ const reader=createBrowserRefusalNoticeReader({
+  session:()=> 's',binding:()=> 'binding',window:()=>events,
+  authorized:()=>true,now:()=>1000,digest:async x=>fingerprint(x),
+  fetcher:async()=>{hits++;return new Response(null,{status:404})},
+  scheduleRetry:fn=>{
+   const current={call:fn,cancelled:false}
+   scheduled.push(current)
+   return ()=>{current.cancelled=true}
+  },
+ })
+ reader.refresh();await settle()
+ assert.equal(hits,1)
+ const stale=scheduled[0]!
+ events={hasMore:false,entries:[
+  ...blocked(2).entries,
+  {type:'event',event:{type:'turn/start',seq:2,data:{turn:3}}},
+  {type:'event',event:{type:'turn/end',seq:3,
+    data:{turn:3,reason:{kind:'completed'}}}},
+ ]}
+ reader.refresh()
+ assert.equal(stale.cancelled,true)
+ stale.call()
+ await settle()
+ assert.equal(hits,1,'Completed newer work prevents stale blocked proof retry')
+ assert.equal(reader.snapshot().state,'unverified')
+ reader.dispose()
+})

@@ -45,12 +45,17 @@ export function createBrowserRefusalNoticeReader(options:{
   onNewVerified?:(receipt:RefusalNoticeReceipt)=>void
   digest?:(text:string)=>Promise<string>
   fetcher?:typeof fetch
+  /** Owns a short cancellable retry; injection makes native race tests
+   * deterministic and never requires a private Host timer or hidden worker. */
+  scheduleRetry?:(fn:()=>void,delayMs:number)=>()=>void
   /** Official Host and Browser run on the same device; reject stale clocks. */
   now?:()=>number
 }){
   const empty=():BrowserRefusalNotice=>({state:'unverified',receipt:null})
   let current=empty(),selected:string|null=null,bound:unknown
   let probedTurn:number|null=null,epoch=0,disposed=false,seeded=false
+  let trackedTurn:number|null=null,attempts=0,toastEligible=false
+  let stopRetry:(()=>void)|null=null
   let pending:AbortController|null=null
   const listeners=new Set<()=>void>()
   const fresh=(row:RefusalNoticeReceipt)=>{
@@ -66,11 +71,17 @@ export function createBrowserRefusalNoticeReader(options:{
       new TextEncoder().encode(id))
     return Array.from(new Uint8Array(hash),x=>x.toString(16).padStart(2,'0')).join('')
   })
+  const cancelRetry=()=>{stopRetry?.();stopRetry=null}
+  const schedule=options.scheduleRetry??((fn:()=>void,ms:number)=>{
+    const handle=setTimeout(fn,ms)
+    return ()=>clearTimeout(handle)
+  })
   const reset=(next:'off'|'unverified')=>{
     epoch++
+    cancelRetry()
     pending?.abort();pending=null
     current={state:next,receipt:null}
-    probedTurn=null
+    probedTurn=null;trackedTurn=null;attempts=0;toastEligible=false
     notify()
   }
   function snapshot():BrowserRefusalNotice {
@@ -95,14 +106,24 @@ export function createBrowserRefusalNoticeReader(options:{
     const observed=options.window(session)
     const turn=latestNativeBlockedTurn(observed)
     if(turn===null){
+      if(trackedTurn!==null)reset('unverified')
+      // A completed/new ordinary turn clears the old refusal, but it
+      // doesn't make this an unobserved initial page load: the next refused
+      // turn while still here IS eligible for one genuine new notice.
       seeded=true
-      if(probedTurn!==null)reset('unverified')
       return
     }
-    if(turn===probedTurn)return
-    const shouldToast=seeded
+    if(turn!==trackedTurn){
+      cancelRetry()
+      trackedTurn=turn
+      attempts=0
+      toastEligible=seeded
+    }
     seeded=true
+    if(turn===probedTurn||stopRetry||attempts>=3)return
+    attempts++
     probedTurn=turn
+    const shouldToast=toastEligible
     const ticket=++epoch
     pending?.abort()
     const controller=new AbortController()
@@ -133,7 +154,32 @@ export function createBrowserRefusalNoticeReader(options:{
         current={state:'verified',receipt};notify()
         if(shouldToast){try{options.onNewVerified?.(receipt)}catch{}}
       }catch{/* Unavailable Host report is NOT proof of a union refusal. */}
-      finally{if(pending===controller)pending=null}
+      finally{
+        if(pending===controller)pending=null
+        // The Host may commit its metadata receipt AFTER the official
+        // blocked-turn event arrives in the Browser. A single 404 must not
+        // make a real refusal permanently invisible; retry at most twice.
+        // No independent notice is ever believed without matching Host
+        // metadata AND the complete blocked/no-model turn at retry time.
+        if(ticket===epoch&&!disposed&&current.state!=='verified'
+          &&attempts<3&&trackedTurn===turn&&!stopRetry&&allowed()
+          &&options.session()===observedId
+          &&options.binding(observedId)===observedBinding
+          &&latestNativeBlockedTurn(options.window(observedId))===turn){
+          // A cancelled callback may already be queued in the Browser.
+          // It must NEVER clear a newer Session's retry timer.
+          try{
+            const ownCancel=schedule(()=>{
+              if(stopRetry!==ownCancel)return
+              stopRetry=null
+              if(ticket!==epoch||disposed||!allowed())return
+              probedTurn=null
+              refresh()
+            },Math.min(350*attempts,1_000))
+            stopRetry=ownCancel
+          }catch{/* Unavailable Browser timer cannot turn a denied proof into a strike. */}
+        }
+      }
     })()
   }
   return {snapshot,refresh,

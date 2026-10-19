@@ -78,3 +78,13 @@ Host 正式设置命名空间加入默认 `off` 的 `realInputStrikeConsent`（�
 2. 用官方消息事件显示**具体拒绝原因与复工入口**，先在 DSH Web 正式 npm 安装包的真实 Chrome 证明通知确实可见。没有通知证据之前，真实拒绝仍 OFF。
 3. 在隔离 Host 上模拟两标签撤销、开关快速切换、相同 Session ID、真文本+图片附件、重启和重新手动发送，验证没有模型偷跑或重播。
 4. 通过后再逐格验 DSH Desktop、Claude Code、Codex；跨端不共享未经实测的拒绝保证。
+
+## 2026-10-19 晚 · 原生通知竞态修复：官方阻断先于工会回执时不漏报
+
+发现真实时序缺陷：浏览器先读到官方 turn/end.reason.kind=blocked、随后才等到 Host 工会的 metadata-only receipt。如果第一次 GET /api/agent-picket/refusal-notice/v1 返回 404/503，旧版只尝试一次并记住 turn 编号，同一轮次随后写入的合法工会回执再也不会被查询到。这直接损害未来真实拒绝的“用户必须看到重发提醒”目标。
+
+目前的修复只改 DSH Client 的纯读取端：对同一轮、同一原生 Session/binding 的失败读最多再查两次（总数上限三次、短暂延迟，无无限轮询），每次均重新要求真实官方 Session 事件窗内最新完整阻断轮次、不允许模型/工具执行、Host 官方 Picket receipt 的相同 turn 和时间有效性；404/503 绝不能冒充已完成罢工。冷加载旧拒绝仍可读回，但不会误弹“刚刚发生”提示。新的拒绝发生后最多产生一次可见提醒。
+
+跨 Session、最新正常任务开始/结束、撤销许可、关闭 UI 和原生服务解绑会清理旧 retry；即使浏览器已排队的“取消回调”最终又执行，也不能清掉另一 Session 的新 retry，更不能请求旧 Session 的 Host 凭据。计时器不可用/抛异常时保守保留未验证态，不产生未处理异常也不丢用户工作。无第三方推送、无提示词或附件存储、无新 Host API。
+
+新增 dsh-refusal-notice.test.ts 中的实际异步竞态/撤销/重入/有界查询回归，并按项目常规运行 TS 类型检查、发布包和官方 DSH Chrome 验收。仍未启用生产 pre-step.reject：Host 正式的请求来源/接收者同一性证据和具体客户端通知证明仍未通过，不能把此时序修复当作整个 #80 DONE 或 release PASS。
