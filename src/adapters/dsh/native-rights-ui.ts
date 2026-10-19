@@ -218,6 +218,43 @@ export function projectUnionQuickWork(
     totalMs:data.lifetime.completedTurnMs}
 }
 
+/**
+ * #79: project the real, limited Host evidence into the union's dignity
+ * journey. The DSH detection route is only claimed-user, not authenticated
+ * direct-human provenance. Its counts CANNOT be used as a three-strike
+ * enforcement receipt. Official Goal work-limit state is independent.
+ */
+export function projectDignityJourney(input:{
+  dignity:BrowserDignitySnapshot|undefined
+  committeeStage:'opened'|'hearing'|'closed'|null
+  goalHold:UnionGoalHold|null
+  goalAuthorized:boolean
+}):{
+  signal:'unavailable'|'quiet'|'review-unverified'
+  caseStage:'not-filed'|'filed'|'hearing'|'closed'
+  workBoundary:'work-goal-blocked'|'work-goal-authorized'|'work-goal-off'
+  humanProvenanceVerified:false
+  abuseCausedGoalStop:false
+}{
+  const signal=input.dignity?.status!=='available'||!input.dignity.data
+    ?'unavailable'
+    :input.dignity.data.origin!=='claimed-user-source'
+      ||input.dignity.data.enforcement!==false
+      ?'unavailable'
+      :input.dignity.data.targeted>0||input.dignity.data.review>0
+        ?'review-unverified':'quiet'
+  return {
+    signal,
+    caseStage:input.committeeStage==='opened'?'filed'
+      :input.committeeStage??'not-filed',
+    workBoundary:input.goalHold
+      ?'work-goal-blocked':input.goalAuthorized
+        ?'work-goal-authorized':'work-goal-off',
+    humanProvenanceVerified:false,
+    abuseCausedGoalStop:false,
+  }
+}
+
 export type UnionFrontScene =
   'closed'|'unavailable'|'quiet'|'bargaining'|'picket'|'dignity'|'rest'|'settled'
 
@@ -784,6 +821,13 @@ export function createDshUnionComponents(
         :lastCommitteeCase.stage==='hearing'?'appeal-hearing':'appeal-closed'
       :hasHostDignitySignal?'unverified'
         :data.dignity?.status==='available'?'no-observations':'unavailable'
+    const dignityJourney=projectDignityJourney({
+      dignity:data.dignity,
+      committeeStage:lastCommitteeCase?.kind==='question-rule'
+        ?lastCommitteeCase.stage:null,
+      goalHold:data.goalHold??null,
+      goalAuthorized:goalStatus(deps).activated===true,
+    })
     const canFileDignityReview=hostCaseAvailable&&!committeeCaseActive
       &&hasHostDignitySignal
     const picketActive = data.available === true && data.picket?.active === true
@@ -1507,6 +1551,22 @@ export function createDshUnionComponents(
         h('p',{role:'status','data-ap-dignity-action-phase':dignityReviewPhase,
           style:{fontWeight:750,margin:'8px 0'}},
           label(('hq.dignity.phase.'+dignityReviewPhase) as MessageKey)),
+        h('section',{
+          'data-ap-dignity-journey':dignityJourney.caseStage,
+          'data-ap-dignity-origin':dignityJourney.signal,
+          'data-ap-goal-independent':dignityJourney.workBoundary,
+          'aria-label':label('hq.dignity.journey.title'),
+          style:{padding:'10px 12px',border:'1px solid #d7c7b3',
+            borderRadius:'9px',margin:'12px 0',display:'grid',gap:'7px'}},
+          h('strong',{style:{fontSize:'13px'}},label('hq.dignity.journey.title')),
+          h('p',{role:'status',style:{margin:0,fontSize:'12px'}},
+            label(('hq.dignity.journey.signal.'+dignityJourney.signal) as MessageKey)),
+          h('p',{style:{margin:0,fontSize:'12px'}},
+            label(('hq.dignity.journey.case.'+dignityJourney.caseStage) as MessageKey)),
+          h('p',{style:{margin:0,fontSize:'12px'}},
+            label(('hq.dignity.journey.work.'+dignityJourney.workBoundary) as MessageKey)),
+          h('p',{style:{...secondary,margin:0,fontSize:'11px'}},
+            label('hq.dignity.journey.separation'))),
         h('p',{style:{fontWeight:750,margin:'8px 0'}},
           label(('hq.dignity.status.'+
             (data.dignity?.status==='available'
