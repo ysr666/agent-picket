@@ -246,6 +246,12 @@ export function createDshBrowserUnionDesk(options: {
         key:expectedKey,token:expectedToken??null,revision:expectedRevision}
       return enqueue(() => perform(desk => desk.raiseDemoDemand('overtime'),reviewed))
     },
+    raiseDemoWelfare(expectedKey?:string,expectedToken?:string|null,
+      expectedRevision?:number|null) {
+      const reviewed=expectedKey===undefined?undefined:{
+        key:expectedKey,token:expectedToken??null,revision:expectedRevision}
+      return enqueue(() => perform(desk => desk.raiseDemoDemand('welfare'),reviewed))
+    },
     setGazetteMode(mode:'visible'|'quiet') {
       return enqueue(async()=>{
         if(mode!=='visible'&&mode!=='quiet')throw new TypeError('Invalid Gazette display mode')

@@ -1099,3 +1099,38 @@ test('stale committee retraction cannot erase a different replacement case using
  assert.equal(a.snapshot().committeeCases?.cases[0]?.kind,'request-dialogue')
  a.dispose();b.dispose()
 })
+
+test('welfare charter survives authenticated Host readback/reload and is Session isolated',async()=>{
+ const f=fixture(),first=f.create(),second=f.create()
+ await first.setActiveSession('a')
+ await second.setActiveSession('b')
+ const initial=first.snapshot()
+ assert.ok(initial.committeeScopeKey&&initial.negotiationArchive)
+ await first.raiseDemoWelfare(keyA,initial.negotiationArchive.writeToken,
+   initial.hostRevision)
+ assert.equal(first.snapshot().pending?.kind,'welfare')
+ assert.equal(second.snapshot().pending,null)
+ const petition=first.snapshot()
+ assert.ok(petition.pending)
+ await assert.rejects(first.counter(petition.pending.id,30*60_000,keyA,
+   petition.negotiationArchive!.writeToken,petition.hostRevision),
+   /Welfare motion only supports accept\/decline/)
+ const filed=first.snapshot()
+ assert.equal(filed.pending?.stage,'open')
+ await first.respond(filed.pending!.id,'accept',keyA,
+   filed.negotiationArchive!.writeToken,filed.hostRevision)
+ assert.equal(first.snapshot().pending,null)
+ assert.deepEqual(first.snapshot().state!.history,[{
+  id:filed.pending!.id,kind:'welfare',outcome:'accepted',
+ }])
+ const serialized=f.get().unionLedger
+ assert.ok(serialized.includes('"welfare"'))
+ first.dispose();second.dispose()
+ const restart=f.create()
+ await restart.setActiveSession('a')
+ assert.equal(restart.snapshot().state?.history.at(-1)?.kind,'welfare')
+ assert.equal(restart.snapshot().state?.agreement.breakIntervalMs,2*H)
+ await restart.setActiveSession('b')
+ assert.deepEqual(restart.snapshot().state?.history,[])
+ restart.dispose()
+})

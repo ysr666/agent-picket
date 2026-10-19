@@ -137,7 +137,7 @@ export function createNativeUnionCommandPort(settings: NativeSettingsProvider): 
       ? text('command.native.grievancePending', {
         id: waiting.id,
         kind: locale() === 'zh-CN'
-          ? (waiting.kind === 'break' ? '休息' : '加班')
+          ? (waiting.kind === 'break' ? '休息' : waiting.kind === 'welfare' ? '福利' : '加班')
           : waiting.kind,
         stage: text(waiting.stage === 'open'
           ? 'command.native.stageOpen' : 'command.native.stageCountered'),

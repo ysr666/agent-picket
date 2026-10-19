@@ -11,7 +11,7 @@ export interface UnionAgenda {
   readonly caseId:number|null
   readonly kind:LaborDemandKind|null
   /** Different from latest-case kind: the next possible demand may be overtime. */
-  readonly nextKind:LaborDemandKind|null
+  readonly nextKind:Exclude<LaborDemandKind,'welfare'>|null
   readonly remainingWorkMs:number|null
   /** Saved active term; NEVER asserted to have been set by a particular case. */
   readonly currentTermMs:number|null
@@ -50,7 +50,7 @@ export function projectUnionAgenda(input:{
   // The Host's observe() gives overdue overtime precedence, even if an
   // older rest petition also became due. Otherwise choose the earliest next
   // threshold, not the type of the last resolved case.
-  const nextKind:LaborDemandKind=verified!==null
+  const nextKind:Exclude<LaborDemandKind,'welfare'>=verified!==null
     &&verified>=state.nextOvertimeDueMs?'overtime'
     :verified!==null&&verified>=state.nextBreakDueMs?'break'
     :state.nextOvertimeDueMs<=state.nextBreakDueMs?'overtime':'break'
@@ -65,8 +65,9 @@ export function projectUnionAgenda(input:{
     if(overdue)return {phase:'milestone',caseId:null,kind:nextKind,
       nextKind,remainingWorkMs:0,currentTermMs:null,
       latestOutcome:null,stage:0,symbolicPicketActive:picket}
-    const term=latest.kind==='break'?state.agreement.breakIntervalMs
-      :state.agreement.overtimeIntervalMs
+    const term=latest.kind==='welfare'?null
+      :latest.kind==='break'?state.agreement.breakIntervalMs
+        :state.agreement.overtimeIntervalMs
     return {phase:'resolved',caseId:latest.id,kind:latest.kind,
       nextKind,remainingWorkMs:nextRemaining,
       currentTermMs:term,latestOutcome:latest.outcome,stage:3,

@@ -821,6 +821,53 @@ test('a denied union case offers one real user-led symbolic protest, not an auto
  assert.equal(noProtest.some(n=>n.props['data-ap-agenda-protest']),false)
 })
 
+test('welfare charter shows a genuine alternative case and disables nonsensical timed counteroffers',async()=>{
+ const {hooks}=fakeReact()
+ const base=deps(rights({welcomeDecision:'enabled',laborRightsEnabled:true})).d
+ let called=0
+ const pending={...freshLaborState(),revision:1,
+  pending:{id:1,kind:'welfare' as const,stage:'open' as const,
+    raisedAtElapsedMs:0,counterOfferMs:null}}
+ const union=(state:LaborStateV1)=>({
+  available:true,state,pending:state.pending,completedTurnMs:0,
+  coverage:'complete' as const,lifetimeMs:null,picket:null,
+  committeeScopeKey:'a'.repeat(64),
+ })
+ const tree=(state:LaborStateV1)=>walk(createDshUnionComponents(hooks,
+  {createPortal:child=>child},{...base,
+   readUnion:()=>union(state),
+   demoWelfare:async()=>{called++},
+   respond:async()=>{},
+   counter:async()=>{throw Error('No timed welfare counter allowed')},
+  }).UnionPanel())
+ const fresh=tree(freshLaborState())
+ const petition=fresh.find(n=>n.props['data-ap-welfare-petition']==='open')
+ assert.ok(petition,'Welfare petition is a real user-controlled Host action')
+ petition.props.onClick()
+ await new Promise(resolve=>setImmediate(resolve))
+ assert.equal(called,1)
+ const open=tree(pending)
+ assert.equal(open.some(n=>n.props['data-ap-welfare-petition']),false,
+  'Cannot file a second petition while the Host has one open')
+ assert.ok(open.some(n=>n.props['data-ap-agenda']==='demand'))
+ assert.equal(open.some(n=>n.type==='select'&&n.props['aria-label']==='union.counter.interval'),false,
+  'Never offer a fictitious paid-leave or time-based welfare counter')
+ const summary=JSON.stringify(open)
+ assert.match(summary,/union.demand.benefits/)
+ assert.match(summary,/hq.welfare.disclosure/)
+ const approved={...pending,pending:null,revision:2,
+  history:[{id:1,kind:'welfare' as const,outcome:'accepted' as const}]}
+ const final=tree(approved)
+ const agenda=final.find(n=>n.props['data-ap-agenda']==='resolved')
+ assert.ok(agenda)
+ assert.match(JSON.stringify(agenda),/hq.welfare.accepted/)
+ assert.doesNotMatch(JSON.stringify(agenda),/hq.resolution.current/,
+  'A welfare charter cannot produce fabricated monetary or time terms')
+ const exited=walk(createDshUnionComponents(hooks,{createPortal:child=>child},
+  deps(rights({welcomeDecision:'not-now',laborRightsEnabled:false})).d).UnionPanel())
+ assert.equal(exited.some(n=>n.props['data-ap-welfare-petition']),false)
+})
+
 test('duty roster is passive, collapsed by default and hidden on opt-out',()=>{
  const {hooks}=fakeReact()
  const base=deps(rights({welcomeDecision:'enabled',laborRightsEnabled:true}))

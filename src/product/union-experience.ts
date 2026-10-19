@@ -13,14 +13,14 @@ export type UnionActivityKind = 'new-demand' | 'counteroffer' | 'accepted'
 export interface UnionActivity {
   readonly id: number
   readonly kind: UnionActivityKind
-  readonly demand: 'break' | 'overtime'
+  readonly demand: LaborDemandKind
 }
 export interface LatestResolution {
   readonly id: number
   readonly kind: LaborDemandKind
   readonly outcome: BargainOutcome
   /** Current effective term, not an assertion that this individual case changed it. */
-  readonly currentIntervalMs: number
+  readonly currentIntervalMs: number | null
 }
 export interface DiscontentFactors {
   readonly workLoad: number
@@ -74,8 +74,9 @@ export function projectUnionExperience(input: UnionExperienceInput): UnionExperi
   const last = state.history.at(-1)
   const latestResolution: LatestResolution | null = last ? {
     id: last.id, kind: last.kind, outcome: last.outcome,
-    currentIntervalMs: last.kind === 'break'
-      ? state.agreement.breakIntervalMs : state.agreement.overtimeIntervalMs,
+    currentIntervalMs: last.kind === 'welfare' ? null
+      :last.kind === 'break' ? state.agreement.breakIntervalMs
+        :state.agreement.overtimeIntervalMs,
   } : null
   const activity: UnionActivity[] = []
   if (state.pending) {

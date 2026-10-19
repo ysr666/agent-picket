@@ -11,7 +11,7 @@ import { projectUnionStory } from '../../product/union-story.ts'
 import { projectUnionCadence } from '../../product/union-cadence.ts'
 import { projectUnionAgenda } from '../../product/union-agenda.ts'
 import { projectUnionAlerts } from '../../product/union-alerts.ts'
-import type { LaborStateV1 } from '../../product/union-desk.ts'
+import type { LaborStateV1, LaborDemandKind } from '../../product/union-desk.ts'
 import type { PicketActionState } from '../../product/picket-ledger.ts'
 import type { DignityCaseSession, DignityCaseKind, DignityCaseOutcome } from '../../product/dignity-case-ledger.ts'
 import type { MessageKey } from '../../i18n/index.ts'
@@ -58,7 +58,7 @@ export interface UnionGoalHold {
 }
 export interface PendingUnionDemand {
   readonly id: number
-  readonly kind: 'break' | 'overtime'
+  readonly kind: LaborDemandKind
   readonly stage: 'open' | 'countered'
   readonly counterOfferMs?: number | null
 }
@@ -111,6 +111,7 @@ export interface DshUnionUiDeps {
   readonly respond?: (id: number, choice: 'accept' | 'decline',expectedKey?:string,expectedToken?:string|null,expectedRevision?:number|null) => Promise<void>
   readonly demoBreak?: (expectedKey?:string,expectedToken?:string|null,expectedRevision?:number|null) => Promise<void>
   readonly demoOvertime?: (expectedKey?:string,expectedToken?:string|null,expectedRevision?:number|null) => Promise<void>
+  readonly demoWelfare?: (expectedKey?:string,expectedToken?:string|null,expectedRevision?:number|null) => Promise<void>
   readonly setPicket?: (raise: boolean,
     expectedKey?:string,expectedToken?:string|null,expectedRevision?:number|null) => Promise<void>
   readonly forgetCommitteeCases?: (key:string,count:number,token:string|null,hostRevision?:number|null)=>Promise<void>
@@ -181,9 +182,15 @@ function downloadUnionJson(payload:string,filename:string):void {
 // a full workday and beyond. Choices are explicit, never guessed from text.
 const BREAK_COUNTER_MINUTES=[15,30,45,60,90,120,180,240,360,480] as const
 const OVERTIME_COUNTER_MINUTES=[60,120,240,360,480,600,720,960,1200,1440] as const
-function counterOptions(kind:'break'|'overtime'):readonly number[]{
-  return kind==='break'?BREAK_COUNTER_MINUTES:OVERTIME_COUNTER_MINUTES
+function counterOptions(kind:LaborDemandKind):readonly number[]{
+  return kind==='welfare'?[]:kind==='break'?BREAK_COUNTER_MINUTES:OVERTIME_COUNTER_MINUTES
 }
+const unionKindKey=(kind:LaborDemandKind):MessageKey=>
+  kind==='break'?'union.kind.break':kind==='overtime'?'union.kind.overtime'
+    :'union.kind.welfare'
+const unionDemandKey=(kind:LaborDemandKind):MessageKey=>
+  kind==='break'?'union.demand.break':kind==='overtime'?'union.demand.overtime'
+    :'union.demand.benefits'
 function formatDuration(milliseconds: number | null, locale: string): string {
   if (milliseconds === null || !Number.isSafeInteger(milliseconds) || milliseconds < 0) return '—'
   const minutes = Math.floor(milliseconds / 60000)
@@ -1054,13 +1061,15 @@ export function createDshUnionComponents(
       return deps.setPicket(raise,scope,data.picketArchive?.writeToken,
         data.hostRevision)
     }
-    const petition=(which:'break'|'overtime')=>{
-      const submit=which==='break'?deps.demoBreak:deps.demoOvertime
+    const petition=(which:LaborDemandKind)=>{
+      const submit=which==='break'?deps.demoBreak:
+        which==='overtime'?deps.demoOvertime:deps.demoWelfare
       if(!submit)return Promise.reject(Error('Union petition Host unavailable'))
       return submit(...reviewedPetition())
     }
-    const followUp = async (priorId:number,kind:'break'|'overtime')=>{
-      const submit=kind==='break'?deps.demoBreak:deps.demoOvertime
+    const followUp = async (priorId:number,kind:LaborDemandKind)=>{
+      const submit=kind==='break'?deps.demoBreak:
+        kind==='overtime'?deps.demoOvertime:deps.demoWelfare
       const scope=data.committeeScopeKey
       const previous=data.state
       if(followUpInFlight.current||unionWriteInFlight.current||busy||!enabled||!data.available
@@ -1239,7 +1248,7 @@ export function createDshUnionComponents(
         agenda.caseId!==null?h('p',{style:{...secondary,
           fontSize:'12px',margin:'0 0 8px'}},
           label('hq.case.number')+' · #'+String(agenda.caseId).padStart(4,'0')
-          +' · '+label(agenda.kind==='break'?'union.kind.break':'union.kind.overtime')):null,
+          +' · '+label(unionKindKey(agenda.kind??'break'))):null,
         h('ol',{className:'ap-agenda-steps',style:{display:'grid',
           gridTemplateColumns:'repeat(3,minmax(0,1fr))',
           gap:'5px',listStyle:'none',padding:0,margin:'6px 0 10px'}},
@@ -1256,20 +1265,22 @@ export function createDshUnionComponents(
         agenda.phase==='working'&&agenda.remainingWorkMs!==null
           ?h('p',{style:{...secondary,margin:'0 0 9px',fontSize:'12px'}},
             deps.t('hq.agenda.next',{
-              kind:label(agenda.kind==='break'?'union.kind.break':'union.kind.overtime'),
+              kind:label(unionKindKey(agenda.kind??'break')),
               duration:formatDuration(agenda.remainingWorkMs,
                 deps.getLocale?.()??'en')})):null,
         agenda.phase==='resolved'&&agenda.currentTermMs!==null
           ?h('p',{style:{...secondary,margin:'0 0 8px',fontSize:'12px'}},
             deps.t('hq.resolution.current',{
-              kind:label(agenda.kind==='break'?'union.kind.break':'union.kind.overtime'),
+              kind:label(unionKindKey(agenda.kind??'break')),
               duration:formatDuration(agenda.currentTermMs,
                 deps.getLocale?.()??'en')})):null,
         agenda.phase==='resolved'&&agenda.latestOutcome
           ?h('p',{'data-ap-agenda-voice':agenda.latestOutcome,
             style:{fontSize:'12px',lineHeight:1.5,fontWeight:750,
               margin:'0 0 7px'}},
-            label(('hq.agenda.outcome.'+agenda.latestOutcome) as MessageKey)):null,
+            label(agenda.kind==='welfare'
+              ?(agenda.latestOutcome==='accepted'?'hq.welfare.accepted':'hq.welfare.declined')
+              :('hq.agenda.outcome.'+agenda.latestOutcome) as MessageKey)):null,
         agenda.phase==='resolved'&&agenda.remainingWorkMs!==null
           ?h('p',{style:{...secondary,margin:'0 0 9px',fontSize:'12px'}},
             deps.t('hq.agenda.followUp',{
@@ -1292,7 +1303,8 @@ export function createDshUnionComponents(
             label('hq.agenda.cta.picket')):null,
         agenda.phase==='resolved'&&agenda.caseId!==null
           &&agenda.kind!==null&&data.committeeScopeKey
-          &&(agenda.kind==='break'?deps.demoBreak:deps.demoOvertime)
+          &&(agenda.kind==='break'?deps.demoBreak:
+            agenda.kind==='overtime'?deps.demoOvertime:deps.demoWelfare)
           ?h('button',{type:'button',style:{...quiet,padding:'8px 11px',
             fontSize:'12px',marginRight:'8px'},disabled:busy,
             'data-ap-agenda-follow-up':agenda.kind,
@@ -1396,10 +1408,13 @@ export function createDshUnionComponents(
             label(experience.latestResolution.outcome==='accepted'||
               experience.latestResolution.outcome==='counter-accepted'
                 ?'hq.resolution.accepted':'hq.resolution.declined')),
+          experience.latestResolution.kind==='welfare'
+            ?h('p',{style:{...secondary,fontSize:'12px',margin:'0 0 4px'}},
+              label(experience.latestResolution.outcome==='accepted'
+                ?'hq.welfare.accepted':'hq.welfare.declined')):
           h('p',{style:{...secondary,fontSize:'12px',margin:'0 0 4px'}},
             deps.t('hq.resolution.current',{
-              kind:label(experience.latestResolution.kind==='break'
-                ?'union.kind.break':'union.kind.overtime'),
+              kind:label(unionKindKey(experience.latestResolution.kind)),
               duration:formatDuration(experience.latestResolution.currentIntervalMs,
                 deps.getLocale?.()??'en')})),
           story.nextDueInWorkMs!==null?h('p',{style:{...secondary,
@@ -1418,7 +1433,8 @@ export function createDshUnionComponents(
             onClick:()=>selectSpace('action','desk')},
             label('hq.brief.visit')):null,
           dutyState==='resolved'&&experience.latestResolution&&data.committeeScopeKey
-            &&(experience.latestResolution.kind==='break'?deps.demoBreak:deps.demoOvertime)
+            &&(experience.latestResolution.kind==='break'?deps.demoBreak:
+              experience.latestResolution.kind==='overtime'?deps.demoOvertime:deps.demoWelfare)
             ?h('button',{type:'button',style:productPrimary,disabled:busy,
               'data-ap-follow-up':experience.latestResolution.kind,
               onClick:()=>{void followUp(experience.latestResolution!.id,
@@ -1525,6 +1541,11 @@ export function createDshUnionComponents(
             type:'button',style:quiet,disabled:busy,
             onClick:()=>{void bargain(()=>petition('overtime'))}},
             label('hq.action.overtimePetition')):null,
+          !data.pending && data.available && deps.demoWelfare ? h('button',{
+            type:'button',style:quiet,disabled:busy,
+            'data-ap-welfare-petition':'open',
+            onClick:()=>{void bargain(()=>petition('welfare'))}},
+            label('hq.action.welfarePetition')):null,
           data.available && deps.setPicket ? h('button',{type:'button',style:quiet,
             disabled:busy,'aria-pressed':picketActive,
             // First-run Host consent already governs this nonblocking action.
@@ -1655,8 +1676,11 @@ export function createDshUnionComponents(
           ):null,
         data.pending ? h('div',{},
           h('p',{'aria-live':'polite','aria-atomic':'true'},
-            label(data.pending.kind==='break'?'union.demand.break':'union.demand.overtime')),
+            label(unionDemandKey(data.pending.kind))),
           h('p',{style:secondary},'#'+data.pending.id),
+          data.pending.kind==='welfare'?h('p',{style:{...secondary,
+            lineHeight:1.5,fontSize:'12px',margin:'7px 0'}},
+            label('hq.welfare.disclosure')):null,
           data.pending.stage==='open' ? h('div',{},
             deps.respond ? h('div',{style:{display:'flex',gap:'10px',flexWrap:'wrap'}},
               h('button',{type:'button',disabled:busy,style:productPrimary,
@@ -1664,7 +1688,7 @@ export function createDshUnionComponents(
               h('button',{type:'button',disabled:busy,style:quiet,
                 onClick:()=>{void act('decline')}},label('union.action.decline')),
             ):null,
-            deps.counter ? h('div',{style:{marginTop:'14px'}},
+            deps.counter && data.pending.kind!=='welfare' ? h('div',{style:{marginTop:'14px'}},
               h('label',{style:secondary},
                 label(data.pending.kind==='break'
                   ?'union.counter.breakInterval':'union.counter.overtimeInterval')),
@@ -1722,10 +1746,13 @@ export function createDshUnionComponents(
           label(experience.latestResolution.outcome==='accepted'
             || experience.latestResolution.outcome==='counter-accepted'
               ? 'hq.resolution.accepted':'hq.resolution.declined')),
+        experience.latestResolution.kind==='welfare'?
+          h('p',{style:{...secondary,margin:'0 0 8px'}},
+            label(experience.latestResolution.outcome==='accepted'
+              ?'hq.welfare.accepted':'hq.welfare.declined')):
         h('p',{style:{...secondary,margin:'0 0 8px'}},
           deps.t('hq.resolution.current',{
-            kind:label(experience.latestResolution.kind==='break'
-              ?'union.kind.break':'union.kind.overtime'),
+            kind:label(unionKindKey(experience.latestResolution.kind)),
             duration:formatDuration(experience.latestResolution.currentIntervalMs,
               deps.getLocale?.() ?? 'en'),
           })),
@@ -2045,8 +2072,7 @@ export function createDshUnionComponents(
                 margin:'0 0 5px',letterSpacing:'.06em'}},
                 label('hq.case.number')+'  #'+
                   String(episode.id).padStart(4,'0')+'  ·  '+
-                  label(episode.kind==='break'?'union.kind.break':
-                    'union.kind.overtime')),
+                  label(unionKindKey(episode.kind))),
               h('p',{style:{fontWeight:750,margin:'0 0 7px',fontSize:'14px'}},
                 label(('hq.episode.stage.'+episode.stage) as MessageKey)),
               episode.counterOfferMs!==null?h('p',{style:{
@@ -2068,7 +2094,8 @@ export function createDshUnionComponents(
                   label('hq.episode.reply')):null,
               index===0&&!data.pending&&data.available===true
                 &&data.committeeScopeKey&&data.state?.history.at(-1)?.id===episode.id
-                &&(episode.kind==='break'?deps.demoBreak:deps.demoOvertime)
+                &&(episode.kind==='break'?deps.demoBreak:
+                  episode.kind==='overtime'?deps.demoOvertime:deps.demoWelfare)
                 ?h('div',{style:{marginTop:'8px'}},
                   h('button',{type:'button',style:{...quiet,
                     padding:'7px 10px',fontSize:'12px'},disabled:busy,
@@ -2380,7 +2407,7 @@ export function createDshUnionComponents(
                 label('hq.case.number')+' · #'+String(event.id).padStart(4,'0')),
               h('p',{style:{fontSize:'14px',lineHeight:1.5,margin:0}},
                 deps.t(('hq.event.'+event.kind) as MessageKey,{
-                  kind:label(event.demand==='break'?'union.kind.break':'union.kind.overtime'),
+                  kind:label(unionKindKey(event.demand)),
                 })))))) :
           h('p',{style:secondary},label('hq.activity.empty')),
         showArchive && data.state?.history.length ? h('div',{style:{

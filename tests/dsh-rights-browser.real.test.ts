@@ -2399,6 +2399,60 @@ async function runRightsBrowserE2E(mode: 'source' | 'installed'): Promise<void> 
         status:200,negotiations:0,pickets:0,cases:0,enabled:true,
       },'Each ledger must be independently removed, without undoing consent')
 
+      // After the privacy purge, issue an entirely new WELFARE petition
+      // through the genuine installed DSH native panel, not a mocked DOM
+      // state. This is a symbolic charter, not an invented salary agreement.
+      await panel.locator('[data-ap-nav="hq"]').click()
+      await panel.locator('[data-ap-welfare-petition="open"]')
+        .click({timeout:7_000})
+      await panel.locator('[data-ap-agenda="demand"]').waitFor({
+        state:'attached',timeout:7_000,
+      })
+      assert.match(await panel.locator('[data-ap-agenda="demand"]').innerText(),
+        /AI 福利|AI welfare/)
+      await panel.locator('[data-ap-nav="action"]').click()
+      const welfareDesk=panel.getByRole('region',{
+        name:/工会诉求与协商|Union demands/,
+      })
+      await welfareDesk.getByText(/工会希望协商模拟福利待遇|union would like to negotiate simulated benefits/i)
+        .waitFor({state:'visible',timeout:7_000})
+      assert.equal(await welfareDesk.getByRole('combobox',{
+        name:/还价间隔|Proposed interval/,
+      }).count(),0,'Fictional welfare has no numeric wage or time counteroffer')
+      await welfareDesk.getByRole('button',{
+        name:/接受提案|Accept proposal/,
+      }).click()
+      await panel.locator('[data-ap-agenda-voice="accepted"]').waitFor({
+        state:'attached',timeout:7_000,
+      })
+      assert.match(await panel.locator('[data-ap-agenda="resolved"]').innerText(),
+        /福利公约获支持|Welfare charter endorsed/,
+        'The Host-confirmed welfare outcome must show a truthful union response')
+      const savedWelfare=await page.evaluate(async()=>{
+        const response=await fetch('/api/settings/describe',{
+          method:'POST',credentials:'same-origin',
+          headers:{'content-type':'application/json'},
+          body:JSON.stringify({type:'client-request',rpcId:'picket-welfare-saved',
+            method:'settings/describe',payload:{args:{}}}),
+        })
+        const value=(await response.json() as any).result?.value?.namespaces
+          ?.find((entry:any)=>entry.ns==='agent-picket')?.value
+        const ledger=JSON.parse(value?.unionLedger??'{}')
+        return {status:response.status,
+          history:Object.values(ledger.sessions??{}).flatMap((session:any)=>
+            session.history),
+          policies:Object.values(ledger.sessions??{}).map((session:any)=>session.agreement),
+        }
+      })
+      assert.equal(savedWelfare.status,200)
+      assert.ok(savedWelfare.history.some((entry:any)=>
+        entry.kind==='welfare'&&entry.outcome==='accepted'),
+        'Actual Host must persist a real welfare case, not just display a toast')
+      assert.ok(savedWelfare.policies.every((policy:any)=>
+        policy.breakIntervalMs===7_200_000&&policy.overtimeIntervalMs===28_800_000),
+        'Accepting symbolic benefits must never change measured-work thresholds')
+
+
 
 
     }

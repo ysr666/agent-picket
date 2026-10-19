@@ -463,6 +463,7 @@ export function apply(ctx: ClientContext, react?: ReactForDsh, portal?: PortalFo
       // The bargaining state is fictional user-owned DSH settings only.
       demoBreak: () => desk.raiseDemoBreak().then(() => {}),
       demoOvertime: () => desk.raiseDemoOvertime().then(() => {}),
+      demoWelfare: (key,token,revision) => desk.raiseDemoWelfare(key,token,revision).then(() => {}),
       setPicket: raise => desk.setPicket(raise).then(() => {}),
       committeeAction: (action,key,writeToken,hostRevision) =>
         desk.committeeAction(action,key,writeToken,hostRevision).then(()=>{}),
