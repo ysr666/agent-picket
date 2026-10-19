@@ -425,6 +425,7 @@ export function apply(ctx: ClientContext, react?: ReactForDsh, portal?: PortalFo
       localComposer,
       subscribeUnion,
       refreshLifetime:days=>lifetime?.refresh(days),
+      refreshDignity:dignity?()=>dignity.refresh():undefined,
       shouldAutoWelcome: () => isDshUnionAutoWelcomeEligible(scoped.sessions.list?.getSnapshot()),
       subscribeSessionVisibility: listener => scoped.sessions.list?.subscribe(listener) ?? (()=>{}),
       // The bargaining state is fictional user-owned DSH settings only.

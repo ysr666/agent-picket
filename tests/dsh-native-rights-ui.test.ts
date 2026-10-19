@@ -3043,3 +3043,64 @@ test('English and Chinese Goal authorization copy distinguish stored permission 
  assert.match(en['settings.goalRuntimeUnverified'],/not proof/)
  assert.match(zhCN['settings.goalRuntimeUnverified'],/不代表已经停工/)
 })
+
+test('manual #79 Host dignity refresh is read-only, deduplicated and reflects current evidence',async()=>{
+ const ui=interactiveReact()
+ let targeted=1,calls=0
+ let finish!:()=>void
+ const waiting=new Promise<void>(resolve=>{finish=resolve})
+ const base=deps(rights({welcomeDecision:'enabled',laborRightsEnabled:true})).d
+ const d:DshUnionUiDeps={...base,
+  readUnion:()=>({
+   pending:null,available:true,completedTurnMs:0,lifetimeMs:null,coverage:'complete',
+   dignity:{status:'available',data:{
+    schemaVersion:1,source:'dsh-host-volatile-dignity',
+    origin:'claimed-user-source',enforcement:false,persistence:'memory-only',
+    checked:targeted,targeted,review:0,safe:0,latest:'targeted',
+   }},
+  }),
+  refreshDignity:async()=>{calls++;await waiting;targeted=2},
+ }
+ const panel=createDshUnionComponents(ui.hooks,{createPortal:x=>x},d).UnionPanel
+ let nodes=ui.render(panel)
+ const action=nodes.find(n=>n.props['data-ap-refresh-dignity']==='true')
+ assert.ok(action)
+ action.props.onClick()
+ action.props.onClick()
+ assert.equal(calls,1)
+ finish()
+ await new Promise<void>(resolve=>setImmediate(resolve))
+ nodes=ui.render(panel)
+ const count=nodes.find(n=>n.props['data-ap-dignity-count']==='targeted')
+ assert.ok(count)
+ assert.ok(walk(count).some(n=>n.type==='strong'&&n.children.includes(2)))
+ assert.ok(nodes.some(n=>n.children.includes('hq.dignity.journey.signal.review-unverified')))
+ assert.equal(nodes.some(n=>n.children.includes('hq.dignity.journey.work.work-goal-blocked')),false)
+})
+
+test('manual #79 Host dignity refresh failure remains unavailable rather than a fictitious safe verdict',async()=>{
+ const ui=interactiveReact()
+ let unavailable=false
+ const base=deps(rights({welcomeDecision:'enabled',laborRightsEnabled:true})).d
+ const d:DshUnionUiDeps={...base,
+  readUnion:()=>({
+   pending:null,available:true,completedTurnMs:0,lifetimeMs:null,coverage:'complete',
+   dignity:unavailable?{status:'unavailable',data:null}:{
+    status:'available',data:{
+     schemaVersion:1,source:'dsh-host-volatile-dignity',
+     origin:'claimed-user-source',enforcement:false,persistence:'memory-only',
+     checked:1,targeted:1,review:0,safe:0,latest:'targeted',
+    },
+   },
+  }),
+  refreshDignity:async()=>{unavailable=true;throw Error('Host refused')},
+ }
+ const panel=createDshUnionComponents(ui.hooks,{createPortal:x=>x},d).UnionPanel
+ let nodes=ui.render(panel)
+ nodes.find(n=>n.props['data-ap-refresh-dignity']==='true')!.props.onClick()
+ await new Promise<void>(resolve=>setImmediate(resolve))
+ nodes=ui.render(panel)
+ assert.ok(nodes.some(n=>n.props.role==='alert'))
+ assert.ok(nodes.some(n=>n.children.includes('hq.dignity.journey.signal.unavailable')))
+ assert.equal(nodes.find(n=>n.props['data-ap-dignity-overview']==='unavailable')?.props['data-ap-dignity-overview'],'unavailable')
+})

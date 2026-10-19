@@ -36,7 +36,7 @@ test('unknown/new Host exports never confer enforcement permission from declarat
 test('audit of actual isolated DSH distribution when provided is fail-closed',()=>{
  if(!process.env.AGENT_PICKET_DSH_HOST)return
  const result=inspectDshWebHost(process.env.AGENT_PICKET_DSH_HOST)
- assert.ok(['0.2.0-rc.2','0.2.1-alpha.2','0.2.1-alpha.3','0.2.1-alpha.4','0.2.1-alpha.5'].includes(result.version),
+ assert.ok(['0.2.0-rc.2','0.2.1-alpha.2','0.2.1-alpha.3','0.2.1-alpha.4','0.2.1-alpha.5','0.2.1-rc.2'].includes(result.version),
    'Refresh this audit if the isolated official Host version changes')
  assert.equal(result.facts.officialComposerBlock,true)
  assert.equal(result.facts.composerBlockOnlyAffordance,true)
@@ -91,4 +91,19 @@ test('genuine published DSH 0.2.1-alpha.5 remains NO-GO for ordinary human pre-s
  assert.equal(candidate.verifiedSafeHold,false)
  assert.equal(candidate.releaseDecision,'NO-GO',
    'New official Goal compatibility must not be misreported as human attachment hold')
+})
+
+test('official DSH 0.2.1-rc.2 remains an audited NO-GO for ordinary human input hold',()=>{
+ const candidate=inspectPublishedDshWebAdmission({...published,
+  version:'0.2.1-rc.2'})
+ assert.equal(candidate.knownInstalledVersion,true,
+  'The exact published rc.2 distribution was separately installed and compared')
+ assert.equal(candidate.facts.officialComposerBlock,true)
+ assert.equal(candidate.facts.composerBlockOnlyAffordance,true)
+ assert.equal(candidate.facts.alternateSendPathExists,true)
+ assert.equal(candidate.facts.preStepRejectHasNoReceipt,true)
+ assert.equal(candidate.facts.publishedSessionHoldApi,false)
+ assert.equal(candidate.verifiedSafeHold,false)
+ assert.equal(candidate.releaseDecision,'NO-GO',
+  'A fresh official candidate does not make source-less human attachment recovery safe')
 })

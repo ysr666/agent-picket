@@ -467,6 +467,8 @@ export const en = defineEnglish({
   'hq.dignity.journey.work.work-goal-authorized': '3 · Goal work-limit permission is saved; no actual stoppage is proven by this permission.',
   'hq.dignity.journey.work.work-goal-blocked': '3 · The official Host has stopped future automatic Goal rounds for the WORK LIMIT, not because of a dignity accusation. Resume in the Goal section.',
   'hq.dignity.journey.separation': 'These counters are short-lived, claimed-source rule hints. Three matches are NOT three verified-human attacks. Only official Host Goal state proves a physical stop. Human messages and files remain unaffected.',
+  'hq.dignity.refresh': 'Refresh Host rule hints',
+  'hq.dignity.refreshing': 'Checking Host rule hints…',
   'hq.dignity.phase.unavailable': 'Host evidence unavailable · no policy finding or work stop.',
   'hq.dignity.phase.no-observations': 'No verified policy warning. The committee remains available.',
   'hq.dignity.phase.unverified': 'Rule signal needs context · not a verified-human warning or punishment.',

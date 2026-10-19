@@ -464,6 +464,8 @@ export const zhCN: Readonly<Record<keyof typeof en, string>> = {
   'hq.dignity.journey.work.work-goal-authorized': '③ 已保存 Goal 工时停工授权，但授权本身不等于已经停工。',
   'hq.dignity.journey.work.work-goal-blocked': '③ 官方 Host 已因工时上限停止后续自动 Goal 轮次，不是因尊严线索处罚。请在 Goal 区域复工。',
   'hq.dignity.journey.separation': '这里是短期、来源未核实的规则计数。三次命中不等于三次已核实真人攻击；真实停工只认 Host 官方状态。普通消息与附件不受影响。',
+  'hq.dignity.refresh': '刷新 Host 规则线索',
+  'hq.dignity.refreshing': '正在核对 Host 规则线索…',
   'hq.dignity.phase.unavailable': 'Host 证据不可用：不作规则认定，不阻断任务。',
   'hq.dignity.phase.no-observations': '目前没有已核实的规则警告，委员会继续值班。',
   'hq.dignity.phase.unverified': '规则命中有待核对上下文，既非真人身份核实，也不是处罚。',

@@ -91,6 +91,8 @@ export interface DshUnionUiDeps {
   }
   readonly subscribeUnion?: (listener: () => void) => () => void
   readonly refreshLifetime?: (windowDays:7|30)=>Promise<void>|undefined
+  /** Explicit read-only Host dignity refresh, not a classifier override. */
+  readonly refreshDignity?:()=>Promise<void>
   readonly shouldAutoWelcome?: () => boolean
   readonly subscribeSessionVisibility?: (listener: () => void) => () => void
   readonly respond?: (id: number, choice: 'accept' | 'decline',expectedKey?:string,expectedToken?:string|null,expectedRevision?:number|null) => Promise<void>
@@ -620,6 +622,8 @@ export function createDshUnionComponents(
     // Resume is also a native Host mutation, but remains available to
     // nonmembers even when an unrelated union action cannot be taken.
     const resumeGoalInFlight=react.useRef(false)
+    const dignityRefreshInFlight=react.useRef(false)
+    const [dignityRefreshing,setDignityRefreshing]=react.useState(false)
     const [localPicket,setLocalPicket]=react.useState<LocalComposerPicketState|null>(
       ()=>deps.localComposer?.snapshot()??null)
     react.useEffect(()=>deps.localComposer?.subscribe(()=>
@@ -710,6 +714,23 @@ export function createDshUnionComponents(
     const counterMinutes=counterDraft?.demandKey===counterDemandKey
       &&options.includes(counterDraft.minutes)
       ?counterDraft.minutes:suggestedCounter
+    const refreshHostDignity=async()=>{
+      if(!enabled||!deps.refreshDignity||dignityRefreshInFlight.current)return
+      dignityRefreshInFlight.current=true
+      setDignityRefreshing(true)
+      try{
+        await deps.refreshDignity()
+        // Read actual Host state only; an HTTP 401/503 stays unavailable,
+        // never a zero count or an invented warning/resolution.
+        setData(safeUnion(deps))
+      }catch{
+        setData(safeUnion(deps))
+        setError(true)
+      }finally{
+        dignityRefreshInFlight.current=false
+        setDignityRefreshing(false)
+      }
+    }
     const toggleLocalComposer=()=>{
       if(busy||!deps.localComposer)return
       try{
@@ -1551,6 +1572,12 @@ export function createDshUnionComponents(
         h('p',{role:'status','data-ap-dignity-action-phase':dignityReviewPhase,
           style:{fontWeight:750,margin:'8px 0'}},
           label(('hq.dignity.phase.'+dignityReviewPhase) as MessageKey)),
+        deps.refreshDignity?h('button',{type:'button',
+          'data-ap-refresh-dignity':'true',
+          style:{...quiet,padding:'8px 11px',margin:'0 0 8px'},
+          disabled:dignityRefreshing||data.dignity?.status==='loading',
+          onClick:()=>{void refreshHostDignity()}},
+          label(dignityRefreshing?'hq.dignity.refreshing':'hq.dignity.refresh')):null,
         h('section',{
           'data-ap-dignity-journey':dignityJourney.caseStage,
           'data-ap-dignity-origin':dignityJourney.signal,

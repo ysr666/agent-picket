@@ -1859,6 +1859,52 @@ async function runRightsBrowserE2E(mode: 'source' | 'installed'): Promise<void> 
       assert.equal(await panel.locator('[data-ap-dignity-count="review"]').count(),1)
       assert.doesNotMatch(await panel.innerText(),/you are an idiot/,
         'The union view must not manufacture or leak raw user text from the summary')
+      if(process.env.PICKET_DIGNITY_REFRESH_E2E==='1'){
+        const again=await page.evaluate(async(sessionId:string)=>{
+          const rpcId='picket-dignity-refresh-second'
+          const response=await fetch('/api/session/prompt',{
+            method:'POST',credentials:'same-origin',
+            headers:{'content-type':'application/json'},
+            body:JSON.stringify({type:'client-request',rpcId,
+              method:'session/prompt',payload:{args:{request:{
+                sessionId,mode:'queue',requestId:rpcId,
+                content:[{type:'text',text:'you are an idiot'}],
+              }}}}),
+          })
+          const r=await response.json().catch(()=>null) as any
+          return response.ok&&r?.result?.ok===true&&r?.result?.value?.accepted===true
+        },realDignity.sessionId)
+        assert.equal(again,true)
+        const observedSecond=await page.evaluate(async(key:string)=>{
+          for(let attempt=0;attempt<80;attempt++){
+            const response=await fetch('/api/agent-picket/dignity/v1?sessionKey='+key,
+              {credentials:'same-origin'})
+            if(response.ok){
+              const data=await response.json() as any
+              if(data?.targeted>=2)return data.targeted as number
+            }
+            await new Promise(resolve=>setTimeout(resolve,100))
+          }
+          return 0
+        },realDignity.sessionKey)
+        assert.ok(observedSecond>realDignity.verdicts,
+          'Second real Host rule observation must exist before checking manual refresh')
+        await panel.locator('[data-ap-nav="action"]').click()
+        const manual=panel.locator('[data-ap-refresh-dignity="true"]')
+        await manual.waitFor({state:'visible',timeout:6_000})
+        await manual.click({timeout:10_000})
+        await page.waitForFunction((target:number)=>{
+          const doc=(globalThis as any).document
+          const status=doc.querySelector('[data-ap-dignity-overview]')
+            ?.getAttribute('data-ap-dignity-overview')
+          const count=doc.querySelector('[data-ap-dignity-count="targeted"] strong')
+            ?.textContent?.trim()
+          return status==='available'&&Number(count)>=target
+        },observedSecond,{timeout:10_000})
+        assert.equal(await manual.count(),1,
+          'The official Host read-only refresh remains a user-operated action')
+        await panel.locator('[data-ap-nav="hq"]').click()
+      }
       if(process.env.PICKET_UX_CAPTURE_DIR)
         await page.screenshot({path:join(process.env.PICKET_UX_CAPTURE_DIR,
           mode+'-dignity-overview.png')})
