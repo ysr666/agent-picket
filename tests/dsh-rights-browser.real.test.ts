@@ -473,7 +473,7 @@ async function runRightsBrowserE2E(mode: 'source' | 'installed'): Promise<void> 
     // Release gate: the sidebar portal must be an actual keyboard modal, not
     // merely a visually overlaid box. Focus cannot escape into Host Composer.
     const trigger = page.getByRole('button',{name:/AI 工会|AI Workers.*Union/}).first()
-    const closeControl = panel.getByRole('button',{name:/关闭|Close/})
+    const closeControl = panel.getByRole('button',{name:/^(?:关闭工会面板|Close union panel)$/})
     await closeControl.waitFor({state:'visible',timeout:5_000})
     assert.equal(await closeControl.evaluate((element:unknown)=>
       element===(globalThis as any).document.activeElement),true,
@@ -606,7 +606,7 @@ async function runRightsBrowserE2E(mode: 'source' | 'installed'): Promise<void> 
     assert.ok(mobileBounds,'Union dialog must remain visible on narrow screen')
     assert.ok(mobileBounds.x>=-1 && mobileBounds.x+mobileBounds.width<=391,
       'Union dialog must not overflow the mobile viewport horizontally')
-    const closeBounds=await panel.getByRole('button',{name:/关闭|Close/}).boundingBox()
+    const closeBounds=await panel.getByRole('button',{name:/^(?:关闭工会面板|Close union panel)$/}).boundingBox()
     assert.ok(closeBounds && closeBounds.x>=0 &&
       closeBounds.x+closeBounds.width<=390 &&
       closeBounds.y>=0 && closeBounds.y+closeBounds.height<=680,
@@ -625,7 +625,7 @@ async function runRightsBrowserE2E(mode: 'source' | 'installed'): Promise<void> 
       })
       assert.ok(horizontal.scroll<=horizontal.client+2,
         width+'px reflow: union content must not overflow its own scroll region')
-      const exit=await panel.getByRole('button',{name:/关闭|Close/}).boundingBox()
+      const exit=await panel.getByRole('button',{name:/^(?:关闭工会面板|Close union panel)$/}).boundingBox()
       assert.ok(exit && exit.x>=0 && exit.x+exit.width<=width,
         width+'px reflow: modal close must be reachable')
       if (width === 320) {
@@ -1427,7 +1427,7 @@ async function runRightsBrowserE2E(mode: 'source' | 'installed'): Promise<void> 
       'Fictional agreement must not increase measured work counters; '
         + 'the next possible demand threshold is not measured work')
 
-    await panel.getByRole('button', { name: /关闭|Close/ }).click()
+    await panel.getByRole('button', { name: /^(?:关闭工会面板|Close union panel)$/ }).click()
     await panel.waitFor({ state: 'detached', timeout: 5_000 })
     await page.reload({ waitUntil: 'domcontentloaded' })
     await skipOfficialProvider()
@@ -1581,7 +1581,7 @@ async function runRightsBrowserE2E(mode: 'source' | 'installed'): Promise<void> 
     // **Full Host process restart**, not just a Web reload. The same throwaway
     // DSH_HOME must retain the settings-owned agreement, and a fresh Host must
     // issue a new auth cookie. Never reuse the previous session's login token.
-    await panel.getByRole('button', { name: /关闭|Close/ }).click()
+    await panel.getByRole('button', { name: /^(?:关闭工会面板|Close union panel)$/ }).click()
     await page.close()
     const exitPromise = once(child, 'exit')
     child.kill('SIGTERM')
@@ -1764,7 +1764,7 @@ async function runRightsBrowserE2E(mode: 'source' | 'installed'): Promise<void> 
       assert.equal(revoked.value?.error,'not_authorized',
         'Revoked permission must deny any subsequent Host work-only RPC request')
     }
-    await panel.getByRole('button', { name: /关闭|Close/ }).click()
+    await panel.getByRole('button', { name: /^(?:关闭工会面板|Close union panel)$/ }).click()
     await page.reload({ waitUntil: 'domcontentloaded' })
     await skipOfficialProvider()
     panel = await openUnion()
@@ -1843,7 +1843,7 @@ async function runRightsBrowserE2E(mode: 'source' | 'installed'): Promise<void> 
       // Complete the FULL user-visible chain in exactly the Session that
       // submitted the genuine Host prompt. The click below is DSH's official
       // workspace sidebar navigation, not a forged Picket session override.
-      await panel.getByRole('button',{name:/关闭|Close/}).click()
+      await panel.getByRole('button',{name:/^(?:关闭工会面板|Close union panel)$/}).click()
       const realSessionRow=page.locator('[data-row-key='+JSON.stringify(
         'session:'+realDignity.sessionId)+']')
       await realSessionRow.waitFor({state:'visible',timeout:10_000})
