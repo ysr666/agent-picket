@@ -71,6 +71,14 @@ jobs:
           --test-name-pattern="real DSH Web: one informed first-run click"
           tests/dsh-goal-welcome.real.test.ts
       # Latest official candidate runs the explicit manual Host dignity proof.
+      - name: Prepare real Documents directory for official rc.2 headless Host
+        if: matrix.dsh == '0.2.1-rc.2'
+        shell: bash
+        run: |
+          # Official workspace/initializeDefault needs the OS Documents path.
+          # This is an isolated disposable runner, not a user machine.
+          mkdir -p "$HOME/Documents"
+          test -d "$HOME/Documents"
       - name: Real dignity Host observation and manual refresh (source + installed)
         if: matrix.dsh == '0.2.1-rc.2'
         env:

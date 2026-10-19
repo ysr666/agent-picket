@@ -1820,9 +1820,18 @@ async function runRightsBrowserE2E(mode: 'source' | 'installed'): Promise<void> 
           })
           const envelope=await response.json().catch(()=>null) as any
           if(response.status!==200||envelope?.rpcId!==rpcId
-            ||envelope?.result?.ok!==true)
+            ||envelope?.result?.ok!==true){
+            const failure=envelope?.result?.error
+            // The published rc.2 Host may lack a system Documents directory
+            // on headless Linux. This is an environmental Host prerequisite,
+            // not an Agent Picket dignity/refusal result. Keep the proof red
+            // with a precise diagnostic; never fake a workspace or Session.
+            if(failure?.message==='system Documents directory is unavailable')
+              throw Error('Official DSH rc.2 requires a system Documents directory '
+                +'in the isolated CI Host; no workspace or dignity proof was run')
             throw Error('Official DSH workspace initializer failed: '
-              +JSON.stringify(envelope?.result?.error??{}))
+              +JSON.stringify(failure??{}))
+          }
           workspaceId=envelope.result.value?.workspace?.workspaceId
         }
         if(!workspaceId)throw Error('Official DSH Host did not initialize a workspace')
