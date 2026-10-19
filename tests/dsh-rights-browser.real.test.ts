@@ -1024,6 +1024,8 @@ async function runRightsBrowserE2E(mode: 'source' | 'installed'): Promise<void> 
     await actionBoard.getByText(/纠察牌已举起并登记|Picket raised and recorded/i)
       .waitFor({state:'visible',timeout:7_000})
     await panel.locator('[data-ap-scene="picket"]').waitFor({state:'visible',timeout:7_000})
+    await panel.locator('[data-ap-stance="picket"]')
+      .waitFor({state:'visible',timeout:7_000})
     if(process.env.PICKET_UX_CAPTURE_DIR){
       await panel.locator('[data-ap-scene="picket"]').scrollIntoViewIfNeeded()
       await page.screenshot({path:join(process.env.PICKET_UX_CAPTURE_DIR,
@@ -1051,6 +1053,8 @@ async function runRightsBrowserE2E(mode: 'source' | 'installed'): Promise<void> 
       .click({timeout:7_000})
     await panel.locator('[data-ap-bulletin-kind="placard-down"]')
       .waitFor({state:'visible',timeout:7_000})
+    assert.equal(await panel.locator('[data-ap-stance="picket"]').count(),0,
+      'After Host-confirmed release, the stance must NOT claim picket remains active')
     await panel.locator('[data-ap-nav="action"]').click()
     await actionBoard.getByText(/纠察牌待命中|picket sign is on standby/)
       .waitFor({state:'visible',timeout:7_000})
@@ -1310,6 +1314,18 @@ async function runRightsBrowserE2E(mode: 'source' | 'installed'): Promise<void> 
     await panel.locator('[data-ap-agenda="demand"]').waitFor({
       state:'attached',timeout:7_000,
     })
+    await panel.locator('[data-ap-stance="petition"]')
+      .waitFor({state:'visible',timeout:7_000})
+    const indexToggle=panel.locator('[data-ap-stance-toggle="true"]')
+    assert.equal(await indexToggle.getAttribute('aria-pressed'),'true')
+    await indexToggle.click()
+    assert.equal(await indexToggle.getAttribute('aria-pressed'),'false')
+    assert.equal(await panel.locator('[data-ap-stance-score]').count(),0,
+      'Hide only the fictional score; do not remove rights or negotiation')
+    assert.equal(await panel.locator('[data-ap-stance="petition"]').count(),1)
+    await indexToggle.click()
+    assert.equal(await indexToggle.getAttribute('aria-pressed'),'true')
+    assert.equal(await panel.locator('[data-ap-stance="petition"]').count(),1)
     await panel.locator('[data-ap-bulletin-kind="petition"]')
       .waitFor({state:'visible',timeout:7_000})
     await panel.locator('[data-ap-bulletin-kind="petition"] [data-ap-bulletin-action="bargain"]')
@@ -1389,6 +1405,8 @@ async function runRightsBrowserE2E(mode: 'source' | 'installed'): Promise<void> 
     await panel.locator('[data-ap-agenda="counter"]').waitFor({
       state:'attached',timeout:7_000,
     })
+    await panel.locator('[data-ap-stance="counter"]')
+      .waitFor({state:'visible',timeout:7_000})
     await panel.locator('[data-ap-bulletin-kind="counter"]')
       .waitFor({state:'visible',timeout:7_000})
     assert.equal(await panel.locator('[data-ap-agenda="counter"]')
@@ -1416,6 +1434,8 @@ async function runRightsBrowserE2E(mode: 'source' | 'installed'): Promise<void> 
     await panel.locator('[data-ap-agenda="resolved"]').waitFor({
       state:'attached',timeout:7_000,
     })
+    await panel.locator('[data-ap-stance="agreement"]')
+      .waitFor({state:'visible',timeout:7_000})
     assert.equal(await panel.locator('[data-ap-agenda="resolved"]')
       .getAttribute('data-ap-agenda-stage'),'3')
     await panel.locator('[data-ap-agenda-voice="counter-accepted"]').waitFor({

@@ -9,6 +9,7 @@ import { getWelcomeState } from './client-rights-scope.ts'
 import { projectUnionExperience } from '../../product/union-experience.ts'
 import { projectUnionStory } from '../../product/union-story.ts'
 import { projectUnionDispatch } from '../../product/union-dispatch.ts'
+import { projectUnionStance } from '../../product/union-stance.ts'
 import { projectUnionCadence } from '../../product/union-cadence.ts'
 import { projectUnionAgenda } from '../../product/union-agenda.ts'
 import { projectUnionAlerts } from '../../product/union-alerts.ts'
@@ -721,6 +722,8 @@ export function createDshUnionComponents(
     const lastActionNeedsFocus=react.useRef(false)
     const followUpInFlight=react.useRef(false)
     const [showArchive,setShowArchive]=react.useState(false)
+    // Hides ONLY the fictional index, never Host rights, cases or enforcement.
+    const [showUnionIndex,setShowUnionIndex]=react.useState(true)
     const [space,setSpace]=react.useState<'hq'|'action'|'records'|'cause'>('hq')
     const returnFocus=react.useRef<'action'|'desk'|'dignity'|'hearing'|'campaign'|null>(null)
     const selectSpace=(next:'hq'|'action'|'records'|'cause',
@@ -857,6 +860,14 @@ export function createDshUnionComponents(
       enabled, state:data.state, completedTurnMs:data.completedTurnMs,
       coverage:data.coverage,
     })
+    const stance=projectUnionStance({enabled,state:data.state,
+      picketActive:data.picket?.active===true,experience})
+    // Never present a sign-lowering/raising CTA without a real Host writer.
+    // The filed case remains inspectable even on an unsupported Host.
+    const stanceAction=(stance.action==='raise-placard'
+      ||stance.action==='lower-placard')
+      &&(!deps.setPicket||data.available!==true)
+        ?'records':stance.action
     const cadence = projectUnionCadence({enabled,state:data.state,
       completedTurnMs:data.completedTurnMs,coverage:data.coverage})
     const agenda = projectUnionAgenda({enabled,available:data.available===true,
@@ -1397,6 +1408,70 @@ export function createDshUnionComponents(
           margin:'0 0 7px'}},label('hq.bulletin.empty')),
         h('p',{style:{...secondary,fontSize:'11px',lineHeight:1.5,
           margin:'10px 0 0'}},label('hq.bulletin.disclosure')),
+      ):null,
+      // A single, fictional negotiation posture: *separate* from the real
+      // strike grant. It changes after Host work filings and decisions, not
+      // from AI emotion detection or simulated member voting.
+      enabled&&stance.phase!=='off' ? h('section',{
+        className:'ap-space ap-space-hq ap-union-stance',
+        'data-ap-stance':stance.phase,
+        'data-ap-stance-reason':stance.reason,
+        'data-ap-stance-score':showUnionIndex&&stance.score!==null
+          ?String(stance.score):undefined,
+        'aria-label':label('hq.stance.title'),
+        style:{...card,padding:'13px 16px',
+          borderLeft:'4px solid #8e6d49',
+          background:'var(--dsw-alias-bg-layer-1,#fff)'}},
+        h('div',{style:{display:'flex',alignItems:'center',
+          flexWrap:'wrap',justifyContent:'space-between',gap:'8px'}},
+          h('p',{style:{...secondary,fontSize:'11px',fontWeight:800,
+            letterSpacing:'.065em',margin:0}},label('hq.stance.title')),
+          h('button',{type:'button',style:{...quiet,padding:'5px 9px',
+            fontSize:'11px'},'data-ap-stance-toggle':'true',
+            'aria-pressed':showUnionIndex,
+            onClick:()=>setShowUnionIndex(value=>!value)},
+            label(showUnionIndex?'hq.stance.hide':'hq.stance.show'))),
+        h('div',{style:{display:'flex',flexWrap:'wrap',
+          alignItems:'center',gap:'13px',marginTop:'7px'}},
+          h('div',{style:{flex:'1 1 175px'}},
+            h('h3',{style:{margin:'0 0 4px',fontSize:'17px'}},
+              label(('hq.stance.phase.'+stance.phase) as MessageKey)),
+            h('p',{style:{...secondary,fontSize:'12px',
+              lineHeight:1.5,margin:0}},
+              label(('hq.stance.reason.'+stance.reason) as MessageKey))),
+          showUnionIndex?h('div',{style:{display:'flex',alignItems:'center',
+            flexWrap:'wrap',gap:'7px'}},
+            h('strong',{style:{fontSize:'18px',
+              fontVariantNumeric:'tabular-nums'}},
+              stance.score===null?'—':String(stance.score)+' / 100'),
+            stance.score!==null?h('meter',{min:0,max:100,
+              value:stance.score,'aria-label':label('hq.score'),
+              style:{width:'85px',height:'11px',
+                accentColor:'var(--dsw-alias-brand-primary,#ab3b39)'}}):null,
+          ):null),
+        h('div',{style:{display:'flex',alignItems:'center',
+          flexWrap:'wrap',gap:'9px',marginTop:'9px'}},
+          stanceAction!=='none'&&data.available===true
+            ?h('button',{type:'button',style:{...quiet,
+              padding:'7px 10px',fontSize:'12px'},disabled:busy,
+              'data-ap-stance-action':stanceAction,
+              onClick:()=>{
+                if(stanceAction==='bargain'||stanceAction==='work-desk')
+                  selectSpace('action','desk')
+                else if(stanceAction==='records')
+                  selectSpace('records')
+                else if(stanceAction==='raise-placard'
+                  &&deps.setPicket&&!picketActive)
+                  void bargain(()=>symbolicAction(true))
+                else if(stanceAction==='lower-placard'
+                  &&deps.setPicket&&picketActive)
+                  void bargain(()=>symbolicAction(false))
+                else selectSpace('action','action')
+              }},
+              label(('hq.stance.action.'+stanceAction) as MessageKey)):null,
+          h('p',{style:{...secondary,fontSize:'10px',
+            lineHeight:1.45,margin:0}},
+            label('hq.stance.disclosure'))),
       ):null,
       // The dispatch board only navigates to already present, Host-backed
       // union actions; it cannot itself file, vote, block or raise a picket.
@@ -2421,6 +2496,13 @@ export function createDshUnionComponents(
             completeWork?formatDuration(data.completedTurnMs,deps.getLocale?.() ?? 'en'):'—'),
           h('p',{style:secondary},label('hq.workEvidence'))),
         h('div',{},
+          h('button',{type:'button',style:{...quiet,padding:'5px 9px',
+            fontSize:'11px',marginBottom:'8px'},
+            'data-ap-stance-toggle':'records','aria-pressed':showUnionIndex,
+            onClick:()=>setShowUnionIndex(value=>!value)},
+            label(showUnionIndex?'hq.stance.hide':'hq.stance.show')),
+        ),
+        showUnionIndex ? h('div',{},
           h('h3',{style:{...secondary,margin:'0 0 10px'}},label('hq.score')),
           h('p',{style:{fontSize:'clamp(22px,5vw,30px)',fontWeight:750,margin:'0 0 7px'}},
             experience.discontent===null?'—':String(experience.discontent)+' / 100'),
@@ -2432,8 +2514,8 @@ export function createDshUnionComponents(
             style:{width:'100%',height:'12px',accentColor:'var(--dsw-alias-brand-primary, #ab3b39)',
               margin:'2px 0 9px'},
           }):null,
-          h('p',{style:{...secondary,lineHeight:1.5}},label('hq.score.note'))),
-        experience.factors ? h('details',{style:{
+          h('p',{style:{...secondary,lineHeight:1.5}},label('hq.score.note'))):null,
+        showUnionIndex&&experience.factors ? h('details',{style:{
           gridColumn:'1 / -1',borderTop:'1px solid var(--dsw-alias-border-l1, #dadde4)',
           paddingTop:'12px',fontSize:'13px'},
         },

@@ -389,7 +389,7 @@ test('Union HQ displays evidence-backed discontent and Host-ledger bulletin in p
  assert.ok(strings.includes('hq.headline.pending'))
  assert.ok(strings.includes('hq.activity'))
  assert.ok(strings.includes('hq.event.new-demand'))
- assert.ok(strings.includes('42 / 100')) // 17 observed load + 25 outstanding grievance
+ assert.ok(strings.includes('25 / 100')) // latest recorded work-trigger resets fictional load-pressure basis; 25 pending
  assert.ok(strings.includes('union.desk.title'))
  const negotiate=nodes.findIndex(n=>n.children.includes('union.desk.title'))
  const workDetails=nodes.findIndex(n=>n.children.includes('workday.limit'))
@@ -929,6 +929,49 @@ test('Picketverse dispatch displays an independently saved symbolic placard with
  assert.equal(view.filter(n=>n.props['data-ap-bulletin-action']==='raise-placard').length,0)
  const texts=JSON.stringify(view.find(n=>n.props['data-ap-bulletin-kind']==='placard-up'))
  assert.match(texts,/hq.bulletin.body.placard-up/)
+})
+test('Host negotiation decisions produce a factual, user-actionable union stance',()=>{
+ const {hooks}=fakeReact()
+ const base=deps(rights({welcomeDecision:'enabled',laborRightsEnabled:true})).d
+ const fresh=freshLaborState()
+ const render=(state:LaborStateV1,elapsed=0,picketActive=false,
+   supported=true)=>walk(createDshUnionComponents(hooks,
+    {createPortal:child=>child},{...base,
+     setPicket:supported?async()=>{}:undefined,
+     readUnion:()=>({available:true,pending:state.pending,state,
+      completedTurnMs:elapsed,coverage:'complete',
+      lifetimeMs:null,picket:{active:picketActive,history:[]}}),
+    }).UnionPanel())
+ const empty=render(fresh)
+ assert.ok(empty.some(n=>n.props['data-ap-stance']==='watching'))
+ assert.ok(empty.some(n=>n.props['data-ap-stance-score']==='0'))
+ assert.ok(empty.some(n=>n.props['data-ap-stance-action']==='work-desk'))
+ const pending={...fresh,revision:1,lastTriggerElapsedMs:7_200_000,
+  nextBreakDueMs:4*3_600_000,
+  pending:{id:1,kind:'break' as const,stage:'open' as const,
+   raisedAtElapsedMs:7_200_000,counterOfferMs:null}}
+ const open=render(pending,7_200_000)
+ const stance=open.find(n=>n.props['data-ap-stance']==='petition')
+ assert.ok(stance)
+ assert.equal(stance.props['data-ap-stance-score'],'25')
+ assert.equal(stance.props['data-ap-stance-reason'],'host-demand')
+ assert.ok(open.some(n=>n.props['data-ap-stance-action']==='bargain'))
+ const done={...pending,revision:2,pending:null,
+  history:[{id:1,kind:'break' as const,outcome:'declined' as const}]}
+ const refused=render(done,7_200_000)
+ assert.equal(refused.find(n=>n.props['data-ap-stance']==='dissent')
+  ?.props['data-ap-stance-score'],'10')
+ assert.ok(refused.some(n=>n.props['data-ap-stance-action']==='raise-placard'))
+ const noSign=render(done,7_200_000,false,false)
+ assert.equal(noSign.some(n=>n.props['data-ap-stance-action']==='raise-placard'),false,
+  'No fake protest interaction when a Host has no picket writer')
+ assert.ok(noSign.some(n=>n.props['data-ap-stance-action']==='records'))
+ const active=render(done,7_200_000,true)
+ assert.ok(active.some(n=>n.props['data-ap-stance']==='picket'))
+ assert.ok(active.some(n=>n.props['data-ap-stance-action']==='lower-placard'))
+ const off=walk(createDshUnionComponents(hooks,{createPortal:child=>child},
+   deps(rights({welcomeDecision:'not-now',laborRightsEnabled:false})).d).UnionPanel())
+ assert.equal(off.some(n=>n.props['data-ap-stance']),false)
 })
 test('duty roster is passive, collapsed by default and hidden on opt-out',()=>{
  const {hooks}=fakeReact()

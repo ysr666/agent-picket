@@ -112,6 +112,12 @@ test('npm dry-run tarball contains prebuilt plugin and no source, tests, or runt
     'Codex owner-binding contract is experimental and must not ship as working enforcement')
   assert.equal(files.has('dist/adapters/dsh/native-rights-ui.js'),false,
     'Browser UI is already inline in client.js; never package a second copy')
+  for(const duplicated of [
+    'dist/product/union-dispatch.js','dist/product/union-stance.js',
+    'dist/product/union-dispatch.d.ts','dist/product/union-stance.d.ts',
+  ])assert.equal(files.has(duplicated),false,
+    'Browser-only Picketverse projections are already inline; no public deep import: '
+      +duplicated)
   assert.ok(files.has('dist/adapters/dsh/native-rights-ui.d.ts'),
     'Keep the internal native React Slot types referenced by client.d.ts')
   assert.equal(files.has('dist/adapters/dsh/client-composer-picket.js'),false,
