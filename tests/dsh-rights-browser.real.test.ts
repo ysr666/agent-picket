@@ -1401,8 +1401,11 @@ async function runRightsBrowserE2E(mode: 'source' | 'installed'): Promise<void> 
     })
     assert.equal(await panel.locator('[data-ap-agenda="resolved"]')
       .getAttribute('data-ap-agenda-stage'),'3')
+    await panel.locator('[data-ap-agenda-voice="counter-accepted"]').waitFor({
+      state:'attached',timeout:7_000,
+    })
     assert.match(await panel.locator('[data-ap-agenda="resolved"]').innerText(),
-      /目前适用的休息规则：0 小时 30 分钟|Current break rule: 0h 30m/,
+      /目前适用的休息规则：0 小时 30 分钟|Current (?:rest )?break rule: 0h 30m/,
       'The shift dossier explains the real next-work consequences of bargaining')
     await panel.locator('[data-ap-agenda="resolved"] [data-ap-agenda-action="review"]').click()
     assert.equal(await panel.locator('[data-ap-current-space]')

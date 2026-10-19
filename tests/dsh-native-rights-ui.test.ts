@@ -5,7 +5,7 @@ import {
  type ReactForDsh,type DshUnionUiDeps,projectUnionQuickWork,projectUnionFrontScene,
 } from '../src/adapters/dsh/native-rights-ui.ts'
 import type {ClientRightsSnapshot} from '../src/adapters/dsh/client-rights-scope.ts'
-import type {LaborStateV1} from '../src/product/union-desk.ts'
+import {freshLaborState, type LaborStateV1} from '../src/product/union-desk.ts'
 import {createDshRealGoalConsentControl} from '../src/adapters/dsh/client-goal-consent.ts'
 
 type Node = {type:any,props:Record<string,any>,children:unknown[]}
@@ -772,7 +772,7 @@ test('union HQ gives one actionable shift dossier through verified Host case sta
  const waiting=view(counter)
  assert.equal(waiting.find(n=>n.props['data-ap-agenda']==='counter')
   ?.props['data-ap-agenda-stage'],2)
- const done={...counter,revision:3,pending:null,
+ const done={...counter,revision:3,pending:null,nextBreakDueMs:9_000_000,
   agreement:{breakIntervalMs:1_800_000,overtimeIntervalMs:28_800_000},
   history:[{id:1,kind:'break' as const,outcome:'counter-accepted' as const}]}
  const final=view(done)
@@ -780,9 +780,45 @@ test('union HQ gives one actionable shift dossier through verified Host case sta
   ?.props['data-ap-agenda-stage'],3)
  assert.match(JSON.stringify(final.find(n=>n.props['data-ap-agenda']==='resolved')),
   /hq.agenda.cta.casebook/)
+ assert.match(JSON.stringify(final.find(n=>n.props['data-ap-agenda']==='resolved')),
+  /hq.agenda.outcome.counter-accepted/,
+  'A Host-confirmed compromise has its own narrative, not generic success text')
  const off=walk(createDshUnionComponents(hooks,{createPortal:child=>child},
   deps(rights({welcomeDecision:'not-now',laborRightsEnabled:false})).d).UnionPanel())
  assert.equal(off.some(n=>n.props['data-ap-agenda']),false)
+})
+
+test('a denied union case offers one real user-led symbolic protest, not an automatic strike',async()=>{
+ const {hooks}=fakeReact()
+ let raises=0
+ const base=deps(rights({welcomeDecision:'enabled',laborRightsEnabled:true})).d
+ const declined={...freshLaborState(),revision:3,
+  history:[{id:1,kind:'break' as const,outcome:'declined' as const}],
+  nextBreakDueMs:7_200_000,nextOvertimeDueMs:28_800_000}
+ const readUnion=()=>({available:true,state:declined,pending:null,
+  completedTurnMs:0,coverage:'complete' as const,lifetimeMs:null,
+  committeeScopeKey:'a'.repeat(64),picket:{active:false,history:[]}})
+ const make=(picketActive=false)=>walk(createDshUnionComponents(hooks,
+  {createPortal:child=>child},{...base,
+   readUnion:()=>({...readUnion(),picket:{active:picketActive,history:[]}}),
+   setPicket:async raise=>{assert.equal(raise,true);raises++}}).UnionPanel())
+ const before=make()
+ const act=before.find(x=>x.props['data-ap-agenda-protest']==='symbolic')
+ assert.ok(act,'Only an actual Host-denied petition can propose a protest')
+ assert.match(JSON.stringify(before.find(x=>x.props['data-ap-agenda']==='resolved')),
+  /hq.agenda.outcome.declined/)
+ assert.equal(raises,0,'No Host picket is raised on passive render')
+ act.props.onClick()
+ await new Promise(resolve=>setImmediate(resolve))
+ assert.equal(raises,1,'An explicit click calls only the existing Host-backed symbolic picket')
+ assert.equal(make(true).some(n=>n.props['data-ap-agenda-protest']),false,
+  'The protest option is not duplicated while the placard is already raised')
+ const accepted={...declined,history:[{id:1,kind:'break' as const,
+  outcome:'accepted' as const}]}
+ const noProtest=walk(createDshUnionComponents(hooks,{createPortal:child=>child},
+  {...base,readUnion:()=>({...readUnion(),state:accepted}),
+    setPicket:async()=>{throw Error('Cannot auto-strike on agreement')}}).UnionPanel())
+ assert.equal(noProtest.some(n=>n.props['data-ap-agenda-protest']),false)
 })
 
 test('duty roster is passive, collapsed by default and hidden on opt-out',()=>{

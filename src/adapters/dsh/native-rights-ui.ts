@@ -1265,13 +1265,39 @@ export function createDshUnionComponents(
               kind:label(agenda.kind==='break'?'union.kind.break':'union.kind.overtime'),
               duration:formatDuration(agenda.currentTermMs,
                 deps.getLocale?.()??'en')})):null,
+        agenda.phase==='resolved'&&agenda.latestOutcome
+          ?h('p',{'data-ap-agenda-voice':agenda.latestOutcome,
+            style:{fontSize:'12px',lineHeight:1.5,fontWeight:750,
+              margin:'0 0 7px'}},
+            label(('hq.agenda.outcome.'+agenda.latestOutcome) as MessageKey)):null,
         agenda.phase==='resolved'&&agenda.remainingWorkMs!==null
           ?h('p',{style:{...secondary,margin:'0 0 9px',fontSize:'12px'}},
-            deps.t('hq.episode.nextReview',{
+            deps.t('hq.agenda.followUp',{
+              kind:label(agenda.nextKind==='overtime'?'union.kind.overtime':
+                'union.kind.break'),
               duration:formatDuration(agenda.remainingWorkMs,
                 deps.getLocale?.()??'en')})):null,
         agenda.symbolicPicketActive?h('p',{style:{...secondary,
           fontSize:'12px',margin:'0 0 8px'}},label('hq.agenda.symbolic')):null,
+        // A denied case may lead to an explicit USER-CONTROLLED protest.
+        // This uses the existing Host picket ledger and readback, NEVER the
+        // real-work strike or a new simulated committee vote.
+        agenda.phase==='resolved'&&
+          (agenda.latestOutcome==='declined'||agenda.latestOutcome==='counter-declined')
+          &&!agenda.symbolicPicketActive&&data.available===true&&deps.setPicket
+          ?h('button',{type:'button',style:{...quiet,padding:'8px 11px',
+            fontSize:'12px',marginRight:'8px'},disabled:busy,
+            'data-ap-agenda-protest':'symbolic',
+            onClick:()=>{void bargain(()=>symbolicAction(true))}},
+            label('hq.agenda.cta.picket')):null,
+        agenda.phase==='resolved'&&agenda.caseId!==null
+          &&agenda.kind!==null&&data.committeeScopeKey
+          &&(agenda.kind==='break'?deps.demoBreak:deps.demoOvertime)
+          ?h('button',{type:'button',style:{...quiet,padding:'8px 11px',
+            fontSize:'12px',marginRight:'8px'},disabled:busy,
+            'data-ap-agenda-follow-up':agenda.kind,
+            onClick:()=>{void followUp(agenda.caseId!,agenda.kind!)}},
+            label(('hq.episode.followUp.'+agenda.kind) as MessageKey)):null,
         data.available===true&&agenda.phase!=='unavailable'
           ?h('button',{type:'button',style:{...quiet,padding:'8px 11px',
             fontSize:'12px'},'data-ap-agenda-action':'review',

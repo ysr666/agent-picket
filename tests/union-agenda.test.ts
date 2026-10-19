@@ -20,8 +20,8 @@ test('union agenda starts without invented case, offers a verified work-based ne
  assert.deepEqual(agenda(baseline),actual,'No hidden RNG, clock, writes or event creation')
  const due=agenda({...baseline,completedTurnMs:8*H})
  assert.equal(due.phase,'milestone')
- assert.equal(due.kind,'break',
-  'Earliest threshold in Host terms outranks other due kinds, without auto-filing')
+ assert.equal(due.kind,'overtime',
+  'At eight hours the Host gives overdue overtime priority over rest')
  assert.equal(due.caseId,null)
  assert.equal(due.remainingWorkMs,0)
  assert.equal(due.stage,0,'A threshold alone is not a petition')
@@ -52,6 +52,7 @@ test('Host petition → counteroffer → settled agreement advances a factual un
  assert.equal(settled.stage,3)
  assert.equal(settled.caseId,demand.id)
  assert.equal(settled.latestOutcome,'counter-accepted')
+ assert.equal(settled.nextKind,'break')
  assert.equal(settled.currentTermMs,30*60_000)
  assert.equal(settled.remainingWorkMs,30*60_000,
   'Next due uses committed Host cooldown floor after a 30-minute accepted counteroffer')
@@ -65,6 +66,9 @@ test('resolved case refers to the earliest REAL next petition, not only its own 
  const out=agenda({...standard(),state,completedTurnMs:3*H})
  assert.equal(out.phase,'resolved')
  assert.equal(out.currentTermMs,state.agreement.breakIntervalMs)
+ assert.equal(out.kind,'break')
+ assert.equal(out.nextKind,'overtime',
+  'Next planned grievance category must differ from old resolved case when due first')
  assert.equal(out.remainingWorkMs,3*H,
   'Overtime is due earlier than the latest break case follow-up')
 })
@@ -106,4 +110,66 @@ test('opt out, disconnected Host and symbolic picket remain safe and truthful',(
   assert.equal(out.caseId,null)
  }
  assert.equal(JSON.stringify(state),before,'No Host state mutation')
+})
+
+test('old accepted deal gives way to a genuinely NEW Host work-triggered petition',()=>{
+ let value:unknown
+ const desk=createLaborDesk({store:{load:()=>value,save:next=>{value=next}},
+  consent:()=>true})
+ const first=desk.observe(2*H,'complete')!
+ desk.counter(first.id,30*60_000)
+ desk.resolveCounter(first.id,true)
+ const old=desk.snapshot().state!
+ const oldAgenda=agenda({...standard(),state:old,completedTurnMs:2*H})
+ assert.equal(oldAgenda.phase,'resolved')
+ assert.equal(oldAgenda.nextKind,'break')
+ // Before the Host observer persists the new petition, the UI cannot invent
+ // an ID, but it must stop pretending the last chapter is still ongoing.
+ const due=agenda({...standard(),state:old,completedTurnMs:2.5*H})
+ assert.equal(due.phase,'milestone')
+ assert.equal(due.caseId,null)
+ assert.equal(due.latestOutcome,null)
+ assert.equal(due.nextKind,'break')
+ assert.equal(due.remainingWorkMs,0)
+ const second=desk.observe(2.5*H,'complete')!
+ assert.ok(second&&second.id!==first.id)
+ const renewed=agenda({...standard(),state:desk.snapshot().state!,
+  completedTurnMs:2.5*H})
+ assert.equal(renewed.phase,'demand')
+ assert.equal(renewed.caseId,second.id)
+ assert.equal(renewed.stage,1)
+ assert.equal(desk.observe(2.5*H,'complete'),null,
+  'No duplicate petition is produced with unchanged verified Host work')
+ assert.equal(agenda({...standard(),state:old,completedTurnMs:2*H,
+  coverage:'partial'}).phase,'resolved',
+  'Partial evidence cannot claim a new shift reached its threshold')
+})
+
+test('a rejected petition leaves a real dissent record and next case uses the same Host ledger',()=>{
+ let value:unknown
+ let enabled=true
+ const desk=createLaborDesk({store:{load:()=>value,save:next=>{value=next}},
+  consent:()=>enabled})
+ const first=desk.observe(2*H,'complete')!
+ desk.respond(first.id,'decline')
+ const stored=desk.snapshot().state!
+ const rejected=agenda({...standard(),state:stored,completedTurnMs:2*H})
+ assert.equal(rejected.phase,'resolved')
+ assert.equal(rejected.latestOutcome,'declined')
+ assert.equal(rejected.caseId,first.id)
+ assert.equal(rejected.symbolicPicketActive,false,
+  'Disagreement must not launch a fake or unauthorized strike')
+ enabled=false
+ assert.equal(desk.observe(4*H,'complete'),null,
+  'Revoked consent stops future petitions, not Host Agent work')
+ assert.equal(agenda({...standard(),state:stored,completedTurnMs:4*H,
+  enabled:false}).phase,'off')
+ enabled=true
+ const reopened=desk.observe(4*H,'complete')!
+ assert.ok(reopened&&reopened.id!==first.id)
+ assert.equal(agenda({...standard(),state:desk.snapshot().state!,
+  completedTurnMs:4*H}).phase,'demand')
+ assert.deepEqual(desk.snapshot().state!.history,
+  [{id:first.id,kind:'break',outcome:'declined'}],
+  'Old dissent remains auditable even though a new petition was filed')
 })
