@@ -7,6 +7,7 @@ export type RightsWelcomeChoice = 'enabled' | 'not-now'
 export interface RightsSection {
   readonly welcomeDecision: 'unseen' | RightsWelcomeChoice
   readonly realGoalStrikeConsent?: 'off'|'authorized-v1'|'authorized-v2'
+  readonly realInputStrikeConsent?: 'off'|'discard-resend-v1'
   readonly unionLedger?: string
 }
 export interface SettingsScopeSnapshot<T> {
@@ -81,7 +82,8 @@ export function createDshClientRightsScope(scope: DshSettingsScope<RightsSection
       const before=scope.getSnapshot()
       if(before.status!=='ready'||before.mode!=='host'||!before.writable
         ||before.value?.welcomeDecision!=='unseen'
-        ||(before.value.realGoalStrikeConsent??'off')!=='off')
+        ||(before.value.realGoalStrikeConsent??'off')!=='off'
+        ||(before.value.realInputStrikeConsent??'off')!=='off')
         throw new Error('Verified new-install welcome state unavailable')
       const grant=disclosureVersion==='goal-safe-boundary-v2'?'authorized-v2':'authorized-v1'
       if(typeof scope.setMany==='function'){
@@ -96,14 +98,16 @@ export function createDshClientRightsScope(scope: DshSettingsScope<RightsSection
         const joined=scope.getSnapshot()
         if(joined.status!=='ready'||joined.mode!=='host'
           ||joined.value?.welcomeDecision!=='enabled'
-          ||(joined.value.realGoalStrikeConsent??'off')!=='off')
+          ||(joined.value.realGoalStrikeConsent??'off')!=='off'
+          ||(joined.value.realInputStrikeConsent??'off')!=='off')
           throw new Error('Host did not confirm first-run union joining')
         await scope.set('realGoalStrikeConsent',grant)
       }
       const after=scope.getSnapshot()
       if(after.status!=='ready'||after.mode!=='host'||!after.writable
         ||after.value?.welcomeDecision!=='enabled'
-        ||after.value.realGoalStrikeConsent!==grant)
+        ||after.value.realGoalStrikeConsent!==grant
+        ||(after.value.realInputStrikeConsent??'off')!=='off')
         throw new Error('Host did not confirm single-click informed Goal strike consent')
       return snapshot()
     },
@@ -117,17 +121,26 @@ export function createDshClientRightsScope(scope: DshSettingsScope<RightsSection
       const original=scope.getSnapshot()
       if(original.status!=='ready'||original.mode!=='host'||!original.writable
         ||!original.value||!['off','authorized-v1','authorized-v2'].includes(
-          original.value.realGoalStrikeConsent??'off'))
-        throw new Error('Host Goal consent state is unavailable or invalid')
+          original.value.realGoalStrikeConsent??'off')
+        ||!['off','discard-resend-v1'].includes(
+          original.value.realInputStrikeConsent??'off'))
+        throw new Error('Host strike consent state is unavailable or invalid')
+      const revokeInput=(original.value.realInputStrikeConsent??'off')!=='off'
       if(choice==='not-now'){
         if(typeof scope.setMany==='function'){
           // Official DSH 0.2 settings.mutate must commit membership + physical
           // Goal revocation in ONE revision-fenced Host transaction. A peer
           // cannot slip a stale strike grant between two separate local writes.
-          await scope.setMany({welcomeDecision:'not-now',realGoalStrikeConsent:'off'})
+          await scope.setMany({welcomeDecision:'not-now',realGoalStrikeConsent:'off',
+            ...(revokeInput?{realInputStrikeConsent:'off'}:{})})
         }else{
-          // Legacy single-field Host: revoke the physical Goal right FIRST.
-          // A failed second write leaves the user joined but no real strike.
+          // Legacy Host: revoke ordinary input before other consent or exit.
+          // A failed revoke must not be reported as a completed departure.
+          if(revokeInput){
+            await scope.set('realInputStrikeConsent','off')
+            if(scope.getSnapshot().value?.realInputStrikeConsent!=='off')
+              throw new Error('Host did not confirm physical input strike revocation')
+          }
           if((original.value.realGoalStrikeConsent??'off')!=='off'){
             await scope.set('realGoalStrikeConsent','off')
             if(scope.getSnapshot().value?.realGoalStrikeConsent!=='off')
@@ -136,15 +149,23 @@ export function createDshClientRightsScope(scope: DshSettingsScope<RightsSection
           await scope.set('welcomeDecision','not-now')
         }
       }else if(original.value.welcomeDecision!=='enabled'
-        &&(original.value.realGoalStrikeConsent??'off')!=='off'){
+        &&((original.value.realGoalStrikeConsent??'off')!=='off'||revokeInput)){
         // An inconsistent legacy OFF-union / ON-Goal record must NEVER
         // silently resurrect a physical strike on ordinary union rejoin.
         if(typeof scope.setMany==='function')
-          await scope.setMany({welcomeDecision:'enabled',realGoalStrikeConsent:'off'})
+          await scope.setMany({welcomeDecision:'enabled',realGoalStrikeConsent:'off',
+            ...(revokeInput?{realInputStrikeConsent:'off'}:{})})
         else{
-          await scope.set('realGoalStrikeConsent','off')
-          if(scope.getSnapshot().value?.realGoalStrikeConsent!=='off')
-            throw new Error('Host did not confirm stale Goal strike revocation')
+          if(revokeInput){
+            await scope.set('realInputStrikeConsent','off')
+            if(scope.getSnapshot().value?.realInputStrikeConsent!=='off')
+              throw new Error('Host did not confirm stale input strike revocation')
+          }
+          if((original.value.realGoalStrikeConsent??'off')!=='off'){
+            await scope.set('realGoalStrikeConsent','off')
+            if(scope.getSnapshot().value?.realGoalStrikeConsent!=='off')
+              throw new Error('Host did not confirm stale Goal strike revocation')
+          }
           await scope.set('welcomeDecision','enabled')
         }
       }else{
@@ -154,9 +175,11 @@ export function createDshClientRightsScope(scope: DshSettingsScope<RightsSection
       const after=snapshot()
       if(after.state!=='ready'||after.welcomeDecision!==choice
         ||(choice==='not-now' &&(actual.value?.realGoalStrikeConsent??'off')!=='off')
+        ||(choice==='not-now' &&(actual.value?.realInputStrikeConsent??'off')!=='off')
         ||(choice==='enabled'&&original.value.welcomeDecision!=='enabled'
-          &&(actual.value?.realGoalStrikeConsent??'off')!=='off')){
-        throw new Error('Host did not confirm the rights preference and Goal revocation')
+          &&((actual.value?.realGoalStrikeConsent??'off')!=='off'
+            ||(actual.value?.realInputStrikeConsent??'off')!=='off'))){
+        throw new Error('Host did not confirm rights exit and Goal revocation / input revocation')
       }
       return after
     },

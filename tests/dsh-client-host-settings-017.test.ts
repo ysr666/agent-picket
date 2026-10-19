@@ -6,7 +6,7 @@ import { createDshClientRightsScope } from '../src/adapters/dsh/client-rights-sc
 
 type Choice = 'unseen'|'enabled'|'not-now'
 function fixture(initial: Choice = 'unseen', loopback = true) {
-  let saved = {welcomeDecision:initial, realGoalStrikeConsent:'off' as 'off'|'authorized-v1'|'authorized-v2',unionLedger:'',unionPicketLedger:''}
+  let saved = {welcomeDecision:initial, realGoalStrikeConsent:'off' as 'off'|'authorized-v1'|'authorized-v2',realInputStrikeConsent:'off' as 'off'|'discard-resend-v1',unionLedger:'',unionPicketLedger:''}
   let revision = 1
   let row: HostNamespaceView = {ns:'agent-picket',revision,value:{...saved}}
   const listeners = new Set<()=>void>()
@@ -30,6 +30,7 @@ function fixture(initial: Choice = 'unseen', loopback = true) {
           assert.equal(op.path.length,1)
           if(op.path[0]==='welcomeDecision')saved={...saved,welcomeDecision:op.value as Choice}
           else if(op.path[0]==='realGoalStrikeConsent')saved={...saved,realGoalStrikeConsent:op.value as 'off'|'authorized-v1'|'authorized-v2'}
+          else if(op.path[0]==='realInputStrikeConsent')saved={...saved,realInputStrikeConsent:op.value as 'off'|'discard-resend-v1'}
           else if(op.path[0]==='unionLedger')saved={...saved,unionLedger:op.value as string}
           else if(op.path[0]==='unionPicketLedger')saved={...saved,unionPicketLedger:op.value as string}
           else throw Error('Invalid Host field')
@@ -203,4 +204,22 @@ test('combined Host mutation rejects unknown keys, unsafe private text, and bogu
     {unionLedger:'{"prompt":"PRIVATE"}',welcomeDecision:'enabled'},
   ]) await assert.rejects(x.scope.setMany!(patch),/Invalid|Unrecognized|Unsafe/)
   assert.equal(x.writes(),0)
+})
+
+
+test('official DSH settings CAS persists independent input strike consent, then atomically revokes both grants',async()=>{
+ const x=fixture()
+ await x.scope.set('welcomeDecision','enabled')
+ await x.scope.set('realGoalStrikeConsent','authorized-v2')
+ assert.equal(x.scope.getSnapshot().value?.realInputStrikeConsent,'off',
+   'Real Goal grant and ordinary input refusal must be independent')
+ await x.scope.set('realInputStrikeConsent','discard-resend-v1')
+ assert.equal(x.scope.getSnapshot().value?.realInputStrikeConsent,'discard-resend-v1')
+ await createDshClientRightsScope(x.scope).choose('not-now')
+ const after=x.scope.getSnapshot()
+ assert.equal(after.value?.welcomeDecision,'not-now')
+ assert.equal(after.value?.realGoalStrikeConsent,'off')
+ assert.equal(after.value?.realInputStrikeConsent,'off')
+ assert.equal(x.writes(),4,'Exit must revoke both grants in a single CAS mutation')
+ await assert.rejects(x.scope.set('realInputStrikeConsent','unknown-v2'),/Invalid real input/)
 })

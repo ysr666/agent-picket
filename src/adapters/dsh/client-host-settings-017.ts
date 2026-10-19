@@ -45,6 +45,8 @@ const NAMESPACE = 'agent-picket'
 const safeMode = (value:unknown):value is 'visible'|'quiet' => value==='visible'||value==='quiet'
 const isRealGoalConsent=(value:unknown):value is 'off'|'authorized-v1'|'authorized-v2'=>
   value==='off'||value==='authorized-v1'||value==='authorized-v2'
+const isRealInputConsent=(value:unknown):value is 'off'|'discard-resend-v1'=>
+  value==='off'||value==='discard-resend-v1'
 const isChoice = (value: unknown): value is UnionSettingsSection['welcomeDecision'] =>
   value === 'unseen' || value === 'enabled' || value === 'not-now'
 function safeLedger(value: unknown): value is string {
@@ -101,14 +103,16 @@ export function createOfficialDsh017Scope(
     const gazetteMode=data.unionGazetteMode ?? 'visible'
     const caseLedger=data.unionDignityCases ?? ''
     const goalConsent=data.realGoalStrikeConsent??'off'
+    const inputConsent=data.realInputStrikeConsent??'off'
     if (!isChoice(data.welcomeDecision) || !safeLedger(data.unionLedger)
       || !safePicketLedger(picket) || !safeDignityCases(caseLedger) || !safeMode(gazetteMode)
-      || !isRealGoalConsent(goalConsent)) {
+      || !isRealGoalConsent(goalConsent)||!isRealInputConsent(inputConsent)) {
       return { status:'ready', mode, writable, revision, value:undefined }
     }
     return {
       status:'ready', mode, writable, revision,
-      value:{welcomeDecision:data.welcomeDecision,realGoalStrikeConsent:goalConsent,unionLedger:data.unionLedger,unionPicketLedger:picket,unionDignityCases:caseLedger,unionGazetteMode:gazetteMode},
+      value:{welcomeDecision:data.welcomeDecision,realGoalStrikeConsent:goalConsent,
+        realInputStrikeConsent:inputConsent,unionLedger:data.unionLedger,unionPicketLedger:picket,unionDignityCases:caseLedger,unionGazetteMode:gazetteMode},
     }
   }
   // Official settings provider owns subscriptions and refreshes this mirror
@@ -117,12 +121,14 @@ export function createOfficialDsh017Scope(
   const setFields=(patch:Readonly<Record<string,unknown>>):Promise<void>=>{
     const operation=tail.then(async()=>{
       const entries=Object.entries(patch)
-      if(entries.length<1||entries.length>2)throw new TypeError('Invalid Host settings batch')
+      if(entries.length<1||entries.length>3)throw new TypeError('Invalid Host settings batch')
       for(const [field,value] of entries){
         if(field==='welcomeDecision'){
           if(!isChoice(value))throw new TypeError('Invalid union consent choice')
         }else if(field==='realGoalStrikeConsent'){
           if(!isRealGoalConsent(value))throw new TypeError('Invalid real Goal strike consent')
+        }else if(field==='realInputStrikeConsent'){
+          if(!isRealInputConsent(value))throw new TypeError('Invalid real input strike consent')
         }else if(field==='unionLedger'){
           if(!safeLedger(value))throw new Error('Unsafe union ledger')
         }else if(field==='unionPicketLedger'){
@@ -148,6 +154,7 @@ export function createOfficialDsh017Scope(
         throw new Error('Host rejected or did not confirm the union setting')
       const data=payload as Record<string,unknown>
       if(!isChoice(data.welcomeDecision)||!isRealGoalConsent(data.realGoalStrikeConsent??'off')
+        ||!isRealInputConsent(data.realInputStrikeConsent??'off')
         ||!safeLedger(data.unionLedger)||!safePicketLedger(data.unionPicketLedger??'')
         ||!safeMode(data.unionGazetteMode??'visible')
         ||!safeDignityCases(data.unionDignityCases??'')

@@ -28,6 +28,12 @@
 
 **当前仍是 NO-GO**，因为生产可见拒绝通知和各客户端真实授权闭环并未验证。自动 Goal 的官方安全停工继续保持已验收的范围。不得据此启用当前旧版 `agent/pre-step.reject`，不得假设被拒输入会自动恢复。
 
+## 2026-10-19 新增：独立的普通输入真实罢工许可（仍不执行）
+
+Host 正式设置命名空间加入默认 `off` 的 `realInputStrikeConsent`（版本 `discard-resend-v1`）。这一许可与 `realGoalStrikeConsent` 独立，旧欢迎、模拟举牌及 Goal v1/v2 授权不会意外升级成普通请求拒绝。对应的官方 Host CAS/镜像校验、披露版本、通知能力验证及读取双 revision 的权限读者都有隔离单测。用户退出工会时，现代 DSH 通过单次 CAS 同时撤销 Goal 和普通输入授权；旧版本按「先撤销输入 → 撤销 Goal → 退出」执行并核对，重新加入也不得使遗留输入授权复活。
+
+**重要**：独立授权字段和选择控制目前仍是待接线的底层组件，没有生产 UI 按钮、官方可见通知确认，也没有把收据接进 `agent/pre-step`。**拥有授权字段不等于真的罢工**，默认没有拒绝消息。后续需要明确通知能力和真实 Chrome 原生验收后才能进入实际执行。
+
 ## 2026-10-19 Chrome rc.2 真实环境修复
 
 前一轮只建立 `$HOME/Documents` 的 CI 修复**被实际 Chrome 测试证伪**：官方 `workspace/initializeDefault` 仍返回 `system Documents directory is unavailable`。复核官方 `dsh-v0.2.1-rc.2` 的 `packages/api/workspace-controller/src/default-directory.ts` 确认 Linux **实际调用 `xdg-user-dir DOCUMENTS`**，当其回传 HOME 时主动拒绝。现在 CI 在独立 Ubuntu runner 配置 XDG 用户文档目录并用原生命令读回验证，完全不修改测试模拟 Host 接口。最终通过结果必须以新一轮真实 CI 为准。

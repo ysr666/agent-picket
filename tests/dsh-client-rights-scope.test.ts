@@ -271,3 +271,60 @@ test('neither a fake modern batch nor a legacy peer race can announce safe revoc
   assert.equal(createDshClientRightsScope(old).snapshot().goalStrikeAuthorized,false,
     'An orphaned grant is NOT active while membership is OFF')
 })
+
+
+test('modern union exit revokes separate ordinary-input and Goal grants in ONE Host CAS',async()=>{
+ let state:RightsSection={welcomeDecision:'enabled',realGoalStrikeConsent:'authorized-v2',
+   realInputStrikeConsent:'discard-resend-v1'}
+ const writes:Readonly<Record<string,unknown>>[]=[]
+ const scope:DshSettingsScope<RightsSection>={
+   getSnapshot:()=>({status:'ready',mode:'host',writable:true,revision:writes.length+1,value:state}),
+   subscribe:()=>()=>{},
+   async set(field,value){
+     assert.equal(field,'welcomeDecision',
+       'Only a subsequent safe rejoin may use a single-field Host write')
+     state={...state,welcomeDecision:value as RightsSection["welcomeDecision"]}
+   },
+   async setMany(patch){writes.push(patch);state={...state,...patch}},
+ }
+ await createDshClientRightsScope(scope).choose('not-now')
+ assert.deepEqual(writes,[{welcomeDecision:'not-now',
+   realGoalStrikeConsent:'off',realInputStrikeConsent:'off'}])
+ assert.equal(state.realInputStrikeConsent,'off')
+ assert.equal(state.realGoalStrikeConsent,'off')
+ await createDshClientRightsScope(scope).choose('enabled')
+ assert.equal(state.realInputStrikeConsent,'off',
+   'A later plain rejoin cannot resurrect discarded human-input enforcement')
+})
+
+test('stale off-union ordinary-input grant is disarmed before rejoin',async()=>{
+ let state:RightsSection={welcomeDecision:'not-now',realGoalStrikeConsent:'off',
+   realInputStrikeConsent:'discard-resend-v1'}
+ const batches:Readonly<Record<string,unknown>>[]=[]
+ const scope:DshSettingsScope<RightsSection>={
+   getSnapshot:()=>({status:'ready',mode:'host',writable:true,revision:batches.length+1,value:state}),
+   subscribe:()=>()=>{},
+   async set(){assert.fail('Do not rejoin with a stale physical-input grant')},
+   async setMany(patch){batches.push(patch);state={...state,...patch}},
+ }
+ await createDshClientRightsScope(scope).choose('enabled')
+ assert.deepEqual(batches,[{welcomeDecision:'enabled',realGoalStrikeConsent:'off',
+   realInputStrikeConsent:'off'}])
+ assert.equal(state.realInputStrikeConsent,'off')
+})
+
+test('legacy exit attempts ordinary-input revocation FIRST and refuses unconfirmed writes',async()=>{
+ let state:RightsSection={welcomeDecision:'enabled',realGoalStrikeConsent:'authorized-v1',
+   realInputStrikeConsent:'discard-resend-v1'}
+ const writes:string[]=[]
+ const scope:DshSettingsScope<RightsSection>={
+   getSnapshot:()=>({status:'ready',mode:'host',writable:true,revision:writes.length+1,value:state}),
+   subscribe:()=>()=>{},
+   async set(field,value){writes.push(field);state={...state,[field]:value}},
+ }
+ await createDshClientRightsScope(scope).choose('not-now')
+ assert.deepEqual(writes,['realInputStrikeConsent','realGoalStrikeConsent','welcomeDecision'])
+ assert.equal(state.realInputStrikeConsent,'off')
+ assert.equal(state.realGoalStrikeConsent,'off')
+ assert.equal(state.welcomeDecision,'not-now')
+})
