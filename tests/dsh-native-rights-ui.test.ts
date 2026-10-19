@@ -3194,3 +3194,19 @@ test('ordinary-input permission is still revocable after official notice channel
  assert.equal(granted,false)
  assert.ok(view.render(settings).some(n=>n.children.includes('settings.inputStrikeOff')))
 })
+
+
+test('initial union disclosure no longer promises automatic recovery of discarded human requests',async()=>{
+ const {en,zhCN}=await import('../src/i18n/index.ts')
+ for(const dict of [en,zhCN]){
+   const first=[dict['welcome.realStrikeBody'],dict['welcome.blockWarningBody'],
+     dict['welcome.blockWarningStatus'],dict['settings.strikeExplanation'],
+     dict['welcome.consentScope']].join(' ')
+   assert.doesNotMatch(first,/lossless|exactly.once|无损恢复|恰好一次恢复/,
+     'Superseded hold-and-restore copy must not mislead the user')
+   assert.match(first,/resend|resubmit|重新发送|重发/,
+     'New spec warns that refused requests need manual re-submission')
+   assert.match(first,/独立授权|separate|independent/,
+     'Union membership or Goal grants are NOT ordinary-input refusal grants')
+ }
+})
