@@ -71,14 +71,25 @@ jobs:
           --test-name-pattern="real DSH Web: one informed first-run click"
           tests/dsh-goal-welcome.real.test.ts
       # Latest official candidate runs the explicit manual Host dignity proof.
-      - name: Prepare real Documents directory for official rc.2 headless Host
+      - name: Configure OS-recognized XDG Documents for rc.2 headless Host
         if: matrix.dsh == '0.2.1-rc.2'
         shell: bash
         run: |
-          # Official workspace/initializeDefault needs the OS Documents path.
-          # This is an isolated disposable runner, not a user machine.
-          mkdir -p "$HOME/Documents"
-          test -d "$HOME/Documents"
+          # Official DSH rc.2 uses `xdg-user-dir DOCUMENTS`, not a bare
+          # $HOME/Documents existence check. On headless Linux, unconfigured
+          # XDG_DOCUMENTS_DIR resolves to $HOME and its initializer refuses.
+          # Configure ONLY this ephemeral CI runner; never spoof Host RPCs.
+          if ! command -v xdg-user-dir >/dev/null; then
+            sudo apt-get update -qq
+            sudo apt-get install -y -qq xdg-user-dirs
+          fi
+          mkdir -p "$HOME/.config" "$HOME/Documents"
+          printf 'XDG_DOCUMENTS_DIR="$HOME/Documents"\n' > "$HOME/.config/user-dirs.dirs"
+          actual="$(xdg-user-dir DOCUMENTS)"
+          test "$actual" = "$HOME/Documents" || {
+            echo "Official Host XDG Documents directory unresolved" >&2
+            exit 1
+          }
       - name: Real dignity Host observation and manual refresh (source + installed)
         if: matrix.dsh == '0.2.1-rc.2'
         env:

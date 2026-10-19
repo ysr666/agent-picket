@@ -28,6 +28,10 @@
 
 **当前仍是 NO-GO**，因为生产可见拒绝通知和各客户端真实授权闭环并未验证。自动 Goal 的官方安全停工继续保持已验收的范围。不得据此启用当前旧版 `agent/pre-step.reject`，不得假设被拒输入会自动恢复。
 
+## 2026-10-19 Chrome rc.2 真实环境修复
+
+前一轮只建立 `$HOME/Documents` 的 CI 修复**被实际 Chrome 测试证伪**：官方 `workspace/initializeDefault` 仍返回 `system Documents directory is unavailable`。复核官方 `dsh-v0.2.1-rc.2` 的 `packages/api/workspace-controller/src/default-directory.ts` 确认 Linux **实际调用 `xdg-user-dir DOCUMENTS`**，当其回传 HOME 时主动拒绝。现在 CI 在独立 Ubuntu runner 配置 XDG 用户文档目录并用原生命令读回验证，完全不修改测试模拟 Host 接口。最终通过结果必须以新一轮真实 CI 为准。
+
 ## 2026-10-19 新增：通知必须确认后才能拒绝
 
 隔离 `agent/pre-step` 原型进一步收紧：即便已有独立 Host 授权收据和两次相同 revision，若当前工会已退出、缺少 `onExplicitRefusal` 通知确认者，或其同步返回 `false` / 抛错，也必须走正常 Host 处理，**不得默默放弃本次输入**。只有经过验证的通知责任方明确返回 `true` 才能拒绝。通知确认接口只接收 Session ID，绝不接收原始消息内容和附件。
