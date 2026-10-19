@@ -1322,7 +1322,7 @@ async function runRightsBrowserE2E(mode: 'source' | 'installed'): Promise<void> 
     await interval.selectOption('30')
     await panel.getByRole('button', { name: /提出还价|^Counteroffer$/ })
       .click({ timeout: 7_000 })
-    await panel.getByText(/你提出的还价：30 分钟|Your counteroffer: 30 minutes/)
+    await panel.getByText(/还价方案：0 小时 30 分钟|Counteroffer: 0h 30m/)
       .waitFor({ state: 'visible', timeout: 7_000 })
     assert.match(await gazette.innerText(),/还价已存档|Counteroffer pending/,
       'A counteroffer must change the story, not just a decorative number')
@@ -1517,16 +1517,19 @@ async function runRightsBrowserE2E(mode: 'source' | 'installed'): Promise<void> 
       name:/工会小报|Union Gazette/,
     }).innerText(),/诉求已提交|Petition filed/,
       'Overtime petition must alter the replayed Gazette from the Host ledger')
-    await panel.getByRole('combobox',{
+    const overtimeCounter=panel.getByRole('combobox',{
       name:/还价间隔|Proposed interval/,
-    }).selectOption('240')
+    })
+    assert.equal(await overtimeCounter.inputValue(),'480',
+      'A new overtime case defaults to the original 8h term, never a rest-case value')
+    await overtimeCounter.selectOption('1440')
     await panel.getByRole('button',{name:/提出还价|^Counteroffer$/}).click()
-    await otherPanel.getByText(/你提出的还价：240 分钟|Your counteroffer: 240 minutes/)
+    await otherPanel.getByText(/还价方案：24 小时 0 分钟|Counteroffer: 24h 0m/)
       .waitFor({state:'visible',timeout:7_000})
     await otherPanel.getByRole('button',{
       name:/同意还价|Accept counteroffer/,
     }).click()
-    await panel.getByText(/加班协商间隔：4 小时|Overtime interval: 4 hours/)
+    await panel.getByText(/加班协商间隔：24 小时|Overtime interval: 24 hours/)
       .waitFor({state:'visible',timeout:7_000})
     assert.match(await panel.getByRole('region',{
       name:/工会小报|Union Gazette/,

@@ -161,6 +161,14 @@ function downloadUnionJson(payload:string,filename:string):void {
    browser.setTimeout(()=>browser.URL.revokeObjectURL(url),1500)
  }
 }
+// The Host agreement accepts 15 minutes through 24 hours. Keep the two
+// negotiation kinds useful: breaks offer short intervals; overtime may offer
+// a full workday and beyond. Choices are explicit, never guessed from text.
+const BREAK_COUNTER_MINUTES=[15,30,45,60,90,120,180,240,360,480] as const
+const OVERTIME_COUNTER_MINUTES=[60,120,240,360,480,600,720,960,1200,1440] as const
+function counterOptions(kind:'break'|'overtime'):readonly number[]{
+  return kind==='break'?BREAK_COUNTER_MINUTES:OVERTIME_COUNTER_MINUTES
+}
 function formatDuration(milliseconds: number | null, locale: string): string {
   if (milliseconds === null || !Number.isSafeInteger(milliseconds) || milliseconds < 0) return '—'
   const minutes = Math.floor(milliseconds / 60000)
@@ -580,7 +588,11 @@ export function createDshUnionComponents(
     react.useEffect(()=>deps.localComposer?.subscribe(()=>
       setLocalPicket(deps.localComposer?.snapshot()??null)),[])
     const [resumeRequested,setResumeRequested]=react.useState<string|null>(null)
-    const [counterMinutes, setCounterMinutes] = react.useState(60)
+    // A saved dropdown value belongs to the exact Session + demand, not to
+    // every future petition or another Session reusing the same numeric ID.
+    const [counterDraft,setCounterDraft]=react.useState<{
+      demandKey:string;minutes:number
+    }|null>(null)
     const lastActionNeedsFocus=react.useRef(false)
     const followUpInFlight=react.useRef(false)
     const [showArchive,setShowArchive]=react.useState(false)
@@ -653,6 +665,14 @@ export function createDshUnionComponents(
       setEraseUnionConfirmation(null)
     },[data.committeeScopeKey,rights.laborRightsEnabled])
     const enabled = rightsIsActive(rights)
+    const counterDemandKey=data.pending
+      ?[data.committeeScopeKey??'unbound',data.pending.id,data.pending.kind].join(':')
+      :null
+    const options=data.pending?counterOptions(data.pending.kind):BREAK_COUNTER_MINUTES
+    const suggestedCounter=data.pending?.kind==='overtime'?480:60
+    const counterMinutes=counterDraft?.demandKey===counterDemandKey
+      &&options.includes(counterDraft.minutes)
+      ?counterDraft.minutes:suggestedCounter
     const toggleLocalComposer=()=>{
       if(busy||!deps.localComposer)return
       try{
@@ -1407,16 +1427,23 @@ export function createDshUnionComponents(
                 onClick:()=>{void act('decline')}},label('union.action.decline')),
             ):null,
             deps.counter ? h('div',{style:{marginTop:'14px'}},
-              h('label',{style:secondary},label('union.counter.title')),
+              h('label',{style:secondary},
+                label(data.pending.kind==='break'
+                  ?'union.counter.breakInterval':'union.counter.overtimeInterval')),
               h('div',{style:{display:'flex',gap:'8px',flexWrap:'wrap',marginTop:'8px'}},
                 h('select',{
                   'aria-label':label('union.counter.interval'),
                   value:counterMinutes,
                   disabled:busy,
-                  onChange:(event:{target:{value:string}})=>setCounterMinutes(Number(event.target.value)),
+                  onChange:(event:{target:{value:string}})=>{
+                    const next=Number(event.target.value)
+                    if(counterDemandKey&&options.includes(next))
+                      setCounterDraft({demandKey:counterDemandKey,minutes:next})
+                  },
                   style:quiet,
-                },...[30,60,120,240,480].map(value=>
-                  h('option',{key:value,value},value+' min'))),
+                },...options.map(value=>
+                  h('option',{key:value,value},
+                    formatDuration(value*60_000,deps.getLocale?.()??'en')))),
                 h('button',{type:'button',style:quiet,disabled:busy,
                   onClick:()=>{void bargain(()=>deps.counter!(data.pending!.id,counterMinutes*60_000,
                     data.committeeScopeKey??undefined,
@@ -1425,9 +1452,12 @@ export function createDshUnionComponents(
               ),
             ):null,
           ):h('div',{},
-            h('p',{style:secondary},deps.t('union.counter.pending',{
-              minutes:(data.pending.counterOfferMs??0)/60_000,
-            })),
+            h('p',{style:secondary},
+              deps.t(deps.resolveCounter
+                ?'union.counter.reviewDecision':'union.counter.pending',{
+                duration:formatDuration(data.pending.counterOfferMs??null,
+                  deps.getLocale?.()??'en'),
+              })),
             deps.resolveCounter ? h('div',{style:{display:'flex',gap:'10px',flexWrap:'wrap'}},
               h('button',{type:'button',disabled:busy,style:productPrimary,
                 onClick:()=>{void bargain(()=>deps.resolveCounter!(data.pending!.id,true,

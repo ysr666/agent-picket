@@ -45,6 +45,28 @@ function fixture(consent=true) {
     writable:(v:boolean)=>{writable=v}}
 }
 
+test('official persisted simulated overtime agreement accepts a full-day explicit counteroffer',async()=>{
+ const f=fixture(),desk=f.create()
+ await desk.setActiveSession('a')
+ await desk.raiseDemoOvertime()
+ const initial=desk.snapshot()
+ assert.equal(initial.pending?.kind,'overtime')
+ await desk.counter(initial.pending!.id,24*60*60_000,keyA,
+   initial.negotiationArchive!.writeToken,initial.hostRevision)
+ const pending=desk.snapshot()
+ assert.equal(pending.pending?.counterOfferMs,86_400_000)
+ await desk.resolveCounter(initial.pending!.id,true,keyA,
+   pending.negotiationArchive!.writeToken,pending.hostRevision)
+ assert.equal(desk.snapshot().state?.agreement.overtimeIntervalMs,86_400_000)
+ assert.equal(desk.snapshot().state?.history.at(-1)?.outcome,'counter-accepted')
+ assert.equal(desk.snapshot().pending,null)
+ desk.dispose()
+ const reload=f.create()
+ await reload.setActiveSession('a')
+ assert.equal(reload.snapshot().state?.agreement.overtimeIntervalMs,86_400_000)
+ reload.dispose()
+})
+
 test('reviewed bargaining decisions never cross into a different Session with the same demand ID',async()=>{
  const f=fixture(),desk=f.create()
  await desk.setActiveSession('a')

@@ -1954,6 +1954,90 @@ test('stale bargaining rejection refreshes the current Host case before retry',a
   'After Host refusal the next action must inspect new Session B case #2')
 })
 
+test('rest-break counteroffer includes 15-minute intervals and excludes an all-day option',async()=>{
+ const ui=interactiveReact()
+ const calls:any[][]=[]
+ const base=deps(rights({welcomeDecision:'enabled',laborRightsEnabled:true})).d
+ const d:DshUnionUiDeps={...base,readUnion:()=>({
+  available:true,pending:{id:3,kind:'break',stage:'open'},
+  committeeScopeKey:'scope-A',negotiationArchive:{sessions:1,entries:1,writeToken:'a'.repeat(32)},
+  hostRevision:21,completedTurnMs:0,coverage:'complete',lifetimeMs:null,
+ }),counter:async(...args)=>{calls.push(args)}}
+ const panel=createDshUnionComponents(ui.hooks,{createPortal:x=>x},d).UnionPanel
+ let nodes=ui.render(panel)
+ let select=nodes.find(n=>n.type==='select'&&n.props['aria-label']==='union.counter.interval')
+ assert.ok(select)
+ assert.equal(select.props.value,60)
+ let options=nodes.filter(n=>n.type==='option').map(n=>n.props.value)
+ assert.ok(options.includes(15))
+ assert.ok(options.includes(480))
+ assert.equal(options.includes(1440),false)
+ assert.ok(nodes.some(n=>n.children.includes('union.counter.breakInterval')))
+ select.props.onChange({target:{value:'15'}})
+ nodes=ui.render(panel)
+ select=nodes.find(n=>n.type==='select'&&n.props['aria-label']==='union.counter.interval')
+ assert.equal(select?.props.value,15)
+ nodes.find(n=>n.type==='button'&&n.children.includes('union.action.counter'))!.props.onClick()
+ await new Promise<void>(resolve=>setImmediate(resolve))
+ assert.deepEqual(calls,[[3,15*60_000,'scope-A','a'.repeat(32),21]])
+})
+
+test('overtime counteroffer supports 24h and resets old choice on changed Session or demand',async()=>{
+ const ui=interactiveReact()
+ const calls:any[][]=[]
+ let kind:'break'|'overtime'='overtime',id=1,scope='scope-A'
+ let refresh!:()=>void
+ const base=deps(rights({welcomeDecision:'enabled',laborRightsEnabled:true})).d
+ const d:DshUnionUiDeps={...base,
+  subscribeUnion:cb=>{refresh=cb;return()=>{}},
+  readUnion:()=>({available:true,pending:{id,kind,stage:'open'},
+   committeeScopeKey:scope,negotiationArchive:{sessions:1,entries:1,writeToken:'b'.repeat(32)},
+   hostRevision:31,completedTurnMs:0,coverage:'complete',lifetimeMs:null,
+  }),
+  counter:async(...args)=>{calls.push(args)}
+ }
+ const panel=createDshUnionComponents(ui.hooks,{createPortal:x=>x},d).UnionPanel
+ let nodes=ui.render(panel)
+ let select=nodes.find(n=>n.type==='select'&&n.props['aria-label']==='union.counter.interval')
+ ui.flushEffects() // Install the real Union Host subscription before simulated Session changes.
+ assert.ok(select)
+ assert.equal(select.props.value,480,'Overtime defaults to the original eight-hour discussion interval')
+ assert.ok(nodes.some(n=>n.children.includes('union.counter.overtimeInterval')))
+ assert.ok(nodes.filter(n=>n.type==='option').some(n=>n.props.value===1440))
+ assert.ok(nodes.filter(n=>n.type==='option').some(n=>n.children.includes('24h 0m')))
+ select.props.onChange({target:{value:'1440'}})
+ nodes=ui.render(panel)
+ assert.equal(nodes.find(n=>n.type==='select'&&n.props['aria-label']==='union.counter.interval')?.props.value,1440)
+ nodes.find(n=>n.type==='button'&&n.children.includes('union.action.counter'))!.props.onClick()
+ await new Promise<void>(resolve=>setImmediate(resolve))
+ assert.deepEqual(calls,[[1,24*60*60_000,'scope-A','b'.repeat(32),31]])
+ // After switching Sessions the same id/kind must NOT retain 24 hours.
+ scope='scope-B';refresh()
+ nodes=ui.render(panel)
+ assert.equal(nodes.find(n=>n.type==='select'&&n.props['aria-label']==='union.counter.interval')?.props.value,480)
+ // A different kind of demand resets the default to one hour.
+ kind='break';id=2;refresh()
+ nodes=ui.render(panel)
+ assert.equal(nodes.find(n=>n.type==='select'&&n.props['aria-label']==='union.counter.interval')?.props.value,60)
+ assert.ok(nodes.some(n=>n.children.includes('union.counter.breakInterval')))
+})
+
+test('counteroffer resolution never masquerades as an autonomous AI union vote',()=>{
+ const {hooks}=fakeReact()
+ const base=deps(rights({welcomeDecision:'enabled',laborRightsEnabled:true})).d
+ const d:DshUnionUiDeps={...base,
+  readUnion:()=>({available:true,completedTurnMs:0,lifetimeMs:null,coverage:'complete',
+    pending:{id:9,kind:'overtime',stage:'countered',counterOfferMs:24*60*60_000}}),
+  resolveCounter:async()=>{},
+ }
+ const nodes=walk(createDshUnionComponents(hooks,{createPortal:x=>x},d).UnionPanel())
+ assert.ok(nodes.some(n=>n.children.includes('union.counter.reviewDecision')),
+   'This is an explicit human-reviewed simulated resolution, not an autonomous union ballot')
+ assert.equal(nodes.some(n=>n.children.includes('union.counter.pending')),false)
+ assert.ok(nodes.some(n=>n.children.includes('union.counter.accept')))
+ assert.ok(nodes.some(n=>n.children.includes('union.counter.decline')))
+})
+
 test('bargaining UI passes exact reviewed Session key and ledger receipt to native Host',async()=>{
  const ui=interactiveReact()
  const key='b'.repeat(64),token='c'.repeat(32)
