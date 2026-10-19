@@ -36,6 +36,21 @@ test('refusal receipt requires exact Host proof AND official no-step blocked tur
   assert.equal(matchRefusalToOfficialTurn(blocked(),null),false)
   assert.equal(latestNativeBlockedTurn(blocked()),2)
   assert.equal(latestNativeBlockedTurn(blocked(2,'completed')),null)
+  const nextCompleted:RefusalEventWindow={hasMore:false,entries:[
+    ...blocked().entries,
+    {type:'event',event:{type:'turn/start',seq:2,data:{turn:3}}},
+    {type:'event',event:{type:'turn/end',seq:3,
+      data:{turn:3,reason:{kind:'completed'}}}},
+  ]}
+  assert.equal(latestNativeBlockedTurn(nextCompleted),null,
+    'A completed newer turn retires an earlier blocked outcome')
+  assert.equal(latestNativeBlockedTurn({...nextCompleted,
+    entries:nextCompleted.entries.slice(0,3)}),null,
+    'A newer in-flight turn also retires the previous blocked outcome')
+  assert.equal(latestNativeBlockedTurn({...blocked(),entries:[
+    ...blocked().entries,{type:'event',event:{type:'turn/start',seq:1,data:{turn:3}}},
+  ]}),null,'Duplicate/out-of-order Host sequence cannot prove a current refusal')
+
   assert.equal(parseRefusalNotice({...proof(),prompt:'USER_SECRET'}),null)
   assert.equal(parseRefusalNotice({...proof(),automaticReplay:true}),null)
 })
@@ -100,7 +115,7 @@ test('browser only announces an authenticated Picket notice matching genuine blo
  let notice=proof(),authorized=true,fetches=0,spoken=0
  const client=createBrowserRefusalNoticeReader({
   session:()=>session,binding:()=>binding,window:()=>window,
-  authorized:()=>authorized,digest:async id=>fingerprint(id),
+  authorized:()=>authorized,now:()=>1000,digest:async id=>fingerprint(id),
   fetcher:async()=>{fetches++;return Response.json(notice)},
   onNewVerified:()=>{spoken++},
  })
@@ -139,12 +154,66 @@ test('browser only announces an authenticated Picket notice matching genuine blo
  client.dispose()
 })
 
+test('completed next turn invalidates old verified receipt and async races',async()=>{
+ let window:RefusalEventWindow={hasMore:false,entries:[]}
+ let now=1000,toast=0,resolveHost:(r:Response)=>void=()=>{}
+ const client=createBrowserRefusalNoticeReader({
+   session:()=> 'session',binding:()=> 'same-binding',window:()=>window,
+   authorized:()=>true,now:()=>now,
+   digest:async value=>fingerprint(value),
+   fetcher:()=>new Promise<Response>(resolve=>{resolveHost=resolve}),
+   onNewVerified:()=>{toast++},
+ })
+ client.refresh()
+ window=blocked()
+ client.refresh();await settle()
+ const subsequent:RefusalEventWindow={hasMore:false,entries:[
+   ...blocked().entries,
+   {type:'event',event:{type:'turn/start',seq:2,data:{turn:3}}},
+ ]}
+ window=subsequent
+ assert.equal(client.snapshot().state,'unverified',
+   'Even before subscriber refresh, the new Host turn invalidates old attribution')
+ resolveHost(Response.json(proof()))
+ await settle()
+ assert.equal(client.snapshot().state,'unverified',
+   'A late Host proof cannot resurrect the previous refusal while another turn is active')
+ assert.equal(toast,0)
+ client.refresh()
+ assert.equal(client.snapshot().state,'unverified')
+ window=blocked(4)
+ client.refresh();await settle()
+ resolveHost(Response.json(proof(4)))
+ await settle()
+ assert.equal(client.snapshot().state,'verified')
+ assert.equal(toast,1)
+ now+=30*60_000+1
+ assert.equal(client.snapshot().state,'unverified',
+   'A stale Host notice expires on the Browser even without a new render event')
+ client.dispose()
+})
+
+test('browser rejects future-dated Host receipt even with matching blocked turn',async()=>{
+ let announced=0
+ const reader=createBrowserRefusalNoticeReader({
+   session:()=> 'one',binding:()=> 'one',window:()=>blocked(),
+   authorized:()=>true,now:()=>1000,
+   digest:async s=>fingerprint(s),
+   fetcher:async()=>Response.json({...proof(),occurredAtMs:7000}),
+   onNewVerified:()=>announced++,
+ })
+ reader.refresh();await settle()
+ assert.equal(reader.snapshot().state,'unverified')
+ assert.equal(announced,0)
+ reader.dispose()
+})
+
 test('closing a Session aborts a pending native Host refusal notice request',async()=>{
  let id='a',binding:object={id:'a'}
  const signals:AbortSignal[]=[]
  const client=createBrowserRefusalNoticeReader({
   session:()=>id,binding:()=>binding,window:()=>blocked(),
-  authorized:()=>true,digest:async x=>fingerprint(x),
+  authorized:()=>true,now:()=>1000,digest:async x=>fingerprint(x),
   fetcher:(_url,init)=>{
     if(init?.signal)signals.push(init.signal)
     return new Promise<Response>(()=>{})
@@ -165,7 +234,7 @@ test('client cannot show a stale Host answer after session navigation or revocat
  const decisions:Array<(r:Response)=>void>=[]
  const client=createBrowserRefusalNoticeReader({
   session:()=>session,binding:()=>binding,window:()=>blocked(),
-  authorized:()=>authorized,digest:async id=>fingerprint(id),
+  authorized:()=>authorized,now:()=>1000,digest:async id=>fingerprint(id),
   fetcher:()=>new Promise<Response>(resolve=>{decisions.push(resolve)}),
  })
  client.refresh();await settle()

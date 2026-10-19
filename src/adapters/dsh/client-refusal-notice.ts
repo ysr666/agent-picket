@@ -8,19 +8,35 @@ export interface BrowserRefusalNotice {
   readonly state:'off'|'unverified'|'verified'
   readonly receipt:RefusalNoticeReceipt|null
 }
+/** Only the latest actually-started turn may describe *the current attempt*.
+ * An old blocked turn is not proof that a later successful/in-flight request
+ * was refused, even if the older blocked event remains in the Host window. */
 export function latestNativeBlockedTurn(window:RefusalEventWindow|undefined):number|null {
   if(!window||window.hasMore)return null
-  let latest:number|null=null
+  let latestStarted:number|null=null,latestEnded:number|null=null
+  let latestEndBlocked=false,previousSeq=-1
   for(const entry of window.entries){
-    if(entry.type!=='event'||entry.event?.type!=='turn/end')continue
-    const value=entry.event.data
-    if(!value||typeof value!=='object'||Array.isArray(value))continue
-    const {turn,reason}=value as {turn?:unknown;reason?:{kind?:unknown}}
-    if(reason?.kind==='blocked'&&Number.isSafeInteger(turn)
-      &&typeof turn==='number'&&turn>0&&(!latest||turn>latest))latest=turn
+    if(entry.type!=='event')continue
+    const e=entry.event
+    if(!e||!Number.isSafeInteger(e.seq)||(e.seq as number)<=previousSeq)
+      return null
+    previousSeq=e.seq as number
+    if(e.type!=='turn/start'&&e.type!=='turn/end')continue
+    const data=e.data
+    if(!data||typeof data!=='object'||Array.isArray(data))return null
+    const {turn,reason}=data as {turn?:unknown;reason?:{kind?:unknown}}
+    if(!Number.isSafeInteger(turn)||typeof turn!=='number'||turn<1)return null
+    if(e.type==='turn/start'){
+      latestStarted=latestStarted===null?turn:Math.max(latestStarted,turn)
+    }else if(latestEnded===null||turn>=latestEnded){
+      latestEnded=turn
+      latestEndBlocked=reason?.kind==='blocked'
+    }
   }
-  return latest
+  return latestStarted!==null&&latestStarted===latestEnded&&latestEndBlocked
+    ?latestEnded:null
 }
+
 export function createBrowserRefusalNoticeReader(options:{
   session:()=>string|null
   binding:(sessionId:string)=>unknown
@@ -29,12 +45,20 @@ export function createBrowserRefusalNoticeReader(options:{
   onNewVerified?:(receipt:RefusalNoticeReceipt)=>void
   digest?:(text:string)=>Promise<string>
   fetcher?:typeof fetch
+  /** Official Host and Browser run on the same device; reject stale clocks. */
+  now?:()=>number
 }){
   const empty=():BrowserRefusalNotice=>({state:'unverified',receipt:null})
   let current=empty(),selected:string|null=null,bound:unknown
   let probedTurn:number|null=null,epoch=0,disposed=false,seeded=false
   let pending:AbortController|null=null
   const listeners=new Set<()=>void>()
+  const fresh=(row:RefusalNoticeReceipt)=>{
+    const now=(options.now??Date.now)()
+    return Number.isSafeInteger(now)&&now>=0
+      &&row.occurredAtMs<=now+5_000
+      &&now-row.occurredAtMs<=30*60_000
+  }
   const notify=()=>{for(const listener of listeners){try{listener()}catch{}}}
   const allowed=()=>{try{return options.authorized()===true}catch{return false}}
   const digest=options.digest??(async(id:string)=>{
@@ -53,6 +77,9 @@ export function createBrowserRefusalNoticeReader(options:{
     if(disposed||!allowed())return {state:'off',receipt:null}
     // Calling snapshot must never claim an old Session proof after navigating.
     if(selected!==options.session()||bound!==options.binding(selected??''))return empty()
+    if(current.state==='verified'&&(!current.receipt||!fresh(current.receipt)
+      ||latestNativeBlockedTurn(options.window(selected!))!==current.receipt.turn))
+      return empty()
     return current
   }
   function refresh():void {
@@ -67,7 +94,11 @@ export function createBrowserRefusalNoticeReader(options:{
     }
     const observed=options.window(session)
     const turn=latestNativeBlockedTurn(observed)
-    if(turn===null){seeded=true;return}
+    if(turn===null){
+      seeded=true
+      if(probedTurn!==null)reset('unverified')
+      return
+    }
     if(turn===probedTurn)return
     const shouldToast=seeded
     seeded=true
@@ -93,9 +124,11 @@ export function createBrowserRefusalNoticeReader(options:{
             signal:controller.signal})
         if(!response.ok)return
         const receipt=parseRefusalNotice(await response.json())
-        if(!receipt||receipt.turn!==turn||ticket!==epoch||disposed||!allowed()
+        if(!receipt||receipt.turn!==turn||!fresh(receipt)
+          ||ticket!==epoch||disposed||!allowed()
           ||options.session()!==observedId
           ||options.binding(observedId)!==observedBinding
+          ||latestNativeBlockedTurn(options.window(observedId))!==receipt.turn
           ||!matchRefusalToOfficialTurn(options.window(observedId),receipt))return
         current={state:'verified',receipt};notify()
         if(shouldToast){try{options.onNewVerified?.(receipt)}catch{}}
