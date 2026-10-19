@@ -1896,6 +1896,99 @@ test('a pending case filing prevents a competing placard mutation',async()=>{
  await new Promise<void>(resolve=>setImmediate(resolve))
 })
 
+test('visible new-petition and placard buttons send the reviewed Host ledger receipts',async()=>{
+ const ui=interactiveReact()
+ const key='a'.repeat(64),negToken='b'.repeat(32),picketToken='c'.repeat(32)
+ const events:any[][]=[]
+ const base=deps(rights({welcomeDecision:'enabled',laborRightsEnabled:true})).d
+ const d:DshUnionUiDeps={...base,
+  readUnion:()=>({available:true,pending:null,coverage:'complete',lifetimeMs:null,
+   completedTurnMs:0,committeeScopeKey:key,
+   negotiationArchive:{sessions:1,entries:0,writeToken:negToken},
+   picketArchive:{sessions:1,entries:0,raises:0,writeToken:picketToken},
+   hostRevision:9,picket:{active:false,history:[]},
+  }),
+  demoBreak:async(...args)=>{events.push(['break',...args])},
+  demoOvertime:async(...args)=>{events.push(['overtime',...args])},
+  setPicket:async(...args)=>{events.push(['picket',...args])},
+ }
+ const panel=createDshUnionComponents(ui.hooks,{createPortal:x=>x},d).UnionPanel
+ const buttons=ui.render(panel)
+ for(const [caption,expected] of [
+  ['hq.action.petition',['break',key,negToken,9]],
+  ['hq.action.overtimePetition',['overtime',key,negToken,9]],
+  ['hq.action.raise',['picket',true,key,picketToken,9]],
+ ] as const){
+  buttons.find(n=>n.type==='button'&&n.children.includes(caption))!.props.onClick()
+  await new Promise<void>(resolve=>setImmediate(resolve))
+  assert.deepEqual(events.at(-1),expected)
+ }
+ assert.equal(events.length,3)
+})
+
+test('stale bargaining rejection refreshes the current Host case before retry',async()=>{
+ const ui=interactiveReact()
+ let current='a',writes=0
+ const base=deps(rights({welcomeDecision:'enabled',laborRightsEnabled:true})).d
+ const d:DshUnionUiDeps={...base,
+  readUnion:()=>({available:true,completedTurnMs:0,coverage:'complete',
+   lifetimeMs:null,committeeScopeKey:current,
+   negotiationArchive:{sessions:1,entries:1,writeToken:'a'.repeat(32)},
+   hostRevision:7,
+   pending:{id:current==='a'?1:2,kind:'break',stage:'open'},
+  }),
+  respond:async()=>{writes++;throw Error('Host rejected obsolete case')}
+ }
+ const panel=createDshUnionComponents(ui.hooks,{createPortal:x=>x},d).UnionPanel
+ let nodes=ui.render(panel)
+ const accept=nodes.find(n=>n.type==='button'&&n.children.includes('union.action.accept'))
+ assert.ok(accept)
+ current='b'
+ accept.props.onClick()
+ await new Promise<void>(resolve=>setImmediate(resolve))
+ nodes=ui.render(panel)
+ assert.equal(writes,1)
+ assert.ok(nodes.some(n=>n.props.role==='alert'),
+  'A declined outdated action is visible as failure, never approval')
+ assert.ok(nodes.some(n=>n.type==='p'&&n.children.includes('#2')),
+  'After Host refusal the next action must inspect new Session B case #2')
+})
+
+test('bargaining UI passes exact reviewed Session key and ledger receipt to native Host',async()=>{
+ const ui=interactiveReact()
+ const key='b'.repeat(64),token='c'.repeat(32)
+ let stage:'open'|'countered'='open'
+ let counterMs=0
+ let events:any[][]=[]
+ const base=deps(rights({welcomeDecision:'enabled',laborRightsEnabled:true})).d
+ const d:DshUnionUiDeps={...base,
+  readUnion:()=>({available:true,coverage:'complete',
+   completedTurnMs:0,lifetimeMs:null,committeeScopeKey:key,
+   negotiationArchive:{sessions:1,entries:1,writeToken:token},
+   hostRevision:19,
+   pending:{id:5,kind:'break',stage,counterOfferMs:stage==='countered'?counterMs:null},
+  }),
+  respond:async(...args)=>{events.push(['respond',...args])},
+  counter:async(...args)=>{events.push(['counter',...args]);stage='countered';counterMs=args[1]},
+  resolveCounter:async(...args)=>{events.push(['resolve',...args])},
+ }
+ const panel=createDshUnionComponents(ui.hooks,{createPortal:x=>x},d).UnionPanel
+ const button=(nodes:Node[],label:string)=>nodes.find(n=>
+  n.type==='button'&&n.children.includes(label))
+ let nodes=ui.render(panel)
+ button(nodes,'union.action.accept')!.props.onClick()
+ await new Promise<void>(resolve=>setImmediate(resolve))
+ assert.deepEqual(events[0],['respond',5,'accept',key,token,19])
+ nodes=ui.render(panel)
+ button(nodes,'union.action.counter')!.props.onClick()
+ await new Promise<void>(resolve=>setImmediate(resolve))
+ assert.deepEqual(events[1],['counter',5,60*60_000,key,token,19])
+ nodes=ui.render(panel)
+ button(nodes,'union.counter.accept')!.props.onClick()
+ await new Promise<void>(resolve=>setImmediate(resolve))
+ assert.deepEqual(events[2],['resolve',5,true,key,token,19])
+})
+
 test('rapid double-click on union placard issues one Host write, then unlocks retry',async()=>{
  const ui=interactiveReact()
  let release!:()=>void

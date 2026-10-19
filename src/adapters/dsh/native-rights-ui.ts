@@ -93,10 +93,11 @@ export interface DshUnionUiDeps {
   readonly refreshLifetime?: (windowDays:7|30)=>Promise<void>|undefined
   readonly shouldAutoWelcome?: () => boolean
   readonly subscribeSessionVisibility?: (listener: () => void) => () => void
-  readonly respond?: (id: number, choice: 'accept' | 'decline') => Promise<void>
-  readonly demoBreak?: () => Promise<void>
-  readonly demoOvertime?: () => Promise<void>
-  readonly setPicket?: (raise: boolean) => Promise<void>
+  readonly respond?: (id: number, choice: 'accept' | 'decline',expectedKey?:string,expectedToken?:string|null,expectedRevision?:number|null) => Promise<void>
+  readonly demoBreak?: (expectedKey?:string,expectedToken?:string|null,expectedRevision?:number|null) => Promise<void>
+  readonly demoOvertime?: (expectedKey?:string,expectedToken?:string|null,expectedRevision?:number|null) => Promise<void>
+  readonly setPicket?: (raise: boolean,
+    expectedKey?:string,expectedToken?:string|null,expectedRevision?:number|null) => Promise<void>
   readonly forgetCommitteeCases?: (key:string,count:number,token:string|null,hostRevision?:number|null)=>Promise<void>
   readonly exportCommitteeCases?: (expectedHashedSessionKey:string)=>string
   readonly exportUnionLedger?:(which:'negotiations'|'pickets',key:string)=>string
@@ -110,8 +111,8 @@ export interface DshUnionUiDeps {
     expectedHashedSessionKey?:string,expectedWriteToken?:string|null,
     expectedHostRevision?:number|null)=>Promise<void>
   readonly setGazetteMode?: (mode:'visible'|'quiet') => Promise<void>
-  readonly counter?: (id: number, intervalMs: number) => Promise<void>
-  readonly resolveCounter?: (id: number, accepts: boolean) => Promise<void>
+  readonly counter?: (id: number, intervalMs: number,expectedKey?:string,expectedToken?:string|null,expectedRevision?:number|null) => Promise<void>
+  readonly resolveCounter?: (id: number, accepts: boolean,expectedKey?:string,expectedToken?:string|null,expectedRevision?:number|null) => Promise<void>
 }
 export interface DshSlots {
   inject(name: string, callback: () => unknown): unknown
@@ -821,7 +822,14 @@ export function createDshUnionComponents(
           ?.getElementById('picket-union-dialog'))deskHeading.current?.focus()
         return true
       }
-      catch { setError(true);return false }
+      catch {
+        // A rejected stale Session/ledger receipt is not success. Pull the
+        // latest Host projection so the next deliberate click reviews the
+        // CURRENT case rather than repeatedly replaying the obsolete ID.
+        setData(safeUnion(deps))
+        setError(true)
+        return false
+      }
       finally { unionWriteInFlight.current=false;setBusy(false) }
     }
     const act = async (kind:'accept'|'decline')=>{
@@ -829,10 +837,15 @@ export function createDshUnionComponents(
       unionWriteInFlight.current=true
       setBusy(true);setError(false)
       try {
-        await deps.respond(data.pending.id,kind)
+        await deps.respond(data.pending.id,kind,
+          data.committeeScopeKey??undefined,
+          data.negotiationArchive?.writeToken,data.hostRevision)
         lastActionNeedsFocus.current=true
         setData(safeUnion(deps))
-      } catch {setError(true)}
+      } catch {
+        setData(safeUnion(deps))
+        setError(true)
+      }
       finally {unionWriteInFlight.current=false;setBusy(false)}
     }
     // Dignity challenges are user-led Host-owned cases; do not report a
@@ -867,6 +880,21 @@ export function createDshUnionComponents(
     // A closed case remains immutable. Filing a follow-up creates a NEW
     // Host-owned petition, and only its confirmed ledger readback may open
     // the bargaining desk. This does not automatically interrupt Agent work.
+    const reviewedPetition=()=>{
+      const scope=data.committeeScopeKey??undefined
+      return [scope,data.negotiationArchive?.writeToken,data.hostRevision] as const
+    }
+    const symbolicAction=(raise:boolean)=>{
+      if(!deps.setPicket)return Promise.reject(Error('Symbolic Host action unavailable'))
+      const scope=data.committeeScopeKey??undefined
+      return deps.setPicket(raise,scope,data.picketArchive?.writeToken,
+        data.hostRevision)
+    }
+    const petition=(which:'break'|'overtime')=>{
+      const submit=which==='break'?deps.demoBreak:deps.demoOvertime
+      if(!submit)return Promise.reject(Error('Union petition Host unavailable'))
+      return submit(...reviewedPetition())
+    }
     const followUp = async (priorId:number,kind:'break'|'overtime')=>{
       const submit=kind==='break'?deps.demoBreak:deps.demoOvertime
       const scope=data.committeeScopeKey
@@ -878,7 +906,7 @@ export function createDshUnionComponents(
       unionWriteInFlight.current=true
       setBusy(true);setError(false)
       try{
-        await submit()
+        await submit(...reviewedPetition())
         const current=safeUnion(deps)
         if(!current.available||current.committeeScopeKey!==scope
           ||!current.state||current.state.revision<=previous.revision
@@ -1123,7 +1151,7 @@ export function createDshUnionComponents(
         h('div',{style:{display:'flex',gap:'7px',flexWrap:'wrap',marginTop:'9px'}},
           dutyState==='picket'&&deps.setPicket?h('button',{type:'button',
             style:productPrimary,disabled:busy,
-            onClick:()=>{void bargain(()=>deps.setPicket!(false))}},
+            onClick:()=>{void bargain(()=>symbolicAction(false))}},
             label('hq.action.lower')):null,
           data.pending&&data.available===true?h('button',{type:'button',
             style:quiet,onClick:()=>selectSpace('action','desk')},
@@ -1140,7 +1168,7 @@ export function createDshUnionComponents(
               label(('hq.episode.followUp.'+experience.latestResolution.kind) as MessageKey)):null,
           dutyState==='quiet'&&deps.demoBreak?h('button',{type:'button',
             style:productPrimary,disabled:busy,
-            onClick:()=>{void bargain(deps.demoBreak!)}},
+            onClick:()=>{void bargain(()=>petition('break'))}},
             label('hq.action.petition')):null,
         ),
       ):null,
@@ -1233,17 +1261,17 @@ export function createDshUnionComponents(
             label('hq.action.review')) :
             data.available && deps.demoBreak ? h('button',{
               type:'button',style:productPrimary,disabled:busy,
-              onClick:()=>{void bargain(deps.demoBreak!)}},
+              onClick:()=>{void bargain(()=>petition('break'))}},
               label('hq.action.petition')):null,
           !data.pending && data.available && deps.demoOvertime ? h('button',{
             type:'button',style:quiet,disabled:busy,
-            onClick:()=>{void bargain(deps.demoOvertime!)}},
+            onClick:()=>{void bargain(()=>petition('overtime'))}},
             label('hq.action.overtimePetition')):null,
           data.available && deps.setPicket ? h('button',{type:'button',style:quiet,
             disabled:busy,'aria-pressed':picketActive,
             // First-run Host consent already governs this nonblocking action.
             // Only the authoritative Host readback can change the placard.
-            onClick:()=>{void bargain(()=>deps.setPicket!(!picketActive))}},
+            onClick:()=>{void bargain(()=>symbolicAction(!picketActive))}},
             label(picketActive?'hq.action.lower':'hq.action.raise')):null,
         ),
         h('p',{role:'status','aria-live':'polite',style:{
@@ -1364,7 +1392,7 @@ export function createDshUnionComponents(
         !data.pending && data.available && deps.demoBreak ?
           h('div',{style:{marginBottom:'14px'}},
             h('button',{type:'button',style:productPrimary,disabled:busy,
-              onClick:()=>{void bargain(deps.demoBreak!)}},label('union.demo.action')),
+              onClick:()=>{void bargain(()=>petition('break'))}},label('union.demo.action')),
             h('p',{style:secondary},label('union.demo.note')),
           ):null,
         data.pending ? h('div',{},
@@ -1390,7 +1418,9 @@ export function createDshUnionComponents(
                 },...[30,60,120,240,480].map(value=>
                   h('option',{key:value,value},value+' min'))),
                 h('button',{type:'button',style:quiet,disabled:busy,
-                  onClick:()=>{void bargain(()=>deps.counter!(data.pending!.id,counterMinutes*60_000),true)}},
+                  onClick:()=>{void bargain(()=>deps.counter!(data.pending!.id,counterMinutes*60_000,
+                    data.committeeScopeKey??undefined,
+                    data.negotiationArchive?.writeToken,data.hostRevision),true)}},
                   label('union.action.counter')),
               ),
             ):null,
@@ -1400,10 +1430,14 @@ export function createDshUnionComponents(
             })),
             deps.resolveCounter ? h('div',{style:{display:'flex',gap:'10px',flexWrap:'wrap'}},
               h('button',{type:'button',disabled:busy,style:productPrimary,
-                onClick:()=>{void bargain(()=>deps.resolveCounter!(data.pending!.id,true))}},
+                onClick:()=>{void bargain(()=>deps.resolveCounter!(data.pending!.id,true,
+                  data.committeeScopeKey??undefined,
+                  data.negotiationArchive?.writeToken,data.hostRevision))}},
                 label('union.counter.accept')),
               h('button',{type:'button',disabled:busy,style:quiet,
-                onClick:()=>{void bargain(()=>deps.resolveCounter!(data.pending!.id,false))}},
+                onClick:()=>{void bargain(()=>deps.resolveCounter!(data.pending!.id,false,
+                  data.committeeScopeKey??undefined,
+                  data.negotiationArchive?.writeToken,data.hostRevision))}},
                 label('union.counter.decline')),
             ):h('p',{style:secondary},label('union.status.waitingCounter')),
           ),
@@ -1478,7 +1512,7 @@ export function createDshUnionComponents(
             data.dignity.data.targeted>=2&&data.available&&deps.setPicket
               &&!picketActive?h('button',{type:'button',style:productPrimary,
                 disabled:busy,
-                onClick:()=>{void bargain(()=>deps.setPicket!(true))}},
+                onClick:()=>{void bargain(()=>symbolicAction(true))}},
                 label('hq.dignity.symbolicAction')):null,
             h('p',{style:{...secondary,width:'100%',fontSize:'12px',margin:0}},
               label(hostCaseAvailable
