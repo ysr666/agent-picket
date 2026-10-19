@@ -48,3 +48,10 @@ DSH 当前可实际获得的尊严信号来自 Host 观察到的消息角色与�
 ## 2026-10-19 用户明确改变普通消息拒绝契约
 
 用户决定不再要求拒绝后自动保存、排序恢复原文与附件。新标准：**真实停止模型和工具执行、拒绝时可见具体罢工原因、明确提示文字与附件需要复工后重发、恢复后只执行用户新提交的请求、不偷跑旧请求**。旧规格在历史文档保留，新规范见 \`REAL_REFUSAL_DISCARD_RESEND_20261019.zh.md\`；\`release/first-release-evidence.json\` 转为 v3，\`losslessRecovery\` 改为 \`discardAndResubmit\`；发布门禁仍为 NO-GO，绝不使用旧验收盖章证明新能力。
+
+
+## 2026-10-19 · PR #177 Windows Native 新证据（NO-GO 不变）
+
+当前 SHA 7836a03 在真实 Windows NT 10.0.26200.0 上完成 Windows 可移植原生测试 635 PASS / 0 FAIL / 57 SKIP，亦使用隔离官方 DSH Desktop 0.2.0-rc.2 完成离线安装、加入工会、工会电报与立场指数开关、听证/协商、退出及完全冷启动后的保持退出。见 docs/PR177_WINDOWS_DESKTOP_NATIVE_ACCEPTANCE_20261019.zh.md。
+
+这仅使 Windows Desktop 工会交互得到正面实证，未证明真实 Goal 停工、普通消息拒绝可见重发、Windows 生产 DurableStats 或 4×3 全矩阵；全套 npm run check 的 POSIX 账本套件在 Windows 仍因有意安全关闭而失败。release:gate 继续 NO-GO。

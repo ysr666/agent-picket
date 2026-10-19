@@ -98,6 +98,7 @@ test('npm dry-run tarball contains prebuilt plugin and no source, tests, or runt
     'docs/REAL_REFUSAL_DISCARD_RESEND_20261019.zh.md',
     'docs/DSH_021_RC2_SAFE_INPUT_HOLD_AUDIT_20261019.zh.md',
     'docs/THREE_PHASE_1_0_READINESS_AUDIT_20261019.zh.md',
+    'docs/PR177_WINDOWS_DESKTOP_NATIVE_ACCEPTANCE_20261019.zh.md',
   ]) {
     assert.equal(files.has(research),false,'Source-only design reference leaked: '+research)
   }

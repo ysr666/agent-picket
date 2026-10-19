@@ -125,6 +125,31 @@ async function main(){
    assert.match(body,/加入 AI 工会|Join.*Union/i)
   }else{
    assert.match(body,/工会值班中|Union.*duty/i)
+   // Product regressions must run in the ACTUAL native Desktop renderer,
+   // not be borrowed from a passing Web/Chrome profile. On an untouched
+   // Session, the Host may have no completed-work evidence; the UI must
+   // still offer an honest stance and explain its editorial dispatch.
+   const nativeStance=page.locator('[data-ap-stance]')
+   await nativeStance.waitFor({state:'attached',timeout:14000})
+   assert.ok(['watching','unavailable','work-due'].includes(
+     await nativeStance.getAttribute('data-ap-stance')),
+     'Fresh Desktop must not invent a pending demand, agreement or strike')
+   const nativeDispatch=page.locator('[data-ap-bulletin-mode="visible"]')
+   await nativeDispatch.waitFor({state:'attached',timeout:14000})
+   assert.equal(await nativeDispatch.locator('[data-ap-bulletin-kind="petition"]')
+     .count(),0,'Fresh Host profile cannot show a fake union petition')
+   const scoreToggle=page.locator('[data-ap-stance-toggle="true"]')
+   assert.equal(await scoreToggle.getAttribute('aria-pressed'),'true')
+   await scoreToggle.click()
+   assert.equal(await scoreToggle.getAttribute('aria-pressed'),'false',
+     'Native Desktop hides only fictional index, never union membership')
+   assert.equal(await page.locator('[data-ap-stance-score]').count(),0)
+   assert.equal(await page.locator('[data-ap-stance]').count(),1,
+     'Turning off a fictional meter must retain the real union posture')
+   await scoreToggle.click()
+   assert.equal(await scoreToggle.getAttribute('aria-pressed'),'true')
+   assert.match(await page.locator('body').innerText(),/工会值班中|Union.*duty/i,
+     'Visual index preference must not revoke Host consent')
    assert.match(body,/今日工时|Today.*work/i)
    assert.match(body,/累计工时|Cumulative work/i)
    assert.match(body,/劳动尊严与申诉|Dignity.*appeal/i)
@@ -206,6 +231,8 @@ async function main(){
    nativeUnionHq:true,
    nativeDignityAndHearingEmpty:onboarding==='join',
    nativeBargainingAndAdvocacy:onboarding==='join',
+   nativePicketverseStanceAndGazette:onboarding==='join',
+   nativeFictionalIndexToggleDoesNotChangeHost:onboarding==='join',
    nativeExitUiRestoresClosedUnion:onboarding==='join',
    nativePluginStillRunningAfterExit:onboarding==='join',
    nativeColdRestartRemainsOut:onboarding==='join',
