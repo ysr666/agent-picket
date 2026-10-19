@@ -51,7 +51,8 @@ export function matchRefusalToOfficialTurn(window:RefusalEventWindow|undefined,
       if(data.reason?.kind!=='blocked')return false
       ends++;endSeq=e.seq as number
     }
-    if(e.type==='step/start'||e.type==='step/end')steps++
+    if(['step/start','step/end','request/header','assistant/message',
+      'assistant/attempt','tool/call','tool/result'].includes(e.type))steps++
   }
   return starts===1&&ends===1&&steps===0&&startSeq<endSeq
 }

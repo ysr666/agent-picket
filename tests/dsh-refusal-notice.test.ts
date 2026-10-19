@@ -28,6 +28,9 @@ test('refusal receipt requires exact Host proof AND official no-step blocked tur
     ...blocked().entries,{type:'event',event:{type:'step/start',seq:2,data:{turn:2,step:1}}},
   ]},valid),false)
   assert.equal(matchRefusalToOfficialTurn({...blocked(),entries:[
+    ...blocked().entries,{type:'event',event:{type:'request/header',seq:3,data:{turn:2}}},
+  ]},valid),false,'A model request must not be attributed to an untouched turn')
+  assert.equal(matchRefusalToOfficialTurn({...blocked(),entries:[
     ...blocked().entries,blocked().entries[1]!,
   ]},valid),false,'A duplicate event Seq invalidates Host attribution')
   assert.equal(matchRefusalToOfficialTurn(blocked(),null),false)
@@ -136,6 +139,27 @@ test('browser only announces an authenticated Picket notice matching genuine blo
  client.dispose()
 })
 
+test('closing a Session aborts a pending native Host refusal notice request',async()=>{
+ let id='a',binding:object={id:'a'}
+ const signals:AbortSignal[]=[]
+ const client=createBrowserRefusalNoticeReader({
+  session:()=>id,binding:()=>binding,window:()=>blocked(),
+  authorized:()=>true,digest:async x=>fingerprint(x),
+  fetcher:(_url,init)=>{
+    if(init?.signal)signals.push(init.signal)
+    return new Promise<Response>(()=>{})
+  },
+ })
+ client.refresh();await settle()
+ assert.equal(signals[0]?.aborted,false)
+ id='b';binding={id:'b'}
+ client.refresh();await settle()
+ assert.equal(signals[0]?.aborted,true,'Session switch aborts its abandoned request')
+ assert.equal(signals[1]?.aborted,false,'New Session owns a fresh request')
+ client.dispose()
+ assert.equal(signals[1]?.aborted,true,'Disposed Client must abort its Host request')
+})
+
 test('client cannot show a stale Host answer after session navigation or revocation',async()=>{
  let session='a',binding:object={key:'a'},authorized=true
  const decisions:Array<(r:Response)=>void>=[]
@@ -157,4 +181,25 @@ test('client cannot show a stale Host answer after session navigation or revocat
  await settle()
  assert.equal(client.snapshot().state,'off')
  client.dispose()
+})
+
+
+test('a detached authenticated Connection cannot return stale Picket refusal receipts',async()=>{
+ let detach=()=>{},route:{fetch:(r:Request)=>Promise<Response>}|undefined
+ let detached=0
+ const ctx={
+  effect(_fn:()=>()=>void){},
+  inject(_deps:string[],handler:(c:any)=>void){
+   handler({connection:{fetch:{register(r:any){route=r;return async()=>{detached++}}}},
+     effect(fn:()=>()=>void){detach=fn()}})
+  },
+ }
+ registerDshRefusalNoticeFetch(ctx,{authorized:()=>true,read:()=>{
+   detach() // Official Connection unmounts inside a pre-admitted GET.
+   return proof()
+ }})
+ const response=await route!.fetch(new Request('http://localhost'+REFUSAL_NOTICE_FETCH_PATH
+   +'?sessionKey='+fingerprint('private-session')))
+ assert.equal(response.status,503)
+ assert.equal(detached,1)
 })

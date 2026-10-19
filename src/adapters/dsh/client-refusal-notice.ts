@@ -33,6 +33,7 @@ export function createBrowserRefusalNoticeReader(options:{
   const empty=():BrowserRefusalNotice=>({state:'unverified',receipt:null})
   let current=empty(),selected:string|null=null,bound:unknown
   let probedTurn:number|null=null,epoch=0,disposed=false,seeded=false
+  let pending:AbortController|null=null
   const listeners=new Set<()=>void>()
   const notify=()=>{for(const listener of listeners){try{listener()}catch{}}}
   const allowed=()=>{try{return options.authorized()===true}catch{return false}}
@@ -43,6 +44,7 @@ export function createBrowserRefusalNoticeReader(options:{
   })
   const reset=(next:'off'|'unverified')=>{
     epoch++
+    pending?.abort();pending=null
     current={state:next,receipt:null}
     probedTurn=null
     notify()
@@ -71,6 +73,9 @@ export function createBrowserRefusalNoticeReader(options:{
     seeded=true
     probedTurn=turn
     const ticket=++epoch
+    pending?.abort()
+    const controller=new AbortController()
+    pending=controller
     const observedId=session,observedBinding=binding
     // Never turn an old proof into a verified event while the next Host query
     // is pending. The prior proof may be shown only for its matching turn.
@@ -84,7 +89,8 @@ export function createBrowserRefusalNoticeReader(options:{
           ||options.binding(observedId)!==observedBinding)return
         const response=await (options.fetcher??globalThis.fetch)(
           REFUSAL_NOTICE_FETCH_PATH+'?sessionKey='+key,
-          {method:'GET',credentials:'same-origin',headers:{accept:'application/json'}})
+          {method:'GET',credentials:'same-origin',headers:{accept:'application/json'},
+            signal:controller.signal})
         if(!response.ok)return
         const receipt=parseRefusalNotice(await response.json())
         if(!receipt||receipt.turn!==turn||ticket!==epoch||disposed||!allowed()
@@ -94,6 +100,7 @@ export function createBrowserRefusalNoticeReader(options:{
         current={state:'verified',receipt};notify()
         if(shouldToast){try{options.onNewVerified?.(receipt)}catch{}}
       }catch{/* Unavailable Host report is NOT proof of a union refusal. */}
+      finally{if(pending===controller)pending=null}
     })()
   }
   return {snapshot,refresh,
