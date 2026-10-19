@@ -12,7 +12,7 @@ export function checkFirstRelease(value){
   const invalid=(message)=>reasons.push(message)
   if(!value || typeof value!=='object' || Array.isArray(value))
     return ['Release attestation missing or invalid']
-  if(value.schemaVersion!==2 || value.release!=='1.0.0')
+  if(value.schemaVersion!==3 || value.release!=='1.0.0')
     invalid('Unexpected release acceptance schema/version')
   const proof=(section,name,display=name)=>{
     const evidence=section?.[name]
@@ -29,7 +29,7 @@ export function checkFirstRelease(value){
   for(const name of ['dsh-web','dsh-desktop','claude-code','codex']){
     const target=value.targets?.[name]
     proof(value.targets,name)
-    for(const key of ['realEnforcement','losslessRecovery',
+    for(const key of ['realEnforcement','discardAndResubmit',
       'verifiedHumanProvenance','visibleRefusalAndResume']){
       if(target?.[key]!=='verified')invalid(name+'.'+key+': not proven')
     }
@@ -54,12 +54,11 @@ export function checkFirstRelease(value){
     proof(target,'exclusiveLiveGoalOwnership','codex/'+os+'/exclusiveLiveGoalOwnership')
     proof(target,'atomicGoalStateTransition','codex/'+os+'/atomicGoalStateTransition')
   }
-  // Desktop is an independent native Host, not a synonym for the Web UI.
-  // A genuine Windows DSH Desktop 0.2.0-rc.2 app.asar was inspected on
-  // 2026-10-16. Its Composer block is an affordance and conversation.send
-  // still calls Session.prompt without any verified Host-owned atomic
-  // normal-input hold/resume receipt. Never clear this known version simply
-  // because the Web Goal tests or a filled-out matrix are green.
+  // Desktop is a separate native Host. The policy now ALLOWS discarding the
+  // attempted text/attachments and an explicit USER resubmit after return,
+  // but still requires authentic pre-model rejection, a visible refusal
+  // notice, durable revocation and a fresh successful post-resume request.
+  // Web ComposerBlocks alone cannot prove any Desktop enforcement.
   const desktop=value.targets?.['dsh-desktop']
   for(const os of ['windows','macos','linux']){
     const host=desktop?.operatingSystems?.[os]
@@ -68,10 +67,10 @@ export function checkFirstRelease(value){
       ||!/^\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.-]+)?$/.test(version))
       invalid('dsh-desktop/'+os+': exact official Desktop Host version is required')
     if(os==='windows'&&version==='0.2.0-rc.2')
-      invalid('dsh-desktop/windows: official Desktop 0.2.0-rc.2 has no verified Host-atomic normal-input hold/resume')
-    proof(host,'hostOwnedPreSubmitHold','dsh-desktop/'+os+'/hostOwnedPreSubmitHold')
-    proof(host,'exactlyOnceOrderedAttachmentRecovery',
-      'dsh-desktop/'+os+'/exactlyOnceOrderedAttachmentRecovery')
+      invalid('dsh-desktop/windows: official Desktop 0.2.0-rc.2 has no verified pre-model refusal and visible resubmit notice')
+    proof(host,'nativePreModelRefusal','dsh-desktop/'+os+'/nativePreModelRefusal')
+    proof(host,'userVisibleResendInstruction',
+      'dsh-desktop/'+os+'/userVisibleResendInstruction')
   }
   for(const name of ['unionHeadquarters','settings','firstRunWarning',
     'warningAppealResume','responsiveAndAccessibility']){

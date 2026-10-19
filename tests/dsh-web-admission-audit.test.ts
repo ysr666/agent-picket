@@ -21,6 +21,7 @@ test('a disabled DSH Web composer is not silently upgraded into a real strike',(
  assert.equal(result.facts.preStepRejectHasNoReceipt,true)
  assert.equal(result.facts.publishedSessionHoldApi,false)
  assert.equal(result.verifiedSafeHold,false)
+ assert.equal(result.verifiedDiscardRefusal,false)
  assert.equal(result.releaseDecision,'NO-GO')
 })
 test('unknown/new Host exports never confer enforcement permission from declarations',()=>{

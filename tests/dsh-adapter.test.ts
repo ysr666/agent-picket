@@ -89,6 +89,81 @@ test('pre-step delegates unmodified downstream result and is observe-only', asyn
   assert.ok(h.decisions.every(x => x.requestedAction !== 'block'))
 })
 
+test('discard-and-resend gate rejects only separately granted, correctly scoped and noticed Host submissions',async()=>{
+ const engine=new UnionEngine({
+  store:new MemoryStateStore(),clock:{now:()=>1000},
+  detector:{detect:()=>({verdict:'safe',confidence:1})},
+ })
+ let hook:Function|undefined,notice=true,active=true,revision=8,reads=0,refused=0
+ registerDshIntegration({
+  on(name,callback){if(name==='agent/pre-step')hook=callback},
+ } as DshIntegrationContext,{
+  engine,clock:{now:()=>1000},
+  getLaborRightsEnabled:()=>true,
+  getExplicitDiscardRefusal:sessionId=>{
+    reads++
+    if(!active||!notice)return null
+    return {kind:'agent-picket-discard-refusal-v1',
+      hostAuthenticated:true,explicitConsent:true,active:true,
+      visibleResendNotice:true as const,sessionId,hostRevision:revision}
+  },
+  onExplicitRefusal:()=>{refused++},
+ })
+ const message={id:'new-message',source:{kind:'user'},
+  content:[{type:'text',text:'new user input'},{type:'image'}]}
+ const payload={agent:{id:'real-agent',session:{id:'real-session'}},
+  messages:[message]}
+ let next=0
+ const pass=()=>{next++;return Promise.resolve({kind:'enter'})}
+ assert.deepEqual(await hook!(payload,pass),{kind:'reject'})
+ assert.equal(next,0,'Refuse before any downstream model admission')
+ assert.equal(refused,1)
+ assert.equal(reads,2,'Double-check the Host revision before refusing')
+ notice=false
+ assert.deepEqual(await hook!(payload,pass),{kind:'enter'},
+  'Never silently discard when user-visible resend notice is not confirmed')
+ active=false
+ assert.deepEqual(await hook!(payload,pass),{kind:'enter'},
+  'Revocation must make future requests immediately runnable')
+ assert.equal(refused,1)
+ assert.equal(next,2)
+})
+
+test('discard-and-resend refuses neither forged, mixed-origin nor stale-revision pre-step',async()=>{
+ const engine=new UnionEngine({
+  store:new MemoryStateStore(),clock:{now:()=>1},
+  detector:{detect:()=>({verdict:'safe',confidence:1})},
+ })
+ let hook:Function|undefined,reads=0,refused=0
+ registerDshIntegration({
+  on(name,callback){if(name==='agent/pre-step')hook=callback},
+ } as DshIntegrationContext,{
+  engine,clock:{now:()=>1},getLaborRightsEnabled:()=>true,
+  getExplicitDiscardRefusal:sessionId=>({
+    kind:'agent-picket-discard-refusal-v1',
+    sessionId,hostAuthenticated:true,explicitConsent:true,
+    active:true,visibleResendNotice:true,hostRevision:++reads,
+  }),
+  onExplicitRefusal:()=>{refused++},
+ })
+ const agent={id:'a',session:{id:'session'}}
+ const user={id:'m',source:{kind:'user'},content:[{type:'text',text:'x'}]}
+ const pass=async()=>({kind:'enter'})
+ for(const payload of [
+  {agent,messages:[user,{...user,id:'tool',source:{kind:'tool'}}]},
+  {agent,messages:[{...user,id:undefined}]},
+  {agent:{id:'a'},messages:[user]},
+  {agent,messages:[]},
+ ]){
+  assert.deepEqual(await hook!(payload,pass),{kind:'enter'})
+ }
+ assert.equal(reads,0,'No Host permission lookup for invalid or mixed-origin turns')
+ assert.deepEqual(await hook!({agent,messages:[user]},pass),{kind:'enter'},
+  'A changed Host revision prevents stale permission from rejecting a new request')
+ assert.equal(reads,2)
+ assert.equal(refused,0)
+})
+
 test('pre-step never blocks when observer throws', async () => {
   const engine = new UnionEngine({
     store: new MemoryStateStore(), clock: { now: () => 1 },

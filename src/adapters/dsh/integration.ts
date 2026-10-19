@@ -72,6 +72,21 @@ export interface DshIntegrationContext {
   effect?(register: () => () => void): unknown
 }
 
+/** User-approved discard+manual-resend prototype. This receipt must be read
+ * from the OFFICIAL Host once the UI has actually shown its refusal notice;
+ * an ordinary union welcome, symbolic placard or Goal-only v2 grant is NOT
+ * an ordinary-input refusal permission. No production owner supplies it yet.
+ */
+export interface DshDiscardRefusalReceipt {
+  readonly kind:'agent-picket-discard-refusal-v1'
+  readonly sessionId:string
+  readonly hostAuthenticated:true
+  readonly explicitConsent:true
+  readonly active:true
+  readonly visibleResendNotice:true
+  readonly hostRevision:number
+}
+
 export interface DshIntegrationOptions {
   readonly engine: UnionEngine
   readonly clock: Clock
@@ -94,6 +109,12 @@ export interface DshIntegrationOptions {
   readonly getLaborRightsEnabled?: () => boolean
   /** One official Host-authorized rights/union state owner, shared with DSH Web. */
   readonly getNativeUnion?: () => NativeUnionCommandPort | undefined
+  /** Strictly optional; production remains OFF until Host notice + CAS proof. */
+  readonly getExplicitDiscardRefusal?:(
+    sessionId:string,
+  )=>DshDiscardRefusalReceipt|null
+  /** Metadata-only audit, never text, attachment or stable message IDs. */
+  readonly onExplicitRefusal?:(sessionId:string)=>void
 }
 
 /**
@@ -218,6 +239,37 @@ export function registerDshIntegration(
   }
 
   ctx.on('agent/pre-step', async (payload, next) => {
+    // A refusal may discard the current text and attachments by explicit
+    // user choice, but MUST NOT silently drop work before the Host proves its
+    // separate real-strike consent AND the UI's visible resend notice.
+    // Crucially, no native Host adapter wires this receipt in production yet.
+    try {
+      const sessionId=payload.agent?.session?.id
+      const humanBatch=typeof payload.agent?.id==='string'&&!!payload.agent.id
+        &&typeof sessionId==='string'&&!!sessionId
+        &&Array.isArray(payload.messages)&&payload.messages.length>0
+        &&payload.messages.every(message=>typeof message.id==='string'
+          &&!!message.id&&message.source?.kind==='user'
+          &&Array.isArray(message.content))
+      if(humanBatch&&options.getExplicitDiscardRefusal){
+        const valid=(row:DshDiscardRefusalReceipt|null|undefined)=>
+          row?.kind==='agent-picket-discard-refusal-v1'
+            &&row.sessionId===sessionId
+            &&row.hostAuthenticated===true&&row.explicitConsent===true
+            &&row.active===true&&row.visibleResendNotice===true
+            &&Number.isSafeInteger(row.hostRevision)&&row.hostRevision>=0
+        // Re-read exact official Host revision at decision time; an already
+        // revoked preference cannot survive a stale callback/snapshot.
+        const a=options.getExplicitDiscardRefusal(sessionId!)
+        if(valid(a)){
+          const b=options.getExplicitDiscardRefusal(sessionId!)
+          if(valid(b)&&b?.hostRevision===a?.hostRevision){
+            try{options.onExplicitRefusal?.(sessionId!)}catch{}
+            return {kind:'reject' as const}
+          }
+        }
+      }
+    }catch{/* Unavailable Host ownership or notice => NEVER silently reject. */}
     try {
       for (const message of payload.messages) {
         // No default consent. Read the real Host-owned setting at EVERY

@@ -35,14 +35,20 @@ export function inspectPublishedDshWebAdmission({version,blocks,conversation,
   if(facts.alternateSendPathExists)
     blockers.push('conversation.send(text) calls Session.prompt independently of composer block state')
   if(facts.preStepRejectHasNoReceipt)
-    blockers.push('agent/pre-step.reject lacks a Host-owned original-input recovery ticket or refusal notice')
+    blockers.push('agent/pre-step.reject has no explicit union refusal notice or proof against delayed model replay')
   if(!facts.publishedSessionHoldApi)
     blockers.push('No documented atomic Host-owned pre-submit hold/resume interface was detected')
-  blockers.push('Direct-human provenance, retention of text plus every attachment, notice, and exactly-once resume require independent native E2E')
+  // 2026-10-19 owner decision: an interrupted request MAY be discarded.
+  // The real admission requirement is now reject BEFORE any model/tool work,
+  // never replay the refused task, show the reason and ask the user to resend
+  // attachments after an authorized recovery. Definitions alone prove none.
+  blockers.push('Pre-model reject and NO DELAYED REPLAY need official native E2E, not declaration matching')
+  blockers.push('A user-visible refusal cause, manual resend instruction, Host authorization, and revocation are not yet verified in the shipping adapter')
   return {
     kind:'agent-picket-dsh-web-admission-audit',version,
     knownInstalledVersion:isKnown, facts,
-    verifiedSafeHold:false,
+    verifiedSafeHold:false, // Historical automatic-recovery capability stays false.
+    verifiedDiscardRefusal:false, // Not shipped until full notice + consent E2E.
     releaseDecision:'NO-GO',
     blockers,
   }

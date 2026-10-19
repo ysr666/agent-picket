@@ -8,6 +8,9 @@ on:
       - '.github/workflows/dsh-packaged-picket-goal.yml'
       - 'src/adapters/dsh/official-persisted-work-preview.ts'
       - 'src/adapters/dsh/plugin.ts'
+      - 'src/adapters/dsh/integration.ts'
+      - 'tests/fixtures/dsh-loop-smoke.mjs'
+      - 'tests/dsh-agentloop.real.test.ts'
   workflow_dispatch:
 
 permissions:
@@ -42,3 +45,9 @@ jobs:
           --no-audit --no-fund @deepseek-ai/dsh@${{ matrix.dsh }}
       - name: Official package manager installs Picket into actual SDK Profile; exercise Host Goal
         run: node scripts/verify-dsh-packaged-picket-goal.mjs
+      - name: Official SDK pre-model refusal and manual re-send proof
+        if: runner.os != 'Windows' && (matrix.dsh == '0.2.1-alpha.5' || matrix.dsh == '0.2.1-rc.2')
+        env:
+          AGENT_PICKET_DSH_BIN: ${{ github.workspace }}/.dsh-host-probe/node_modules/.bin/dsh
+          AGENT_PICKET_DSH_HOST: ${{ github.workspace }}/.dsh-host-probe/node_modules
+        run: node --experimental-strip-types --test --test-reporter=tap tests/dsh-agentloop.real.test.ts

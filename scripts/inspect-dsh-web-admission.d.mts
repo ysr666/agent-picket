@@ -21,6 +21,7 @@ export interface DshWebAdmissionReport {
     publishedSessionHoldApi:boolean
   }
   verifiedSafeHold:false
+  verifiedDiscardRefusal:false
   releaseDecision:'NO-GO'
   blockers:string[]
 }

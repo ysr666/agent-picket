@@ -54,12 +54,16 @@ test('production DSH bundle cannot ship the destructive pre-step reject probe', 
   // checked after the build, not simply the TypeScript source tree.
   assert.doesNotMatch(integration, /createDshPreStepProbe/)
   assert.doesNotMatch(api, /createDshPreStepProbe/)
-  assert.doesNotMatch(integration, /kind:\s*['"]reject['"]/,
-    'A destructive pre-step reject must never reach the shipped adapter')
-  assert.match(integration, /return next\(\)/,
-    'The actual Host pre-step middleware must still delegate to the Host')
+  assert.match(integration,/getExplicitDiscardRefusal/,
+    'Refusal must be behind the existing adapter and an explicit Host witness')
+  assert.match(integration,/visibleResendNotice/,
+    'Never drop an input without a confirmed user-visible resend instruction')
+  assert.match(integration,/return next\(\)/,
+    'The actual Host pre-step middleware must delegate without Host proof')
   assert.match(integration, /block: false/,
     'The shipped DSH adapter must not advertise safe Host enforcement')
   const plugin = read('dist/adapters/dsh/plugin.js')
   assert.doesNotMatch(plugin, /createDshPreStepProbe/)
+  assert.doesNotMatch(plugin,/getExplicitDiscardRefusal/,
+    'The production Host never activates the opt-in path before visible notice E2E')
 })

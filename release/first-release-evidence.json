@@ -1,12 +1,11 @@
 {
-  "schemaVersion": 2,
+  "schemaVersion": 3,
   "release": "1.0.0",
   "status": "blocked",
   "targets": {
     "dsh-web": {
       "status": "not-verified",
       "realEnforcement": "not-verified",
-      "losslessRecovery": "not-verified",
       "verifiedHumanProvenance": "not-verified",
       "visibleRefusalAndResume": "not-verified",
       "evidence": [],
@@ -23,12 +22,12 @@
           "status": "not-verified",
           "evidence": []
         }
-      }
+      },
+      "discardAndResubmit": "not-verified"
     },
     "dsh-desktop": {
       "status": "not-verified",
       "realEnforcement": "not-verified",
-      "losslessRecovery": "not-verified",
       "verifiedHumanProvenance": "not-verified",
       "visibleRefusalAndResume": "not-verified",
       "evidence": [],
@@ -37,11 +36,11 @@
           "status": "not-verified",
           "evidence": [],
           "officialHostVersion": "0.2.0-rc.2",
-          "hostOwnedPreSubmitHold": {
+          "nativePreModelRefusal": {
             "status": "not-verified",
             "evidence": []
           },
-          "exactlyOnceOrderedAttachmentRecovery": {
+          "userVisibleResendInstruction": {
             "status": "not-verified",
             "evidence": []
           }
@@ -50,11 +49,11 @@
           "status": "not-verified",
           "evidence": [],
           "officialHostVersion": null,
-          "hostOwnedPreSubmitHold": {
+          "nativePreModelRefusal": {
             "status": "not-verified",
             "evidence": []
           },
-          "exactlyOnceOrderedAttachmentRecovery": {
+          "userVisibleResendInstruction": {
             "status": "not-verified",
             "evidence": []
           }
@@ -63,21 +62,21 @@
           "status": "not-verified",
           "evidence": [],
           "officialHostVersion": null,
-          "hostOwnedPreSubmitHold": {
+          "nativePreModelRefusal": {
             "status": "not-verified",
             "evidence": []
           },
-          "exactlyOnceOrderedAttachmentRecovery": {
+          "userVisibleResendInstruction": {
             "status": "not-verified",
             "evidence": []
           }
         }
-      }
+      },
+      "discardAndResubmit": "not-verified"
     },
     "claude-code": {
       "status": "not-verified",
       "realEnforcement": "not-verified",
-      "losslessRecovery": "not-verified",
       "verifiedHumanProvenance": "not-verified",
       "visibleRefusalAndResume": "not-verified",
       "evidence": [],
@@ -94,12 +93,12 @@
           "status": "not-verified",
           "evidence": []
         }
-      }
+      },
+      "discardAndResubmit": "not-verified"
     },
     "codex": {
       "status": "not-verified",
       "realEnforcement": "not-verified",
-      "losslessRecovery": "not-verified",
       "verifiedHumanProvenance": "not-verified",
       "visibleRefusalAndResume": "not-verified",
       "evidence": [],
@@ -143,7 +142,8 @@
             "evidence": []
           }
         }
-      }
+      },
+      "discardAndResubmit": "not-verified"
     }
   },
   "userExperience": {

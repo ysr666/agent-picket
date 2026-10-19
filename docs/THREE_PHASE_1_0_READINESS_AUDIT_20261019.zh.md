@@ -44,3 +44,7 @@ DSH 当前可实际获得的尊严信号来自 Host 观察到的消息角色与�
 ### 后续官方版本核查 · 0.2.1-rc.2
 
 已另行独立安装官方 \`next\` 版本，并完成真实 Chrome Goal 停工／恢复 1/1 通过；新版本六处关键输入/Goal 公共实现与 alpha.5 原始字节完全一致。普通消息的 Host-owned 原子 hold/resumeOnce 仍没有已发布接口，\`release:gate\` 继续 NO-GO。详细可复验的反例与 #79 UI 通知失败试验见 \`docs/DSH_021_RC2_SAFE_INPUT_HOLD_AUDIT_20261019.zh.md\`。
+
+## 2026-10-19 用户明确改变普通消息拒绝契约
+
+用户决定不再要求拒绝后自动保存、排序恢复原文与附件。新标准：**真实停止模型和工具执行、拒绝时可见具体罢工原因、明确提示文字与附件需要复工后重发、恢复后只执行用户新提交的请求、不偷跑旧请求**。旧规格在历史文档保留，新规范见 \`REAL_REFUSAL_DISCARD_RESEND_20261019.zh.md\`；\`release/first-release-evidence.json\` 转为 v3，\`losslessRecovery\` 改为 \`discardAndResubmit\`；发布门禁仍为 NO-GO，绝不使用旧验收盖章证明新能力。

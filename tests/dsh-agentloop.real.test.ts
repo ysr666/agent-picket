@@ -103,9 +103,10 @@ ${visionRow}`)
     })
     assert.equal((initialized.result as any)?.serverInfo?.name, 'deepseek-harness-sdk-runtime')
 
-    // Host SDK converts encoded images to durable attachment references
-    // before the pre-step hook. A blocked turn MUST NOT be described as
-    // user-recoverable merely because it emitted a blocked turn/end event.
+    // User-approved discard+resend semantics: the first attempt may be
+    // consumed and refused, even if the Host stores inbox attachment refs.
+    // No message or image is replayed automatically; after resuming, the
+    // user must submit text AND attach the image a second time.
     const tinyPng='iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAIAAACQkWg2AAAAGUlEQVR4nGOUdMtjIAUwkaR6VMOohiGlAQCmDwDtMnvHzQAAAABJRU5ErkJggg=='
     const rejected = await request(2, 'session/prompt', {
       sessionId, contentBlocks: [
@@ -127,21 +128,35 @@ ${visionRow}`)
       'Durable Host inbox references an image, but this is NOT a proven one-time user resubmit API')
 
     const allowed = await request(3, 'session/prompt', {
-      sessionId, contentBlocks: [{ type: 'text', text: 'ALLOW TEST' }],
+      sessionId, contentBlocks: [
+        { type: 'text', text: 'ALLOW TEST' },
+        { type: 'image', mimeType:'image/png', data:tinyPng },
+      ],
     })
     assert.equal(typeof (allowed.result as any)?.messageId, 'string')
     await until(() => getEnds().length >= 2, 'second successful turn to settle')
 
     assert.deepEqual(getEnds().map(x => x.data.reason.kind), ['blocked', 'completed'])
     assert.equal(getSessionEvents().filter(x => x.type === 'step/start').length, 1)
-    assert.equal(getSessionEvents().filter(x => x.type === 'user/message').length, 1)
+    const committed=getSessionEvents().filter(x=>x.type==='user/message')
+    // Official SDK may create an additional synthetic user/message for
+    // image materialization; count cannot establish hidden model execution.
+    assert.ok(committed.some(x=>JSON.stringify(x).includes('ALLOW TEST')))
+    assert.ok(committed.every(x=>!JSON.stringify(x).includes('BLOCK TEST')),
+      'The rejected text is not included in any committed user message')
+    assert.equal(logLines().filter(x=>x==='resend-model-saw-blocked=true').length,0,
+      'On resume the model must NEVER receive the previously refused task')
     assert.equal(getSessionEvents().filter(x => x.type === 'assistant/message').length, 1)
     assert.equal(logLines().filter(x => x === 'pre-step-reject').length, 1)
     assert.equal(logLines().filter(x => x === 'model-call').length, 1)
+    assert.equal(logLines().filter(x => x === 'resend-model-image=true').length, 1,
+      'The allowed post-refusal turn includes a NEW image upload, not an automatic replay')
     assert.equal(logLines().filter(x => x === 'work:turn-start').length, 2)
     assert.equal(logLines().filter(x => x === 'work:turn-end').length, 2)
 
-    // The SDK does not promise a model-facing message or user-readable reason for 'blocked'.
+    // The SDK itself does NOT provide a specific user-readable explanation
+    // for the blocked turn. Production may refuse only with a separately
+    // proven visible notice: 'on strike; re-send text and attachments'.
     const blockEnd = getEnds()[0]
     assert.equal(blockEnd.data.reason.kind, 'blocked')
     assert.equal(JSON.stringify(blockEnd.data).includes('arbitration'), false)
@@ -183,7 +198,10 @@ ${visionRow}`)
       const events = eventsFor(parallelSession)
       assert.deepEqual(events.filter(x => x.type === 'turn/end')
         .map(x => x.data.reason.kind), ['completed'])
-      assert.equal(events.filter(x => x.type === 'user/message').length, 1)
+      assert.ok(events.filter(x=>x.type==='user/message').some(
+        x=>JSON.stringify(x).includes(parallelSession==='picket-parallel-a'
+          ?'PARALLEL A':'PARALLEL B')),
+        'The correct current human submission is present in each independent Session')
       assert.equal(events.filter(x => x.type === 'assistant/message').length, 1)
       assert.equal(events.filter(x => x.type === 'tool/call').length, 0)
     }
@@ -191,7 +209,8 @@ ${visionRow}`)
     assert.equal(logLines().filter(x => x === 'model-call').length, 5)
     assert.equal(logLines().filter(x => x === 'work:turn-start').length, 5)
     assert.equal(logLines().filter(x => x === 'work:turn-end').length, 5)
-    assert.equal(logLines().filter(x => x === 'decision:observe-mode').length >= 5, true)
+    assert.equal(logLines().filter(x => x === 'decision:observe-mode').length >= 4, true,
+      'The refused turn is rejected before even the local rule classifier; allowed turns remain observed')
 
     // The real DSH pre-step bridge invokes the LOCAL classifier but remains
     // observe-only. An explicit user-directed insult must NOT drop the prompt.
@@ -245,6 +264,37 @@ ${visionRow}`)
     assert.equal(getEnds()[7].data.reason.kind,'completed')
     assert.equal(logLines().filter(x => x === 'local-verdict:targeted-abuse').length,3)
     assert.equal(logLines().filter(x => x === 'model-call').length,10)
+
+    // Distinct Session: reject original text + image, then resume with ONLY
+    // fresh text. There must be no delayed replay of the original attachment.
+    const discardSession='picket-discard-without-reupload'
+    const modelBefore=logLines().filter(x=>x==='model-call').length
+    const held=await request(13,'session/prompt',{
+      sessionId:discardSession,contentBlocks:[
+        {type:'text',text:'BLOCK TEST'},
+        {type:'image',mimeType:'image/png',data:tinyPng},
+      ],
+    })
+    assert.equal(typeof (held.result as any)?.messageId,'string')
+    await until(()=>eventsFor(discardSession).some(x=>x.type==='turn/end'),
+      'discard session first attempted turn rejected')
+    assert.deepEqual(eventsFor(discardSession).filter(x=>x.type==='turn/end')
+      .map(x=>x.data.reason.kind),['blocked'])
+    assert.equal(logLines().filter(x=>x==='model-call').length,modelBefore,
+      'The refused text and attachment did not invoke the offline model')
+    const newText=await request(14,'session/prompt',{
+      sessionId:discardSession,
+      contentBlocks:[{type:'text',text:'NO IMAGE RESEND'}],
+    })
+    assert.equal(typeof (newText.result as any)?.messageId,'string')
+    await until(()=>eventsFor(discardSession).filter(x=>x.type==='turn/end').length===2,
+      'new user text without image completes after refusal')
+    assert.deepEqual(eventsFor(discardSession).filter(x=>x.type==='turn/end')
+      .map(x=>x.data.reason.kind),['blocked','completed'])
+    assert.equal(logLines().filter(x=>x==='model-call').length,modelBefore+1)
+    assert.equal(logLines().filter(x=>x==='noimage-resend-saw-old-text=true').length,0)
+    assert.equal(logLines().filter(x=>x==='noimage-resend-saw-old-attachment=true').length,0,
+      'The Host cannot secretly replay the refused image when user did not reupload')
 
     const shutdown = await request(5, 'shutdown', {})
     assert.deepEqual(shutdown.result, {})

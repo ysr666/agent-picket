@@ -6,7 +6,7 @@ const manifest=JSON.parse(readFileSync(new URL('../release/first-release-evidenc
 test('first release cannot pass until four client targets on three operating systems are proven',()=>{
  const problems=checkFirstRelease(manifest)
  assert.ok(problems.length>=30)
- assert.ok(problems.some(s=>s.includes('dsh-web.losslessRecovery')))
+ assert.ok(problems.some(s=>s.includes('dsh-web.discardAndResubmit')))
  assert.ok(problems.some(s=>s.includes('dsh-desktop/windows')))
  assert.ok(problems.some(s=>s.includes('codex.verifiedHumanProvenance')))
  assert.ok(problems.some(s=>s.includes('claude-code.realEnforcement')))
@@ -17,7 +17,7 @@ test('forged suite result and missing UI review never authorize release',()=>{
  const copy=structuredClone(manifest)
  for(const item of Object.values(copy.targets as Record<string,any>)){
    item.status='verified';item.evidence=['test://real-blocking-e2e-proof']
-   for(const key of ['realEnforcement','losslessRecovery',
+   for(const key of ['realEnforcement','discardAndResubmit',
      'verifiedHumanProvenance','visibleRefusalAndResume']) item[key]='verified'
    for(const evidence of Object.values(item.operatingSystems) as any[]){
      evidence.status='verified';evidence.evidence=['test://target-os-host-real-e2e-proof']
@@ -25,6 +25,20 @@ test('forged suite result and missing UI review never authorize release',()=>{
  }
  assert.ok(checkFirstRelease(copy).some(s=>s.includes('unionHeadquarters')))
  assert.ok(checkFirstRelease(copy).some(s=>s.includes('Maintainer sign-off')))
+})
+test('user-approved discard-and-resend policy replaces auto-recovery, not safe refusal evidence',()=>{
+ const old=structuredClone(manifest)
+ assert.equal(old.schemaVersion,3)
+ old.schemaVersion=2
+ assert.ok(checkFirstRelease(old).some(s=>s.includes('schema/version')),
+  'Old lossless-recovery release manifests cannot silently bypass the new consent contract')
+ const candidate=structuredClone(manifest)
+ candidate.targets['dsh-web'].losslessRecovery='verified'
+ assert.ok(checkFirstRelease(candidate).some(s=>s.includes('dsh-web.discardAndResubmit')),
+  'Legacy recovery claims alone cannot authorize rejection+manual resend')
+ candidate.targets['dsh-web'].discardAndResubmit='verified'
+ assert.ok(checkFirstRelease(candidate).some(s=>s.includes('dsh-web.realEnforcement')))
+ assert.ok(checkFirstRelease(candidate).some(s=>s.includes('dsh-web.visibleRefusalAndResume')))
 })
 test('missing or malformed evidence must fail closed',()=>{
  assert.ok(checkFirstRelease(null).length)
@@ -38,15 +52,15 @@ test('release demands an independent target-by-OS matrix, not aggregate OS or AC
  const pass=structuredClone(manifest)
  for(const [name,target] of Object.entries(pass.targets) as [string,any][]){
    target.status='verified';target.evidence=['test://verified-host-runtime-flow']
-   for(const key of ['realEnforcement','losslessRecovery',
+   for(const key of ['realEnforcement','discardAndResubmit',
      'verifiedHumanProvenance','visibleRefusalAndResume'])target[key]='verified'
    for(const os of Object.values(target.operatingSystems) as any[]){
      os.status='verified';os.evidence=['test://real-windows-mac-linux-e2e']
      if(name==='dsh-desktop'){
        // Synthetic future-build SHAPE only; this does not certify a Host.
        os.officialHostVersion='9.999.0'
-       for(const key of ['hostOwnedPreSubmitHold',
-         'exactlyOnceOrderedAttachmentRecovery']){
+       for(const key of ['nativePreModelRefusal',
+         'userVisibleResendInstruction']){
          os[key]={status:'verified',
            evidence:['test://synthetic-future-desktop-real-host-proof']}
        }
@@ -98,14 +112,14 @@ test('release demands an independent target-by-OS matrix, not aggregate OS or AC
    s.includes('dsh-desktop/windows: official Desktop 0.2.0-rc.2')),
    'Known Windows Desktop binary must stay NO-GO even if every other cell is forged green')
  desktop.windows.officialHostVersion='9.999.0'
- desktop.windows.hostOwnedPreSubmitHold.status='not-verified'
+ desktop.windows.nativePreModelRefusal.status='not-verified'
  assert.ok(checkFirstRelease(pass).some(s=>
-   s.includes('dsh-desktop/windows/hostOwnedPreSubmitHold')))
- desktop.windows.hostOwnedPreSubmitHold.status='verified'
- desktop.windows.exactlyOnceOrderedAttachmentRecovery.evidence=[]
+   s.includes('dsh-desktop/windows/nativePreModelRefusal')))
+ desktop.windows.nativePreModelRefusal.status='verified'
+ desktop.windows.userVisibleResendInstruction.evidence=[]
  assert.ok(checkFirstRelease(pass).some(s=>
-   s.includes('dsh-desktop/windows/exactlyOnceOrderedAttachmentRecovery')))
- desktop.windows.exactlyOnceOrderedAttachmentRecovery.evidence=
+   s.includes('dsh-desktop/windows/userVisibleResendInstruction')))
+ desktop.windows.userVisibleResendInstruction.evidence=
    ['test://synthetic-future-desktop-real-host-proof']
  assert.deepEqual(checkFirstRelease(pass),[],
    'Synthetic future Desktop proof shape restored, not a real release authorization')
@@ -117,8 +131,8 @@ test('installed Windows DSH Desktop rc.2 known-unsafe version and missing native
  const gaps=checkFirstRelease(manifest)
  for(const text of [
   'dsh-desktop/windows: official Desktop 0.2.0-rc.2',
-  'dsh-desktop/windows/hostOwnedPreSubmitHold',
-  'dsh-desktop/windows/exactlyOnceOrderedAttachmentRecovery',
+  'dsh-desktop/windows/nativePreModelRefusal',
+  'dsh-desktop/windows/userVisibleResendInstruction',
   'dsh-desktop/macos: exact official Desktop Host version',
   'dsh-desktop/linux: exact official Desktop Host version',
  ])assert.ok(gaps.some(s=>s.includes(text)),text)
