@@ -373,8 +373,8 @@ async function runRightsBrowserE2E(mode: 'source' | 'installed'): Promise<void> 
       assert.match(grantText,/普通消息、附件和运行中的工具仍继续|Ordinary messages, attachments and running tools continue/)
     }else{
       assert.match(grantText,/默认关闭，可随时退出|Off by default/)
-      assert.match(grantText,/真实罢工，会暂停下一次任务|A real strike holds the next task/)
-      assert.match(grantText,/真实罢工关闭|real strikes OFF/,
+      assert.match(grantText,/真实罢工，可能拒绝本次请求|A real strike can reject this request/)
+      assert.match(grantText,/普通消息真实罢工关闭|ordinary-input strikes OFF/,
         'Without qualified consent the Host must explicitly stay nonblocking')
     }
     const disclosure=firstRun.locator('.ap-onboard-details')
@@ -387,9 +387,9 @@ async function runRightsBrowserE2E(mode: 'source' | 'installed'): Promise<void> 
         'Old simulation membership cannot be silently upgraded')
     }else{
       assert.match(await firstRun.innerText(),
-        /一次知情加入即可涵盖真实罢工|one informed opt-in can cover real strikes/)
+        /普通消息真实罢工需要独立版本化知情授权|ordinary-input strikes require their own versioned/i)
       assert.match(await firstRun.innerText(),
-        /原文和全部附件|submitted text and all attachments/,
+        /复工后需手动重发文字|manually resend the request/,
         'Unsafe ordinary-input hold requires future Host-owned recovery')
     }
     await disclosure.locator('summary').click()
@@ -511,6 +511,18 @@ async function runRightsBrowserE2E(mode: 'source' | 'installed'): Promise<void> 
       .last().click()
     const nativeSettings=page.locator('[data-ap-view="settings"]')
     await nativeSettings.waitFor({state:'visible',timeout:6_000})
+    assert.equal(await nativeSettings.locator('[data-ap-native-refusal="verified"]').count(),0,
+      'An offline/generic blocked turn must never be attributed to the union without its Host receipt')
+    if(dshVersion.includes('0.2.1-rc.2')){
+      const hostProofRoute=await page.evaluate(async()=>{
+        const response=await fetch('/api/agent-picket/refusal-notice/v1?sessionKey='
+          +'a'.repeat(64),{credentials:'same-origin',headers:{accept:'application/json'}})
+        return {status:response.status,body:await response.json()}
+      })
+      assert.deepEqual(hostProofRoute,{status:404,body:{error:'unavailable'}},
+        'Official DSH Host exposes an authenticated, empty read-only refusal proof route. '
+          +'An absent receipt can NEVER become a Picket strike notification')
+    }
     // The installed native Client must explain the actual discard/resend
     // semantics and keep the independent permission unavailable until the
     // official refusal notification is proved end-to-end. A settings form

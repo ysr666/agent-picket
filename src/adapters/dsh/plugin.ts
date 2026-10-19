@@ -14,6 +14,7 @@ import { registerDshLifetimeWorkFetch, type LifetimeHostContext } from './lifeti
 import { createVolatileDignityLedger } from './dignity-live.ts'
 import { registerDshDignityFetch } from './dignity-fetch.ts'
 import {readHostGoalStrikeConsent} from './goal-work-enforcement.ts'
+import {createVolatileRefusalNotices,registerDshRefusalNoticeFetch} from './refusal-notice-host.ts'
 import type {NativeSettingsProvider} from './native-rights-command.ts'
 import { registerOfficialPersistedGoalPreview } from './official-persisted-work-preview.ts'
 
@@ -83,6 +84,17 @@ export function apply(ctx: DshIntegrationContext): void {
     authorized: () => nativeUnion?.enabled() === true,
     store: () => lifetime,
   })
+  // A separate *read-only* Host evidence route. The production listener has
+  // NO refusal writer/consent callback: reports are empty and inputs run.
+  // The official connection route permits a future native Client to match a
+  // precise Picket Host receipt to the durable blocked turn, not to a generic
+  // blocked status created by another plugin. Never records messages.
+  const refusalNotices=createVolatileRefusalNotices()
+  registerDshRefusalNoticeFetch(ctx as unknown as LifetimeHostContext,{
+    authorized:()=>nativeSettings!==undefined,
+    read:key=>refusalNotices.read(key),
+  })
+  ctx.effect?.(()=>()=>refusalNotices.clear())
   const dignity=createVolatileDignityLedger()
   const durable: DetectionProvider = {
     detect(prompt) {

@@ -3210,3 +3210,31 @@ test('initial union disclosure no longer promises automatic recovery of discarde
      'Union membership or Goal grants are NOT ordinary-input refusal grants')
  }
 })
+
+test('a confirmed official blocked Host turn and Picket receipt renders a visible refusal explanation',()=>{
+ const {hooks}=fakeReact()
+ const base=deps(rights({welcomeDecision:'enabled',laborRightsEnabled:true})).d
+ const report={state:'verified' as const,receipt:{
+  schemaVersion:1 as const,source:'dsh-host-picket-refusal-v1' as const,
+  turn:3,occurredAtMs:1000,outcome:'discard-manual-resend' as const,
+  containsInput:false as const,automaticReplay:false as const,
+ }}
+ const d:DshUnionUiDeps={...base,readUnion:()=>({
+  pending:null,completedTurnMs:null,coverage:'complete',lifetimeMs:null,
+  inputRefusalNotice:report,
+ })}
+ const ui=createDshUnionComponents(hooks,{createPortal:x=>x},d)
+ const settings=walk(ui.SettingsPanel())
+ assert.ok(settings.some(n=>n.props['data-ap-native-refusal']==='verified'
+   &&n.children.includes('hq.inputStrikeRefusedNotice')),
+ 'Native settings must surface a verified refusal, not just a transient toast')
+ const hq=walk(ui.UnionPanel())
+ assert.ok(hq.some(n=>n.props['data-ap-native-refusal']==='verified'
+   &&n.props.role==='alert'))
+ const unknown={...d,readUnion:()=>({pending:null,completedTurnMs:null,
+   coverage:'complete' as const,lifetimeMs:null,
+   inputRefusalNotice:{state:'unverified' as const,receipt:null}})}
+ const unverified=walk(createDshUnionComponents(hooks,{createPortal:x=>x},unknown).SettingsPanel())
+ assert.equal(unverified.some(n=>n.props['data-ap-native-refusal']==='verified'),false,
+   'Unmatched generic blocked turns cannot impersonate a real strike')
+})

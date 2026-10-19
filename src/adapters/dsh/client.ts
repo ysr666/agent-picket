@@ -1,6 +1,7 @@
 import { createBrowserDashboardBridge } from './client-dashboard.ts'
 import { createBrowserLifetimeWorkReader, createCompletedTurnRefreshGate } from './client-lifetime.ts'
 import { createBrowserDignityReader } from './client-dignity.ts'
+import {createBrowserRefusalNoticeReader} from './client-refusal-notice.ts'
 import { createDshBrowserUnionDesk, type UnionSettingsSection } from './client-bargaining.ts'
 import {createDshLocalComposerPicket,type DshComposerBlocks} from './client-composer-picket.ts'
 import { createDshClientRightsScope, type DshSettingsScope } from './client-rights-scope.ts'
@@ -253,6 +254,24 @@ export function apply(ctx: ClientContext, react?: ReactForDsh, portal?: PortalFo
     })
     const uiLocale = () => resolveLocale({ hostLocale: scoped.locale?.getLocale().active })
     const activeId = () => currentDshUnionSession(scoped.sessions.list?.getSnapshot())
+    // Attribution is performed only after matching this exact Session's
+    // genuine `turn/end: blocked` with a separate authenticated Host Picket
+    // receipt. Generic Host blocks and symbolic pickets never produce toast.
+    const refusalReader=createBrowserRefusalNoticeReader({
+      session:()=>activeId()??null,
+      binding:id=>scoped.sessions.binding?.(id),
+      window:id=>scoped.sessions.binding?.(id)?.eventSource.getSnapshot(),
+      authorized:()=>true, // Official Connection validates browser session auth.
+      onNewVerified:receipt=>{
+        const id=activeId()
+        if(!id||refusalReader.snapshot().receipt!==receipt)return
+        try{
+          const context=scoped.sessions.scope(id)
+          context?.get('conversation')?.input.for(context).notify('info',
+            formatMessage(uiLocale(),'hq.inputStrikeRefusedNotice'))
+        }catch{/* Native toast is optional; the verified HQ receipt remains visible. */}
+      },
+    })
     const localComposer=createDshLocalComposerPicket({
       currentSession:()=>activeId(),
       member:()=>owner.snapshot().laborRightsEnabled,
@@ -291,6 +310,7 @@ export function apply(ctx: ClientContext, react?: ReactForDsh, portal?: PortalFo
       return {
         ...desk.snapshot(),
         goalHold:recovery.read(),
+        inputRefusalNotice:refusalReader.snapshot(),
         completedTurnMs: data?.coverage === 'complete'
           ? data.sessionWork?.completedTurnMs ?? null : null,
         coverage: data?.coverage ?? 'not-loaded' as const,
@@ -306,6 +326,10 @@ export function apply(ctx: ClientContext, react?: ReactForDsh, portal?: PortalFo
       let lastTurnStart = -1
       let lastTurnEnd = -1
       const onWork = () => {
+        // Official event window transitions can prove a new blocked turn;
+        // never classify a plain blocked reason as a Picket strike without
+        // its separate metadata-only authenticated Host receipt.
+        refusalReader.refresh()
         // Recheck the real Host choice, and drop old-session data immediately.
         lifetime?.setScope(owner.snapshot().laborRightsEnabled,
           activeId()??'agent-picket:global-work')
@@ -370,6 +394,7 @@ export function apply(ctx: ClientContext, react?: ReactForDsh, portal?: PortalFo
       }
       const stopLifetime = lifetime?.subscribe(listener) ?? (()=>{})
       const stopDignity = dignity?.subscribe(listener) ?? (()=>{})
+      const stopRefusal=refusalReader.subscribe(listener)
       const stopDesk = desk.subscribe(listener)
       const stopSettings = owner.subscribe(()=>{
         bindLocalComposer() // Leaving the union releases the local block.
@@ -390,6 +415,7 @@ export function apply(ctx: ClientContext, react?: ReactForDsh, portal?: PortalFo
         stopDesk()
         stopLifetime()
         stopDignity()
+        stopRefusal()
       }
     }
     // Background observer is lifecycle-owned and works while the drawer is
@@ -401,6 +427,7 @@ export function apply(ctx: ClientContext, react?: ReactForDsh, portal?: PortalFo
         stopBackground()
         lifetime?.dispose()
         dignity?.dispose()
+        refusalReader.dispose()
         desk.dispose()
         localComposer.dispose()
         localComposerPorts.delete(localComposer)

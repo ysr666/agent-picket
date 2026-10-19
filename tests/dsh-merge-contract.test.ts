@@ -81,3 +81,18 @@ test('ordinary-input refusal UI is disclosed but production Host and Client rema
  assert.doesNotMatch(plugin,/getExplicitDiscardRefusal/,
    'The production AgentLoop may never reject from an unverified UI capability')
 })
+
+
+test('ordinary-input attribution must combine official blocked turn with a separate Host receipt',()=>{
+ const host=read('src/adapters/dsh/plugin.ts')
+ const client=read('src/adapters/dsh/client.ts')
+ const observer=read('src/adapters/dsh/client-refusal-notice.ts')
+ assert.match(host,/registerDshRefusalNoticeFetch/)
+ assert.match(host,/createVolatileRefusalNotices/)
+ assert.doesNotMatch(host,/onExplicitRefusal\s*:/,
+   'Production must not create fake refusal receipts before the Host UI is qualified')
+ assert.match(client,/createBrowserRefusalNoticeReader/)
+ assert.match(observer,/matchRefusalToOfficialTurn/)
+ assert.doesNotMatch(observer,/session\/prompt|session\/resume|automaticReplay\s*:\s*true/,
+   'Notice projection cannot submit or replay refused input')
+})

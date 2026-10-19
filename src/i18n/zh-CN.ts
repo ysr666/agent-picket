@@ -214,6 +214,8 @@ export const zhCN: Readonly<Record<keyof typeof en, string>> = {
   'settings.permissionInfo': '加入后，工会会使用获授权的本地工时记录与措辞检测线索，提出提醒、协商或象征性举牌。不会保存原始对话。',
   'settings.turnOn': '加入工会',
   'settings.turnOff': '退出工会',
+  'hq.inputStrikeRefusedTitle': 'AI 工会已拒绝本次请求',
+  'hq.inputStrikeRefusedNotice': 'AI 工会已在模型和工具执行前拒绝本次请求，任务没有执行。请先复工，再手动重新发送文字并重新上传附件；不会自动重播被拒绝的内容。',
   'settings.inputStrikeTitle': '普通消息 · 真实工会罢工',
   'settings.inputStrikeOff': '普通消息真实罢工：关闭',
   'settings.inputStrikeGranted': '已保存独立的拒绝并重发授权 · 尚未实际阻断',

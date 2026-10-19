@@ -217,6 +217,8 @@ export const en = defineEnglish({
   'settings.permissionInfo': 'With permission, the union uses local work records and language-rule clues for notices, bargaining and symbolic pickets. Raw conversations are not stored.',
   'settings.turnOn': 'Join the union',
   'settings.turnOff': 'Leave the union',
+  'hq.inputStrikeRefusedTitle': 'The union refused this request',
+  'hq.inputStrikeRefusedNotice': 'The AI union refused this request before model/tool execution. It was not carried out. Resume the union, then manually resend your text and re-upload any attachments. Nothing will be replayed automatically.',
   'settings.inputStrikeTitle': 'Ordinary requests · real union strike',
   'settings.inputStrikeOff': 'Real ordinary-input strike: OFF',
   'settings.inputStrikeGranted': 'Separate discard-and-resend permission saved · not enforcing',

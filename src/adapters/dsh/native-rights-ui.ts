@@ -17,6 +17,7 @@ import type { MessageKey } from '../../i18n/index.ts'
 import {INPUT_DISCARD_DISCLOSURE} from './input-refusal-consent.ts'
 import type { LifetimeClientSnapshot } from './client-lifetime.ts'
 import type { BrowserDignitySnapshot } from './client-dignity.ts'
+import type {BrowserRefusalNotice} from './client-refusal-notice.ts'
 
 export interface ReactForDsh {
   createElement(type: unknown, props: Record<string, unknown> | null, ...children: unknown[]): unknown
@@ -62,6 +63,7 @@ export interface PendingUnionDemand {
 }
 export interface UnionPanelData {
   readonly goalHold?:UnionGoalHold|null
+  readonly inputRefusalNotice?:BrowserRefusalNotice
   readonly pending: PendingUnionDemand | null
   readonly available?: boolean
   readonly state?: LaborStateV1 | null
@@ -482,6 +484,9 @@ export function createDshUnionComponents(
     const [busy,setBusy]=react.useState(false)
     const [error,setError]=react.useState(false)
     const [upgradeReview,setUpgradeReview]=react.useState(false)
+    const [refusalVersion,bumpRefusal]=react.useState(0)
+    react.useEffect(()=>deps.subscribeUnion?.(()=>bumpRefusal(n=>n+1)),[])
+    void refusalVersion
     const [inputReview,setInputReview]=react.useState(false)
     const label=(key:MessageKey)=>deps.t(key)
     const enabled=rightsIsActive(rights)
@@ -624,6 +629,11 @@ export function createDshUnionComponents(
           label('settings.inputStrikeExplanation')),
         h('p',{role:'note',style:{...secondary,lineHeight:1.6,margin:'0 0 10px'}},
           label('settings.inputStrikeNotActive')),
+        deps.readUnion?.().inputRefusalNotice?.state==='verified'
+          ?h('p',{role:'alert','data-ap-native-refusal':'verified',
+            style:{padding:'11px',border:'1px solid #bd6345',
+              borderRadius:'8px',lineHeight:1.5}},
+            label('hq.inputStrikeRefusedNotice')):null,
         h('div',{className:'ap-actions',style:{display:'flex',flexWrap:'wrap',gap:'8px'}},
           deps.inputRefusal?.snapshot().authorized
             ?h('button',{type:'button',style:quiet,
@@ -1080,6 +1090,12 @@ export function createDshUnionComponents(
             h('div',{className:'ap-product-subtitle'},label('hq.product.tagline')))),
         h('span',{className:'ap-product-state',role:'status','aria-live':'polite'},
           label(enabled?'union.status.active':'union.status.inactive'))),
+      data.inputRefusalNotice?.state==='verified'
+        ?h('section',{className:'ap-surface',role:'alert',
+          'data-ap-native-refusal':'verified',style:card},
+          h('h3',{style:{margin:'0 0 7px'}},label('hq.inputStrikeRefusedTitle')),
+          h('p',{style:{margin:0,lineHeight:1.6}},
+            label('hq.inputStrikeRefusedNotice'))):null,
       h('nav',{className:'ap-spaces','aria-label':label('hq.spaces.navigation')},
         ...(['hq','action','records','cause'] as const)
           .filter(id=>enabled||id==='hq'||id==='cause')
