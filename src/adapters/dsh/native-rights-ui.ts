@@ -568,6 +568,12 @@ export function createDshUnionComponents(
     const [data, setData] = react.useState(() => safeUnion(deps))
     const [error, setError] = react.useState(false)
     const [busy, setBusy] = react.useState(false)
+    // React state is not a synchronous double-click lock. The same rendered
+    // button callback can run again before React commits its busy state.
+    const unionWriteInFlight=react.useRef(false)
+    // Resume is also a native Host mutation, but remains available to
+    // nonmembers even when an unrelated union action cannot be taken.
+    const resumeGoalInFlight=react.useRef(false)
     const [localPicket,setLocalPicket]=react.useState<LocalComposerPicketState|null>(
       ()=>deps.localComposer?.snapshot()??null)
     react.useEffect(()=>deps.localComposer?.subscribe(()=>
@@ -658,14 +664,18 @@ export function createDshUnionComponents(
     const held=data.goalHold??null
     const holdKey=held?[held.sessionId,held.goalId,held.revision].join(':'):null
     const resumeHeldGoal=async()=>{
-      if(!held||!held.canResume||busy||holdKey===resumeRequested
-        ||!deps.resumeGoal)return
+      if(!held||!held.canResume||busy||resumeGoalInFlight.current
+        ||holdKey===resumeRequested||!deps.resumeGoal)return
+      resumeGoalInFlight.current=true
       setBusy(true);setError(false)
       try{
         await deps.resumeGoal(held)
         setResumeRequested(holdKey)
         setData(safeUnion(deps))
-      }catch{setError(true)}finally{setBusy(false)}
+      }catch{setError(true)}finally{
+        resumeGoalInFlight.current=false
+        setBusy(false)
+      }
     }
     react.useEffect(()=>{
       // Remote permission revocation cannot strand the user in an inaccessible room.
@@ -780,7 +790,8 @@ export function createDshUnionComponents(
       :scene==='bargaining'?'hq.lead.pending'
       :('hq.scene.'+scene+'.line') as MessageKey
     const choice = async (next:'enabled'|'not-now')=>{
-      if (busy||rights.state!=='ready'||!rights.writable) return
+      if (busy||unionWriteInFlight.current||rights.state!=='ready'||!rights.writable) return
+      unionWriteInFlight.current=true
       setBusy(true);setError(false)
       try {
         const confirmed=await deps.rights.choose(next)
@@ -792,11 +803,12 @@ export function createDshUnionComponents(
           throw Error('Host did not confirm the union preference')
         if(next==='not-now')setSpace('hq')
       } catch {setError(true)}
-      finally {setBusy(false)}
+      finally {unionWriteInFlight.current=false;setBusy(false)}
     }
     const bargain = async (action: () => Promise<void>,
       focusNegotiationAfter=false):Promise<boolean> => {
-      if (busy || !enabled) return false
+      if (busy || unionWriteInFlight.current || !enabled) return false
+      unionWriteInFlight.current=true
       setBusy(true);setError(false)
       try {
         await action()
@@ -810,27 +822,29 @@ export function createDshUnionComponents(
         return true
       }
       catch { setError(true);return false }
-      finally { setBusy(false) }
+      finally { unionWriteInFlight.current=false;setBusy(false) }
     }
     const act = async (kind:'accept'|'decline')=>{
-      if (!deps.respond || !data.pending || busy || !enabled) return
+      if (!deps.respond || !data.pending || busy || unionWriteInFlight.current || !enabled) return
+      unionWriteInFlight.current=true
       setBusy(true);setError(false)
       try {
         await deps.respond(data.pending.id,kind)
         lastActionNeedsFocus.current=true
         setData(safeUnion(deps))
       } catch {setError(true)}
-      finally {setBusy(false)}
+      finally {unionWriteInFlight.current=false;setBusy(false)}
     }
     // Dignity challenges are user-led Host-owned cases; do not report a
     // successful filing merely because an RPC resolved. Fence every write to
     // the same Session, increasing case ID, and (when present) fresh token.
     const fileDignityReview=async()=>{
-      if(caseFilingInFlight.current||busy||!canFileDignityReview)return
+      if(caseFilingInFlight.current||unionWriteInFlight.current||busy||!canFileDignityReview)return
       const scope=data.committeeScopeKey!
       const token=data.committeeArchive?.writeToken??null
       const lastId=data.committeeCases!.cases.at(-1)?.id??0
       caseFilingInFlight.current=true
+      unionWriteInFlight.current=true
       setBusy(true);setError(false)
       try{
         await deps.committeeAction!({kind:'file',topic:'question-rule'},
@@ -848,7 +862,7 @@ export function createDshUnionComponents(
         selectSpace('action','hearing')
         hearingHeading.current?.focus()
       }catch{setError(true)}
-      finally{caseFilingInFlight.current=false;setBusy(false)}
+      finally{caseFilingInFlight.current=false;unionWriteInFlight.current=false;setBusy(false)}
     }
     // A closed case remains immutable. Filing a follow-up creates a NEW
     // Host-owned petition, and only its confirmed ledger readback may open
@@ -857,10 +871,11 @@ export function createDshUnionComponents(
       const submit=kind==='break'?deps.demoBreak:deps.demoOvertime
       const scope=data.committeeScopeKey
       const previous=data.state
-      if(followUpInFlight.current||busy||!enabled||!data.available
+      if(followUpInFlight.current||unionWriteInFlight.current||busy||!enabled||!data.available
         ||data.pending||!submit||!scope
         ||!previous||previous.history.at(-1)?.id!==priorId)return
       followUpInFlight.current=true
+      unionWriteInFlight.current=true
       setBusy(true);setError(false)
       try{
         await submit()
@@ -876,7 +891,7 @@ export function createDshUnionComponents(
         setData(current)
         selectSpace('action','desk')
       }catch{setError(true)}
-      finally{followUpInFlight.current=false;setBusy(false)}
+      finally{followUpInFlight.current=false;unionWriteInFlight.current=false;setBusy(false)}
     }
     return h('section',{className:'ap-ui ap-product','data-ap-view':'hq','data-ap-current-space':space,style:{display:'grid',gap:'12px',width:'100%',maxWidth:'860px',padding:'3px 0'}},
       h('style',{'data-agent-picket-style':'v1'},UNION_THEME),

@@ -1790,6 +1790,45 @@ test('real Host-blocked Goal shows official restore button even after exiting th
  assert.deepEqual(calls,[hold])
 })
 
+test('real Goal resume ignores same-render double click, but supports retry after failed Host CAS',async()=>{
+ const ui=interactiveReact()
+ const hold={sessionId:'s',goalId:'g',revision:9,canResume:true}
+ let writes=0
+ let settle!:(ok:boolean)=>void
+ let pending=new Promise<void>((resolve,reject)=>{
+  settle=ok=>ok?resolve():reject(Error('Host CAS conflict'))
+ })
+ const base=deps(rights({welcomeDecision:'not-now',laborRightsEnabled:false})).d
+ const d:DshUnionUiDeps={...base,
+  readUnion:()=>({...base.readUnion!(),goalHold:hold}),
+  resumeGoal:async()=>{writes++;await pending},
+ }
+ const panel=createDshUnionComponents(ui.hooks,{createPortal:x=>x},d).UnionPanel
+ let nodes=ui.render(panel)
+ let resume=nodes.find(n=>n.type==='button'&&n.children.includes('hq.goalHold.resume'))
+ assert.ok(resume)
+ resume.props.onClick()
+ resume.props.onClick()
+ assert.equal(writes,1,'One native Goal CAS per double click; never send a second conflicting resume')
+ settle(false)
+ await new Promise<void>(resolve=>setImmediate(resolve))
+ nodes=ui.render(panel)
+ assert.ok(nodes.some(n=>n.props.role==='alert'),
+  'A real Host resume failure remains visible, not incorrectly reported as resumed')
+ pending=new Promise<void>((resolve,reject)=>{
+  settle=ok=>ok?resolve():reject(Error('Host CAS conflict'))
+ })
+ resume=nodes.find(n=>n.type==='button'&&n.children.includes('hq.goalHold.resume'))
+ assert.ok(resume)
+ resume.props.onClick()
+ assert.equal(writes,2,'After a failed CAS the user can intentionally retry')
+ settle(true)
+ await new Promise<void>(resolve=>setImmediate(resolve))
+ nodes=ui.render(panel)
+ assert.equal(nodes.find(n=>n.type==='button'&&n.children.includes('hq.goalHold.resume'))?.props.disabled,true,
+  'After accepted Host resume the old revision cannot be submitted again')
+})
+
 test('Goal stopped under a different policy cannot appear as a union recovery',()=>{
  const {hooks}=fakeReact()
  const basis=deps(rights({welcomeDecision:'enabled',laborRightsEnabled:true}))
@@ -1826,6 +1865,111 @@ function interactiveReact(){
  return {hooks,render(component:()=>unknown){cursor=0;deferred=[];return walk(component())},
   flushEffects(){const batch=deferred;deferred=[];for(const effect of batch)effect()}}
 }
+
+test('a pending case filing prevents a competing placard mutation',async()=>{
+ const ui=interactiveReact()
+ let finish!:()=>void
+ const wait=new Promise<void>(resolve=>{finish=resolve})
+ let filed=0,raised=0
+ const base=deps(rights({welcomeDecision:'enabled',laborRightsEnabled:true})).d
+ const d:DshUnionUiDeps={...base,
+  readUnion:()=>({
+   available:true,pending:null,completedTurnMs:null,coverage:'not-loaded',lifetimeMs:null,
+   committeeScopeKey:'session-x',committeeCases:{cases:[]},
+   dignity:{status:'available',data:{
+    schemaVersion:1,source:'dsh-host-volatile-dignity',
+    origin:'claimed-user-source',persistence:'memory-only',enforcement:false,
+    checked:1,safe:0,review:1,targeted:2,latest:'review',
+   }},
+  }),
+  committeeAction:async()=>{filed++;await wait},
+  setPicket:async()=>{raised++},
+ }
+ const nodes=ui.render(createDshUnionComponents(ui.hooks,{createPortal:x=>x},d).UnionPanel)
+ const file=nodes.find(n=>n.type==='button'&&n.children.includes('hq.dignity.fileCase'))
+ const raise=nodes.find(n=>n.type==='button'&&n.children.includes('hq.dignity.symbolicAction'))
+ assert.ok(file&&raise)
+ file.props.onClick()
+ raise.props.onClick()
+ assert.deepEqual([filed,raised],[1,0])
+ finish()
+ await new Promise<void>(resolve=>setImmediate(resolve))
+})
+
+test('rapid double-click on union placard issues one Host write, then unlocks retry',async()=>{
+ const ui=interactiveReact()
+ let release!:()=>void
+ let pending=new Promise<void>(resolve=>{release=resolve})
+ const writes:boolean[]=[]
+ const base=deps(rights({welcomeDecision:'enabled',laborRightsEnabled:true})).d
+ const d:DshUnionUiDeps={...base,
+  readUnion:()=>({available:true,pending:null,completedTurnMs:0,
+   coverage:'partial',lifetimeMs:null,picket:{active:false,history:[]}}),
+  setPicket:async state=>{writes.push(state);await pending},
+ }
+ const panel=createDshUnionComponents(ui.hooks,{createPortal:x=>x},d).UnionPanel
+ let nodes=ui.render(panel)
+ const raise=nodes.find(n=>n.type==='button'&&n.children.includes('hq.action.raise'))
+ assert.ok(raise)
+ raise.props.onClick()
+ raise.props.onClick()
+ assert.deepEqual(writes,[true],
+  'Same-render double click cannot queue a second official Host placard event')
+ release()
+ await new Promise<void>(resolve=>setImmediate(resolve))
+ pending=new Promise<void>(resolve=>{release=resolve})
+ nodes=ui.render(panel)
+ nodes.find(n=>n.type==='button'&&n.children.includes('hq.action.raise'))!.props.onClick()
+ assert.deepEqual(writes,[true,true],
+  'After a verified completed write the union remains operable')
+ release()
+ await new Promise<void>(resolve=>setImmediate(resolve))
+})
+
+test('simultaneous accept and decline cannot submit contradictory Host decisions',async()=>{
+ const ui=interactiveReact()
+ let release!:()=>void
+ const waiting=new Promise<void>(resolve=>{release=resolve})
+ const writes:string[]=[]
+ const base=deps(rights({welcomeDecision:'enabled',laborRightsEnabled:true})).d
+ const d:DshUnionUiDeps={...base,
+  readUnion:()=>({available:true,pending:{id:7,kind:'break',stage:'open'},
+   completedTurnMs:0,coverage:'partial',lifetimeMs:null}),
+  respond:async(id,choice)=>{writes.push(id+':'+choice);await waiting},
+ }
+ const panel=createDshUnionComponents(ui.hooks,{createPortal:x=>x},d).UnionPanel
+ let nodes=ui.render(panel)
+ const accept=nodes.find(n=>n.type==='button'&&n.children.includes('union.action.accept'))
+ const decline=nodes.find(n=>n.type==='button'&&n.children.includes('union.action.decline'))
+ assert.ok(accept&&decline)
+ accept.props.onClick()
+ decline.props.onClick()
+ accept.props.onClick()
+ assert.deepEqual(writes,['7:accept'],
+  'Two opposing actions in the same render must not both reach the Host')
+ release()
+ await new Promise<void>(resolve=>setImmediate(resolve))
+})
+
+test('failed union write releases synchronous guard for deliberate retry',async()=>{
+ const ui=interactiveReact()
+ let calls=0
+ const base=deps(rights({welcomeDecision:'enabled',laborRightsEnabled:true})).d
+ const d:DshUnionUiDeps={...base,readUnion:()=>({
+  available:true,pending:null,coverage:'partial',completedTurnMs:0,lifetimeMs:null,
+  picket:{active:false,history:[]},
+ }),setPicket:async()=>{calls++;if(calls===1)throw Error('Host refused')}}
+ const panel=createDshUnionComponents(ui.hooks,{createPortal:x=>x},d).UnionPanel
+ let nodes=ui.render(panel)
+ nodes.find(n=>n.type==='button'&&n.children.includes('hq.action.raise'))!.props.onClick()
+ await new Promise<void>(resolve=>setImmediate(resolve))
+ nodes=ui.render(panel)
+ assert.ok(nodes.some(n=>n.props.role==='alert'),
+  'Failed Host write must remain visible as an error')
+ nodes.find(n=>n.type==='button'&&n.children.includes('hq.action.raise'))!.props.onClick()
+ await new Promise<void>(resolve=>setImmediate(resolve))
+ assert.equal(calls,2,'A failure must not permanently lock legitimate future actions')
+})
 
 test('Action room distinguishes a saved official Goal grant from a real Host stop',()=>{
  const ui=interactiveReact()
