@@ -511,6 +511,25 @@ async function runRightsBrowserE2E(mode: 'source' | 'installed'): Promise<void> 
       .last().click()
     const nativeSettings=page.locator('[data-ap-view="settings"]')
     await nativeSettings.waitFor({state:'visible',timeout:6_000})
+    // The installed native Client must explain the actual discard/resend
+    // semantics and keep the independent permission unavailable until the
+    // official refusal notification is proved end-to-end. A settings form
+    // field or saved Goal v2 permission alone is NOT active refusal.
+    const inputStrike=nativeSettings.locator('[data-ap-input-refusal="consent-only"]')
+    await inputStrike.waitFor({state:'visible',timeout:6_000})
+    assert.match(await inputStrike.innerText(),
+      /重新上传|re-upload/,
+      'Real Host settings must warn that refused attachments need a manual re-upload')
+    assert.match(await inputStrike.innerText(),
+      /不会.*自动|not.*replay|NOT be replayed/i,
+      'Old refused requests must not be auto-replayed after resumption')
+    const ordinaryStrikeControl=inputStrike.getByRole('button',{
+      name:/查看真实普通消息罢工授权|Review real input-strike permission/,
+    })
+    assert.equal(await ordinaryStrikeControl.isDisabled(),true,
+      'Ordinary-input refusal cannot be granted before native notice verification')
+    assert.equal(await inputStrike.locator('[data-ap-input-enforcement="off"]').count(),1,
+      'The Client must never claim ordinary-input rejection is already active')
     if(process.env.PICKET_UX_CAPTURE_DIR){
       await page.screenshot({path:join(process.env.PICKET_UX_CAPTURE_DIR,
         mode+'-settings-main.png')})

@@ -67,3 +67,17 @@ test('production DSH bundle cannot ship the destructive pre-step reject probe', 
   assert.doesNotMatch(plugin,/getExplicitDiscardRefusal/,
     'The production Host never activates the opt-in path before visible notice E2E')
 })
+
+
+test('ordinary-input refusal UI is disclosed but production Host and Client remain safely OFF',()=>{
+ const ui=read('dist/adapters/dsh/native-rights-ui.js')
+ const client=read('src/adapters/dsh/client.ts')
+ const plugin=read('dist/adapters/dsh/plugin.js')
+ assert.match(ui,/settings\.inputStrikeNotActive/)
+ assert.match(ui,/settings\.inputStrikeDisclosure/)
+ assert.match(ui,/settings\.inputStrikeRevoke/)
+ assert.match(client,/createDshInputRefusalConsentControl\(rightsScope,\(\)=>false\)/,
+   'Do not enable ordinary-input refusal until official Host-visible notice is verified')
+ assert.doesNotMatch(plugin,/getExplicitDiscardRefusal/,
+   'The production AgentLoop may never reject from an unverified UI capability')
+})

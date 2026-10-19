@@ -5,6 +5,7 @@ import { createDshBrowserUnionDesk, type UnionSettingsSection } from './client-b
 import {createDshLocalComposerPicket,type DshComposerBlocks} from './client-composer-picket.ts'
 import { createDshClientRightsScope, type DshSettingsScope } from './client-rights-scope.ts'
 import {createDshRealGoalConsentControl} from './client-goal-consent.ts'
+import {createDshInputRefusalConsentControl} from './input-refusal-consent.ts'
 import {createDshGoalServiceWitness} from './client-goal-capability.ts'
 import { createOfficialDsh017Scope, type OfficialHostMirror, type OfficialHostSettings } from './client-host-settings-017.ts'
 import { registerDshNativeRightsSlots, type ReactForDsh, type PortalForDsh, type DshSlots } from './native-rights-ui.ts'
@@ -231,6 +232,9 @@ export function apply(ctx: ClientContext, react?: ReactForDsh, portal?: PortalFo
     unionRegistered = true
     const owner = createDshClientRightsScope(rightsScope)
     const goalConsentControl=createDshRealGoalConsentControl(rightsScope,goalWitness)
+    // Production remains OFF: no official authenticated, client-visible
+    // refusal receipt is yet proven. Consent must not itself veto submissions.
+    const inputConsentControl=createDshInputRefusalConsentControl(rightsScope,()=>false)
     const recovery=createDshGoalRecoveryPort({
       currentSession:()=>currentDshUnionSession(scoped.sessions.list?.getSnapshot()),
       binding:id=>scoped.sessions.binding?.(id),
@@ -415,6 +419,7 @@ export function apply(ctx: ClientContext, react?: ReactForDsh, portal?: PortalFo
         return owner.chooseFirstRun(disclosure)
       }},
       goal:version==='new'?goalConsentControl:undefined,
+      inputRefusal:inputConsentControl,
       t: (key, params) => (formatMessage as unknown as
         (locale: ReturnType<typeof uiLocale>, key: MessageKey, params?: Record<string, string | number>) => string)(
           uiLocale(), key, params),

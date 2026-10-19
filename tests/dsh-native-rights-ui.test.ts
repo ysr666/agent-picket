@@ -1161,7 +1161,8 @@ test('dedicated settings section only toggles Host-owned union permission',async
  assert.ok(nodes.some(n=>n.props['aria-label']==='settings.unionSection'))
  assert.ok(nodes.some(n=>n.children.includes('settings.realBlockingUnavailable')))
  const disabled=nodes.filter(n=>n.type==='button'&&n.props.disabled===true)
- assert.equal(disabled.length,2,'Both enforcement and per-strike controls must be unavailable')
+ assert.equal(disabled.length,3,
+   'Both legacy enforcement controls and the unverified input-refusal consent button must remain disabled')
  const off=nodes.find(n=>n.type==='button'&&n.children.includes('settings.turnOff'))
  assert.ok(off)
  await off.props.onClick()
@@ -3103,4 +3104,93 @@ test('manual #79 Host dignity refresh failure remains unavailable rather than a 
  assert.ok(nodes.some(n=>n.props.role==='alert'))
  assert.ok(nodes.some(n=>n.children.includes('hq.dignity.journey.signal.unavailable')))
  assert.equal(nodes.find(n=>n.props['data-ap-dignity-overview']==='unavailable')?.props['data-ap-dignity-overview'],'unavailable')
+})
+
+test('ordinary-message strike card clearly warns about discard/resend but remains disabled without real notice proof',()=>{
+ const {hooks}=fakeReact()
+ const basis=deps(rights({welcomeDecision:'enabled',laborRightsEnabled:true}))
+ let changed=0
+ const d:DshUnionUiDeps={...basis.d,inputRefusal:{
+   snapshot:()=>({available:false,writable:true,authorized:false,enforcing:false}),
+   async choose(){changed++;throw Error('No officially verified notice delivery')},
+ }}
+ const elements=walk(createDshUnionComponents(hooks,{createPortal:x=>x},d).SettingsPanel())
+ assert.ok(elements.some(x=>x.props['data-ap-input-refusal']==='consent-only'))
+ assert.ok(elements.some(x=>x.children.includes('settings.inputStrikeExplanation')))
+ assert.ok(elements.some(x=>x.children.includes('settings.inputStrikeNotActive')))
+ const refusal=elements.find(x=>x.type==='button'&&x.children.includes('settings.inputStrikeReview'))
+ assert.equal(refusal?.props.disabled,true,
+   'A separate consent button must remain disabled without official visible-notice E2E')
+ assert.ok(elements.some(x=>x.props['data-ap-input-enforcement']==='off'))
+ assert.equal(changed,0,'Rendering a simulated picket cannot enable physical refusal')
+})
+
+test('ordinary-input strike review must display discard warning before an independent grant',async()=>{
+ const view=goalSettingsRenderHarness()
+ const basis=deps(rights({welcomeDecision:'enabled',laborRightsEnabled:true}))
+ let authorized=false
+ const operations:string[]=[]
+ const d:DshUnionUiDeps={...basis.d,inputRefusal:{
+   snapshot:()=>({available:true,writable:true,authorized,enforcing:false}),
+   async choose(choice,version){
+     operations.push(choice+':'+String(version))
+     if(choice==='discard-resend-v1'){
+       assert.equal(version,'input-discard-manual-resend-v1')
+       authorized=true
+     }else{authorized=false}
+     return {available:true,writable:true,authorized,enforcing:false}
+   },
+ }}
+ const settings=createDshUnionComponents(view.hooks,{createPortal:x=>x},d).SettingsPanel
+ const button=(nodes:Node[],key:string)=>nodes.find(n=>n.type==='button'&&n.children.includes(key))
+ let nodes=view.render(settings)
+ const review=button(nodes,'settings.inputStrikeReview')
+ assert.ok(review&&!review.props.disabled)
+ assert.deepEqual(operations,[])
+ review.props.onClick()
+ nodes=view.render(settings)
+ assert.ok(nodes.some(n=>n.children.includes('settings.inputStrikeDisclosure')),
+   'Visible warning must explain the current request is discarded and attachments must be reuploaded')
+ assert.deepEqual(operations,[],'Opening the warning cannot grant anything')
+ button(nodes,'settings.inputStrikeCancel')!.props.onClick()
+ nodes=view.render(settings)
+ assert.deepEqual(operations,[],'Cancel preserves OFF')
+ button(nodes,'settings.inputStrikeReview')!.props.onClick()
+ nodes=view.render(settings)
+ button(nodes,'settings.inputStrikeConfirm')!.props.onClick()
+ await new Promise<void>(resolve=>setImmediate(resolve))
+ assert.deepEqual(operations,['discard-resend-v1:input-discard-manual-resend-v1'])
+ nodes=view.render(settings)
+ assert.ok(nodes.some(n=>n.children.includes('settings.inputStrikeGranted')))
+ assert.ok(nodes.some(n=>n.children.includes('settings.inputStrikeNotActive')),
+   'Host permission alone must NEVER imply the production rejection hook is active')
+ const revoke=button(nodes,'settings.inputStrikeRevoke')
+ assert.ok(revoke&&!revoke.props.disabled)
+ revoke.props.onClick()
+ await new Promise<void>(resolve=>setImmediate(resolve))
+ assert.deepEqual(operations,[
+   'discard-resend-v1:input-discard-manual-resend-v1','off:undefined'])
+})
+
+test('ordinary-input permission is still revocable after official notice channel disappears',async()=>{
+ const view=goalSettingsRenderHarness()
+ const basis=deps(rights({welcomeDecision:'not-now',laborRightsEnabled:false}))
+ let granted=true
+ const operations:string[]=[]
+ const d:DshUnionUiDeps={...basis.d,inputRefusal:{
+   snapshot:()=>({available:false,writable:true,authorized:granted,enforcing:false}),
+   async choose(choice){operations.push(choice);granted=choice!=='off';
+     return {available:false,writable:true,authorized:granted,enforcing:false}},
+ }}
+ const settings=createDshUnionComponents(view.hooks,{createPortal:x=>x},d).SettingsPanel
+ const before=view.render(settings)
+ const revoke=before.find(n=>n.type==='button'
+   &&n.children.includes('settings.inputStrikeRevoke'))
+ assert.ok(revoke&&!revoke.props.disabled,
+   'Offline Host notice cannot trap an old independent permission')
+ revoke.props.onClick()
+ await new Promise<void>(resolve=>setImmediate(resolve))
+ assert.deepEqual(operations,['off'])
+ assert.equal(granted,false)
+ assert.ok(view.render(settings).some(n=>n.children.includes('settings.inputStrikeOff')))
 })

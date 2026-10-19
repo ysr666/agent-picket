@@ -14,6 +14,7 @@ const modules = [
   'i18n/index.js',
   'adapters/dsh/client-rights-scope.js',
   'adapters/dsh/client-goal-consent.js',
+  'adapters/dsh/input-refusal-consent.js',
   'adapters/dsh/client-goal-capability.js',
   'adapters/dsh/client-host-settings-017.js',
   'product/union-desk.js',
@@ -38,7 +39,7 @@ const allowedImports = new Map([
   ['i18n/index.js', new Set(['./en.js', './zh-CN.js'])],
   ['adapters/dsh/client-host-settings-017.js', new Set(['../../product/union-ledger.js','../../product/picket-ledger.js','../../product/dignity-case-ledger.js'])],
   ['product/union-ledger.js', new Set(['./union-desk.js'])],
-  ['adapters/dsh/native-rights-ui.js', new Set(['./client-rights-scope.js','../../product/union-experience.js','../../product/union-story.js','../../product/union-cadence.js','../../product/union-alerts.js'])],
+  ['adapters/dsh/native-rights-ui.js', new Set(['./client-rights-scope.js','../../product/union-experience.js','../../product/union-story.js','../../product/union-cadence.js','../../product/union-alerts.js','./input-refusal-consent.js'])],
   ['adapters/dsh/client-bargaining.js', new Set([
     '../../product/union-desk.js', '../../product/union-ledger.js', '../../product/picket-ledger.js',
     '../../product/dignity-case-ledger.js',
@@ -47,7 +48,7 @@ const allowedImports = new Map([
   ['adapters/dsh/client-dignity.js', new Set(['./dignity-contract.js'])],
   ['adapters/dsh/client.js', new Set([
     './client-composer-picket.js',
-    './client-dashboard.js', './client-rights-scope.js', './client-goal-consent.js', './client-goal-capability.js', './client-bargaining.js',
+    './client-dashboard.js', './client-rights-scope.js', './client-goal-consent.js', './input-refusal-consent.js', './client-goal-capability.js', './client-bargaining.js',
     './native-rights-ui.js', './client-host-settings-017.js', './client-lifetime.js', './client-dignity.js', '../../i18n/index.js',
   ])],
 ])

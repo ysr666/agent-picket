@@ -14,6 +14,7 @@ import type { LaborStateV1 } from '../../product/union-desk.ts'
 import type { PicketActionState } from '../../product/picket-ledger.ts'
 import type { DignityCaseSession, DignityCaseKind, DignityCaseOutcome } from '../../product/dignity-case-ledger.ts'
 import type { MessageKey } from '../../i18n/index.ts'
+import {INPUT_DISCARD_DISCLOSURE} from './input-refusal-consent.ts'
 import type { LifetimeClientSnapshot } from './client-lifetime.ts'
 import type { BrowserDignitySnapshot } from './client-dignity.ts'
 
@@ -38,6 +39,14 @@ export interface DshGoalConsentPort {
     Promise<{readonly available:boolean;readonly writable:boolean;readonly authorized:boolean;readonly activated?:boolean}>
   qualify?(fresh?:boolean):Promise<boolean>
   subscribe?(listener:()=>void):()=>void
+}
+export interface DshInputRefusalConsentPort {
+  snapshot():{readonly available:boolean;readonly writable:boolean;
+    readonly authorized:boolean;readonly enforcing:false}
+  choose(choice:'off'|'discard-resend-v1',
+    disclosure?:typeof INPUT_DISCARD_DISCLOSURE):Promise<{
+      readonly available:boolean;readonly writable:boolean;
+      readonly authorized:boolean;readonly enforcing:false}>
 }
 export interface UnionGoalHold {
   readonly sessionId:string
@@ -76,6 +85,7 @@ export interface UnionPanelData {
 export interface DshUnionUiDeps {
   readonly rights: DshRightsPort
   readonly goal?:DshGoalConsentPort
+  readonly inputRefusal?:DshInputRefusalConsentPort
   /** UI language is read from DSH's locale service (Host preferred, en fallback). */
   readonly t: (key: MessageKey, params?: Record<string, string | number>) => string
   readonly subscribeLocale?: (listener: () => void) => () => void
@@ -472,6 +482,7 @@ export function createDshUnionComponents(
     const [busy,setBusy]=react.useState(false)
     const [error,setError]=react.useState(false)
     const [upgradeReview,setUpgradeReview]=react.useState(false)
+    const [inputReview,setInputReview]=react.useState(false)
     const label=(key:MessageKey)=>deps.t(key)
     const enabled=rightsIsActive(rights)
     const writable=rights.state==='ready'&&rights.writable
@@ -494,6 +505,20 @@ export function createDshUnionComponents(
           ||goalStatus(deps).authorized!==result.authorized)
           throw Error('Host did not confirm Goal consent')
         if(next==='authorized-v2')setUpgradeReview(false)
+      }catch{setError(true)}finally{setBusy(false)}
+    }
+    const chooseInput=async(next:'off'|'discard-resend-v1')=>{
+      if(busy||!deps.inputRefusal)return
+      const before=deps.inputRefusal.snapshot()
+      if(!before.writable||(next!=='off'&&!before.available))return
+      setBusy(true);setError(false)
+      try{
+        const result=await deps.inputRefusal.choose(next,
+          next==='discard-resend-v1'?INPUT_DISCARD_DISCLOSURE:undefined)
+        if(result.authorized!==(next==='discard-resend-v1')
+          ||deps.inputRefusal.snapshot().authorized!==result.authorized)
+          throw Error('Host did not confirm ordinary-input refusal preference')
+        setInputReview(false)
       }catch{setError(true)}finally{setBusy(false)}
     }
     const choose=async(next:'enabled'|'not-now')=>{
@@ -586,6 +611,45 @@ export function createDshUnionComponents(
           h('span',{},label('settings.flowRestore'))),
         h('p',{className:'ap-settings-scope'},
           label(goal.available?'settings.goalOtherEnforcementOff':'settings.futureConsent'))),
+      h('section',{className:'ap-surface ap-input-refusal-status',
+        'data-ap-input-refusal':'consent-only',
+        'aria-label':label('settings.inputStrikeTitle'),style:card},
+        h('h3',{style:{margin:'0 0 8px'}},label('settings.inputStrikeTitle')),
+        h('p',{role:'status','aria-live':'polite',
+          'data-ap-input-enforcement':'off',
+          style:{fontWeight:700,margin:'0 0 7px'}},
+          label(deps.inputRefusal?.snapshot().authorized
+            ?'settings.inputStrikeGranted':'settings.inputStrikeOff')),
+        h('p',{style:{...secondary,lineHeight:1.6,margin:'0 0 10px'}},
+          label('settings.inputStrikeExplanation')),
+        h('p',{role:'note',style:{...secondary,lineHeight:1.6,margin:'0 0 10px'}},
+          label('settings.inputStrikeNotActive')),
+        h('div',{className:'ap-actions',style:{display:'flex',flexWrap:'wrap',gap:'8px'}},
+          deps.inputRefusal?.snapshot().authorized
+            ?h('button',{type:'button',style:quiet,
+              disabled:busy||!deps.inputRefusal.snapshot().writable,
+              onClick:()=>{void chooseInput('off')}},label('settings.inputStrikeRevoke'))
+            :h('button',{type:'button',style:primary,
+              disabled:busy||!enabled||!deps.inputRefusal?.snapshot().available
+                ||!deps.inputRefusal.snapshot().writable,
+              'aria-expanded':inputReview,
+              'aria-controls':'picket-input-discard-review',
+              onClick:()=>setInputReview(true)},label('settings.inputStrikeReview'))),
+        inputReview&&deps.inputRefusal?.snapshot().available
+          ?h('section',{id:'picket-input-discard-review',role:'group',
+            'aria-label':label('settings.inputStrikeReview'),
+            style:{padding:'12px',border:'1px solid #b97732',borderRadius:'9px',
+              display:'grid',gap:'8px'}},
+            h('p',{role:'note',style:{margin:0,lineHeight:1.6}},
+              label('settings.inputStrikeDisclosure')),
+            h('div',{className:'ap-actions'},
+              h('button',{type:'button',style:primary,
+                disabled:busy||!enabled||!deps.inputRefusal.snapshot().writable,
+                onClick:()=>{void chooseInput('discard-resend-v1')}},
+                label('settings.inputStrikeConfirm')),
+              h('button',{type:'button',style:quiet,disabled:busy,
+                onClick:()=>setInputReview(false)},label('settings.inputStrikeCancel'))))
+          :null),
       h('details',{className:'ap-settings-block','aria-label':label('settings.realBlocking')},
         h('summary',{},label('settings.advancedTitle')),
         h('h3',{style:{margin:'13px 0 8px',fontSize:'14px'}},label('settings.realBlocking')),

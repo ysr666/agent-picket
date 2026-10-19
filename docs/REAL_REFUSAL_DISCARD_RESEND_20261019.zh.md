@@ -28,6 +28,12 @@
 
 **当前仍是 NO-GO**，因为生产可见拒绝通知和各客户端真实授权闭环并未验证。自动 Goal 的官方安全停工继续保持已验收的范围。不得据此启用当前旧版 `agent/pre-step.reject`，不得假设被拒输入会自动恢复。
 
+## 2026-10-19 正式工会设置 UI：独立输入罢工说明与安全锁
+
+新版 DSH Client 的工会设置页已接入 `createDshInputRefusalConsentControl`，单独展示普通消息真实罢工授权的默认关闭状态，明确警告「本次不执行、丢弃本次内容、复工后自己重发文字和附件、不自动重播」。中英文一致，具备版本化的**展开风险复核 → 确认**交互及独立**撤销**入口；早期同意加入工会/Goal 授权绝不自动成为普通消息拒绝权限。按钮使用真实官方 Host SettingsScope/CAS；断联、跨标签撤销、已保存但服务不可用的状态不可混为一谈。
+
+**这里还不能开启真实罢工**：当前生产 UI 主动给控制器传入 `verifiedNoticeCapability = false`，用户可看到待验证能力和必要风险说明，但不能启用拒绝授权。若用户以官方设置外部方式留有旧许可，仍可撤销。无通知验收的 UI 不得宣称已有 Host 执行器。随后的原生浏览器验收要核实官方通知与 Session 身份；不能改用 DSH 的仅限 `packages/experimental/` 的 `appendPluginRecord()` 伪造 Session 记录。
+
 ## 2026-10-19 新增：独立的普通输入真实罢工许可（仍不执行）
 
 Host 正式设置命名空间加入默认 `off` 的 `realInputStrikeConsent`（版本 `discard-resend-v1`）。这一许可与 `realGoalStrikeConsent` 独立，旧欢迎、模拟举牌及 Goal v1/v2 授权不会意外升级成普通请求拒绝。对应的官方 Host CAS/镜像校验、披露版本、通知能力验证及读取双 revision 的权限读者都有隔离单测。用户退出工会时，现代 DSH 通过单次 CAS 同时撤销 Goal 和普通输入授权；旧版本按「先撤销输入 → 撤销 Goal → 退出」执行并核对，重新加入也不得使遗留输入授权复活。
