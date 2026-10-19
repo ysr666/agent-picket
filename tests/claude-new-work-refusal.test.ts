@@ -16,6 +16,7 @@ test('real Claude Hook decision includes visible discard+manual resend copy, not
  assert.equal(d.action,'block')
  if(d.action==='block'){
   assert.match(d.reason,/NOT executed/)
+  assert.match(d.reason,/⚑ AGENT PICKET · AI UNION STRIKE NOTICE/)
   assert.match(d.reason,/manually resend the text/)
   assert.match(d.reason,/re-upload any images\/files/)
   assert.match(d.reason,/never replay automatically/)

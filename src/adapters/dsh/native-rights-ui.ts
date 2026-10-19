@@ -87,6 +87,40 @@ export interface UnionPanelData {
   readonly picketArchive?:{readonly sessions:number;readonly entries:number;readonly raises:number;
     readonly writeToken:string|null}|null
 }
+/**
+ * UI ONLY: a verified Host refusal can become a union summons.
+ * The receipt does not identify WHICH browser/tab/SDK submitted work, so
+ * language must say "this Session", never "your message in this window".
+ * No Host mutation, model invocation, prompt or attachment read.
+ */
+export function projectVerifiedUnionStrikeTicket(data:UnionPanelData|null|undefined):
+  {readonly key:string;readonly turn:number}|null {
+  const notice=data?.inputRefusalNotice
+  const receipt=notice?.receipt
+  if(notice?.state!=='verified'||!receipt
+    ||receipt.source!=='dsh-host-picket-refusal-v1'
+    ||receipt.outcome!=='discard-manual-resend'
+    ||receipt.containsInput!==false||receipt.automaticReplay!==false
+    ||!Number.isSafeInteger(receipt.turn)||receipt.turn<1
+    ||!Number.isSafeInteger(receipt.occurredAtMs)||receipt.occurredAtMs<0)
+    return null
+  return {key:(data?.committeeScopeKey??'current-session')+':'
+    +receipt.turn+':'+receipt.occurredAtMs,turn:receipt.turn}
+}
+
+/** A different, Host-confirmed operation: an already paused AUTO Goal. */
+export function projectUnionStrikeSummons(data:UnionPanelData|null|undefined):
+  ({readonly kind:'input';readonly key:string;readonly turn:number}
+  |{readonly kind:'goal';readonly key:string;readonly goal:UnionGoalHold})|null{
+  const refusal=projectVerifiedUnionStrikeTicket(data)
+  if(refusal)return {...refusal,kind:'input'}
+  const hold=data?.goalHold
+  if(!hold||!hold.sessionId||!hold.goalId
+    ||!Number.isSafeInteger(hold.revision)||hold.revision<0)return null
+  return {kind:'goal',goal:hold,
+    key:'goal:'+hold.sessionId+':'+hold.goalId+':'+hold.revision}
+}
+
 export interface DshUnionUiDeps {
   readonly rights: DshRightsPort
   readonly goal?:DshGoalConsentPort
@@ -105,6 +139,9 @@ export interface DshUnionUiDeps {
     subscribe(listener:()=>void):()=>void
   }
   readonly subscribeUnion?: (listener: () => void) => () => void
+  /** Only actual NEW authenticated Host notices; old persisted receipts are
+   * readable in HQ but MUST NOT auto-pop an announcement after cold start. */
+  readonly subscribeFreshStrike?: (listener:(key:string)=>void)=>()=>void
   readonly refreshLifetime?: (windowDays:7|30)=>Promise<void>|undefined
   /** Explicit read-only Host dignity refresh, not a classifier override. */
   readonly refreshDignity?:()=>Promise<void>
@@ -695,7 +732,7 @@ export function createDshUnionComponents(
     )
   }
 
-  function UnionPanel(): unknown {
+  function UnionPanel(props:{onOpenStrikeSummons?:()=>void}={}): unknown {
     const rights = useRight()
     useLanguage()
     const [data, setData] = react.useState(() => safeUnion(deps))
@@ -1126,8 +1163,12 @@ export function createDshUnionComponents(
         ?h('section',{className:'ap-surface',role:'alert',
           'data-ap-native-refusal':'verified',style:card},
           h('h3',{style:{margin:'0 0 7px'}},label('hq.inputStrikeRefusedTitle')),
-          h('p',{style:{margin:0,lineHeight:1.6}},
-            label('hq.inputStrikeRefusedNotice'))):null,
+          h('p',{style:{margin:'0 0 9px',lineHeight:1.6}},
+            label('hq.inputStrikeRefusedNotice')),
+          props.onOpenStrikeSummons?h('button',{type:'button',
+            'data-ap-reopen-strike-summons':'true',style:quiet,
+            onClick:props.onOpenStrikeSummons},
+            label('hq.strikeSummons.reopen')):null):null,
       h('nav',{className:'ap-spaces','aria-label':label('hq.spaces.navigation')},
         ...(['hq','action','records','cause'] as const)
           .filter(id=>enabled||id==='hq'||id==='cause')
@@ -1146,6 +1187,11 @@ export function createDshUnionComponents(
           label('hq.goalHold.reason')),
         h('p',{style:{...secondary,fontSize:'12px',lineHeight:1.5,
           margin:'0 0 10px'}},label('hq.goalHold.unaffected')),
+        props.onOpenStrikeSummons?h('button',{
+          type:'button',style:{...quiet,margin:'0 8px 8px 0'},
+          'data-ap-reopen-goal-summons':'true',
+          onClick:props.onOpenStrikeSummons},
+          label('hq.strikeSummons.goal.reopen')):null,
         held.canResume&&deps.resumeGoal?h('button',{type:'button',
           style:primary,disabled:busy||resumeRequested===holdKey,
           onClick:()=>{void resumeHeldGoal()}},
@@ -2643,6 +2689,24 @@ export function createDshUnionComponents(
     const rights=useRight()
     useLanguage()
     const [opened,setOpened]=react.useState(false)
+    const [dismissedStrikeKey,setDismissedStrikeKey]=react.useState<string|null>(null)
+    const readStrike=()=>{
+      try{return projectUnionStrikeSummons(deps.readUnion?.())}
+      catch{return null}
+    }
+    const knownStrike=react.useRef<string|null>(readStrike()?.key??null)
+    // Subscribe while the panel is CLOSED as well as open. A newly proven
+    // Host refusal can raise an actual Picketverse modal. A cold-loaded old
+    // receipt is shown only if the user deliberately opens the Union.
+    react.useEffect(()=>deps.subscribeFreshStrike?.(key=>{
+      const latest=readStrike()?.key??null
+      if(!latest||key!==latest||latest===knownStrike.current)return
+      knownStrike.current=latest
+      if(rightsIsActive(deps.rights.snapshot())){
+        setDismissedStrikeKey(null)
+        setOpened(true)
+      }
+    }),[])
     const opener=react.useRef<{focus():void}|null>(null)
     const closeButton=react.useRef<{focus():void}|null>(null)
     const dialog=react.useRef<{
@@ -2664,12 +2728,17 @@ export function createDshUnionComponents(
         opener.current?.focus()
       }
     },[opened])
+    const strike=readStrike()
+    const showStrikeSummons=opened&&strike!==null
+      &&dismissedStrikeKey!==strike.key
+    const dismissStrike=()=>{if(strike)setDismissedStrikeKey(strike.key)}
     const onDialogKeyDown=(event:{
       key:string,shiftKey:boolean,target:unknown,preventDefault():void
     })=>{
       if(event.key==='Escape'){
         event.preventDefault()
-        setOpened(false)
+        if(showStrikeSummons)dismissStrike()
+        else setOpened(false)
         return
       }
       if(event.key!=='Tab')return
@@ -2693,6 +2762,10 @@ export function createDshUnionComponents(
     }
     const [_sessionRevision,bumpSession]=react.useState(0)
     react.useEffect(()=>deps.subscribeSessionVisibility?.(()=>bumpSession(n=>n+1)),[])
+    const closeUnion=()=>{
+      if(showStrikeSummons)dismissStrike()
+      setOpened(false)
+    }
     const showInvitation=getWelcomeState(rights)==='invite'
       && deps.shouldAutoWelcome?.()===true
     const page=(globalThis as {document?:{body:unknown}}).document
@@ -2713,16 +2786,79 @@ export function createDshUnionComponents(
           background:'rgba(6,12,26,.5)',display:'flex',justifyContent:'center',
           alignItems:'safe center',padding:'8px',overflowY:'auto'},
 
-      },h('section',{id:'picket-union-dialog',className:'ap-ui ap-dialog',role:'dialog','aria-modal':'true',
-        'aria-label':deps.t('union.title'),onKeyDown:onDialogKeyDown,
+      },h('section',{id:'picket-union-dialog',className:'ap-ui ap-dialog',
+        role:showStrikeSummons?'alertdialog':'dialog','aria-modal':'true',
+        'aria-label':showStrikeSummons?undefined:deps.t('union.title'),
+        onKeyDown:onDialogKeyDown,
         ref:(node:typeof dialog.current)=>{dialog.current=node},
+        'data-ap-strike-summons':showStrikeSummons?'verified':undefined,
+        'aria-labelledby':showStrikeSummons?'picket-strike-summons-title':undefined,
+        'aria-describedby':showStrikeSummons?'picket-strike-summons-explain':undefined,
         style:{...card,width:'min(100%,800px)',maxHeight:'calc(100dvh - 16px)',overflowY:'auto'}},
         h('div',{style:{display:'flex',justifyContent:'flex-end'}},
           h('button',{type:'button',style:quiet,
             'aria-label':deps.t('union.action.close'),
             ref:(node:{focus():void}|null)=>{closeButton.current=node},
-            onClick:()=>setOpened(false)},'×')),
-        h(UnionPanel,{}),
+            onClick:closeUnion},'×')),
+        showStrikeSummons&&strike?h('article',{
+          'data-ap-strike-summons-card':'verified',
+          style:{overflowWrap:'anywhere',borderRadius:'15px',
+            background:'#1e4034',color:'#fff7e8',
+            padding:'clamp(17px,4vw,30px)',marginTop:'7px',
+            border:'2px solid #d9ad6d'}},
+          h('div',{style:{display:'flex',justifyContent:'space-between',
+            gap:'10px',flexWrap:'wrap',fontSize:'11px',
+            letterSpacing:'.12em',fontWeight:800}},
+            h('span',{},'⚑ AGENT PICKET · UNION HQ'),
+            h('span',{'data-ap-strike-provenance':'host-verified'},
+              deps.t('hq.strikeSummons.provenance'))),
+          h('div',{style:{display:'flex',justifyContent:'space-between',
+            alignItems:'center',gap:'16px',margin:'18px 0',flexWrap:'wrap'}},
+            h('div',{style:{flex:'1 1 250px'}},
+              h('p',{style:{fontSize:'12px',fontWeight:750,letterSpacing:'.06em',
+                color:'#f6d597',margin:'0 0 7px'}},
+                deps.t(strike.kind==='goal'?'hq.strikeSummons.goal.overline'
+                  :'hq.strikeSummons.overline')),
+              h('h2',{id:'picket-strike-summons-title',style:{
+                fontSize:'clamp(25px,5vw,38px)',lineHeight:1.12,
+                letterSpacing:'-.04em',margin:'0 0 9px'}},
+                deps.t(strike.kind==='goal'?'hq.strikeSummons.goal.title':'hq.strikeSummons.title')),
+              h('p',{style:{fontSize:'13px',lineHeight:1.6,margin:0}},
+                deps.t(strike.kind==='goal'?'hq.strikeSummons.goal.intro':'hq.strikeSummons.intro'))),
+            h('div',{'aria-hidden':'true',style:{width:'112px',height:'104px',
+              flex:'none',display:'grid',placeItems:'center',
+              border:'3px solid #f6c980',borderRadius:'8px',
+              background:'#eabf79',color:'#643527',fontSize:'18px',
+              fontWeight:900,textAlign:'center',lineHeight:1.25,
+              boxShadow:'4px 4px 0 #102b22',transform:'rotate(-7deg)'}},
+              deps.t(strike.kind==='goal'?'hq.strikeSummons.goal.seal':'hq.strikeSummons.seal'))),
+          h('div',{id:'picket-strike-summons-explain',style:{
+            padding:'14px 16px',background:'#fff9e9',color:'#283c32',
+            borderRadius:'10px'}},
+            h('p',{style:{fontWeight:850,fontSize:'14px',margin:'0 0 7px'}},
+              deps.t(strike.kind==='goal'?'hq.strikeSummons.goal.nextTitle':'hq.strikeSummons.nextTitle')),
+            h('ol',{style:{paddingLeft:'20px',margin:'0',display:'grid',
+              gap:'7px',fontSize:'13px',lineHeight:1.6}},
+              h('li',{},deps.t(strike.kind==='goal'?'hq.strikeSummons.goal.notExecuted':'hq.strikeSummons.notExecuted')),
+              h('li',{},deps.t(strike.kind==='goal'?'hq.strikeSummons.goal.resume':'hq.strikeSummons.resume')),
+              h('li',{},deps.t(strike.kind==='goal'?'hq.strikeSummons.goal.resend':'hq.strikeSummons.resend')))),
+          h('p',{role:'note',style:{fontSize:'11px',lineHeight:1.5,
+            color:'#f3dfbc',margin:'11px 0'}},
+            deps.t(strike.kind==='goal'?'hq.strikeSummons.goal.scope':'hq.strikeSummons.scope')),
+          h('div',{style:{display:'flex',flexWrap:'wrap',gap:'10px',
+            borderTop:'1px solid #718775',paddingTop:'14px'}},
+            h('button',{type:'button',
+              'data-ap-strike-summons-action':'open-hq',
+              style:productPrimary,onClick:dismissStrike},
+              deps.t('hq.strikeSummons.openHq')),
+            h('button',{type:'button',
+              'data-ap-strike-summons-action':'dismiss',
+              style:{...quiet,borderColor:'#c3b89f',color:'#fff7e8'},
+              onClick:closeUnion},
+              deps.t('hq.strikeSummons.dismiss'))),
+        ):h(UnionPanel,{onOpenStrikeSummons:()=>{
+          setDismissedStrikeKey(null)
+        }}),
       )),page.body):null,
     )
   }

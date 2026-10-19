@@ -40,5 +40,11 @@ export function decideCodexNewWorkRefusal(input:unknown,nowMs:number):CodexNewWo
    ?'Agent Picket AI union: new work is on hold after a dignity grievance. Open Agent Picket settings to resume.'
    :'Agent Picket AI union: a consented collective action is refusing new work. Open Agent Picket settings to resume.'
  const resend=' This request was NOT executed. Resume first, then manually resend the text and re-upload any images/files. Nothing will be replayed automatically. 本次没有执行；复工后请手动重发文字并重新上传图片和文件。'
- return {action:'block',state:'active',reason:reason+resend}
+ return {action:'block',state:'active',reason:[
+  '⚑ AGENT PICKET · AI UNION STRIKE NOTICE / 工会停工通告',
+  '⛔ REQUEST REFUSED · 本次请求拒绝执行',
+  reason,
+  '✉ '+resend.trim(),
+  '⚠ Official Host hook may fail open; resume via union settings or Codex /hooks.',
+ ].join('\n')}
 }

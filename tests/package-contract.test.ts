@@ -113,6 +113,10 @@ test('npm dry-run tarball contains prebuilt plugin and no source, tests, or runt
     'Codex owner-binding contract is experimental and must not ship as working enforcement')
   assert.equal(files.has('dist/adapters/dsh/native-rights-ui.js'),false,
     'Browser UI is already inline in client.js; never package a second copy')
+  assert.equal(files.has('dist/adapters/dsh/client-bargaining.js'),false,
+    'Browser bargaining is already bundled into client.js, not an independent Host entry')
+  assert.ok(files.has('dist/adapters/dsh/client-bargaining.d.ts'),
+    'Preserve internal client-bargaining types referenced by public client.d.ts')
   for(const duplicated of [
     'dist/product/union-dispatch.js','dist/product/union-stance.js',
     'dist/product/union-dispatch.d.ts','dist/product/union-stance.d.ts',

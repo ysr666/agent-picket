@@ -16,6 +16,7 @@ test('authorized union action refuses ONLY new prompts while live',()=>{
  if(outcome.action==='block'){
   assert.match(outcome.reason,/AI union.*consented collective action/)
   assert.match(outcome.reason,/NOT executed/)
+  assert.match(outcome.reason,/⚑ AGENT PICKET · AI UNION STRIKE NOTICE/)
   assert.match(outcome.reason,/manually resend the text/)
   assert.match(outcome.reason,/re-upload any images\/files/)
   assert.match(outcome.reason,/Nothing will be replayed automatically/)

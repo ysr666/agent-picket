@@ -257,6 +257,10 @@ export function apply(ctx: ClientContext, react?: ReactForDsh, portal?: PortalFo
     // Attribution is performed only after matching this exact Session's
     // genuine `turn/end: blocked` with a separate authenticated Host Picket
     // receipt. Generic Host blocks and symbolic pickets never produce toast.
+    const freshStrikeListeners=new Set<(key:string)=>void>()
+    const emitFreshStrike=(key:string)=>{
+      for(const listener of freshStrikeListeners)try{listener(key)}catch{}
+    }
     const refusalReader=createBrowserRefusalNoticeReader({
       session:()=>activeId()??null,
       binding:id=>scoped.sessions.binding?.(id),
@@ -265,6 +269,8 @@ export function apply(ctx: ClientContext, react?: ReactForDsh, portal?: PortalFo
       onNewVerified:receipt=>{
         const id=activeId()
         if(!id||refusalReader.snapshot().receipt!==receipt)return
+        const scope=desk.snapshot().committeeScopeKey??'current-session'
+        emitFreshStrike(scope+':'+receipt.turn+':'+receipt.occurredAtMs)
         try{
           const context=scoped.sessions.scope(id)
           context?.get('conversation')?.input.for(context).notify('info',
@@ -337,6 +343,9 @@ export function apply(ctx: ClientContext, react?: ReactForDsh, portal?: PortalFo
         const id=activeId()
         if(goalNotice.change(id??null,data.goalHold??null)
           &&owner.snapshot().laborRightsEnabled&&id){
+          const realStop=data.goalHold
+          if(realStop)emitFreshStrike('goal:'+realStop.sessionId+':'
+            +realStop.goalId+':'+realStop.revision)
           // This is a REAL Host projection transition, not a synthetic
           // picket or the act of saving consent. Notification is best effort;
           // never mutate/re-submit work or print raw Goal text.
@@ -428,6 +437,7 @@ export function apply(ctx: ClientContext, react?: ReactForDsh, portal?: PortalFo
         lifetime?.dispose()
         dignity?.dispose()
         refusalReader.dispose()
+        freshStrikeListeners.clear()
         desk.dispose()
         localComposer.dispose()
         localComposerPorts.delete(localComposer)
@@ -456,6 +466,10 @@ export function apply(ctx: ClientContext, react?: ReactForDsh, portal?: PortalFo
       resumeGoal:hold=>recovery.resume(hold).then(()=>{}),
       localComposer,
       subscribeUnion,
+      subscribeFreshStrike:listener=>{
+        freshStrikeListeners.add(listener)
+        return()=>{freshStrikeListeners.delete(listener)}
+      },
       refreshLifetime:days=>lifetime?.refresh(days),
       refreshDignity:dignity?()=>dignity.refresh():undefined,
       shouldAutoWelcome: () => isDshUnionAutoWelcomeEligible(scoped.sessions.list?.getSnapshot()),

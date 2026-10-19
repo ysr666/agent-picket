@@ -98,3 +98,15 @@ Host 正式设置命名空间加入默认 `off` 的 `realInputStrikeConsent`（�
 3. DSH 的 agent/pre-step.reject 可在模型之前拒绝，但不同于 Claude/Codex，它只产生普通 blocked，不自带提交者可读的工会专属说明。可借助已有的插件 React 工会 HQ 以及已验收的 Session 事件+Host 回执投影来显示通知，conversation.input.notify 仅是额外提示。仍要解决谁提交了本次请求、谁能看到其可见回执：不能拿同一 Session 另一 Web 标签的预先横幅充当 SDK/CLI 的通知确认。ComposerBlocks 仅能暂停当前客户端输入框，不是全 Host 拒绝。
 
 结论：官方新增通知 API 不是所有客户端的统一先决条件。要验收的是同一个被拒绝请求确实没到模型、用户可以看到完整原因和恢复说明、只执行复工后由人重新提交的消息，并能通过真实 Host 授权机制撤销。Claude/Codex 当前实验用纯 JSON 行动文件，不等于可信生产授权或真的 AI 代表集体投票；Hook 故障可放行、未自动安装到用户环境。发布门禁未因此变成 GO。
+
+## 2026-10-20 · Picketverse 真正的工会停工公告
+
+这轮纠正重要的体验缺口：UserPromptSubmit 的 block 原因不是一个够好玩的 AI 工会体验。新版 DSH 原生 Sidebar 现有官方 Portal 里，加入大字号高对比、金色倾斜印章、⚑ 工会抬头和完整复工指引的 alertdialog，保留现有 Host root inert、键盘焦点循环、Esc 关闭和中英文支持。
+
+只承认两种有官方 Host 证据的工作动作。一是普通输入拒绝：必须先由官方 blocked/no-model Turn 和 Picket 专属元数据交叉验证，才能显示「未执行→核实复工→重新发送文字与全部附件」。二是实际 Goal 工作停止：必须读取官方 Goal ID 与 revision，才显示「前一轮已完成、下一轮自动 Goal 停止、可在 HQ 或官方命令复工」，明确不会因此拒绝普通聊天。假举牌、模拟协商、算法分类或无证明的 blocked 一律不能触发正式公告。
+
+订阅官方 Session 的现有 Host 变更，无需用户先打开 Sidebar：新的已核实停工可以自动打开弹层，同一案只弹一次。冷载旧回执不能装作刚刚发生。用户可以在 HQ 重新查看；关闭通知不操作真实 Host，不自动重播消息，不读取或存储原始内容。Host Session 回执不等于某一浏览器标签就是提交人，所以绝不谎称其他 SDK/CLI 的使用者必然看到了弹窗。
+
+Claude Code/Codex 不适合由命令 Hook 强制启动系统 GUI（不一定有桌面、会导致超时/权限问题）。因此使用 Host 原生 reason/event 作为主要通知入口，改成醒目的 ⚑ AGENT PICKET 工会停工单，明确说明未执行、原因和手动重发步骤；浏览器、系统推送可以以后作为经用户授权的附加渠道，而不是阻断任务的安全前提。
+
+验证：新增 Host 回执真伪、官方 Goal 区分、弹窗动作、去重和重启安全组件测试；官方 DSH 0.2.1-rc.2 真实 Chrome 源码及安装包流程 2/2 PASS；Mac Claude Code 2.1.295 和 Codex 0.146.1 真正 Host Hook 均拦截模型且正确返回工会停工理由。生产普通输入拦截仍默认 OFF，因此不能谎称「真实用户请求被拒并显示弹窗」整链已签收。

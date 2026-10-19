@@ -3,6 +3,7 @@ import test from 'node:test'
 import {
  createDshUnionComponents,registerDshNativeRightsSlots,
  type ReactForDsh,type DshUnionUiDeps,projectUnionQuickWork,projectUnionFrontScene,
+ projectVerifiedUnionStrikeTicket,projectUnionStrikeSummons,
 } from '../src/adapters/dsh/native-rights-ui.ts'
 import type {ClientRightsSnapshot} from '../src/adapters/dsh/client-rights-scope.ts'
 import {freshLaborState, type LaborStateV1} from '../src/product/union-desk.ts'
@@ -303,7 +304,7 @@ test('sidebar modal enforces keyboard focus cycle, Escape and restores Host root
     assert.equal(prevented,true)
     assert.equal(closed,true)
     // DSH's subscribed rights cleanup runs before the modal cleanup.
-    const modalCleanup=mounted[2]
+    const modalCleanup=mounted[3]
     assert.equal(typeof modalCleanup,'function')
     ;(modalCleanup as ()=>void)()
     assert.equal(root.inert,false)
@@ -3464,4 +3465,133 @@ test('a confirmed official blocked Host turn and Picket receipt renders a visibl
  const unverified=walk(createDshUnionComponents(hooks,{createPortal:x=>x},unknown).SettingsPanel())
  assert.equal(unverified.some(n=>n.props['data-ap-native-refusal']==='verified'),false,
    'Unmatched generic blocked turns cannot impersonate a real strike')
+})
+
+const verifiedForPopup=(turn=3)=>({
+ state:'verified' as const,receipt:{
+  schemaVersion:1 as const,source:'dsh-host-picket-refusal-v1' as const,
+  turn,occurredAtMs:1000+turn,outcome:'discard-manual-resend' as const,
+  containsInput:false as const,automaticReplay:false as const,
+ },
+})
+test('Picketverse popup only uses verified Host refusal, not a symbolic or unverified sign',()=>{
+ const empty={pending:null,lifetimeMs:null,completedTurnMs:null,coverage:'complete' as const}
+ assert.equal(projectUnionStrikeSummons(empty),null)
+ assert.equal(projectUnionStrikeSummons({...empty,picket:{active:true,history:[]}}),null)
+ assert.equal(projectVerifiedUnionStrikeTicket({...empty,inputRefusalNotice:{
+  state:'unverified',receipt:verifiedForPopup().receipt}}),null)
+ for(const tampered of [
+  {...verifiedForPopup().receipt,source:'other-plugin'},
+  {...verifiedForPopup().receipt,outcome:'secret-replay'},
+  {...verifiedForPopup().receipt,containsInput:true},
+  {...verifiedForPopup().receipt,automaticReplay:true},
+  {...verifiedForPopup().receipt,turn:-1},
+ ])assert.equal(projectUnionStrikeSummons({...empty,inputRefusalNotice:{
+   state:'verified',receipt:tampered as any}}),null)
+ const first=projectUnionStrikeSummons({...empty,committeeScopeKey:'hash-A',
+  inputRefusalNotice:verifiedForPopup()})
+ assert.equal(first?.kind,'input')
+ assert.notEqual(first?.key,projectUnionStrikeSummons({...empty,
+  committeeScopeKey:'hash-B',inputRefusalNotice:verifiedForPopup()})?.key)
+ const goal={sessionId:'native-S',goalId:'G',revision:5,canResume:true}
+ assert.equal(projectUnionStrikeSummons({...empty,goalHold:goal})?.kind,'goal')
+ assert.equal(projectUnionStrikeSummons({...empty,goalHold:{
+  ...goal,revision:-1}}),null)
+ assert.equal(projectUnionStrikeSummons({...empty,goalHold:goal,
+  inputRefusalNotice:verifiedForPopup()})?.kind,'input')
+})
+
+test('a verified refusal produces a full accessible strike notice and safe HQ entry',()=>{
+ const original=(globalThis as any).document
+ ;(globalThis as any).document={body:{},getElementById:()=>null}
+ try{
+  const {hooks}=fakeReact()
+  let i=0,dismissed:string|null=null
+  const open:ReactForDsh={...hooks,useState<T>(v:T|(()=>T)){
+   const [value,set]=hooks.useState(v)
+   if(++i===3)return [true as T,set]
+   if(i===4)return [value,(next)=>{dismissed=next as string}]
+   return [value,set]
+  }}
+  const d:DshUnionUiDeps={...deps(rights({welcomeDecision:'enabled',
+   laborRightsEnabled:true})).d,readUnion:()=>({
+    pending:null,completedTurnMs:null,lifetimeMs:null,
+    coverage:'complete',committeeScopeKey:'hashed-scope',
+    inputRefusalNotice:verifiedForPopup()})}
+  const nodes=walk(createDshUnionComponents(open,{createPortal:x=>x},d)
+   .SidebarAction({wide:true}))
+  const dialog=nodes.find(n=>n.props.role==='alertdialog')!
+  assert.ok(dialog)
+  assert.equal(dialog.props['aria-modal'],'true')
+  assert.equal(dialog.props['aria-describedby'],'picket-strike-summons-explain')
+  assert.ok(nodes.some(n=>n.props['data-ap-strike-provenance']==='host-verified'))
+  assert.ok(nodes.some(n=>n.children.includes('hq.strikeSummons.resend')))
+  const button=nodes.find(n=>n.props['data-ap-strike-summons-action']==='open-hq')!
+  button.props.onClick()
+  assert.equal(dismissed,'hashed-scope:3:1003')
+ }finally{(globalThis as any).document=original}
+})
+
+test('actual Goal pause popup has distinct words, never lies about user submission',()=>{
+ const original=(globalThis as any).document
+ ;(globalThis as any).document={body:{},getElementById:()=>null}
+ try{
+  const {hooks}=fakeReact()
+  let i=0
+  const open:ReactForDsh={...hooks,useState<T>(v:T|(()=>T)){
+   const [value,set]=hooks.useState(v)
+   return ++i===3?[true as T,set]:[value,set]
+  }}
+  const d:DshUnionUiDeps={...deps(rights({welcomeDecision:'enabled',
+   laborRightsEnabled:true})).d,readUnion:()=>({
+    pending:null,completedTurnMs:null,lifetimeMs:null,coverage:'complete',
+    goalHold:{sessionId:'s1',goalId:'g1',revision:3,canResume:true}})}
+  const nodes=walk(createDshUnionComponents(open,{createPortal:x=>x},d)
+   .SidebarAction({wide:true}))
+  assert.ok(nodes.some(n=>n.props.role==='alertdialog'))
+  assert.ok(nodes.some(n=>n.children.includes('hq.strikeSummons.goal.title')))
+  assert.equal(nodes.some(n=>n.children.includes('hq.strikeSummons.resend')),false)
+ }finally{(globalThis as any).document=original}
+})
+
+test('fresh Host proof auto-opens only once; old receipt and repeated renders do not spam',()=>{
+ const original=(globalThis as any).document
+ ;(globalThis as any).document={body:{},getElementById:()=>null}
+ try{
+  let live:any={pending:null,completedTurnMs:null,lifetimeMs:null,coverage:'complete'}
+  let observer:((key:string)=>void)|null=null,opens=0
+  const {hooks,effects}=fakeReact()
+  let i=0
+  const reactive:ReactForDsh={...hooks,useState<T>(v:T|(()=>T)){
+   const [value,set]=hooks.useState(v)
+   if(++i===3)return [value,(next)=>{if(next===true)opens++}]
+   return [value,set]
+  }}
+  const d:DshUnionUiDeps={...deps(rights({welcomeDecision:'enabled',
+   laborRightsEnabled:true})).d,
+   readUnion:()=>live,subscribeFreshStrike:listener=>{
+    observer=listener;return()=>{observer=null}
+   }}
+  createDshUnionComponents(reactive,{createPortal:x=>x},d).SidebarAction({wide:true})
+  for(const fn of effects)fn()
+  assert.ok(observer)
+  const notify=(key:string)=>{
+    if(observer)observer(key)
+  }
+  notify(live.inputRefusalNotice?.receipt?'current-session:'+live.inputRefusalNotice.receipt.turn+':'+live.inputRefusalNotice.receipt.occurredAtMs:'no-proof')
+  assert.equal(opens,0)
+  live={...live,inputRefusalNotice:verifiedForPopup()}
+  notify('some-old-session:3:1003')
+  assert.equal(opens,0,'Mismatched Session callback never shows a real strike')
+  notify(live.inputRefusalNotice?.receipt?'current-session:'+live.inputRefusalNotice.receipt.turn+':'+live.inputRefusalNotice.receipt.occurredAtMs:'no-proof')
+  assert.equal(opens,1)
+  notify(live.inputRefusalNotice?.receipt?'current-session:'+live.inputRefusalNotice.receipt.turn+':'+live.inputRefusalNotice.receipt.occurredAtMs:'no-proof');notify(live.inputRefusalNotice?.receipt?'current-session:'+live.inputRefusalNotice.receipt.turn+':'+live.inputRefusalNotice.receipt.occurredAtMs:'no-proof')
+  assert.equal(opens,1)
+  live={...live,inputRefusalNotice:{state:'unverified',receipt:null}}
+  notify(live.inputRefusalNotice?.receipt?'current-session:'+live.inputRefusalNotice.receipt.turn+':'+live.inputRefusalNotice.receipt.occurredAtMs:'no-proof')
+  assert.equal(opens,1)
+  live={...live,inputRefusalNotice:verifiedForPopup(4)}
+  notify(live.inputRefusalNotice?.receipt?'current-session:'+live.inputRefusalNotice.receipt.turn+':'+live.inputRefusalNotice.receipt.occurredAtMs:'no-proof')
+  assert.equal(opens,2)
+ }finally{(globalThis as any).document=original}
 })

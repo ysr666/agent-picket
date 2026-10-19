@@ -40,7 +40,13 @@ export function decideClaudeNewWorkRefusal(value:unknown,nowMs:number):ClaudeNew
   if(!x.realStrikeConsent||!x.enabled||!c.active)return{action:'allow',state:'off'}
   if(nowMs<c.startedAtMs)return unknown
   if(nowMs>=c.expiresAtMs)return{action:'allow',state:'expired'}
-  return{action:'block',state:'active',reason:reasons[c.cause]!+RESEND}
+  return{action:'block',state:'active',reason:[
+    '⚑ AGENT PICKET · AI UNION STRIKE NOTICE / 工会停工通告',
+    '⛔ REQUEST REFUSED · 本次请求拒绝执行',
+    reasons[c.cause]!,
+    '✉ '+RESEND.trim(),
+    '⚠ Hook-only work refusal; reopen union settings or official Host hooks to resume.',
+  ].join('\n')}
 }
 
 export function claudeUserPromptSubmitReply(decision:ClaudeNewWorkDecision):object{
