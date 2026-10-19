@@ -94,6 +94,13 @@ for flavor in source installed; do
     ((pass+=1))
   else
     echo "FLAVOR=$flavor FAIL stage=real-chrome-rights-and-ax"
+    # These checks use a synthetic offline provider and isolated Host profile,
+    # never user transcripts. Surface test failures otherwise lost to CI.
+    if env | grep -qx 'PICKET_DIGNITY_REFRESH_E2E=1'; then
+      echo "--- $flavor isolated native browser failure ---"
+      tail -65 "$proof/web-$flavor.log"
+      echo "--- end browser failure ---"
+    fi
     ((fail+=1))
   fi
 done
