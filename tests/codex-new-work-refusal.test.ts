@@ -13,7 +13,13 @@ const active={version:1,host:'codex',scope:'new-work-only',realStrikeConsent:tru
 test('authorized union action refuses ONLY new prompts while live',()=>{
  const outcome=decideCodexNewWorkRefusal(active,t)
  assert.equal(outcome.action,'block')
- if(outcome.action==='block')assert.match(outcome.reason,/AI union.*consented collective action/)
+ if(outcome.action==='block'){
+  assert.match(outcome.reason,/AI union.*consented collective action/)
+  assert.match(outcome.reason,/NOT executed/)
+  assert.match(outcome.reason,/manually resend the text/)
+  assert.match(outcome.reason,/re-upload any images\/files/)
+  assert.match(outcome.reason,/Nothing will be replayed automatically/)
+ }
  for(const cause of ['overwork','repeated-targeted-abuse','collective-vote'])
   assert.equal(decideCodexNewWorkRefusal({...active,campaign:{...active.campaign,cause}},t).action,'block')
 })

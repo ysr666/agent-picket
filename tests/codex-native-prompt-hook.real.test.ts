@@ -167,6 +167,12 @@ test('official Codex UserPromptSubmit explicitly denies before a model HTTP requ
      if(mode==='union-deny'){
       const readback=await rpc('thread/read',{threadId,includeTurns:true})
       const persisted=JSON.stringify(readback.thread?.turns??[])
+      assert.ok(notifications.some(x=>x.method==='hook/completed'
+        &&JSON.stringify(x).includes('NOT executed')
+        &&JSON.stringify(x).includes('manually resend the text')),
+        'Codex must put fixed refusal reason in its official Hook event, without a custom toast')
+      assert.equal(persisted.includes('NOT executed'),false,
+        'Visible Hook notice must not become injected persistent model content')
       assert.equal(readback.thread?.turns?.length,1)
       assert.equal(readback.thread?.turns?.[0]?.status,'completed')
       assert.equal(persisted.includes('SYNTHETIC_OFFLINE_UNION_TEST_NO_REAL_WORK'),false,

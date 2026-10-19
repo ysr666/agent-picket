@@ -1,0 +1,38 @@
+name: Claude Code UserPrompt Integration
+on:
+  pull_request:
+    paths:
+      - src/adapters/claude/new-work-refusal.ts
+      - src/adapters/codex/new-work-refusal.ts
+      - tests/claude-new-work-refusal.test.ts
+      - scripts/claude-union-user-prompt-hook.mjs
+      - tests/claude-native-prompt-refusal.real.test.ts
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  claude-prompt:
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 12
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+      - name: Build and test Agent Picket
+        run: |
+          npm ci --ignore-scripts --no-audit --no-fund
+          npm run check
+      - name: Install official Claude Code (isolated)
+        run: npm install --prefix .claude-host --no-save --no-audit --no-fund @anthropic-ai/claude-code@2.1.295
+      - name: Verify official CLI version
+        run: .claude-host/node_modules/.bin/claude --version
+      - name: Test actual prompt refusal and manual resume
+        run: node --experimental-strip-types --test tests/claude-native-prompt-refusal.real.test.ts
+        env:
+          AGENT_PICKET_CLAUDE_BIN: ${{ github.workspace }}/.claude-host/node_modules/.bin/claude

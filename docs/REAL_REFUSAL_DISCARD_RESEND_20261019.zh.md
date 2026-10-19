@@ -88,3 +88,13 @@ Host 正式设置命名空间加入默认 `off` 的 `realInputStrikeConsent`（�
 跨 Session、最新正常任务开始/结束、撤销许可、关闭 UI 和原生服务解绑会清理旧 retry；即使浏览器已排队的“取消回调”最终又执行，也不能清掉另一 Session 的新 retry，更不能请求旧 Session 的 Host 凭据。计时器不可用/抛异常时保守保留未验证态，不产生未处理异常也不丢用户工作。无第三方推送、无提示词或附件存储、无新 Host API。
 
 新增 dsh-refusal-notice.test.ts 中的实际异步竞态/撤销/重入/有界查询回归，并按项目常规运行 TS 类型检查、发布包和官方 DSH Chrome 验收。仍未启用生产 pre-step.reject：Host 正式的请求来源/接收者同一性证据和具体客户端通知证明仍未通过，不能把此时序修复当作整个 #80 DONE 或 release PASS。
+
+## 2026-10-19 深夜：对照别人的实现，不应强制要求官方新增通知服务
+
+用户指出，真实拒绝后的提示不必全部依赖 Host 新增的通知 API。Claude Code / Codex 官方 Hooks 已经内置了将拒绝理由反馈到原生客户端的渠道。新的 P0 工程路线应该按各 Host 的能力分别实现。
+
+1. Claude Code 的 UserPromptSubmit 允许 Hook 返回 decision=block + reason，Host 将 reason 呈给用户且不追加进模型上下文。新增 src/adapters/claude/new-work-refusal.ts 和 scripts/claude-union-user-prompt-hook.mjs，在独立试验性授权/模拟行动开启时，使用官方结果拒绝新消息，并写明「本次未执行；复工后手动重发文字与附件；不自动重播」。不提取、不记录或保存原始提示词。真实 Claude Code 2.1.295 Mac CLI 实验：隔离官方 UserPromptSubmit 设置，Hook 实际运行，拒绝时本地 HTTP 无推理端点没有收到请求，且 CLI 输出确实含拒绝及重发理由；独立关闭工会行动后新手动提交能到达端点。新增 macOS / Ubuntu 真实 CI 测试，结果须以 CI 最终运行状态为准。
+2. Codex 的 UserPromptSubmit 同样支持 Hook 返回 decision=block + reason。现有项目候选已能阻断，原文案未说清用户需要重传文字/附件，这轮补齐。真实 Codex 0.146.1 Mac App-Server 的官方 Hook 事件链中，hook/completed 事件确实包含新增的未执行及手动重发理由，而本地模型端点没有收到被拒绝请求；拒绝说明未写进持久对话，官方禁用 Hook 后新提交能运行。App-Server 事件送达不自动等于各种 TUI/桌面 UI 及无障碍都已真人验收。
+3. DSH 的 agent/pre-step.reject 可在模型之前拒绝，但不同于 Claude/Codex，它只产生普通 blocked，不自带提交者可读的工会专属说明。可借助已有的插件 React 工会 HQ 以及已验收的 Session 事件+Host 回执投影来显示通知，conversation.input.notify 仅是额外提示。仍要解决谁提交了本次请求、谁能看到其可见回执：不能拿同一 Session 另一 Web 标签的预先横幅充当 SDK/CLI 的通知确认。ComposerBlocks 仅能暂停当前客户端输入框，不是全 Host 拒绝。
+
+结论：官方新增通知 API 不是所有客户端的统一先决条件。要验收的是同一个被拒绝请求确实没到模型、用户可以看到完整原因和恢复说明、只执行复工后由人重新提交的消息，并能通过真实 Host 授权机制撤销。Claude/Codex 当前实验用纯 JSON 行动文件，不等于可信生产授权或真的 AI 代表集体投票；Hook 故障可放行、未自动安装到用户环境。发布门禁未因此变成 GO。
