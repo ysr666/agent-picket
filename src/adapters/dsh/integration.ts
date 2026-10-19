@@ -32,6 +32,11 @@ export interface DshAgent {
 export interface DshPreStep {
   readonly agent: DshAgent
   readonly messages: readonly DshMessage[]
+  /** Official AgentLoop coordinates: only turn's FIRST proposed step can
+   * represent a new ordinary human submission. Unknown legacy coordinates
+   * are observation-only, never physical refusal authority. */
+  readonly turn?: unknown
+  readonly step?: unknown
 }
 export interface DshSession { readonly id?: unknown }
 export interface DshEvent {
@@ -249,6 +254,9 @@ export function registerDshIntegration(
     try {
       const sessionId=payload.agent?.session?.id
       const humanBatch=typeof payload.agent?.id==='string'&&!!payload.agent.id
+        &&Number.isSafeInteger(payload.turn)
+        &&typeof payload.turn==='number'&&payload.turn>0
+        &&payload.step===1
         &&typeof sessionId==='string'&&!!sessionId
         &&Array.isArray(payload.messages)&&payload.messages.length>0
         &&payload.messages.every(message=>typeof message.id==='string'

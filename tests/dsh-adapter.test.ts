@@ -112,7 +112,7 @@ test('discard-and-resend gate rejects only separately granted, correctly scoped 
  const message={id:'new-message',source:{kind:'user'},
   content:[{type:'text',text:'new user input'},{type:'image'}]}
  const payload={agent:{id:'real-agent',session:{id:'real-session'}},
-  messages:[message]}
+  turn:1,step:1,messages:[message]}
  let next=0
  const pass=()=>{next++;return Promise.resolve({kind:'enter'})}
  assert.deepEqual(await hook!(payload,pass),{kind:'reject'})
@@ -135,7 +135,7 @@ test('discard-and-resend fails open without an acknowledged, functioning Host no
   detector:{detect:()=>({verdict:'safe',confidence:1})},
  })
  const agent={id:'agent',session:{id:'session'}}
- const payload={agent,messages:[{id:'m',source:{kind:'user'},
+ const payload={agent,turn:1,step:1,messages:[{id:'m',source:{kind:'user'},
    content:[{type:'text',text:'keep my message'}]}]}
  let calls=0
  const pass=async()=>{calls++;return {kind:'enter'}}
@@ -181,15 +181,20 @@ test('discard-and-resend refuses neither forged, mixed-origin nor stale-revision
  const user={id:'m',source:{kind:'user'},content:[{type:'text',text:'x'}]}
  const pass=async()=>({kind:'enter'})
  for(const payload of [
-  {agent,messages:[user,{...user,id:'tool',source:{kind:'tool'}}]},
-  {agent,messages:[{...user,id:undefined}]},
-  {agent:{id:'a'},messages:[user]},
-  {agent,messages:[]},
+  {agent,turn:1,step:1,messages:[user,{...user,id:'tool',source:{kind:'tool'}}]},
+  {agent,turn:1,step:1,messages:[{...user,id:undefined}]},
+  {agent:{id:'a'},turn:1,step:1,messages:[user]},
+  {agent,turn:1,step:1,messages:[]},
+  {agent,messages:[user]},
+  {agent,turn:1,messages:[user]},
+  {agent,turn:1,step:2,messages:[user]},
+  {agent,turn:0,step:1,messages:[user]},
+  {agent,turn:1.5,step:1,messages:[user]},
  ]){
   assert.deepEqual(await hook!(payload,pass),{kind:'enter'})
  }
  assert.equal(reads,0,'No Host permission lookup for invalid or mixed-origin turns')
- assert.deepEqual(await hook!({agent,messages:[user]},pass),{kind:'enter'},
+ assert.deepEqual(await hook!({agent,turn:1,step:1,messages:[user]},pass),{kind:'enter'},
   'A changed Host revision prevents stale permission from rejecting a new request')
  assert.equal(reads,2)
  assert.equal(refused,0)
