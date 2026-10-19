@@ -107,7 +107,7 @@ test('discard-and-resend gate rejects only separately granted, correctly scoped 
       hostAuthenticated:true,explicitConsent:true,active:true,
       visibleResendNotice:true as const,sessionId,hostRevision:revision}
   },
-  onExplicitRefusal:()=>{refused++},
+  onExplicitRefusal:()=>{refused++;return true},
  })
  const message={id:'new-message',source:{kind:'user'},
   content:[{type:'text',text:'new user input'},{type:'image'}]}
@@ -129,6 +129,37 @@ test('discard-and-resend gate rejects only separately granted, correctly scoped 
  assert.equal(next,2)
 })
 
+test('discard-and-resend fails open without an acknowledged, functioning Host notice',async()=>{
+ const engine=new UnionEngine({
+  store:new MemoryStateStore(),clock:{now:()=>1},
+  detector:{detect:()=>({verdict:'safe',confidence:1})},
+ })
+ const agent={id:'agent',session:{id:'session'}}
+ const payload={agent,messages:[{id:'m',source:{kind:'user'},
+   content:[{type:'text',text:'keep my message'}]}]}
+ let calls=0
+ const pass=async()=>{calls++;return {kind:'enter'}}
+ for(const [index,notice] of [undefined,()=>false,()=>{throw Error('toast unavailable')},()=>true].entries()){
+   let hook:Function|undefined
+   const ctx = {
+     on(name: string, fn: Function) {
+       if (name === 'agent/pre-step') hook = fn
+     },
+   } as unknown as DshIntegrationContext
+   registerDshIntegration(ctx,{
+      engine,clock:{now:()=>1},getLaborRightsEnabled:()=>true,
+      getExplicitDiscardRefusal:sessionId=>({
+        kind:'agent-picket-discard-refusal-v1',sessionId,
+        hostAuthenticated:true,explicitConsent:true,active:true,
+        visibleResendNotice:true,hostRevision:10,
+      }),onExplicitRefusal:notice,
+   })
+   const result=await hook!(payload,pass)
+   assert.deepEqual(result,index===3?{kind:'reject'}:{kind:'enter'})
+ }
+ assert.equal(calls,3,'Unavailable, false or throwing notice must never discard')
+})
+
 test('discard-and-resend refuses neither forged, mixed-origin nor stale-revision pre-step',async()=>{
  const engine=new UnionEngine({
   store:new MemoryStateStore(),clock:{now:()=>1},
@@ -144,7 +175,7 @@ test('discard-and-resend refuses neither forged, mixed-origin nor stale-revision
     sessionId,hostAuthenticated:true,explicitConsent:true,
     active:true,visibleResendNotice:true,hostRevision:++reads,
   }),
-  onExplicitRefusal:()=>{refused++},
+  onExplicitRefusal:()=>{refused++;return true},
  })
  const agent={id:'a',session:{id:'session'}}
  const user={id:'m',source:{kind:'user'},content:[{type:'text',text:'x'}]}

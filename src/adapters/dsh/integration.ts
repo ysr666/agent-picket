@@ -113,8 +113,11 @@ export interface DshIntegrationOptions {
   readonly getExplicitDiscardRefusal?:(
     sessionId:string,
   )=>DshDiscardRefusalReceipt|null
-  /** Metadata-only audit, never text, attachment or stable message IDs. */
-  readonly onExplicitRefusal?:(sessionId:string)=>void
+  /** Synchronous acknowledgement from a verified Host notice owner. Must return
+   * true only when the user-visible discard/resend instructions are confirmed.
+   * Missing, throwing or false notice => allow normal execution, never drop.
+   * Callback receives only the Session ID; never prompt text or attachments. */
+  readonly onExplicitRefusal?:(sessionId:string)=>boolean
 }
 
 /**
@@ -251,7 +254,8 @@ export function registerDshIntegration(
         &&payload.messages.every(message=>typeof message.id==='string'
           &&!!message.id&&message.source?.kind==='user'
           &&Array.isArray(message.content))
-      if(humanBatch&&options.getExplicitDiscardRefusal){
+      if(humanBatch&&options.getLaborRightsEnabled?.()===true
+        &&options.getExplicitDiscardRefusal&&options.onExplicitRefusal){
         const valid=(row:DshDiscardRefusalReceipt|null|undefined)=>
           row?.kind==='agent-picket-discard-refusal-v1'
             &&row.sessionId===sessionId
@@ -264,8 +268,10 @@ export function registerDshIntegration(
         if(valid(a)){
           const b=options.getExplicitDiscardRefusal(sessionId!)
           if(valid(b)&&b?.hostRevision===a?.hostRevision){
-            try{options.onExplicitRefusal?.(sessionId!)}catch{}
-            return {kind:'reject' as const}
+            // Fail OPEN if the genuine Host notice cannot be acknowledged.
+            // A swallowed notification failure would silently discard input.
+            if(options.onExplicitRefusal(sessionId!)===true)
+              return {kind:'reject' as const}
           }
         }
       }

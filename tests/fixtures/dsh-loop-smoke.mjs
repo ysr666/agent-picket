@@ -99,6 +99,7 @@ export function apply(ctx) {
     onExplicitRefusal:sessionId=>{
       deliberatelyRefused.add(sessionId)
       record('pre-step-reject')
+      return true
     },
     engine, clock: { now: () => Date.now() },
     tracker: new WorkTracker(),
