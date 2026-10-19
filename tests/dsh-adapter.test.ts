@@ -107,7 +107,10 @@ test('discard-and-resend gate rejects only separately granted, correctly scoped 
       hostAuthenticated:true,explicitConsent:true,active:true,
       visibleResendNotice:true as const,sessionId,hostRevision:revision}
   },
-  onExplicitRefusal:()=>{refused++;return true},
+  onExplicitRefusal:(sessionId,turn)=>{
+    assert.equal(sessionId,'real-session');assert.equal(turn,1)
+    refused++;return true
+  },
  })
  const message={id:'new-message',source:{kind:'user'},
   content:[{type:'text',text:'new user input'},{type:'image'}]}

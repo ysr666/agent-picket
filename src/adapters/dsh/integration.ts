@@ -122,7 +122,9 @@ export interface DshIntegrationOptions {
    * true only when the user-visible discard/resend instructions are confirmed.
    * Missing, throwing or false notice => allow normal execution, never drop.
    * Callback receives only the Session ID; never prompt text or attachments. */
-  readonly onExplicitRefusal?:(sessionId:string)=>boolean
+  /** Exact official turn coordinate enables later visible notices to match
+   * THIS blocked attempt, not a separate plugin's unrelated Host rejection. */
+  readonly onExplicitRefusal?:(sessionId:string,turn:number)=>boolean
 }
 
 /**
@@ -278,7 +280,7 @@ export function registerDshIntegration(
           if(valid(b)&&b?.hostRevision===a?.hostRevision){
             // Fail OPEN if the genuine Host notice cannot be acknowledged.
             // A swallowed notification failure would silently discard input.
-            if(options.onExplicitRefusal(sessionId!)===true)
+            if(options.onExplicitRefusal(sessionId!,payload.turn as number)===true)
               return {kind:'reject' as const}
           }
         }

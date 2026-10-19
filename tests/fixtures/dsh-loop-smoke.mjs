@@ -102,8 +102,9 @@ export function apply(ctx) {
           sessionId,hostAuthenticated:true,explicitConsent:true,
           active:true,visibleResendNotice:true,hostRevision:7}
         :null,
-    onExplicitRefusal:sessionId=>{
+    onExplicitRefusal:(sessionId,turn)=>{
       deliberatelyRefused.add(sessionId)
+      record('pre-step-reject-turn:'+String(turn))
       record('pre-step-reject')
       return true
     },

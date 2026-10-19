@@ -148,6 +148,8 @@ ${visionRow}`)
       'On resume the model must NEVER receive the previously refused task')
     assert.equal(getSessionEvents().filter(x => x.type === 'assistant/message').length, 1)
     assert.equal(logLines().filter(x => x === 'pre-step-reject').length, 1)
+    assert.ok(logLines().includes('pre-step-reject-turn:1'),
+      'A future union refusal notice must cite the exact Host turn, not a guessed client message ID')
     assert.ok(logLines().includes('pre-step-coordinate:1:1'),
       'Official first proposed turn must have authentic turn=1,step=1 coordinates')
     assert.ok(logLines().includes('pre-step-coordinate:2:1'),
