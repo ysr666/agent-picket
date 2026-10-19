@@ -63,3 +63,28 @@ jobs:
         run: node scripts/run-windows-portable-tests.mjs
       - name: Verify package contents without publishing
         run: node scripts/check-package-budget.mjs
+      # An automatic reviewer artifact, NOT npm publish, tag or release.
+      - name: Build SHA-pinned UNRELEASED QA package
+        if: runner.os == 'Linux' && matrix.node == '24'
+        shell: bash
+        run: |
+          mkdir -p qa-unreleased
+          npm pack --ignore-scripts --pack-destination qa-unreleased --silent
+          (
+            cd qa-unreleased
+            sha256sum agent-picket-0.0.0.tgz > SHA256SUMS
+            printf 'AGENT PICKET DEVELOPMENT QA ONLY - NOT RELEASED\n' > READ_FIRST.txt
+            printf 'Source commit: %s\n' "$GITHUB_SHA" >> READ_FIRST.txt
+            printf 'Draft development candidate; real input strike OFF.\n' >> READ_FIRST.txt
+            printf 'Install ONLY to an isolated disposable DSH profile.\n' >> READ_FIRST.txt
+            printf 'No npm publication, tag or maintainer release approval.\n' >> READ_FIRST.txt
+          )
+          node --input-type=module -e 'import {statSync} from "node:fs"; if(statSync("qa-unreleased/agent-picket-0.0.0.tgz").size>250000)throw Error("QA tarball too large")'
+      - name: Upload UNRELEASED QA package and SHA256
+        if: runner.os == 'Linux' && matrix.node == '24'
+        uses: actions/upload-artifact@v4
+        with:
+          name: agent-picket-unreleased-qa-${{ github.sha }}
+          path: qa-unreleased/
+          if-no-files-found: error
+          retention-days: 7
