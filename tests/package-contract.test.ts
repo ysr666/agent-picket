@@ -94,6 +94,7 @@ test('npm dry-run tarball contains prebuilt plugin and no source, tests, or runt
   for(const research of [
     'docs/LOCAL_DETECTION.md','docs/DSH_WEB_COMPANION.zh.md',
     'docs/PR_CHAIN_CONVERGENCE_20261016.zh.md',
+    'docs/PICKETVERSE_SHIFT_AGENDA_20261019.zh.md',
   ]) {
     assert.equal(files.has(research),false,'Source-only design reference leaked: '+research)
   }

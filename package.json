@@ -65,6 +65,7 @@
     "cordis.patch.yml",
     "docs/",
     "!docs/PR_CHAIN_CONVERGENCE_20261016.zh.md",
+    "!docs/PICKETVERSE_SHIFT_AGENDA_20261019.zh.md",
     "!docs/RELEASE_1_0_NONNEGOTIABLE_20261012.zh.md",
     "!docs/DSH_LOCAL_COMPOSER_PICKET_20261018.md",
     "!docs/HOST_ATOMIC_HOLD_CONTRACT_20261012.md",

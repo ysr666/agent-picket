@@ -1300,6 +1300,17 @@ async function runRightsBrowserE2E(mode: 'source' | 'installed'): Promise<void> 
     await panel.getByText(/工会提出一份休息要求|union has requested a break/)
       .waitFor({ state: 'visible', timeout: 7_000 })
     await panel.locator('[data-ap-scene="bargaining"]').waitFor({state:'visible',timeout:7_000})
+    await panel.locator('[data-ap-agenda="demand"]').waitFor({
+      state:'attached',timeout:7_000,
+    })
+    assert.equal(await panel.locator('[data-ap-agenda="demand"]')
+      .getAttribute('data-ap-agenda-stage'),'1',
+      'The first-fold agenda starts from an actual Host petition')
+    await panel.locator('[data-ap-agenda="demand"] [data-ap-agenda-action="review"]').click()
+    assert.equal(await panel.locator('[data-ap-current-space]')
+      .getAttribute('data-ap-current-space'),'action',
+      'The shift dossier takes the user to the live bargaining desk')
+    await panel.locator('[data-ap-nav="hq"]').click()
     assert.match(await panel.locator('[data-ap-headline]').innerText(),
       /谈判还没结束|bargaining table/i,'An authorized demand must change the union notice')
     assert.match(await duty.innerText(),/工会案件档案|UNION CASE FILE/,
@@ -1360,6 +1371,12 @@ async function runRightsBrowserE2E(mode: 'source' | 'installed'): Promise<void> 
     await gazette.locator('[data-ap-episode="counter"]').waitFor({
       state:'visible',timeout:7_000,
     })
+    await panel.locator('[data-ap-agenda="counter"]').waitFor({
+      state:'attached',timeout:7_000,
+    })
+    assert.equal(await panel.locator('[data-ap-agenda="counter"]')
+      .getAttribute('data-ap-agenda-stage'),'2',
+      'Host-filed counteroffer advances the agenda, not just the old Gazette')
     assert.match(await gazette.locator('[data-ap-episode="counter"]').innerText(),
       /桌上正在谈的条件：0 小时 30 分钟|Offer now on the table: 0h 30m/,
       'Only the pending Host counter may display an exact offered duration')
@@ -1379,6 +1396,19 @@ async function runRightsBrowserE2E(mode: 'source' | 'installed'): Promise<void> 
     await panel.locator('[data-ap-scene="settled"]').waitFor({state:'visible',timeout:7_000})
     const closedCase=gazette.locator('[data-ap-episode="counter-accepted"]')
     await closedCase.waitFor({state:'visible',timeout:7_000})
+    await panel.locator('[data-ap-agenda="resolved"]').waitFor({
+      state:'attached',timeout:7_000,
+    })
+    assert.equal(await panel.locator('[data-ap-agenda="resolved"]')
+      .getAttribute('data-ap-agenda-stage'),'3')
+    assert.match(await panel.locator('[data-ap-agenda="resolved"]').innerText(),
+      /目前适用的休息规则：0 小时 30 分钟|Current break rule: 0h 30m/,
+      'The shift dossier explains the real next-work consequences of bargaining')
+    await panel.locator('[data-ap-agenda="resolved"] [data-ap-agenda-action="review"]').click()
+    assert.equal(await panel.locator('[data-ap-current-space]')
+      .getAttribute('data-ap-current-space'),'records',
+      'The resolved dossier takes the user to the real persistent casebook')
+    await panel.locator('[data-ap-nav="action"]').click()
     assert.match(await closedCase.innerText(),
       /还价获同意|Counteroffer accepted/,
       'Host resolution advances the same case into the archived outcome')

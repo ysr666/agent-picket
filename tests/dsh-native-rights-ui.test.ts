@@ -5,6 +5,7 @@ import {
  type ReactForDsh,type DshUnionUiDeps,projectUnionQuickWork,projectUnionFrontScene,
 } from '../src/adapters/dsh/native-rights-ui.ts'
 import type {ClientRightsSnapshot} from '../src/adapters/dsh/client-rights-scope.ts'
+import type {LaborStateV1} from '../src/product/union-desk.ts'
 import {createDshRealGoalConsentControl} from '../src/adapters/dsh/client-goal-consent.ts'
 
 type Node = {type:any,props:Record<string,any>,children:unknown[]}
@@ -745,6 +746,44 @@ test('Host-authorized Gazette is a bounded, independently grouped replay',()=>{
   &&n.props['aria-expanded']===true))
 })
 
+
+test('union HQ gives one actionable shift dossier through verified Host case stages',()=>{
+ const {hooks}=fakeReact()
+ const base=deps(rights({welcomeDecision:'enabled',laborRightsEnabled:true})).d
+ const open={schemaVersion:1 as const,revision:1,
+  agreement:{breakIntervalMs:7_200_000,overtimeIntervalMs:28_800_000},
+  nextBreakDueMs:7_200_000,nextOvertimeDueMs:28_800_000,
+  lastTriggerElapsedMs:7_200_000,
+  pending:{id:1,kind:'break' as const,stage:'open' as const,
+    raisedAtElapsedMs:7_200_000,counterOfferMs:null},history:[]}
+ const view=(state:LaborStateV1)=>walk(createDshUnionComponents(hooks,
+  {createPortal:child=>child},{...base,readUnion:()=>({available:true,
+   pending:state.pending, state,completedTurnMs:7_200_000,
+   coverage:'complete',lifetimeMs:null,picket:null})}).UnionPanel())
+ const next=view(open)
+ const region=next.find(n=>n.props['data-ap-agenda']==='demand')
+ assert.ok(region,'The first-screen shift agenda reflects the current Host petition')
+ assert.equal(region.props['data-ap-agenda-stage'],1)
+ assert.match(JSON.stringify(region),/hq.agenda.phase.demand/)
+ assert.ok(next.some(n=>n.props['data-ap-agenda-action']==='review'),
+  'A real action routes to the existing bargaining desk, not a decorative copy')
+ const counter={...open,revision:2,pending:{...open.pending,
+  stage:'countered' as const,counterOfferMs:1_800_000}}
+ const waiting=view(counter)
+ assert.equal(waiting.find(n=>n.props['data-ap-agenda']==='counter')
+  ?.props['data-ap-agenda-stage'],2)
+ const done={...counter,revision:3,pending:null,
+  agreement:{breakIntervalMs:1_800_000,overtimeIntervalMs:28_800_000},
+  history:[{id:1,kind:'break' as const,outcome:'counter-accepted' as const}]}
+ const final=view(done)
+ assert.equal(final.find(n=>n.props['data-ap-agenda']==='resolved')
+  ?.props['data-ap-agenda-stage'],3)
+ assert.match(JSON.stringify(final.find(n=>n.props['data-ap-agenda']==='resolved')),
+  /hq.agenda.cta.casebook/)
+ const off=walk(createDshUnionComponents(hooks,{createPortal:child=>child},
+  deps(rights({welcomeDecision:'not-now',laborRightsEnabled:false})).d).UnionPanel())
+ assert.equal(off.some(n=>n.props['data-ap-agenda']),false)
+})
 
 test('duty roster is passive, collapsed by default and hidden on opt-out',()=>{
  const {hooks}=fakeReact()
