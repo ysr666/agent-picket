@@ -83,6 +83,12 @@ export function apply(ctx) {
   // deliberately unavailable to the production plugin; it represents a
   // hypothetical separately verified Host grant AND user-visible notice.
   const deliberatelyRefused=new Set()
+  // Observe the genuine Host proposal coordinates, not invented test values.
+  // No prompt text or attachment references are recorded.
+  ctx.on('agent/pre-step',async(payload,next)=>{
+    record('pre-step-coordinate:'+String(payload.turn)+':'+String(payload.step))
+    return next()
+  })
   registerDshIntegration(ctx, {
     // Isolated smoke test only. Production uses the *current official Host
     // settings* for this callback and remains OFF without an explicit opt-in.
