@@ -1809,8 +1809,21 @@ async function runRightsBrowserE2E(mode: 'source' | 'installed'): Promise<void> 
         // initializer; do not depend on DOM row timing or invent an ID.
         let workspaceId=workspaceRow?.getAttribute('data-row-key')?.slice('workspace:'.length)
         if(!workspaceId){
-          const prepared=await rpc('workspace/initializeDefault',{})
-          workspaceId=prepared?.workspace?.workspaceId
+          // Unlike session/create, this official no-args RPC does not accept
+          // an {request:{}} wrapper in the Gateway args object.
+          const rpcId='picket-live-default-workspace'
+          const response=await fetch('/api/workspace/initializeDefault',{
+            method:'POST',credentials:'same-origin',
+            headers:{'content-type':'application/json'},
+            body:JSON.stringify({type:'client-request',rpcId,
+              method:'workspace/initializeDefault',payload:{args:{}}}),
+          })
+          const envelope=await response.json().catch(()=>null) as any
+          if(response.status!==200||envelope?.rpcId!==rpcId
+            ||envelope?.result?.ok!==true)
+            throw Error('Official DSH workspace initializer failed: '
+              +JSON.stringify(envelope?.result?.error??{}))
+          workspaceId=envelope.result.value?.workspace?.workspaceId
         }
         if(!workspaceId)throw Error('Official DSH Host did not initialize a workspace')
         const created=await rpc('session/create',{workspaceId})

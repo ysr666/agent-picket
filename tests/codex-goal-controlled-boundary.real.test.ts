@@ -216,7 +216,10 @@ test('native Codex completes in-flight autonomous Turn, holds next round and col
   await Promise.allSettled([first?.close(),external?.close(),second?.close()])
   for(const request of requests)try{request.response.end()}catch{/* cleanup */}
   await new Promise<void>(resolve=>server.close(()=>resolve()))
-  rmSync(root,{recursive:true,force:true})
+  // Native Codex may finish writing a just-closed synthetic rollout a few
+  // milliseconds after its app-server process exits (especially on Linux).
+  // Retry only the isolated temp-directory deletion; never mask test failures.
+  rmSync(root,{recursive:true,force:true,maxRetries:10,retryDelay:100})
  }
 
  async function launch(){
