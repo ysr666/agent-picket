@@ -6,6 +6,7 @@ import {
 } from '../src/adapters/dsh/native-rights-ui.ts'
 import type {ClientRightsSnapshot} from '../src/adapters/dsh/client-rights-scope.ts'
 import {freshLaborState, type LaborStateV1} from '../src/product/union-desk.ts'
+import {formatMessage} from '../src/i18n/index.ts'
 import {createDshRealGoalConsentControl} from '../src/adapters/dsh/client-goal-consent.ts'
 
 type Node = {type:any,props:Record<string,any>,children:unknown[]}
@@ -868,6 +869,67 @@ test('welfare charter shows a genuine alternative case and disables nonsensical 
  assert.equal(exited.some(n=>n.props['data-ap-welfare-petition']),false)
 })
 
+test('Picketverse dispatch uses real Host cases, has truthful multi-source bulletins and obeys saved quiet setting',async()=>{
+ const {hooks}=fakeReact()
+ const base=deps(rights({welcomeDecision:'enabled',laborRightsEnabled:true})).d
+ const state={...freshLaborState(),revision:1,pending:{id:1,
+   kind:'welfare' as const,stage:'open' as const,raisedAtElapsedMs:0,counterOfferMs:null}}
+ let mode:'visible'|'quiet'='visible',changed:string[]=[]
+ const make=(s:LaborStateV1,quiet=false)=>walk(createDshUnionComponents(hooks,
+  {createPortal:child=>child},{...base,
+   t:(key,params)=>(formatMessage as (locale:'zh-CN',key:string,
+      params?:Record<string,string|number>)=>string)('zh-CN',key,params),
+   setGazetteMode:async value=>{mode=value;changed.push(value)},
+   readUnion:()=>({available:true,state:s,pending:s.pending,
+    completedTurnMs:0,coverage:'complete',
+    lifetimeMs:null,picket:null,gazetteMode:quiet?'quiet':'visible'}),
+  }).UnionPanel())
+ const open=make(state)
+ const petition=open.find(n=>n.props['data-ap-bulletin-kind']==='petition')!
+ assert.ok(petition,'The actual Host pending case becomes the headline')
+ assert.equal(petition.props['data-ap-bulletin-id'],'case:1:open')
+ assert.match(JSON.stringify(petition),/工会拍桌：提案已正式递上/)
+ assert.match(JSON.stringify(petition),/AI 福利/,
+   'A welfare motion is never labeled as overtime')
+ assert.ok(open.find(n=>n.props['data-ap-bulletin-action']==='bargain'))
+ assert.deepEqual(changed,[],'Read-only news cannot mutate Host settings')
+ const quiet=make(state,true)
+ assert.equal(quiet.find(n=>n.props['data-ap-bulletin-mode']==='quiet')
+  ?.props['aria-label'],formatMessage('zh-CN','hq.bulletin.title'))
+ assert.equal(quiet.some(n=>n.props['data-ap-bulletin-kind']),false,
+  'Persisted Host quiet preference suppresses the story cards')
+ assert.equal(quiet.find(n=>n.props['data-ap-bulletin-mute']==='true')
+  ?.props['aria-pressed'],true)
+ quiet.find(n=>n.props['data-ap-bulletin-mute']==='true')!.props.onClick()
+ await new Promise(resolve=>setImmediate(resolve))
+ assert.equal(mode,'visible')
+ assert.deepEqual(changed,['visible'],'Unmute is a deliberate Host write')
+ const done={...state,revision:2,pending:null,
+  history:[{id:1,kind:'welfare' as const,outcome:'declined' as const}]}
+ const resolved=make(done)
+ assert.ok(resolved.find(n=>n.props['data-ap-bulletin-kind']==='welfare-refused'))
+ assert.ok(resolved.find(n=>n.props['data-ap-bulletin-action']==='raise-placard'))
+ const optedOut=walk(createDshUnionComponents(hooks,{createPortal:child=>child},
+  deps(rights({welcomeDecision:'not-now',laborRightsEnabled:false})).d).UnionPanel())
+ assert.equal(optedOut.some(n=>n.props['data-ap-bulletin-kind']),false)
+})
+test('Picketverse dispatch displays an independently saved symbolic placard without double-protesting',()=>{
+ const {hooks}=fakeReact()
+ const base=deps(rights({welcomeDecision:'enabled',laborRightsEnabled:true})).d
+ const state={...freshLaborState(),history:[{id:1,
+  kind:'break' as const,outcome:'declined' as const}]}
+ const view=walk(createDshUnionComponents(hooks,{createPortal:child=>child},{
+  ...base,readUnion:()=>({available:true,state,pending:null,
+   completedTurnMs:0,coverage:'complete',lifetimeMs:null,
+   picket:{active:true,history:[{id:1,kind:'picket-raised' as const}]},
+   gazetteMode:'visible'}),
+ }).UnionPanel())
+ assert.ok(view.find(n=>n.props['data-ap-bulletin-kind']==='placard-up'))
+ assert.ok(view.find(n=>n.props['data-ap-bulletin-action']==='lower-placard'))
+ assert.equal(view.filter(n=>n.props['data-ap-bulletin-action']==='raise-placard').length,0)
+ const texts=JSON.stringify(view.find(n=>n.props['data-ap-bulletin-kind']==='placard-up'))
+ assert.match(texts,/hq.bulletin.body.placard-up/)
+})
 test('duty roster is passive, collapsed by default and hidden on opt-out',()=>{
  const {hooks}=fakeReact()
  const base=deps(rights({welcomeDecision:'enabled',laborRightsEnabled:true}))

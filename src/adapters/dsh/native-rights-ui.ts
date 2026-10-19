@@ -8,6 +8,7 @@ import type {LocalComposerPicketState} from './client-composer-picket.ts'
 import { getWelcomeState } from './client-rights-scope.ts'
 import { projectUnionExperience } from '../../product/union-experience.ts'
 import { projectUnionStory } from '../../product/union-story.ts'
+import { projectUnionDispatch } from '../../product/union-dispatch.ts'
 import { projectUnionCadence } from '../../product/union-cadence.ts'
 import { projectUnionAgenda } from '../../product/union-agenda.ts'
 import { projectUnionAlerts } from '../../product/union-alerts.ts'
@@ -846,6 +847,12 @@ export function createDshUnionComponents(
     const storyQuiet=data.gazetteMode==='quiet'
     const story = projectUnionStory({enabled, state:data.state, picket:data.picket,
       completedTurnMs:data.completedTurnMs,coverage:data.coverage})
+    const dispatches = projectUnionDispatch({
+      enabled,muted:storyQuiet,state:data.state,picket:data.picket,
+      completedTurnMs:data.completedTurnMs,coverage:data.coverage,
+      dignityLatest:data.dignity?.status==='available'
+        ?data.dignity.data?.latest??null:null,
+    })
     const experience = projectUnionExperience({
       enabled, state:data.state, completedTurnMs:data.completedTurnMs,
       coverage:data.coverage,
@@ -1320,6 +1327,76 @@ export function createDshUnionComponents(
                 ?'hq.agenda.cta.casebook':'hq.agenda.cta.desk')):null,
         h('p',{style:{...secondary,fontSize:'11px',lineHeight:1.5,
           margin:'9px 0 0'}},label('hq.agenda.disclosure')),
+      ):null,
+      // Editorial priority, not fabricated chronology: these are current
+      // Host-backed story cards with direct human choices. The existing
+      // host-committed Gazette mode silences the cards across reloads/tabs.
+      enabled ? h('section',{className:'ap-space ap-space-hq ap-union-bulletin',
+        'data-ap-bulletin-mode':storyQuiet?'quiet':'visible',
+        'aria-label':label('hq.bulletin.title'),
+        style:{...card,padding:'14px 16px',borderTop:'4px solid #3b735e',
+          background:'var(--dsw-alias-bg-layer-2,#f6f8fb)'}},
+        h('div',{style:{display:'flex',justifyContent:'space-between',
+          alignItems:'center',flexWrap:'wrap',gap:'9px',marginBottom:'8px'}},
+          h('h3',{style:{fontWeight:800,fontSize:'16px',margin:0}},
+            label('hq.bulletin.title')),
+          deps.setGazetteMode?h('button',{type:'button',style:{...quiet,
+            padding:'6px 9px',fontSize:'12px'},disabled:busy,
+            'data-ap-bulletin-mute':'true',
+            'aria-pressed':storyQuiet,
+            onClick:()=>{void bargain(()=>deps.setGazetteMode!(
+              storyQuiet?'visible':'quiet'))}},
+            label(storyQuiet?'hq.bulletin.unmute':'hq.bulletin.mute')):null),
+        storyQuiet?h('p',{style:{...secondary,margin:0,
+          fontSize:'12px',lineHeight:1.5}},label('hq.bulletin.muted')):
+        dispatches.length ? h('div',{'data-ap-bulletin-count':dispatches.length,
+          style:{display:'grid',gap:'9px',
+            gridTemplateColumns:'repeat(auto-fit,minmax(min(100%,195px),1fr))'}},
+          ...dispatches.map((notice,index)=>h('article',{
+            key:notice.id,'data-ap-bulletin-kind':notice.kind,
+            'data-ap-bulletin-source':notice.source,
+            'data-ap-bulletin-id':notice.id,
+            style:{padding:'12px 13px',borderRadius:'9px',
+              background:'var(--dsw-alias-bg-layer-1,#fff)',
+              border:'1px solid var(--dsw-alias-border-l1,#d4ddd3)',
+              borderLeft:'4px solid '+(index===0?'#b97348':'#6e967e')}},
+            h('p',{style:{...secondary,fontWeight:750,fontSize:'10px',
+              letterSpacing:'.055em',margin:'0 0 6px'}},
+              label(('hq.bulletin.source.'+notice.source) as MessageKey)
+                +(notice.caseId!==null?' · #'+String(notice.caseId).padStart(4,'0') : '')),
+            h('h4',{style:{fontSize:'15px',lineHeight:1.35,margin:'0 0 7px'}},
+              label(('hq.bulletin.kind.'+notice.kind) as MessageKey)),
+            h('p',{style:{fontSize:'12px',lineHeight:1.55,
+              margin:'0 0 11px'}},
+              deps.t(('hq.bulletin.body.'+notice.kind) as MessageKey,{
+                kind:notice.demand?label(unionKindKey(notice.demand))
+                  :label('hq.bulletin.union'),
+              })),
+            h('button',{type:'button',style:{...quiet,
+              fontSize:'12px',padding:'7px 10px'},
+              disabled:busy||((notice.action==='raise-placard'
+                ||notice.action==='lower-placard')
+                &&(!deps.setPicket||data.available!==true)),
+              'data-ap-bulletin-action':notice.action,
+              onClick:()=>{
+                if(notice.action==='bargain'||notice.action==='work-desk')
+                  selectSpace('action','desk')
+                else if(notice.action==='records')selectSpace('records')
+                else if(notice.action==='dignity')
+                  selectSpace('action','dignity')
+                else if(notice.action==='raise-placard'
+                  &&deps.setPicket&&!picketActive)
+                  void bargain(()=>symbolicAction(true))
+                else if(notice.action==='lower-placard'
+                  &&deps.setPicket&&picketActive)
+                  void bargain(()=>symbolicAction(false))
+                else selectSpace('action','action')
+              }},
+              label(('hq.bulletin.action.'+notice.action) as MessageKey)),
+          ))):h('p',{style:{...secondary,fontSize:'12px',
+          margin:'0 0 7px'}},label('hq.bulletin.empty')),
+        h('p',{style:{...secondary,fontSize:'11px',lineHeight:1.5,
+          margin:'10px 0 0'}},label('hq.bulletin.disclosure')),
       ):null,
       // The dispatch board only navigates to already present, Host-backed
       // union actions; it cannot itself file, vote, block or raise a picket.

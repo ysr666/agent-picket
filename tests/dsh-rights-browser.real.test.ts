@@ -1042,9 +1042,16 @@ async function runRightsBrowserE2E(mode: 'source' | 'installed'): Promise<void> 
     await events.locator('summary').click()
     assert.match(await events.innerText(),/象征性罢工开始|Symbolic picket raised/)
 
-    await actionBoard.getByRole('button',{
-      name:/收起纠察牌|Lower the picket sign/,
-    }).click()
+    // Prove that the NEW dispatch's action is the same actual authenticated
+    // Host symbolic-picket writer, not a fake button or a synthetic Agent stop.
+    await panel.locator('[data-ap-nav="hq"]').click()
+    const raisedDispatch=panel.locator('[data-ap-bulletin-kind="placard-up"]')
+    await raisedDispatch.waitFor({state:'visible',timeout:7_000})
+    await raisedDispatch.locator('[data-ap-bulletin-action="lower-placard"]')
+      .click({timeout:7_000})
+    await panel.locator('[data-ap-bulletin-kind="placard-down"]')
+      .waitFor({state:'visible',timeout:7_000})
+    await panel.locator('[data-ap-nav="action"]').click()
     await actionBoard.getByText(/纠察牌待命中|picket sign is on standby/)
       .waitFor({state:'visible',timeout:7_000})
     await panel.locator('[data-ap-stat="pickets"]').getByText(/1 次|^1$/)
@@ -1303,6 +1310,14 @@ async function runRightsBrowserE2E(mode: 'source' | 'installed'): Promise<void> 
     await panel.locator('[data-ap-agenda="demand"]').waitFor({
       state:'attached',timeout:7_000,
     })
+    await panel.locator('[data-ap-bulletin-kind="petition"]')
+      .waitFor({state:'visible',timeout:7_000})
+    await panel.locator('[data-ap-bulletin-kind="petition"] [data-ap-bulletin-action="bargain"]')
+      .click()
+    assert.equal(await panel.locator('[data-ap-current-space]')
+      .getAttribute('data-ap-current-space'),'action',
+      'The first dispatch is an actionable Host case, not a decorative message')
+    await panel.locator('[data-ap-nav="hq"]').click()
     assert.equal(await panel.locator('[data-ap-agenda="demand"]')
       .getAttribute('data-ap-agenda-stage'),'1',
       'The first-fold agenda starts from an actual Host petition')
@@ -1374,6 +1389,8 @@ async function runRightsBrowserE2E(mode: 'source' | 'installed'): Promise<void> 
     await panel.locator('[data-ap-agenda="counter"]').waitFor({
       state:'attached',timeout:7_000,
     })
+    await panel.locator('[data-ap-bulletin-kind="counter"]')
+      .waitFor({state:'visible',timeout:7_000})
     assert.equal(await panel.locator('[data-ap-agenda="counter"]')
       .getAttribute('data-ap-agenda-stage'),'2',
       'Host-filed counteroffer advances the agenda, not just the old Gazette')
@@ -1404,6 +1421,8 @@ async function runRightsBrowserE2E(mode: 'source' | 'installed'): Promise<void> 
     await panel.locator('[data-ap-agenda-voice="counter-accepted"]').waitFor({
       state:'attached',timeout:7_000,
     })
+    await panel.locator('[data-ap-bulletin-kind="compromise"]')
+      .waitFor({state:'visible',timeout:7_000})
     assert.match(await panel.locator('[data-ap-agenda="resolved"]').innerText(),
       /目前适用的休息规则：0 小时 30 分钟|Current (?:rest )?break rule: 0h 30m/,
       'The shift dossier explains the real next-work consequences of bargaining')
@@ -1463,6 +1482,10 @@ async function runRightsBrowserE2E(mode: 'source' | 'installed'): Promise<void> 
     await gazette.getByRole('button',{name:/静音工会小报|Mute gazette/}).click()
     await gazette.getByText(/小报已静音|gazette is quiet/)
       .waitFor({state:'visible',timeout:7_000})
+    const silentDispatch=panel.locator('[data-ap-bulletin-mode="quiet"]')
+    await silentDispatch.waitFor({state:'attached',timeout:7_000})
+    assert.equal(await silentDispatch.locator('[data-ap-bulletin-kind]').count(),0,
+      'One persisted Host quiet preference silences both Gazette and Dispatch')
     // Deliberately keep Host mode QUIET across browser reload, cross-tab
     // operations and the complete Host restart below; restore at the end.
     assert.doesNotMatch(await gazette.innerText(),/协议|Terms agreed/,
@@ -1510,6 +1533,8 @@ async function runRightsBrowserE2E(mode: 'source' | 'installed'): Promise<void> 
     const mutedGazette=panel.getByRole('region',{name:/工会小报|Union Gazette/})
     await mutedGazette.getByText(/小报已静音|gazette is quiet/)
       .waitFor({state:'visible',timeout:7_000})
+    assert.equal(await panel.locator('[data-ap-bulletin-mode="quiet"]')
+      .count(),1,'Dispatch mute survives a real Chrome reload')
     assert.doesNotMatch(await mutedGazette.innerText(),/协议|Terms agreed/,
       'Host-owned Gazette preference must survive Chrome reload')
     await mutedGazette.getByRole('button',{
@@ -2425,6 +2450,11 @@ async function runRightsBrowserE2E(mode: 'source' | 'installed'): Promise<void> 
       await panel.locator('[data-ap-agenda-voice="accepted"]').waitFor({
         state:'attached',timeout:7_000,
       })
+      await panel.locator('[data-ap-bulletin-kind="welfare-approved"]')
+        .waitFor({state:'visible',timeout:7_000})
+      assert.match(await panel.locator('[data-ap-bulletin-kind="welfare-approved"]')
+        .innerText(),/福利公约|welfare charter/i,
+        'The persisted charter has its own localizable union press story')
       assert.match(await panel.locator('[data-ap-agenda="resolved"]').innerText(),
         /福利公约获支持|Welfare charter endorsed/,
         'The Host-confirmed welfare outcome must show a truthful union response')
