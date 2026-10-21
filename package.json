@@ -55,6 +55,8 @@
     "!dist/adapters/claude/**",
     "!dist/adapters/dsh/native-rights-ui.js",
     "!dist/adapters/dsh/client-bargaining.js",
+    "!dist/adapters/dsh/client-host-settings-017.js",
+    "!dist/adapters/dsh/client-refusal-notice.js",
     "!dist/product/union-dispatch.js",
     "!dist/product/union-dispatch.d.ts",
     "!dist/product/union-stance.js",

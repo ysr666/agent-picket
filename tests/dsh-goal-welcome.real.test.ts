@@ -627,6 +627,10 @@ test('real DSH Web: one informed first-run click atomically confirms union and G
    await resume.waitFor({state:'visible',timeout:7000})
    if(capture){
      await page.setViewportSize({width:320,height:640})
+     // The accessible HQ is a scrollable drawer. The real-strike notice
+     // above it can make a valid Goal-resume control below the initial fold.
+     // Scroll as a user would, then prove the entire action is reachable.
+     await resume.scrollIntoViewIfNeeded({timeout:7000})
      const rect=await resume.boundingBox()
      assert.ok(rect&&rect.x>=0&&rect.y>=0
        &&rect.x+rect.width<=321&&rect.y+rect.height<=641,

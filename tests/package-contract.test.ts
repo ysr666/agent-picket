@@ -115,6 +115,16 @@ test('npm dry-run tarball contains prebuilt plugin and no source, tests, or runt
     'Browser UI is already inline in client.js; never package a second copy')
   assert.equal(files.has('dist/adapters/dsh/client-bargaining.js'),false,
     'Browser bargaining is already bundled into client.js, not an independent Host entry')
+  for(const inlined of [
+    'dist/adapters/dsh/client-host-settings-017.js',
+    'dist/adapters/dsh/client-refusal-notice.js',
+  ])assert.equal(files.has(inlined),false,
+    'Client-only module already inlined in bundled client.js: '+inlined)
+  for(const declaration of [
+    'dist/adapters/dsh/client-host-settings-017.d.ts',
+    'dist/adapters/dsh/client-refusal-notice.d.ts',
+  ])assert.ok(files.has(declaration),
+    'Preserve types referenced by public client declarations: '+declaration)
   assert.ok(files.has('dist/adapters/dsh/client-bargaining.d.ts'),
     'Preserve internal client-bargaining types referenced by public client.d.ts')
   for(const duplicated of [
