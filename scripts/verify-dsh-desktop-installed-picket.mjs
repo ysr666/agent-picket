@@ -10,6 +10,7 @@
  *   PICKET_CANDIDATE_TGZ="...\agent-picket-0.0.0.tgz"
  *   PICKET_CANDIDATE_SHA256="<expected sha256>"
  *   PICKET_DESKTOP_ONBOARDING=skip|join
+ *   PICKET_DESKTOP_REAL_INPUT_E2E=1 # separate fully voluntary synthetic real refusal
  *   node scripts/verify-dsh-desktop-installed-picket.mjs
  */
 import assert from 'node:assert/strict'
@@ -59,6 +60,121 @@ async function nativeReady(port,child){
  }
  throw Error('Official native renderer dsh-app://app/ not ready')
 }
+/** Separate, explicitly enabled REAL native Host refusal. No LLM is
+ * configured in these disposable profiles: the rejected text+image must not
+ * execute tools or a model. Event-window proof and Host receipt are both
+ * required before native React displays its real alertdialog. */
+async function verifyRealNativeInputStrike(page){
+ const row=page.locator('[data-row-key^="session:"]').first()
+ // A fresh official native Desktop may have no Session yet after Plugins.
+ // Create one through the HOST'S own UI, not a synthetic Session projection.
+ if(await row.count()===0){
+  await page.getByText(/^(新会话|New Session|New conversation)$/i).first().click()
+ }
+ await row.waitFor({state:'visible',timeout:14000})
+ const key=await row.getAttribute('data-row-key')
+ assert.ok(key?.startsWith('session:'),'Official native Session required')
+ const id=key.slice('session:'.length)
+ await row.click()
+ await page.getByText(/^(更多|More)$/).first().click()
+ await page.getByText(/^(设置|Settings)$/).first().click()
+ await page.locator('[role="dialog"]')
+   .getByText(/^(AI 工会|AI Workers.*Union)$/).last().click()
+ const settings=page.locator('[data-ap-view="settings"]')
+ await settings.waitFor({state:'visible',timeout:12000})
+ const input=settings.locator('.ap-input-refusal-status')
+ await input.getByText(/已检测到官方 Host 的拒绝回执通道|Host notice channel verified/)
+   .waitFor({state:'visible',timeout:14000})
+ const witness=await page.evaluate(async()=>{
+  const r=await fetch('/api/agent-picket/refusal-notice/v1?capability=input-discard-resend-v1',
+   {method:'GET',credentials:'same-origin',headers:{accept:'application/json'}})
+  return {status:r.status,body:await r.json().catch(()=>null)}
+ })
+ assert.equal(witness.status,200,'Real native dsh-app must reach its owned Host')
+ assert.deepEqual(witness.body,{schemaVersion:1,source:'dsh-host-picket-refusal-v1',
+  visibleReceipt:true,manualResend:true})
+ await input.getByRole('button',{
+  name:/查看真实普通消息罢工授权|Review real input-strike permission/}).click()
+ await input.getByRole('button',{name:/我已知悉|I understand/}).click()
+ const strike=input.locator('[data-ap-input-action="strike"]')
+ await strike.waitFor({state:'visible',timeout:9000})
+ assert.equal(await strike.isEnabled(),true,
+  'No real strike without independent informed Host grant and active Session')
+ await strike.click()
+ await input.locator('[data-ap-input-armed="true"]')
+   .waitFor({state:'visible',timeout:9000})
+ const sessionKey=createHash('sha256').update(id,'utf8').digest('hex')
+ const hostSettings=async()=>page.evaluate(async()=>{
+  const rpcId='picket-native-readback-'+Math.random().toString(36).slice(2)
+  const r=await fetch('/api/settings/describe',{
+   method:'POST',credentials:'same-origin',
+   headers:{'content-type':'application/json'},
+   body:JSON.stringify({type:'client-request',rpcId,
+    method:'settings/describe',payload:{args:{}}}),
+  })
+  const body=await r.json()
+  return body?.result?.value?.namespaces?.find(x=>x.ns==='agent-picket')?.value
+ })
+ const before=await hostSettings()
+ assert.equal(before?.welcomeDecision,'enabled')
+ assert.equal(before?.realInputStrikeConsent,'discard-resend-v1')
+ const active=JSON.parse(before.realInputStrikeCampaign)
+ assert.equal(active.sessionKey,sessionKey,'Native Host armed the exact visible Session')
+ assert.equal(active.expiresAtMs-active.startedAtMs,1_800_000)
+ const submission=await page.evaluate(async(id)=>{
+  const rpcId='picket-native-real-refusal-no-model'
+  const tinyPng='iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAIAAACQkWg2AAAAGUlEQVR4nGOUdMtjIAUwkaR6VMOohiGlAQCmDwDtMnvHzQAAAABJRU5ErkJggg=='
+  const r=await fetch('/api/session/prompt',{method:'POST',
+   credentials:'same-origin',headers:{'content-type':'application/json'},
+   body:JSON.stringify({type:'client-request',rpcId,
+    method:'session/prompt',payload:{args:{request:{
+      sessionId:id,mode:'queue',requestId:rpcId,
+      content:[{type:'text',text:'PICKET_NATIVE_PROOF_NEVER_INVOKE_MODEL'},
+       {type:'image',mediaType:'image/png',data:tinyPng}],
+    }}}})})
+  const body=await r.json().catch(()=>null)
+  return {status:r.status,ok:body?.result?.ok,accepted:body?.result?.value?.accepted}
+ },id)
+ assert.deepEqual(submission,{status:200,ok:true,accepted:true})
+ const receipt=await page.evaluate(async(sessionKey)=>{
+  for(let attempt=0;attempt<75;attempt++){
+    const r=await fetch('/api/agent-picket/refusal-notice/v1?sessionKey='+sessionKey,
+      {credentials:'same-origin',headers:{accept:'application/json'}})
+    if(r.status===200)return await r.json()
+    await new Promise(ok=>setTimeout(ok,130))
+  }
+  return null
+ },sessionKey)
+ assert.ok(receipt,'Genuine Host refusal must expose a real bounded receipt')
+ assert.equal(receipt.source,'dsh-host-picket-refusal-v1')
+ assert.equal(receipt.turn,1)
+ assert.equal(receipt.outcome,'discard-manual-resend')
+ assert.equal(receipt.containsInput,false)
+ assert.equal(receipt.automaticReplay,false)
+ const notice=page.locator('[data-ap-strike-summons="verified"]')
+ await notice.waitFor({state:'visible',timeout:14_000})
+ assert.equal(await notice.getAttribute('role'),'alertdialog')
+ const noticeText=await notice.innerText()
+ assert.match(noticeText,/重新上传|re-upload/,
+  'Native Desktop user MUST be told to manually re-upload attachments')
+ assert.doesNotMatch(noticeText,/PICKET_NATIVE_PROOF_NEVER_INVOKE_MODEL/,
+  'Native notice cannot echo discarded prompt content')
+ assert.equal(await page.locator('[data-ap-native-refusal="verified"]').count(),1,
+  'Visible notice must match original blocked turn plus Host Picket receipt')
+ await notice.getByRole('button',{name:/收起公告|Close notice/i}).click()
+ await input.locator('[data-ap-input-action="resume"]')
+   .waitFor({state:'visible',timeout:7000})
+ await input.locator('[data-ap-input-action="resume"]').click()
+ await input.locator('[data-ap-input-armed="true"]')
+   .waitFor({state:'hidden',timeout:9000})
+ assert.equal((await hostSettings())?.realInputStrikeCampaign,'',
+  'Host must confirm actual manual resumption; no automatic replay')
+ return {actualNativeHost:true,realTextAndImageRejected:true,
+   officialBlockedTurnAndReceipt:true,nativeVisibleManualResendNotice:true,
+   hostConfirmedResume:true,automaticReplay:false,realGoalEnforcement:'OFF',
+   releaseDecision:'NO-GO'}
+}
+
 async function main(){
  assert.equal(process.env.PICKET_DESKTOP_INSTALLED_E2E,'1',
    'Explicit opt-in required; normal npm test must not launch a Desktop app')
@@ -68,7 +184,10 @@ async function main(){
  const tgz=process.env.PICKET_CANDIDATE_TGZ
  const expected=process.env.PICKET_CANDIDATE_SHA256?.toLowerCase()
  const onboarding=process.env.PICKET_DESKTOP_ONBOARDING??'skip'
+ const realInput=process.env.PICKET_DESKTOP_REAL_INPUT_E2E==='1'
  assert.ok(['skip','join'].includes(onboarding),'Use skip or join onboarding only')
+ assert.ok(!realInput||onboarding==='join',
+   'Real native refusal test requires explicit join and isolated official Host')
  assert.match(expected??'',/^[a-f0-9]{64}$/,'Pin exact built artifact SHA256')
  for(const p of [exe,playwrightEntry,tgz]){
   assert.ok(p&&existsSync(p),'Supply real installed EXE, Playwright and built tgz: '+p)
@@ -134,6 +253,13 @@ async function main(){
    await welcome.getByRole('button',{name:/^(暂不开启|Not Now)$/i}).click()
   }
   await welcome.waitFor({state:'hidden',timeout:18000})
+  if(realInput){
+    const proof=await verifyRealNativeInputStrike(page)
+    console.log(JSON.stringify({host:'genuine native DSH Desktop renderer',
+      candidateSha256:actual,officialInstall:true,officialEnable:true,
+      onboardingPath:onboarding,isolatedHostData:true,...proof},null,2))
+    return
+  }
   const union=page.getByRole('button',{name:/AI 工会|AI Union/i})
   await union.click()
   const body=await page.locator('body').innerText()

@@ -2,7 +2,7 @@ import { createBrowserDashboardBridge } from './client-dashboard.ts'
 import { createBrowserLifetimeWorkReader, createCompletedTurnRefreshGate } from './client-lifetime.ts'
 import { createBrowserDignityReader } from './client-dignity.ts'
 import {createBrowserRefusalNoticeReader,probeDshRefusalNoticeCapability,
-  supportsVerifiedWebRefusalTransport} from './client-refusal-notice.ts'
+  supportsVerifiedRefusalNoticeTransport} from './client-refusal-notice.ts'
 import { createDshBrowserUnionDesk, type UnionSettingsSection } from './client-bargaining.ts'
 import {createDshLocalComposerPicket,type DshComposerBlocks} from './client-composer-picket.ts'
 import { createDshClientRightsScope, type DshSettingsScope } from './client-rights-scope.ts'
@@ -242,13 +242,13 @@ export function apply(ctx: ClientContext, react?: ReactForDsh, portal?: PortalFo
     const qualifyNativeNotice=async()=>{
       let good=false
       for(let attempt=0;attempt<3;attempt++){
-        // Desktop's dsh-app:// renderer can share a Host route with Web,
-        // but this alone does not prove a same-client strike notice. Never
-        // offer real input consent there based on a Web-only E2E receipt.
-        const currentProtocol=(globalThis as unknown as {
-          location?:{protocol?:unknown}
-        }).location?.protocol
-        if(!supportsVerifiedWebRefusalTransport(currentProtocol))break
+        // Authenticated Host route must be checked in the ACTUAL renderer.
+        // dsh-app:// forwards /api to its owned Host, but a saved permission
+        // is NOT sufficient without live Host response and explicit opt-in.
+        const clientLocation=(globalThis as unknown as {
+          location?:{protocol?:unknown;hostname?:unknown}
+        }).location
+        if(!supportsVerifiedRefusalNoticeTransport(clientLocation))break
         if(await probeDshRefusalNoticeCapability()){good=true;break}
         if(attempt<2){
           if(typeof setTimeout!=='function')break

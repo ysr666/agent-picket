@@ -8,7 +8,7 @@ import {
 } from '../src/adapters/dsh/input-refusal-consent.ts'
 import {readHostActiveInputStrike} from '../src/adapters/dsh/host-input-strike.ts'
 import {probeDshRefusalNoticeCapability,
-  supportsVerifiedWebRefusalTransport} from '../src/adapters/dsh/client-refusal-notice.ts'
+  supportsVerifiedRefusalNoticeTransport} from '../src/adapters/dsh/client-refusal-notice.ts'
 import type {DshSettingsScope} from '../src/adapters/dsh/client-rights-scope.ts'
 import type {NativeSettingsProvider} from '../src/adapters/dsh/native-rights-command.ts'
 
@@ -160,11 +160,17 @@ test('official native Host capability probe rejects HTTP failures and forged JSO
  assert.equal(await probeDshRefusalNoticeCapability(async()=>{throw Error('offline')}),false)
 })
 
-test('Web-only refusal consent cannot be inferred from a native Desktop dsh-app renderer',()=>{
-  assert.equal(supportsVerifiedWebRefusalTransport('http:'),true)
-  assert.equal(supportsVerifiedWebRefusalTransport('https:'),true)
-  for(const protocol of ['dsh-app:','file:','chrome-extension:','about:',null,undefined,'']){
-    assert.equal(supportsVerifiedWebRefusalTransport(protocol),false,
-      'Only an actually accepted Web transport may offer input strike consent: '+String(protocol))
+test('only genuine DSH Web or Desktop app origin can qualify for a SEPARATE real Host notice probe',()=>{
+  assert.equal(supportsVerifiedRefusalNoticeTransport({protocol:'http:',hostname:'localhost'}),true)
+  assert.equal(supportsVerifiedRefusalNoticeTransport({protocol:'https:',hostname:'example.com'}),true)
+  assert.equal(supportsVerifiedRefusalNoticeTransport({protocol:'dsh-app:',hostname:'app'}),true)
+  for(const location of [null,undefined,{},'dsh-app:',
+    {protocol:'dsh-app:',hostname:'shell'},
+    {protocol:'dsh-app:',hostname:'app.evil'},
+    {protocol:'file:',hostname:''},
+    {protocol:'chrome-extension:',hostname:'app'},
+    {protocol:'about:',hostname:'app'}]){
+    assert.equal(supportsVerifiedRefusalNoticeTransport(location),false,
+      'Host GET + independent consent must be required after origin prerequisite: '+JSON.stringify(location))
   }
 })
