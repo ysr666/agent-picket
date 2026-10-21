@@ -1744,6 +1744,38 @@ test('settings prioritize membership; future real-strike controls are disclosure
 })
 
 
+test('late Goal readiness must never silently upgrade an already displayed Join click',async()=>{
+ const view=goalSettingsRenderHarness()
+ const oldDocument=(globalThis as any).document
+ ;(globalThis as any).document={body:{},getElementById:()=>({inert:false})}
+ let available=false,joined=rights(),grants=0,joins=0
+ const d:DshUnionUiDeps={...deps(joined).d,
+   rights:{snapshot:()=>joined,subscribe:()=>()=>{},
+     async choose(choice){joins++;joined=rights({welcomeDecision:choice,
+       laborRightsEnabled:choice==='enabled'});return joined},
+     async chooseFirstRun(){grants++;throw Error('No surprise elevation permitted')}},
+   goal:{snapshot:()=>({available,writable:true,authorized:false}),
+     qualify:async()=>available,
+     choose:async()=>({available,writable:true,authorized:false})},
+ }
+ try{
+   const welcome=createDshUnionComponents(view.hooks,{createPortal:x=>x},d).Welcome
+   const render=()=>view.render(()=>welcome({complete:()=>{}}))
+   let nodes=render()
+   assert.ok(nodes.some(n=>n.type==='button'&&n.children.includes('welcome.enable')))
+   available=true // Async real Host Goal response arrives after dialog rendered.
+   nodes=render()
+   assert.equal(nodes.some(n=>n.type==='button'&&n.children.includes('welcome.enableGoal')),false,
+     'Button may not upgrade an informed membership click into a live-Goal grant')
+   const join=nodes.find(n=>n.type==='button'&&n.children.includes('welcome.enable'))!
+   join.props.onClick()
+   await new Promise<void>(resolve=>setImmediate(resolve))
+   assert.equal(joins,1)
+   assert.equal(grants,0,'An asynchronous witness cannot escalate into first-run physical stop')
+   assert.notEqual(joined.goalStrikeAuthorized,true)
+ }finally{(globalThis as any).document=oldDocument}
+})
+
 test('one first-run informed click uses versioned Host Goal CAS and requires verified dual readback',async()=>{
  const {hooks}=fakeReact()
  const initial=rights()
@@ -3400,6 +3432,44 @@ test('ordinary-input strike review must display discard warning before an indepe
  await new Promise<void>(resolve=>setImmediate(resolve))
  assert.deepEqual(operations,[
    'discard-resend-v1:input-discard-manual-resend-v1','off:undefined'])
+})
+
+test('Desktop with retained Web input permission must show unverified notice, never Host-ready',()=>{
+ const {hooks}=fakeReact()
+ const basis=deps(rights({welcomeDecision:'enabled',laborRightsEnabled:true}))
+ const actions:boolean[]=[]
+ const d:DshUnionUiDeps={...basis.d,inputRefusal:{
+   snapshot:()=>({available:false,writable:true,authorized:true,
+     enforcing:false as const,armed:false,hasCampaign:false}),
+   async choose(){throw Error('No verified notice in native renderer')},
+   async setArmed(value){actions.push(value);throw Error('Native strike admission unavailable')},
+ },readUnion:()=>({pending:null,completedTurnMs:null,lifetimeMs:null,
+   coverage:'unavailable',committeeScopeKey:'synthetic-session'})}
+ const view=createDshUnionComponents(hooks,{createPortal:x=>x},d)
+ const nodes=walk(view.UnionPanel())
+ const section=nodes.find(n=>n.props['data-ap-real-input-strike']==='unverified-cross-client')
+ assert.ok(section,'A saved preference may remain visible after crossing clients')
+ const body=walk(section)
+ assert.ok(body.some(n=>n.children.includes('settings.inputStrikeCrossClientUnverified')),
+   'Other-client Session strikes may still block work without native notice proof')
+ assert.equal(body.some(n=>n.children.includes('settings.inputStrikeReady')),false)
+ assert.equal(body.some(n=>n.children.includes('settings.inputStrikeArmed')),false)
+ const start=body.find(n=>n.props['data-ap-real-input-action']==='strike')
+ assert.equal(start?.props.disabled,true,'Cannot arm a strike without notice transport')
+ assert.deepEqual(actions,[])
+ const settings=walk(view.SettingsPanel())
+ const warning=settings.find(n=>n.children.includes('settings.inputStrikeCrossClientUnverified'))
+ assert.ok(warning,'Settings must disclose another client might have armed the same Session')
+ assert.equal(settings.find(n=>n.props['data-ap-input-enforcement']==='unverified')
+   ?.props['data-ap-input-enforcement'],'unverified',
+   'Do not assert OFF for a potentially live cross-client campaign')
+ assert.equal(settings.some(n=>n.props['data-ap-input-refusal']==='unverified-cross-client'),true)
+ for(const dict of [en,zhCN]){
+  const note=dict['settings.inputStrikeCrossClientUnverified']
+  assert.match(note,/Session|会话/)
+  assert.match(note,/other|其他/)
+  assert.match(note,/resend|重发/)
+ }
 })
 
 test('ordinary-input permission is still revocable after official notice channel disappears',async()=>{

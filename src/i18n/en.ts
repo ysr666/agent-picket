@@ -259,6 +259,7 @@ export const en = defineEnglish({
   'settings.inputStrikeStart': '⚑ Begin real strike · this Session',
   'settings.inputStrikeResume': 'Resume normal requests · end real strike',
   'settings.inputStrikeScope': 'This 30-minute Session-specific action is separate from a symbolic sign. Other DSH clients using the same Session may also be affected. During a strike, rejected text/files will not be saved or replayed by Picket. Use Resume here to stop immediately.',
+  'settings.inputStrikeCrossClientUnverified': '⚠ This client cannot verify real-refusal notices and cannot start a new strike here. A Session strike started in another DSH client may STILL cause Host refusal of new requests while this window may lack a visible notice. Resume in the original client or revoke consent in union settings; manually resend refused text and attachments.',
   'settings.inputStrikeNotActive': 'Production safety lock: the official, user-visible refusal notice has not passed end-to-end verification. No ordinary input is being blocked, regardless of any saved permission or symbolic placard.',
   'settings.inputStrikeReview': 'Review real input-strike permission',
   'settings.inputStrikeDisclosure': 'Important: the current request will not run if a real union strike rejects it. The rejected text and attachments may be discarded without backup. Resuming the union never runs the old request automatically. You must manually resend your text and re-upload files. This permission is independent of Goal stoppages and may be revoked at any time.',
