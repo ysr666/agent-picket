@@ -100,7 +100,7 @@ async function main(){
   if(offeredOfficialGoal){
    assert.match(disclosure,/普通消息|ordinary messages/i)
    assert.match(disclosure,/Host/)
-   assert.match(disclosure,/不拒绝新消息|not.*reject.*new messages/i)
+   assert.match(disclosure,/不拒绝新消息|不会阻断普通用户消息和附件|not.*reject.*new messages|does not block ordinary user messages/i)
   }else{
    // The official native Goal service is not yet confirmed; no fake consent.
    assert.match(disclosure,/真罢工尚未开放|Real strikes unavailable/i)
