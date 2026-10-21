@@ -4,6 +4,16 @@ import {REFUSAL_NOTICE_FETCH_PATH,parseRefusalNotice,
   matchRefusalToOfficialTurn,type RefusalEventWindow,
   type RefusalNoticeReceipt} from './refusal-notice-contract.ts'
 
+/** The ordinary-input strike notice has only been end-to-end qualified in
+ * the DSH Web HTTP(S) browser. A working Host GET endpoint inside native
+ * dsh-app:// is NOT proof that the Desktop renderer can display a notice to
+ * the submitting user. Fail closed for client-side grant/arming there until
+ * a separate native Desktop acceptance path exists. This does NOT pretend
+ * to solve cross-client Session provenance at the Host hook boundary. */
+export function supportsVerifiedWebRefusalTransport(protocol:unknown):boolean {
+  return protocol==='http:'||protocol==='https:'
+}
+
 /** Prove the actual official Host GET handler is installed before an opt-in
  * ordinary-input campaign can be armed. Never sends an actual Session ID. */
 export async function probeDshRefusalNoticeCapability(

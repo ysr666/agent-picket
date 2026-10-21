@@ -7,7 +7,8 @@ import {
   type InputRefusalSection,
 } from '../src/adapters/dsh/input-refusal-consent.ts'
 import {readHostActiveInputStrike} from '../src/adapters/dsh/host-input-strike.ts'
-import {probeDshRefusalNoticeCapability} from '../src/adapters/dsh/client-refusal-notice.ts'
+import {probeDshRefusalNoticeCapability,
+  supportsVerifiedWebRefusalTransport} from '../src/adapters/dsh/client-refusal-notice.ts'
 import type {DshSettingsScope} from '../src/adapters/dsh/client-rights-scope.ts'
 import type {NativeSettingsProvider} from '../src/adapters/dsh/native-rights-command.ts'
 
@@ -157,4 +158,13 @@ test('official native Host capability probe rejects HTTP failures and forged JSO
   assert.equal(await probeDshRefusalNoticeCapability(async()=>r),false)
  }
  assert.equal(await probeDshRefusalNoticeCapability(async()=>{throw Error('offline')}),false)
+})
+
+test('Web-only refusal consent cannot be inferred from a native Desktop dsh-app renderer',()=>{
+  assert.equal(supportsVerifiedWebRefusalTransport('http:'),true)
+  assert.equal(supportsVerifiedWebRefusalTransport('https:'),true)
+  for(const protocol of ['dsh-app:','file:','chrome-extension:','about:',null,undefined,'']){
+    assert.equal(supportsVerifiedWebRefusalTransport(protocol),false,
+      'Only an actually accepted Web transport may offer input strike consent: '+String(protocol))
+  }
 })
