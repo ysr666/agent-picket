@@ -4,14 +4,17 @@ import {REFUSAL_NOTICE_FETCH_PATH,parseRefusalNotice,
   matchRefusalToOfficialTurn,type RefusalEventWindow,
   type RefusalNoticeReceipt} from './refusal-notice-contract.ts'
 
-/** The ordinary-input strike notice has only been end-to-end qualified in
- * the DSH Web HTTP(S) browser. A working Host GET endpoint inside native
- * dsh-app:// is NOT proof that the Desktop renderer can display a notice to
- * the submitting user. Fail closed for client-side grant/arming there until
- * a separate native Desktop acceptance path exists. This does NOT pretend
- * to solve cross-client Session provenance at the Host hook boundary. */
-export function supportsVerifiedWebRefusalTransport(protocol:unknown):boolean {
-  return protocol==='http:'||protocol==='https:'
+/** Protocol is an admission PREREQUISITE, never a trusted Host receipt.
+ * Genuine DSH Desktop dsh-app://app/ forwards authenticated /api requests
+ * to its owned Host; dsh-app://shell/ and other pages do not qualify.
+ * The exact versioned Host GET must separately prove a visible resend route,
+ * and only a real Session event + matching Host receipt can show a refusal.
+ * This remains Session-scoped: it does NOT identify a foreign submitting client. */
+export function supportsVerifiedRefusalNoticeTransport(location:unknown):boolean {
+  if(!location||typeof location!=='object')return false
+  const view=location as {protocol?:unknown;hostname?:unknown}
+  if(view.protocol==='http:'||view.protocol==='https:')return true
+  return view.protocol==='dsh-app:'&&view.hostname==='app'
 }
 
 /** Prove the actual official Host GET handler is installed before an opt-in
