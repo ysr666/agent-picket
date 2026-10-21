@@ -256,6 +256,7 @@ export const zhCN: Readonly<Record<keyof typeof en, string>> = {
   'settings.inputStrikeStart': '⚑ 发起本会话真实罢工',
   'settings.inputStrikeResume': '复工 · 解除真实输入阻断',
   'settings.inputStrikeScope': '真实罢工限时 30 分钟，与象征性举牌完全独立。同一 DSH 会话的其他客户端也可能受到影响。拒绝的文字、图片和文件不会被 Picket 保存或自动重发；随时可在此复工。',
+  'settings.inputStrikeCrossClientUnverified': '⚠ 本客户端尚不能验证真实拒绝回执，因此不能在此发起新罢工。同一 DSH 会话如已在其他客户端发起会话级罢工，新的请求仍可能被 Host 拒绝，而当前窗口可能无法显示拒绝通知。请返回原客户端复工，或在工会设置中撤销授权；被拒请求须手动重发文字和附件。',
   'settings.inputStrikeNotActive': '生产安全锁仍然有效：尚未完成官方用户可见拒绝通知的端到端验收。目前不会阻断普通消息；保存授权、象征性举牌都不代表真实罢工。',
   'settings.inputStrikeReview': '查看真实普通消息罢工授权',
   'settings.inputStrikeDisclosure': '请注意：真实工会罢工可能拒绝你当前发送的请求，该请求不会执行，文字及附件可能直接放弃而不作备份。复工不会自动执行旧请求；你必须手动重发文字并重新上传图片、文件。此权限与 Goal 停工独立，可随时撤销。',

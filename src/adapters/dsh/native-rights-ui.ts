@@ -680,11 +680,15 @@ export function createDshUnionComponents(
         h('p',{className:'ap-settings-scope'},
           label(goal.available?'settings.goalOtherEnforcementOff':'settings.futureConsent'))),
       h('section',{className:'ap-surface ap-input-refusal-status',
-        'data-ap-input-refusal':deps.inputRefusal?.snapshot().armed?'armed':'consent-only',
+        'data-ap-input-refusal':deps.inputRefusal?.snapshot().armed?'armed':
+          deps.inputRefusal?.snapshot().authorized&&!deps.inputRefusal.snapshot().available
+            ?'unverified-cross-client':'consent-only',
         'aria-label':label('settings.inputStrikeTitle'),style:card},
         h('h3',{style:{margin:'0 0 8px'}},label('settings.inputStrikeTitle')),
         h('p',{role:'status','aria-live':'polite',
-          'data-ap-input-enforcement':deps.inputRefusal?.snapshot().armed?'armed':'off',
+          'data-ap-input-enforcement':deps.inputRefusal?.snapshot().armed?'armed':
+            deps.inputRefusal?.snapshot().authorized&&!deps.inputRefusal.snapshot().available
+              ?'unverified':'off',
           style:{fontWeight:700,margin:'0 0 7px'}},
           label(deps.inputRefusal?.snapshot().authorized
             ?'settings.inputStrikeGranted':'settings.inputStrikeOff')),
@@ -692,7 +696,8 @@ export function createDshUnionComponents(
           label('settings.inputStrikeExplanation')),
         h('p',{role:'note',style:{...secondary,lineHeight:1.6,margin:'0 0 10px'}},
           label(deps.inputRefusal?.snapshot().available
-            ?'settings.inputStrikeReady':'settings.inputStrikeNotActive')),
+            ?'settings.inputStrikeReady':deps.inputRefusal?.snapshot().authorized
+              ?'settings.inputStrikeCrossClientUnverified':'settings.inputStrikeNotActive')),
         deps.inputRefusal?.snapshot().armed?h('p',{role:'status',
           'data-ap-input-armed':'true',style:{fontWeight:800,color:'#a44734'}},
           label('settings.inputStrikeArmed')):null,
@@ -1215,12 +1220,15 @@ export function createDshUnionComponents(
           label(enabled?'union.status.active':'union.status.inactive'))),
       deps.inputRefusal?.snapshot().authorized
         ?h('section',{className:'ap-surface ap-real-input-strike',
-          'data-ap-real-input-strike':deps.inputRefusal.snapshot().armed?'armed':'off',
+          'data-ap-real-input-strike':deps.inputRefusal.snapshot().armed?'armed':
+            deps.inputRefusal.snapshot().available?'off':'unverified-cross-client',
           style:{...card,borderLeft:'5px solid #bb6244'}},
           h('h3',{style:{margin:'0 0 8px'}},label('settings.inputStrikeTitle')),
           h('p',{role:'status',style:{fontWeight:750,margin:'0 0 7px'}},
             label(deps.inputRefusal.snapshot().armed
-              ?'settings.inputStrikeArmed':'settings.inputStrikeReady')),
+              ?'settings.inputStrikeArmed'
+              :deps.inputRefusal.snapshot().available
+                ?'settings.inputStrikeReady':'settings.inputStrikeCrossClientUnverified')),
           h('p',{style:{...secondary,margin:'0 0 12px',lineHeight:1.5}},
             label('settings.inputStrikeScope')),
           deps.inputRefusal.setArmed?h('button',{type:'button',
