@@ -121,3 +121,70 @@ test('a NEW Host work threshold outranks an OLD negotiation while retaining the 
  assert.equal(partial[0]?.kind,'compromise')
  assert.equal(partial.some(n=>n.kind==='work-milestone'),false)
 })
+
+test('real armed Host campaign is NOT reported as a refusal without a matching blocked-turn receipt',()=>{
+ const empty=initial()
+ const arms=projectUnionDispatch({...empty,inputStrike:{armed:true,verifiedRefusedTurn:null}})
+ assert.deepEqual(arms.map(x=>[x.kind,x.action,x.source,x.id]),[
+   ['input-strike-armed','resume-input','host-input-strike','input-armed'],
+ ])
+ assert.equal(arms[0]?.awaitingResponse,false)
+ assert.deepEqual(projectUnionDispatch({...empty,inputStrike:{
+   armed:false,verifiedRefusedTurn:null}}),[])
+ assert.deepEqual(projectUnionDispatch({...empty,inputStrike:{
+   armed:false,verifiedRefusedTurn:0}}),[])
+ assert.deepEqual(projectUnionDispatch({...empty,inputStrike:{
+   armed:false,verifiedRefusedTurn:-1}}),[])
+ assert.deepEqual(projectUnionDispatch({...empty,inputStrike:{
+   armed:false,verifiedRefusedTurn:NaN}}),[])
+})
+
+test('Host-verified rejection becomes a replayable Session bulletin; after release it requires manual review',()=>{
+ const state={...freshLaborState(),history:[{
+   id:18,kind:'break' as const,outcome:'declined' as const,
+ }]}
+ const armed=projectUnionDispatch({...initial(),state,inputStrike:{
+   armed:true,verifiedRefusedTurn:3}})
+ assert.deepEqual(armed.map(x=>[x.kind,x.action,x.id]),[
+   ['input-strike-refused','resume-input','input-refused:3'],
+   ['refused','raise-placard','case:18:declined'],
+ ])
+ const reread=projectUnionDispatch({...initial(),state,inputStrike:{
+   armed:true,verifiedRefusedTurn:3}})
+ assert.deepEqual(reread,armed,'No additional Host event or notification on replay')
+ const released=projectUnionDispatch({...initial(),state,inputStrike:{
+   armed:false,verifiedRefusedTurn:3}})
+ assert.deepEqual(released[0],{
+   id:'input-followup:3',kind:'input-strike-followup',
+   source:'host-input-strike',caseId:null,demand:null,
+   action:'review-refusal',awaitingResponse:false,
+ })
+ assert.equal(released[1]?.kind,'refused',
+   'Factual refusal does not erase an unrelated bargaining case')
+ assert.deepEqual(projectUnionDispatch({...initial(),muted:true,state,inputStrike:{
+   armed:true,verifiedRefusedTurn:3}}),[])
+ assert.deepEqual(projectUnionDispatch({...initial(),enabled:false,state,inputStrike:{
+   armed:true,verifiedRefusedTurn:3}}),[])
+ const unavailable=projectUnionDispatch({...initial(),state:null,inputStrike:{
+   armed:false,verifiedRefusedTurn:3}})
+ assert.equal(unavailable[0]?.kind,'input-strike-followup',
+   'Missing simulated labor ledger must not erase separately verified Host refusal')
+ assert.equal(unavailable.length,1)
+})
+
+test('real Host refusal outranks fictional case, placard and unproven dignity verdict in bounded dispatch',()=>{
+ const state={...freshLaborState(),pending:{
+   id:7,kind:'welfare' as const,stage:'open' as const,
+   raisedAtElapsedMs:0,counterOfferMs:null,
+ }}
+ const picket={active:true,history:[{id:2,kind:'picket-raised' as const}]}
+ const result=projectUnionDispatch({...initial(),state,picket,
+   dignityLatest:'targeted',inputStrike:{armed:true,verifiedRefusedTurn:9}})
+ assert.deepEqual(result.map(x=>x.kind),[
+   'input-strike-refused','petition','placard-up',
+ ])
+ assert.deepEqual(result.map(x=>x.source),[
+   'host-input-strike','host-case','host-placard',
+ ])
+ assert.equal(result.length,3)
+})

@@ -133,6 +133,13 @@ test('npm dry-run tarball contains prebuilt plugin and no source, tests, or runt
   ])assert.equal(files.has(duplicated),false,
     'Browser-only Picketverse projections are already inline; no public deep import: '
       +duplicated)
+  for(const inlined of ['union-agenda','union-alerts','union-cadence',
+    'union-experience','union-story']){
+    assert.equal(files.has('dist/product/'+inlined+'.js'),false,
+      'Product-only projection is already bundled into client.js: '+inlined)
+    assert.ok(files.has('dist/product/'+inlined+'.d.ts'),
+      'Keep transitive client declaration for '+inlined)
+  }
   assert.ok(files.has('dist/adapters/dsh/native-rights-ui.d.ts'),
     'Keep the internal native React Slot types referenced by client.d.ts')
   assert.equal(files.has('dist/adapters/dsh/client-composer-picket.js'),false,

@@ -7,7 +7,7 @@ import {
 } from '../src/adapters/dsh/native-rights-ui.ts'
 import type {ClientRightsSnapshot} from '../src/adapters/dsh/client-rights-scope.ts'
 import {freshLaborState, type LaborStateV1} from '../src/product/union-desk.ts'
-import {formatMessage} from '../src/i18n/index.ts'
+import {formatMessage,en,zhCN} from '../src/i18n/index.ts'
 import {createDshRealGoalConsentControl} from '../src/adapters/dsh/client-goal-consent.ts'
 
 type Node = {type:any,props:Record<string,any>,children:unknown[]}
@@ -3596,4 +3596,112 @@ test('fresh Host proof auto-opens only once; old receipt and repeated renders do
   notify(live.inputRefusalNotice?.receipt?'current-session:'+live.inputRefusalNotice.receipt.turn+':'+live.inputRefusalNotice.receipt.occurredAtMs:'no-proof')
   assert.equal(opens,2)
  }finally{(globalThis as any).document=original}
+})
+
+test('the Union HQ bulletin distinguishes armed Session, actual Host refusal, and manual follow-up',()=>{
+ const membership=rights({welcomeDecision:'enabled',laborRightsEnabled:true})
+ const base=deps(membership).d
+ const state=freshLaborState()
+ const render=(armed:boolean,report:ReturnType<typeof verifiedForPopup>|null,
+   mode:'visible'|'quiet'='visible',unionEnabled=true)=>{
+   const {hooks}=fakeReact()
+   const d:DshUnionUiDeps={...base,
+    rights:{...base.rights,snapshot:()=>rights({welcomeDecision:unionEnabled?'enabled':'not-now',
+      laborRightsEnabled:unionEnabled})},
+    inputRefusal:{
+     snapshot:()=>({available:true,writable:true,authorized:true,enforcing:false,
+       armed,hasCampaign:armed}),
+     choose:async()=>({available:true,writable:true,authorized:true,enforcing:false}),
+     async setArmed(){},
+    },
+    readUnion:()=>({available:true,state,pending:null,picket:null,
+      completedTurnMs:0,coverage:'complete',lifetimeMs:null,
+      gazetteMode:mode,
+      inputRefusalNotice:report??{state:'unverified',receipt:null},
+      committeeScopeKey:'session-hash'}),
+   }
+   return walk(createDshUnionComponents(hooks,{createPortal:x=>x},d)
+     .UnionPanel({onOpenStrikeSummons:()=>{}}))
+ }
+ const armed=render(true,null)
+ assert.ok(armed.some(n=>n.props['data-ap-bulletin-kind']==='input-strike-armed'))
+ assert.equal(armed.some(n=>n.props['data-ap-bulletin-kind']==='input-strike-refused'),false)
+ assert.ok(armed.some(n=>n.props['data-ap-bulletin-action']==='resume-input'
+   &&n.props.disabled===false))
+ const refusal=render(true,verifiedForPopup())
+ assert.ok(refusal.some(n=>n.props['data-ap-bulletin-kind']==='input-strike-refused'
+   &&n.props['data-ap-bulletin-source']==='host-input-strike'))
+ assert.equal(refusal.some(n=>n.props['data-ap-bulletin-kind']==='input-strike-armed'),false)
+ const after=render(false,verifiedForPopup())
+ assert.ok(after.some(n=>n.props['data-ap-bulletin-kind']==='input-strike-followup'))
+ assert.ok(after.some(n=>n.props['data-ap-bulletin-action']==='review-refusal'
+   &&n.props.disabled===false))
+ assert.equal(after.some(n=>n.props['data-ap-bulletin-action']==='resume-input'),false)
+ assert.equal(render(false,verifiedForPopup(),'quiet').some(n=>n.props['data-ap-bulletin-kind']),false)
+ assert.equal(render(true,verifiedForPopup(),'visible',false)
+   .some(n=>n.props['data-ap-bulletin-kind']),false)
+})
+
+test('real dispatch resume does exactly one Host disarm, independent of symbolic placards',async()=>{
+ const {hooks}=fakeReact()
+ const base=deps(rights({welcomeDecision:'enabled',laborRightsEnabled:true})).d
+ const events:boolean[]=[]
+ let armed=true
+ let release:()=>void=()=>{}
+ const hold=new Promise<void>(resolve=>{release=resolve})
+ const d:DshUnionUiDeps={...base,inputRefusal:{
+   snapshot:()=>({available:true,writable:true,authorized:true,enforcing:false,
+     armed,hasCampaign:armed}),
+   choose:async()=>({available:true,writable:true,authorized:true,enforcing:false}),
+   async setArmed(value){events.push(value);await hold;armed=value},
+  },readUnion:()=>({available:true,state:freshLaborState(),pending:null,
+   completedTurnMs:0,coverage:'complete',lifetimeMs:null,
+   committeeScopeKey:'session-hash',inputRefusalNotice:verifiedForPopup()})}
+ const ui=createDshUnionComponents(hooks,{createPortal:x=>x},d)
+ const nodes=walk(ui.UnionPanel())
+ const action=nodes.find(n=>n.props['data-ap-bulletin-action']==='resume-input')!
+ assert.ok(action&&!action.props.disabled)
+ action.props.onClick()
+ action.props.onClick()
+ assert.deepEqual(events,[false],
+   'Rapid double click must not perform duplicate real Host mutations')
+ release()
+ await new Promise<void>(resolve=>setImmediate(resolve))
+ assert.equal(armed,false)
+ const after=walk(createDshUnionComponents(fakeReact().hooks,{createPortal:x=>x},d)
+   .UnionPanel({onOpenStrikeSummons:()=>{}}))
+ assert.ok(after.some(n=>n.props['data-ap-bulletin-kind']==='input-strike-followup'))
+ assert.equal(events.length,1)
+})
+
+test('post-refusal bulletin reopens proven notice; an unverified turn can never become a real headline',()=>{
+ const base=deps(rights({welcomeDecision:'enabled',laborRightsEnabled:true})).d
+ let opened=0
+ const read=(verified:boolean)=>()=>({available:true,state:freshLaborState(),
+   pending:null,completedTurnMs:0,coverage:'complete' as const,
+   lifetimeMs:null,
+   inputRefusalNotice:verified?verifiedForPopup():{
+     state:'unverified' as const,receipt:verifiedForPopup().receipt}})
+ const panel=(verified:boolean)=>walk(createDshUnionComponents(fakeReact().hooks,
+   {createPortal:x=>x},{...base,inputRefusal:{
+     snapshot:()=>({available:true,writable:true,authorized:true,
+       enforcing:false as const,armed:false,hasCampaign:false}),
+     choose:async()=>({available:true,writable:true,authorized:true,
+       enforcing:false as const}),
+   },readUnion:read(verified)}).UnionPanel({
+     onOpenStrikeSummons:()=>{opened++},
+   }))
+ const real=panel(true)
+ const review=real.find(n=>n.props['data-ap-bulletin-action']==='review-refusal')!
+ assert.ok(review&&!review.props.disabled)
+ review.props.onClick()
+ assert.equal(opened,1)
+ assert.equal(panel(false).some(n=>n.props['data-ap-bulletin-kind']==='input-strike-followup'),false)
+ assert.equal(opened,1,'Read-only projections must not trigger automatic summons')
+ for(const data of [en,zhCN]){
+  for(const key of ['input-strike-armed','input-strike-refused','input-strike-followup'] as const){
+   assert.equal(typeof data[('hq.bulletin.kind.'+key) as keyof typeof en], 'string')
+   assert.equal(typeof data[('hq.bulletin.body.'+key) as keyof typeof en], 'string')
+  }
+ }
 })

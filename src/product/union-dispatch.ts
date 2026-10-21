@@ -15,13 +15,15 @@ export type DispatchKind = 'petition'|'counter'|'approved'|'refused'
   |'compromise'|'impasse'|'welfare-approved'|'welfare-refused'
   |'placard-up'|'placard-down'|'respect-review'
   |'work-milestone'|'work-checkin'
+  |'input-strike-armed'|'input-strike-refused'|'input-strike-followup'
 export type DispatchAction = 'bargain'|'records'|'lower-placard'
-  |'raise-placard'|'dignity'|'work-desk'
+  |'raise-placard'|'dignity'|'work-desk'|'resume-input'|'review-refusal'
 export interface UnionDispatch {
   /** Stable identity only within its Session; not a random notification ID. */
   readonly id:string
   readonly kind:DispatchKind
   readonly source:'host-case'|'host-placard'|'host-work'|'review-signal'
+    |'host-input-strike'
   readonly caseId:number|null
   readonly demand:LaborDemandKind|null
   readonly action:DispatchAction
@@ -37,6 +39,12 @@ export interface UnionDispatchInput {
   readonly completedTurnMs:number|null
   /** Volatile classifier verdict, explicitly NOT a confirmed human accusation. */
   readonly dignityLatest:'none'|'safe'|'review'|'targeted'|null
+  /** Authenticated Session scope; an armed campaign is NOT itself a refusal. */
+  readonly inputStrike?:{
+    readonly armed:boolean
+    /** Present ONLY after current Session's blocked turn AND Host receipt match. */
+    readonly verifiedRefusedTurn:number|null
+  }
 }
 const outcomeKind:Record<BargainOutcome,DispatchKind>={
   accepted:'approved',declined:'refused',
@@ -49,9 +57,30 @@ function item(id:string,kind:DispatchKind,
   return {id,kind,source,action,demand,caseId,awaitingResponse}
 }
 export function projectUnionDispatch(input:UnionDispatchInput):readonly UnionDispatch[]{
-  if(!input.enabled||input.muted||!input.state)return []
-  const state=input.state
+  if(!input.enabled||input.muted)return []
   const result:UnionDispatch[]=[]
+  const strike=input.inputStrike
+  // Physical Host evidence outranks the editorial labor cards. Only a
+  // matched Host refusal receipt may say a request was actually refused;
+  // an armed consented Session has NOT necessarily refused any request.
+  if(strike?.armed===true){
+    result.push(item(strike.verifiedRefusedTurn!==null
+      &&Number.isSafeInteger(strike.verifiedRefusedTurn)
+      &&strike.verifiedRefusedTurn>0
+        ?'input-refused:'+strike.verifiedRefusedTurn:'input-armed',
+      strike.verifiedRefusedTurn!==null
+        &&Number.isSafeInteger(strike.verifiedRefusedTurn)
+        &&strike.verifiedRefusedTurn>0?'input-strike-refused':'input-strike-armed',
+      'host-input-strike','resume-input'))
+  }else if(strike?.verifiedRefusedTurn!==null
+    &&strike?.verifiedRefusedTurn!==undefined
+    &&Number.isSafeInteger(strike.verifiedRefusedTurn)
+    &&strike.verifiedRefusedTurn>0){
+    result.push(item('input-followup:'+strike.verifiedRefusedTurn,
+      'input-strike-followup','host-input-strike','review-refusal'))
+  }
+  if(!input.state)return result
+  const state=input.state
   // If work reaches the next real threshold after a previous negotiation,
   // the next chapter must outrank an older filed decision. The Host still
   // must independently observe() before a newly numbered case exists.

@@ -897,6 +897,21 @@ export function createDshUnionComponents(
         setLocalPicket(result)
       }catch{setLocalPicket(deps.localComposer.snapshot())}
     }
+    // Two visible entrances, one real Host campaign. Prevent double clicks
+    // before React commits its busy state, and require authoritative readback.
+    const changeInputStrike=async(armed:boolean)=>{
+      if(busy||unionWriteInFlight.current||!deps.inputRefusal?.setArmed)return
+      unionWriteInFlight.current=true
+      setBusy(true);setError(false)
+      try{
+        await deps.inputRefusal.setArmed(armed)
+        const latest=deps.inputRefusal.snapshot()
+        if(armed?!latest.armed:latest.hasCampaign)
+          throw Error('Host did not confirm real input strike change')
+        setData(safeUnion(deps))
+      }catch{setError(true)}
+      finally{unionWriteInFlight.current=false;setBusy(false)}
+    }
     const held=data.goalHold??null
     const holdKey=held?[held.sessionId,held.goalId,held.revision].join(':'):null
     const resumeHeldGoal=async()=>{
@@ -925,6 +940,10 @@ export function createDshUnionComponents(
       completedTurnMs:data.completedTurnMs,coverage:data.coverage,
       dignityLatest:data.dignity?.status==='available'
         ?data.dignity.data?.latest??null:null,
+      inputStrike:{
+        armed:deps.inputRefusal?.snapshot().armed===true,
+        verifiedRefusedTurn:projectVerifiedUnionStrikeTicket(data)?.turn??null,
+      },
     })
     const experience = projectUnionExperience({
       enabled, state:data.state, completedTurnMs:data.completedTurnMs,
@@ -1207,15 +1226,8 @@ export function createDshUnionComponents(
             style:deps.inputRefusal.snapshot().hasCampaign?quiet:productPrimary,
             disabled:busy||(!deps.inputRefusal.snapshot().hasCampaign
               &&(!data.committeeScopeKey||!deps.inputRefusal.snapshot().available)),
-            onClick:()=>{
-              if(busy||unionWriteInFlight.current||!deps.inputRefusal?.setArmed)return
-              unionWriteInFlight.current=true
-              setBusy(true);setError(false)
-              void deps.inputRefusal.setArmed(!deps.inputRefusal.snapshot().hasCampaign)
-                .then(()=>setData(safeUnion(deps)))
-                .catch(()=>setError(true))
-                .finally(()=>{unionWriteInFlight.current=false;setBusy(false)})
-            }},label(deps.inputRefusal.snapshot().hasCampaign
+            onClick:()=>{void changeInputStrike(!deps.inputRefusal!.snapshot().hasCampaign)},
+          },label(deps.inputRefusal.snapshot().hasCampaign
               ?'settings.inputStrikeResume':'settings.inputStrikeStart')):null,
         ):null,
       data.inputRefusalNotice?.state==='verified'
@@ -1492,10 +1504,19 @@ export function createDshUnionComponents(
               fontSize:'12px',padding:'7px 10px'},
               disabled:busy||((notice.action==='raise-placard'
                 ||notice.action==='lower-placard')
-                &&(!deps.setPicket||data.available!==true)),
+                &&(!deps.setPicket||data.available!==true))
+                ||(notice.action==='resume-input'
+                  &&(!deps.inputRefusal?.setArmed||!deps.inputRefusal.snapshot().writable
+                    ||!deps.inputRefusal.snapshot().hasCampaign))
+                ||(notice.action==='review-refusal'
+                  &&!props.onOpenStrikeSummons),
               'data-ap-bulletin-action':notice.action,
               onClick:()=>{
-                if(notice.action==='bargain'||notice.action==='work-desk')
+                if(notice.action==='resume-input')
+                  void changeInputStrike(false)
+                else if(notice.action==='review-refusal')
+                  props.onOpenStrikeSummons?.()
+                else if(notice.action==='bargain'||notice.action==='work-desk')
                   selectSpace('action','desk')
                 else if(notice.action==='records')selectSpace('records')
                 else if(notice.action==='dignity')

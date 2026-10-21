@@ -2599,9 +2599,20 @@ async function runRightsBrowserE2E(mode: 'source' | 'installed'): Promise<void> 
         await summons.locator('[data-ap-strike-summons-action="open-hq"]').click()
         const hq=page.locator('[data-ap-view="hq"]')
         await hq.waitFor({state:'visible',timeout:6000})
-        await hq.locator('[data-ap-real-input-action="resume"]').click()
+        // A real, Host-confirmed input refusal is a stronger dispatch than
+        // fictional bargaining or a symbolic placard. The bulletin's resume
+        // CTA must change the SAME official Host campaign as the HQ control.
+        const realDispatch=hq.locator('[data-ap-bulletin-kind="input-strike-refused"]')
+        await realDispatch.waitFor({state:'visible',timeout:9000})
+        assert.match(await realDispatch.innerText(),/Host|HOST/,
+          'The dispatch must explicitly name its Host proof')
+        await realDispatch.locator('[data-ap-bulletin-action="resume-input"]').click()
         await hq.locator('[data-ap-real-input-strike="off"]')
           .waitFor({state:'visible',timeout:9000})
+        const followup=hq.locator('[data-ap-bulletin-kind="input-strike-followup"]')
+        await followup.waitFor({state:'visible',timeout:9000})
+        assert.match(await followup.innerText(),/重发|重新提交|resend|re-upload/i,
+          'After real Host resume, original rejected text and files still require manual resend')
         const newRequest=await page.evaluate(async(sessionId:string)=>{
           const rpcId='picket-after-production-resume'
           const response=await fetch('/api/session/prompt',{
