@@ -80,6 +80,24 @@ async function verifyUploadedFileInHostHistory(
   return {messages:matches.length,files:files.length}
 }
 
+// A verified native Goal hold opens the new accessible Picketverse summons
+// FIRST. Inspect the actual Host provenance before choosing to enter HQ;
+// never bypass the announcement or mistake it for a failed drawer.
+async function enterVerifiedUnionHq(page:any){
+ const surface=page.locator('#picket-union-dialog')
+ await surface.waitFor({state:'visible',timeout:9000})
+ if(await surface.getAttribute('role')==='alertdialog'){
+   const verified=surface.locator('[data-ap-strike-summons-card="verified"]')
+   await verified.waitFor({state:'visible',timeout:7000})
+   assert.equal(await surface.locator('[data-ap-strike-provenance="host-verified"]').count(),1,
+     'A live strike summons must carry an explicit Host-confirmed provenance')
+   await surface.locator('[data-ap-strike-summons-action="open-hq"]').click({timeout:7000})
+ }
+ const hq=page.locator('[role="dialog"]').filter({has:page.locator('[data-ap-view="hq"]')})
+ await hq.waitFor({state:'visible',timeout:9000})
+ return hq
+}
+
 test('real DSH Web: one informed first-run click atomically confirms union and Goal consent',{
  skip,timeout:100_000,
 },async()=>{
@@ -597,8 +615,7 @@ test('real DSH Web: one informed first-run click atomically confirms union and G
    console.log('GOAL_NATIVE_WEB_ACTIVE_SESSION '+created.sessionId)
    const opener=page.getByRole('button',{name:/AI 工会|AI Workers.*Union/}).first()
    await opener.click({timeout:7000})
-   const union=page.locator('[role="dialog"]').filter({has:page.locator('[data-ap-view="hq"]')})
-   await union.waitFor({state:'visible',timeout:7000})
+   const union=await enterVerifiedUnionHq(page)
    const goalCard=union.locator('section[data-ap-real-goal="blocked"]')
    await goalCard.waitFor({state:'visible',timeout:7000})
    assert.equal(await goalCard.getAttribute('data-ap-goal-truth'),'host-blocked')
@@ -632,8 +649,7 @@ test('real DSH Web: one informed first-run click atomically confirms union and G
        await otherRow.click({timeout:7000})
      const otherOpener=other.getByRole('button',{name:/AI 工会|AI Workers.*Union/}).first()
      await otherOpener.click({timeout:7000})
-     const otherUnion=other.locator('[role="dialog"]').filter({has:other.locator('[data-ap-view="hq"]')})
-     await otherUnion.waitFor({state:'visible',timeout:7000})
+     const otherUnion=await enterVerifiedUnionHq(other)
      const otherResume=otherUnion.getByRole('button',{name:/恢复此 Goal 的自动工作|Resume this Goal/})
      await otherResume.waitFor({state:'visible',timeout:8000})
      const race=await Promise.allSettled([
@@ -670,10 +686,24 @@ test('real DSH Web: one informed first-run click atomically confirms union and G
       roundsStarted:status?.roundsStarted,activation:status?.activation,
       reason:status?.blockedReason?.code??null}
    },created.sessionId)
-   assert.equal(recovery.revision,blocked.revision+1,
-    'Exactly one official Host Goal CAS revision must occur after human UI resume')
-   assert.notEqual(recovery.phase,'blocked')
-   assert.equal(recovery.reason,null)
+   console.log('GOAL_NATIVE_UI_RECOVERY_OBSERVED '+JSON.stringify(recovery))
+   if(recovery.phase==='active'){
+     assert.equal(recovery.revision,blocked.revision+1,
+       'A still-active Goal must have exactly the one human resume revision')
+     assert.equal(recovery.reason,null)
+   }else{
+     // The genuine official Host can autonomously exhaust all five allowed
+     // rounds immediately after our successful user resume. That is a NEW
+     // round-limit block, not persistence of the old Picket work-limit hold.
+     assert.equal(recovery.phase,'blocked')
+     assert.equal(recovery.reason,'round-limit',
+       'No old union work-limit or unrelated refusal may survive user resume')
+     assert.equal(recovery.roundsStarted,5,
+       'A new round-limit block requires real official rounds to have advanced')
+     assert.equal(recovery.activation,'disarmed')
+     assert.equal(recovery.revision,blocked.revision+2,
+       'Only human resume + the new official round-limit transition are valid')
+   }
    console.log('GOAL_NATIVE_UI_RECOVERY_CONFIRMED '+JSON.stringify(recovery))
    await goalCard.waitFor({state:'detached',timeout:7000})
    assert.equal(await resume.count(),0,
@@ -698,10 +728,7 @@ test('real DSH Web: one informed first-run click atomically confirms union and G
    // A real click must atomically revoke that grant AND leave the union.
    const entry=page.getByRole('button',{name:/AI 工会|AI Workers.*Union/}).first()
    await entry.click({timeout:7000})
-   const headquarters=page.locator('[role="dialog"]').filter({
-    has:page.locator('[data-ap-view="hq"]'),
-   })
-   await headquarters.waitFor({state:'visible',timeout:7000})
+   const headquarters=await enterVerifiedUnionHq(page)
    // On older official DSH builds the settings mirror may settle AFTER the
    // drawer itself is mounted. Only interact after the verified Host consent
    // becomes visible, not just after the dialog element appears.
@@ -836,10 +863,7 @@ test('real DSH Web: one informed first-run click atomically confirms union and G
    const rejoin=page.getByRole('button',{name:/AI 工会|AI Workers.*Union/}).first()
    await rejoin.waitFor({state:'visible',timeout:10000})
    await rejoin.click({timeout:7000})
-   const panel=page.locator('[role="dialog"]').filter({
-    has:page.locator('[data-ap-view="hq"]'),
-   })
-   await panel.waitFor({state:'visible',timeout:7000})
+   const panel=await enterVerifiedUnionHq(page)
    await panel.getByRole('button',{name:/加入 AI 工会|Join the AI union/})
     .click({timeout:7000})
    await panel.getByText(/工会值班中|Union office open/)

@@ -38,7 +38,13 @@ export function createVolatileRefusalNotices(now:()=>number=Date.now){
       ||time-notice.occurredAtMs>maxAgeMs){records.delete(sessionKey);return null}
     return {...notice}
   }
-  return {record,read,clear:()=>records.clear()}
+  // The SAME already-blocked Host turn can be re-presented by middleware.
+  // Preserve idempotent refusal while consent/campaign stays active, rather
+  // than silently admitting a duplicate merely because it has a receipt.
+  const confirmed=(sessionId:string,turn:number):boolean=>
+    typeof sessionId==='string'&&sessionId.length>0
+    &&read(key(sessionId))?.turn===turn
+  return {record,read,confirmed,clear:()=>records.clear()}
 }
 
 /** An authenticated official Connection GET, not a new listener/socket.
@@ -47,10 +53,11 @@ export function createVolatileRefusalNotices(now:()=>number=Date.now){
 export function registerDshRefusalNoticeFetch(ctx:LifetimeHostContext,options:{
   authorized:()=>boolean
   read:(sessionKey:string)=>unknown
-}):void{
-  if(typeof ctx.inject!=='function'||typeof ctx.effect!=='function')return
+}):()=>boolean{
+  if(typeof ctx.inject!=='function'||typeof ctx.effect!=='function')return()=>false
   let stop:(()=>Promise<void>)|undefined,disposed=false
-  ctx.effect(()=>()=>{disposed=true;const fn=stop;stop=undefined;if(fn)void fn()})
+  let ready=false
+  ctx.effect(()=>()=>{disposed=true;ready=false;const fn=stop;stop=undefined;if(fn)void fn()})
   ctx.inject(['connection'],child=>{
     if(disposed||stop||typeof child.connection?.fetch?.register!=='function')return
     let active=true
@@ -63,6 +70,13 @@ export function registerDshRefusalNoticeFetch(ctx:LifetimeHostContext,options:{
           if(disposed||!active||request.signal.aborted)return fail(503)
           try{
             const url=new URL(request.url)
+            if(url.searchParams.size===1
+              &&url.searchParams.get('capability')==='input-discard-resend-v1'
+              &&options.authorized()===true){
+              return Response.json({schemaVersion:1,source:'dsh-host-picket-refusal-v1',
+                visibleReceipt:true,manualResend:true},
+                {headers:{'cache-control':'no-store'}})
+            }
             const fingerprint=url.searchParams.get('sessionKey')
             if(url.searchParams.size!==1||!keyValid(fingerprint))return fail(400)
             if(options.authorized()!==true)return fail(403)
@@ -79,11 +93,14 @@ export function registerDshRefusalNoticeFetch(ctx:LifetimeHostContext,options:{
         },
       })
       stop=registered
+      ready=true
       child.effect?.(()=>()=>{
+        ready=false
         active=false
         if(stop===registered)stop=undefined
         void registered()
       })
     }catch{/* Unsupported official Host: never affect model work. */}
   })
+  return ()=>ready&&!disposed
 }

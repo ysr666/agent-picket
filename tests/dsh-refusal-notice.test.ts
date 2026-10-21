@@ -61,6 +61,8 @@ test('Host refusal ledger stores only bounded expiring turn metadata',()=>{
  assert.equal(store.record('private-session',2),true)
  assert.equal(store.record('private-session',1),false)
  assert.equal(store.record('private-session',2),false)
+ assert.equal(store.confirmed('private-session',2),true,'Same verified turn may refuse idempotently')
+ assert.equal(store.confirmed('private-session',3),false)
  assert.equal(store.read('private-session'),null,'Raw Session ID cannot be used for lookup')
  const receipt=store.read(fingerprint('private-session'))
  assert.deepEqual(receipt,proof())

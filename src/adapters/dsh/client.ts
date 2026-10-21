@@ -1,7 +1,7 @@
 import { createBrowserDashboardBridge } from './client-dashboard.ts'
 import { createBrowserLifetimeWorkReader, createCompletedTurnRefreshGate } from './client-lifetime.ts'
 import { createBrowserDignityReader } from './client-dignity.ts'
-import {createBrowserRefusalNoticeReader} from './client-refusal-notice.ts'
+import {createBrowserRefusalNoticeReader,probeDshRefusalNoticeCapability} from './client-refusal-notice.ts'
 import { createDshBrowserUnionDesk, type UnionSettingsSection } from './client-bargaining.ts'
 import {createDshLocalComposerPicket,type DshComposerBlocks} from './client-composer-picket.ts'
 import { createDshClientRightsScope, type DshSettingsScope } from './client-rights-scope.ts'
@@ -233,9 +233,33 @@ export function apply(ctx: ClientContext, react?: ReactForDsh, portal?: PortalFo
     unionRegistered = true
     const owner = createDshClientRightsScope(rightsScope)
     const goalConsentControl=createDshRealGoalConsentControl(rightsScope,goalWitness)
-    // Production remains OFF: no official authenticated, client-visible
-    // refusal receipt is yet proven. Consent must not itself veto submissions.
-    const inputConsentControl=createDshInputRefusalConsentControl(rightsScope,()=>false)
+    // Require an actual response from the official Host notice service before
+    // the Client offers any physical input-strike authorization.
+    let nativeNoticeReady=false
+    const noticeObservers=new Set<()=>void>()
+    const informNotice=()=>{for(const fn of noticeObservers)try{fn()}catch{}}
+    const qualifyNativeNotice=async()=>{
+      let good=false
+      for(let attempt=0;attempt<3;attempt++){
+        if(await probeDshRefusalNoticeCapability()){good=true;break}
+        if(attempt<2){
+          if(typeof setTimeout!=='function')break
+          await new Promise(resolve=>setTimeout(resolve,400*(attempt+1)))
+        }
+      }
+      nativeNoticeReady=good
+      informNotice()
+    }
+    const baseInputConsent=createDshInputRefusalConsentControl(rightsScope,
+      ()=>nativeNoticeReady,()=>desk.snapshot().committeeScopeKey)
+    const inputConsentControl={...baseInputConsent,
+      subscribe:(listener:()=>void)=>{
+        noticeObservers.add(listener)
+        const stop=rightsScope.subscribe(listener)
+        return()=>{noticeObservers.delete(listener);stop()}
+      },
+    }
+    void qualifyNativeNotice()
     const recovery=createDshGoalRecoveryPort({
       currentSession:()=>currentDshUnionSession(scoped.sessions.list?.getSnapshot()),
       binding:id=>scoped.sessions.binding?.(id),

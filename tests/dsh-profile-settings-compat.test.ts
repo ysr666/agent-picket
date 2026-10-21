@@ -9,15 +9,16 @@ import { createNativeUnionCommandPort, type NativeSettingsProvider } from '../sr
 test('new DSH Config keeps real Goal authorization distinct from legacy union simulation', () => {
   const schema = DshProfileRightsConfig
   assert.equal(schema.type, 'object')
-  for (const name of ['welcomeDecision','unionLedger','commandLocale','unionPicketLedger','unionDignityCases','unionGazetteMode','realGoalStrikeConsent','realInputStrikeConsent']) {
+  for (const name of ['welcomeDecision','unionLedger','commandLocale','unionPicketLedger','unionDignityCases','unionGazetteMode','realGoalStrikeConsent','realInputStrikeConsent','realInputStrikeCampaign']) {
     assert.equal(schema.dict![name]?.meta.volatile, true, name)
   }
   assert.deepEqual(Object.keys(schema.dict!).sort(),
-    ['commandLocale','realGoalStrikeConsent','realInputStrikeConsent','unionDignityCases','unionGazetteMode','unionLedger','unionPicketLedger','welcomeDecision'])
+    ['commandLocale','realGoalStrikeConsent','realInputStrikeCampaign','realInputStrikeConsent','unionDignityCases','unionGazetteMode','unionLedger','unionPicketLedger','welcomeDecision'])
   const parsed = schema({})
   assert.equal(parsed.welcomeDecision.get(), 'unseen')
   assert.equal(parsed.realGoalStrikeConsent.get(), 'off')
   assert.equal(parsed.realInputStrikeConsent.get(), 'off')
+  assert.equal(parsed.realInputStrikeCampaign.get(), '')
   assert.throws(()=>schema({realInputStrikeConsent:'unknown-v2' as never}))
   assert.equal(schema({realGoalStrikeConsent:'authorized-v1'}).realGoalStrikeConsent.get(),'authorized-v1')
   assert.throws(()=>schema({realGoalStrikeConsent:true as never}))

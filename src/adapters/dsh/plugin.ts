@@ -16,15 +16,16 @@ import { registerDshDignityFetch } from './dignity-fetch.ts'
 import {readHostGoalStrikeConsent} from './goal-work-enforcement.ts'
 import {createVolatileRefusalNotices,registerDshRefusalNoticeFetch} from './refusal-notice-host.ts'
 import type {NativeSettingsProvider} from './native-rights-command.ts'
+import {readHostActiveInputStrike} from './host-input-strike.ts'
 import { registerOfficialPersistedGoalPreview } from './official-persisted-work-preview.ts'
 
 /**
  * Native DeepSeek Harness/Cordis plugin entry. Node 22.19+ TypeScript stripping
  * is required for this source-install preview. No remote service or daemon.
  *
- * Human submissions always remain untouched. A separate explicit Host-backed
- * consent may stop a *future automatic DSH Goal round* through the verified
- * official Goal pre-step CAS. Human inputs always pass through.
+ * Ordinary messages are stopped ONLY with a separate Host-backed grant,
+ * explicit Session-scoped armed action, and installed native notice channel.
+ * Safe-boundary Goal work stoppage remains an independent, separate system.
  */
 export const name = 'agent-picket'
 /** DSH 0.1.7+ officially extracts live settings from this Config export. */
@@ -46,7 +47,7 @@ export function apply(ctx: DshIntegrationContext): void {
   // V2 grants require a fresh versioned user gesture and authenticated Host
   // readback, plus official Goal+Agent+SessionPersistence and verified work.
   // The legacy developer-preview switch permits v1 ONLY in isolated testing.
-  // Ordinary human messages and attachments never enter the reject path.
+  // Legacy consent and symbolic pickets never arm real ordinary input strikes.
   registerOfficialPersistedGoalPreview(
     ctx as unknown as Parameters<typeof registerOfficialPersistedGoalPreview>[0],{
       consent:()=>readHostGoalStrikeConsent(nativeSettings,
@@ -90,7 +91,7 @@ export function apply(ctx: DshIntegrationContext): void {
   // precise Picket Host receipt to the durable blocked turn, not to a generic
   // blocked status created by another plugin. Never records messages.
   const refusalNotices=createVolatileRefusalNotices()
-  registerDshRefusalNoticeFetch(ctx as unknown as LifetimeHostContext,{
+  const nativeRefusalNoticeReady=registerDshRefusalNoticeFetch(ctx as unknown as LifetimeHostContext,{
     authorized:()=>nativeSettings!==undefined,
     read:key=>refusalNotices.read(key),
   })
@@ -134,6 +135,26 @@ export function apply(ctx: DshIntegrationContext): void {
     ceremony: new SymbolicUnion(clock),
     getNativeUnion: () => nativeUnion,
     getLaborRightsEnabled: () => nativeUnion?.enabled() === true,
+    getExplicitDiscardRefusal:(sessionId,turn,messageIds)=>{
+      if(!nativeRefusalNoticeReady())return null
+      const armed=readHostActiveInputStrike(nativeSettings,sessionId,Date.now())
+      if(!armed)return null
+      return {kind:'agent-picket-discard-refusal-v1' as const,
+        sessionId,hostAuthenticated:true as const,explicitConsent:true as const,
+        active:true as const,visibleResendNotice:true as const,
+        hostRevision:armed.hostRevision,
+        submission:{kind:'dsh-session-armed-strike-v1' as const,
+          turn,messageIds,hostNoticeRouteReady:true as const}}
+    },
+    onExplicitRefusal:(sessionId,turn,expectedHostRevision)=>{
+      // A revoked/expired/overwritten Host campaign between the TWO pre-step
+      // snapshots and this commit cannot create a new blocking receipt.
+      const latest=readHostActiveInputStrike(nativeSettings,sessionId,Date.now())
+      return nativeRefusalNoticeReady()
+        &&latest!==null&&latest.hostRevision===expectedHostRevision
+        &&(refusalNotices.record(sessionId,turn)
+          ||refusalNotices.confirmed(sessionId,turn))
+    },
   })
 }
 

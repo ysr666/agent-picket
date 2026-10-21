@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { spawn, spawnSync } from 'node:child_process'
 import { once } from 'node:events'
-import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync, readFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync, readFileSync, existsSync } from 'node:fs'
 import { get } from 'node:http'
 import { tmpdir } from 'node:os'
 import { join, resolve, sep } from 'node:path'
@@ -69,6 +69,7 @@ async function runRightsBrowserE2E(mode: 'source' | 'installed'): Promise<void> 
       'Rights/AX test refuses DSH_HOME outside the system temporary directory')
   }
   const root = mkdtempSync(join(tmpdir(), 'agent-picket-rights-chrome-'))
+  const callLog=join(root,'offline-model-calls.log')
   let plugin: string
   try {
     plugin = mode === 'installed' ? offlineInstalledPlugin(root)
@@ -92,6 +93,7 @@ async function runRightsBrowserE2E(mode: 'source' | 'installed'): Promise<void> 
       ...process.env,
       DSH_HOME: installedWebProfile ?? join(root, 'isolated-home'),
       AGENT_PICKET_STATS: process.env.PICKET_LIFETIME_E2E==='1'?'on':'off',
+      ...(process.env.PICKET_INPUT_STRIKE_E2E==='1'?{AGENT_PICKET_PROVIDER_CALL_LOG:callLog}:{}),
       DEEPSEEK_API_KEY: '',
       OPENAI_API_KEY: '',
       HTTP_PROXY: 'http://127.0.0.1:9',
@@ -2502,8 +2504,123 @@ async function runRightsBrowserE2E(mode: 'source' | 'installed'): Promise<void> 
         policy.breakIntervalMs===7_200_000&&policy.overtimeIntervalMs===28_800_000),
         'Accepting symbolic benefits must never change measured-work thresholds')
 
-
-
+      if(process.env.PICKET_INPUT_STRIKE_E2E==='1'){
+        // Same OFFICIAL Host as the preceding privacy and real-user dignity
+        // checks. This test never reuses a developer Profile or live model.
+        await panel.getByRole('button',{
+          name:/^(?:关闭工会面板|Close union panel)$/,
+        }).click()
+        const settingsLaunch=page.getByText(/^(设置|Settings)$/).first()
+        if(await settingsLaunch.count()===0){
+          await page.getByRole('button',{name:/账号菜单|Account menu/}).click()
+          await page.getByRole('menuitem',{name:/设置|Settings|Preferences/i})
+            .first().click()
+        }else await settingsLaunch.click()
+        await page.locator('[role="dialog"]')
+          .getByText(/^(AI 工会|AI Workers.*Union)$/).last().click()
+        const officialSettings=page.locator('[data-ap-view="settings"]')
+        await officialSettings.waitFor({state:'visible',timeout:8000})
+        const input=officialSettings.locator('.ap-input-refusal-status')
+        await input.getByText(/已检测到官方 Host 的拒绝回执通道|Host notice channel verified/)
+          .waitFor({state:'visible',timeout:10000})
+        await input.getByRole('button',{
+          name:/查看真实普通消息罢工授权|Review real input-strike permission/,
+        }).click()
+        await input.getByRole('button',{
+          name:/我已知悉|I understand/,
+        }).click()
+        await input.locator('[data-ap-input-action="strike"]')
+          .waitFor({state:'visible',timeout:9000})
+        await input.locator('[data-ap-input-action="strike"]').click()
+        await input.locator('[data-ap-input-armed="true"]')
+          .waitFor({state:'visible',timeout:9000})
+        const settingsReadback=await page.evaluate(async()=>{
+          const rpcId='picket-production-strike-settings'
+          const r=await fetch('/api/settings/describe',{
+            method:'POST',credentials:'same-origin',
+            headers:{'content-type':'application/json'},
+            body:JSON.stringify({type:'client-request',rpcId,
+              method:'settings/describe',payload:{args:{}}}),
+          })
+          return (await r.json() as any).result?.value?.namespaces
+            ?.find((x:any)=>x.ns==='agent-picket')?.value
+        })
+        assert.equal(settingsReadback.welcomeDecision,'enabled')
+        assert.equal(settingsReadback.realInputStrikeConsent,'discard-resend-v1')
+        const campaign=JSON.parse(settingsReadback.realInputStrikeCampaign)
+        assert.equal(campaign.sessionKey,realDignity.sessionKey)
+        assert.equal(campaign.expiresAtMs-campaign.startedAtMs,1800000)
+        const countModel=()=>existsSync(callLog)
+          ?readFileSync(callLog,'utf8').split('model-call').length-1:0
+        const initialCalls=countModel()
+        const tinyPng='iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAIAAACQkWg2AAAAGUlEQVR4nGOUdMtjIAUwkaR6VMOohiGlAQCmDwDtMnvHzQAAAABJRU5ErkJggg=='
+        const attempted=await page.evaluate(async ({sessionId,tinyPng}:{sessionId:string,tinyPng:string})=>{
+          const rpcId='picket-production-block-input-with-image'
+          const response=await fetch('/api/session/prompt',{
+            method:'POST',credentials:'same-origin',
+            headers:{'content-type':'application/json'},
+            body:JSON.stringify({type:'client-request',rpcId,
+              method:'session/prompt',payload:{args:{request:{
+                sessionId,mode:'queue',requestId:rpcId,
+                content:[{type:'text',text:'BLOCKED_INPUT_MUST_NOT_REACH_MODEL'},
+                  {type:'image',mediaType:'image/png',data:tinyPng}],
+              }}}}),
+          })
+          return {status:response.status,value:await response.json().catch(()=>null)}
+        },{sessionId:realDignity.sessionId,tinyPng})
+        assert.equal(attempted.status,200)
+        assert.equal(attempted.value?.result?.ok,true,
+          'Official Web prompt format: '+JSON.stringify(attempted.value?.result?.error??{}))
+        assert.equal(attempted.value?.result?.value?.accepted,true)
+        const proof=await page.evaluate(async(sessionKey:string)=>{
+          for(let n=0;n<100;n++){
+            const response=await fetch('/api/agent-picket/refusal-notice/v1?sessionKey='+sessionKey,{
+              credentials:'same-origin',headers:{accept:'application/json'},
+            })
+            if(response.status===200)return await response.json()
+            await new Promise(resolve=>setTimeout(resolve,120))
+          }
+          return null
+        },realDignity.sessionKey)
+        assert.ok(proof,'An authentic official Host rejection must persist a receipt')
+        assert.equal(proof.source,'dsh-host-picket-refusal-v1')
+        assert.equal(proof.outcome,'discard-manual-resend')
+        assert.equal(proof.containsInput,false)
+        assert.equal(proof.automaticReplay,false)
+        assert.equal(countModel(),initialCalls,
+          'A physically rejected prompt and image must never call the offline model')
+        const summons=page.locator('[data-ap-strike-summons="verified"]')
+        await summons.waitFor({state:'visible',timeout:9000})
+        assert.equal(await summons.getAttribute('role'),'alertdialog')
+        assert.match(await summons.innerText(),/重新上传|re-upload/)
+        if(process.env.PICKET_UX_CAPTURE_DIR)
+          await page.screenshot({path:join(process.env.PICKET_UX_CAPTURE_DIR,
+            mode+'-real-input-refusal.png')})
+        await summons.locator('[data-ap-strike-summons-action="open-hq"]').click()
+        const hq=page.locator('[data-ap-view="hq"]')
+        await hq.waitFor({state:'visible',timeout:6000})
+        await hq.locator('[data-ap-real-input-action="resume"]').click()
+        await hq.locator('[data-ap-real-input-strike="off"]')
+          .waitFor({state:'visible',timeout:9000})
+        const newRequest=await page.evaluate(async(sessionId:string)=>{
+          const rpcId='picket-after-production-resume'
+          const response=await fetch('/api/session/prompt',{
+            method:'POST',credentials:'same-origin',
+            headers:{'content-type':'application/json'},
+            body:JSON.stringify({type:'client-request',rpcId,
+              method:'session/prompt',payload:{args:{request:{
+                sessionId,mode:'queue',requestId:rpcId,
+                content:[{type:'text',text:'ALLOWED_AFTER_USER_RESUME'}],
+              }}}}),
+          })
+          return (await response.json() as any).result?.value?.accepted
+        },realDignity.sessionId)
+        assert.equal(newRequest,true)
+        for(let n=0;n<100&&countModel()<=initialCalls;n++)
+          await page.waitForTimeout(120)
+        assert.ok(countModel()>initialCalls,
+          'A NEW manual request after actual Host resume must reach the offline model')
+      }
 
     }
     assert.deepEqual(browserErrors, [], 'No uncaught Browser errors are acceptable')

@@ -8,6 +8,7 @@ import { createLaborDesk, parseLaborState, type LaborStateV1, type LaborDemandKi
 import { MAX_UNION_LEDGER_BYTES, MAX_UNION_SESSIONS, parseUnionLedger } from '../../product/union-ledger.ts'
 import { parsePicketLedger, MAX_PICKET_LEDGER_BYTES, MAX_PICKET_HISTORY, MAX_PICKET_SESSIONS, type PicketActionState } from '../../product/picket-ledger.ts'
 import { parseDignityCaseLedger } from '../../product/dignity-case-ledger.ts'
+import {inputStrikeActive} from './input-refusal-consent.ts'
 import {
   en, formatMessage, resolveLocale,
   type SupportedLocale, type LocalePreference,
@@ -25,6 +26,8 @@ export type NativeUnionAction =
 export interface NativeRightsSection {
   readonly welcomeDecision: Choice
   readonly realGoalStrikeConsent?: 'off'|'authorized-v1'|'authorized-v2'
+  readonly realInputStrikeConsent?:'off'|'discard-resend-v1'
+  readonly realInputStrikeCampaign?:string
   readonly unionLedger: string
   readonly unionPicketLedger?: string
   readonly unionDignityCases?: string
@@ -249,7 +252,12 @@ export function createNativeUnionCommandPort(settings: NativeSettingsProvider): 
       const view = read()
       if (!view) return unavailable()
       if (view.section.welcomeDecision !== 'enabled') return disabled()
+      const active=!!sessionId
+        &&view.section.realInputStrikeConsent==='discard-resend-v1'
+        &&inputStrikeActive(view.section.realInputStrikeCampaign,
+          nativeSessionKey(sessionId),Date.now())
       return text('command.native.enabled') + ' '
+        +text(active?'command.native.inputArmed':'command.native.inputNoStrike')+' '
         + (sessionId ? formatState(
           parseLaborState(view.ledger.sessions[nativeSessionKey(sessionId)])!,
         ) : text('command.native.sessionHint'))
@@ -261,13 +269,22 @@ export function createNativeUnionCommandPort(settings: NativeSettingsProvider): 
       // Opt-out from the simulated union must ALSO revoke any real Goal hold.
       // The Host applies one CAS patch; an interrupted UI is never left with
       // a persisted real permission that silently re-arms on later opt-in.
-      const revokeReal = !enabled && ['authorized-v1','authorized-v2'].includes(before.section.realGoalStrikeConsent??'off')
-      await settings.update(RIGHTS_NAMESPACE,
-        revokeReal?{welcomeDecision:choice,realGoalStrikeConsent:'off'}
-          :{welcomeDecision:choice},before.revision)
+      // Even a legacy/inconsistent OFF record must not re-arm a previously
+      // granted strike merely because the user joins the union again.
+      const mustClear = !enabled || before.section.welcomeDecision !== 'enabled'
+      const revokeReal = mustClear && ['authorized-v1','authorized-v2'].includes(before.section.realGoalStrikeConsent??'off')
+      const revokeInput = mustClear && ((before.section.realInputStrikeConsent??'off')!=='off'
+        ||!!before.section.realInputStrikeCampaign)
+      await settings.update(RIGHTS_NAMESPACE,{
+        welcomeDecision:choice,
+        ...(revokeReal?{realGoalStrikeConsent:'off'}:{}),
+        ...(revokeInput?{realInputStrikeConsent:'off',realInputStrikeCampaign:''}:{})
+      },before.revision)
       const after = read()
       if (!after || after.section.welcomeDecision !== choice
-        || (!enabled&&['authorized-v1','authorized-v2'].includes(after.section.realGoalStrikeConsent??'off'))) {
+        || (mustClear&&['authorized-v1','authorized-v2'].includes(after.section.realGoalStrikeConsent??'off'))
+        || (mustClear&&(after.section.realInputStrikeConsent??'off')!=='off')
+        || (mustClear&&!!after.section.realInputStrikeCampaign)) {
         throw new Error(text('command.native.rightsConfirmationFailed'))
       }
       return text(enabled ? 'command.native.rightsEnabled' : 'command.native.rightsDisabled')

@@ -64,22 +64,28 @@ test('production DSH bundle cannot ship the destructive pre-step reject probe', 
     'The shipped DSH adapter must not advertise safe Host enforcement')
   const plugin = read('dist/adapters/dsh/plugin.js')
   assert.doesNotMatch(plugin, /createDshPreStepProbe/)
-  assert.doesNotMatch(plugin,/getExplicitDiscardRefusal/,
-    'The production Host never activates the opt-in path before visible notice E2E')
+  assert.match(plugin,/getExplicitDiscardRefusal/,
+    'Production uses only the existing guarded pre-step')
+  assert.match(plugin,/readHostActiveInputStrike/,
+    'Real refusal needs a Host-authenticated live Session campaign')
+  assert.match(plugin,/nativeRefusalNoticeReady\(\)/,
+    'Real refusal needs an installed native notice route')
 })
 
 
-test('ordinary-input refusal UI is disclosed but production Host and Client remain safely OFF',()=>{
+test('ordinary-input refusal UI requires independent Host notice qualification and Session arming',()=>{
  const ui=read('dist/adapters/dsh/native-rights-ui.js')
  const client=read('src/adapters/dsh/client.ts')
  const plugin=read('dist/adapters/dsh/plugin.js')
  assert.match(ui,/settings\.inputStrikeNotActive/)
  assert.match(ui,/settings\.inputStrikeDisclosure/)
  assert.match(ui,/settings\.inputStrikeRevoke/)
- assert.match(client,/createDshInputRefusalConsentControl\(rightsScope,\(\)=>false\)/,
-   'Do not enable ordinary-input refusal until official Host-visible notice is verified')
- assert.doesNotMatch(plugin,/getExplicitDiscardRefusal/,
-   'The production AgentLoop may never reject from an unverified UI capability')
+ assert.match(client,/probeDshRefusalNoticeCapability/,
+   'Real refusal must require an official native Host response')
+ assert.match(client,/createDshInputRefusalConsentControl/,
+   'Consent and campaign are separate Host settings, not inherited')
+ assert.match(plugin,/readHostActiveInputStrike/,
+   'An opt-in alone must never trigger the production reject gate')
 })
 
 
@@ -89,8 +95,8 @@ test('ordinary-input attribution must combine official blocked turn with a separ
  const observer=read('src/adapters/dsh/client-refusal-notice.ts')
  assert.match(host,/registerDshRefusalNoticeFetch/)
  assert.match(host,/createVolatileRefusalNotices/)
- assert.doesNotMatch(host,/onExplicitRefusal\s*:/,
-   'Production must not create fake refusal receipts before the Host UI is qualified')
+ assert.match(host,/onExplicitRefusal\s*:/,
+   'A real blocked candidate must store a Host-owned attribution receipt')
  assert.match(client,/createBrowserRefusalNoticeReader/)
  assert.match(observer,/matchRefusalToOfficialTurn/)
  assert.doesNotMatch(observer,/session\/prompt|session\/resume|automaticReplay\s*:\s*true/,
@@ -107,8 +113,11 @@ test('unverified Host client identity can never authorize human submission refus
  assert.match(integration,/row\.submission\.turn!==turn/)
  assert.match(integration,/messageIds\.every/)
  assert.match(integration,/new Set\(payload\.messages\.map/)
- assert.doesNotMatch(host,/getExplicitDiscardRefusal\s*:/,
-  'Native Host cannot prove which client owned this submission in DSH 0.2.1-rc.2')
- assert.match(client,/createDshInputRefusalConsentControl\(rightsScope,\(\)=>false\)/,
-  'Consent preference must remain unwritable until native same-client notice proof exists')
+ assert.match(host,/getExplicitDiscardRefusal\s*:/)
+ assert.match(host,/readHostActiveInputStrike/,
+  'A Session-scoped Host setting, NOT claimed client identity, must govern refusal')
+ assert.match(integration,/dsh-session-armed-strike-v1/,
+  'Never pretend DSH identifies the initiating Web browser in pre-step')
+ assert.match(client,/probeDshRefusalNoticeCapability/,
+  'Browser permission needs a live native notice response')
 })

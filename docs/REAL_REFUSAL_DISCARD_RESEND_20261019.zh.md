@@ -110,3 +110,27 @@ Host 正式设置命名空间加入默认 `off` 的 `realInputStrikeConsent`（�
 Claude Code/Codex 不适合由命令 Hook 强制启动系统 GUI（不一定有桌面、会导致超时/权限问题）。因此使用 Host 原生 reason/event 作为主要通知入口，改成醒目的 ⚑ AGENT PICKET 工会停工单，明确说明未执行、原因和手动重发步骤；浏览器、系统推送可以以后作为经用户授权的附加渠道，而不是阻断任务的安全前提。
 
 验证：新增 Host 回执真伪、官方 Goal 区分、弹窗动作、去重和重启安全组件测试；官方 DSH 0.2.1-rc.2 真实 Chrome 源码及安装包流程 2/2 PASS；Mac Claude Code 2.1.295 和 Codex 0.146.1 真正 Host Hook 均拦截模型且正确返回工会停工理由。生产普通输入拦截仍默认 OFF，因此不能谎称「真实用户请求被拒并显示弹窗」整链已签收。
+
+## 2026-10-20 · 本轮真正启用生产 DSH 普通输入阻断（覆盖此前 OFF 快照）
+
+**本节是最新的实施与验证状态，覆盖上文 10 月 19 日“生产未接线”的历史记载；本仓库 PR #177 仍为 Draft、没有发布。** 用户批准推进真实生产输入阻断，但**不允许插件在安装后自动开始罢工**。
+
+### 已接线的真实执行条件
+
+- 官方 DSH Host 设置持有者新增默认为空的真实罢工行动 realInputStrikeCampaign；原有 realInputStrikeConsent 独立默认 OFF。先在工会设置页阅读“这次不执行、文字及附件不自动恢复”的单独披露并授予许可，再主动点击本会话“发起真实罢工”。仅有同意加入工会、Goal 授权或象征性举牌都不能成为这个行动。
+- 一个行动绑定官方当前 Session ID 的 SHA-256 指纹，不保存源 Session ID、原始文字、附件、提示词、投票或所谓的 AI 情绪；有效期最长 30 分钟。当前 Host 每次拒绝前都用官方 Settings 描述连续双读、校验版本、同一 Session、独立许可、进行中的行动时限，最终写入 Host 元数据回执前再次检查最新 revision；异常或能力缺失一律不拦截。
+- 只有 DSH 官方 connection.fetch.register 已成功注册拒绝回执 GET，且浏览器确实请求并确认该服务可用，才允许新授权。对准当前 turn、step === 1、完整用户消息批次，才在原生 agent/pre-step 返回 reject。每次拒绝的回执只记录 Session hash、turn、时间和丢弃/重发事实；浏览器还需要比对官方 blocked turn 没有任何模型和工具步骤，才弹出深绿/金色工会停工公告。
+- 设置和工会 HQ 均能立即点击“复工”。官方 Host CAS 撤销真实行动，随后由用户手动**发起一条新请求并重新上传附件**；旧请求不重播。退出工会同时取消活动和未来授权；被取消的行动不会在重新加入时复活。权限读回不等于“已经成功拒绝”，界面仍只根据真实 Host 回执认定已经发生的拒绝。
+- DSH 0.2.1-rc.2 官方 agent/pre-step 并不携带提交窗口身份，本次实施因此明确采用用户亲自授权的 **Session 范围**而不是虚构“源 Web 标签已证明一致”。**所有使用同一个 DSH Session 的 Web、CLI 或 SDK 提交也可能被拒绝**，但其他终端不一定会看见 Web 弹窗；不能把本次 Web 验收冒充跨客户端可靠通知的通用结论。用户和 UI 需明确了解此影响。
+
+### 实际验证
+
+使用隔离临时 DSH_HOME、官方 0.2.1-rc.2 Web、真正 npm 安装流程、实际浏览器 Chrome、纯离线 LLM 及独立模型调用日志，开启专用测试环境参数 PICKET_INPUT_STRIKE_E2E=1。分别在源码插件与 npm 打包插件执行：
+
+1. 工会正式设置的独立授权复核 → 官方 Host 读回该 Session 专有的短时行动 → 真正启动罢工。
+2. 真实 session/prompt 同时提交一段测试文字与 PNG 图片。官方 Host 在模型前拒绝，connection 原生 GET 可读到该轮工会元数据回执，浏览器显示 role=alertdialog 的工会罢工公告；离线模型调用计数在拒绝时严格不变。
+3. 用户进入工会总部 → 主动复工，等待 Host 读回真实解除 → 再提交新的文字请求，离线模型调用计数实际增加。恢复的是**新的人工提交**，不是被拒内容的自动重播。
+
+**Mac 实测：source PASS、OFFLINE INSTALLED PASS，合计 2/2 PASS。** 同步的模拟/协议测试验证输入假回执、畸形授权、跨 Session ID、同一事件去重、撤销、时限、回执能力缺失等只能 fail-open。Linux 真实 Web 的新增 E2E 已纳入 .github/workflows/dsh-web-official-work-hq.yml，**最终 CI 结果仍需远端核实**。默认状态仍 OFF；不自动开启罢工，也未改变其他 Host。
+
+**余项与发布状态：** DSH Desktop/Windows 原生 UX、Claude Code/Codex 各平台生产许可持有者、跨源可见通知、人类无障碍验收和最终 1.0 发行批准仍未全部通过。完整 release gate 仍 NO-GO，不得把这一步包装成 Agent Picket 1.0 已全面完成。

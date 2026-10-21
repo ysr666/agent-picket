@@ -42,7 +42,7 @@ const modules = [
 ]
 const allowedImports = new Map([
   ['i18n/index.js', new Set(['./en.js', './zh-CN.js'])],
-  ['adapters/dsh/client-host-settings-017.js', new Set(['../../product/union-ledger.js','../../product/picket-ledger.js','../../product/dignity-case-ledger.js'])],
+  ['adapters/dsh/client-host-settings-017.js', new Set(['../../product/union-ledger.js','../../product/picket-ledger.js','../../product/dignity-case-ledger.js','./input-refusal-consent.js'])],
   ['product/union-ledger.js', new Set(['./union-desk.js'])],
   ['adapters/dsh/native-rights-ui.js', new Set(['./client-rights-scope.js','../../product/union-experience.js','../../product/union-story.js','../../product/union-dispatch.js','../../product/union-stance.js','../../product/union-agenda.js','../../product/union-cadence.js','../../product/union-alerts.js','./input-refusal-consent.js'])],
   ['adapters/dsh/client-bargaining.js', new Set([

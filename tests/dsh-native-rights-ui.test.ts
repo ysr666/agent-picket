@@ -3390,8 +3390,10 @@ test('ordinary-input strike review must display discard warning before an indepe
  assert.deepEqual(operations,['discard-resend-v1:input-discard-manual-resend-v1'])
  nodes=view.render(settings)
  assert.ok(nodes.some(n=>n.children.includes('settings.inputStrikeGranted')))
- assert.ok(nodes.some(n=>n.children.includes('settings.inputStrikeNotActive')),
-   'Host permission alone must NEVER imply the production rejection hook is active')
+ assert.ok(nodes.some(n=>n.children.includes('settings.inputStrikeReady')),
+   'Host route eligibility can be ready without a live campaign')
+ assert.equal(nodes.some(n=>n.props['data-ap-input-enforcement']==='armed'),false,
+   'Host grant alone must never activate the production input hook')
  const revoke=button(nodes,'settings.inputStrikeRevoke')
  assert.ok(revoke&&!revoke.props.disabled)
  revoke.props.onClick()

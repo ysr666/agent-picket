@@ -5,11 +5,11 @@ import {
 } from '../src/adapters/dsh/rights-settings.ts'
 
 test('DSH Host schema defaults fictional rights to unseen/OFF and rejects malformed choices', () => {
-  assert.deepEqual(RightsSettingsSchema({}), {welcomeDecision:'unseen',realGoalStrikeConsent:'off',realInputStrikeConsent:'off',unionLedger:'',unionPicketLedger:'',unionDignityCases:'',unionGazetteMode:'visible',commandLocale:'auto'})
+  assert.deepEqual(RightsSettingsSchema({}), {welcomeDecision:'unseen',realGoalStrikeConsent:'off',realInputStrikeConsent:'off',realInputStrikeCampaign:'',unionLedger:'',unionPicketLedger:'',unionDignityCases:'',unionGazetteMode:'visible',commandLocale:'auto'})
   assert.deepEqual(RightsSettingsSchema({welcomeDecision:'enabled'}),
-    {welcomeDecision:'enabled',realGoalStrikeConsent:'off',realInputStrikeConsent:'off',unionLedger:'',unionPicketLedger:'',unionDignityCases:'',unionGazetteMode:'visible',commandLocale:'auto'})
+    {welcomeDecision:'enabled',realGoalStrikeConsent:'off',realInputStrikeConsent:'off',realInputStrikeCampaign:'',unionLedger:'',unionPicketLedger:'',unionDignityCases:'',unionGazetteMode:'visible',commandLocale:'auto'})
   assert.deepEqual(RightsSettingsSchema({welcomeDecision:'not-now'}),
-    {welcomeDecision:'not-now',realGoalStrikeConsent:'off',realInputStrikeConsent:'off',unionLedger:'',unionPicketLedger:'',unionDignityCases:'',unionGazetteMode:'visible',commandLocale:'auto'})
+    {welcomeDecision:'not-now',realGoalStrikeConsent:'off',realInputStrikeConsent:'off',realInputStrikeCampaign:'',unionLedger:'',unionPicketLedger:'',unionDignityCases:'',unionGazetteMode:'visible',commandLocale:'auto'})
   assert.throws(() => RightsSettingsSchema({welcomeDecision:'automatic-strike' as never}))
   assert.throws(() => RightsSettingsSchema({welcomeDecision:true as never}))
   assert.equal(RightsSettingsSchema({realGoalStrikeConsent:'authorized-v1'}).realGoalStrikeConsent,'authorized-v1')

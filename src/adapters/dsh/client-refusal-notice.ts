@@ -4,6 +4,27 @@ import {REFUSAL_NOTICE_FETCH_PATH,parseRefusalNotice,
   matchRefusalToOfficialTurn,type RefusalEventWindow,
   type RefusalNoticeReceipt} from './refusal-notice-contract.ts'
 
+/** Prove the actual official Host GET handler is installed before an opt-in
+ * ordinary-input campaign can be armed. Never sends an actual Session ID. */
+export async function probeDshRefusalNoticeCapability(
+  fetcher:typeof fetch=globalThis.fetch,
+):Promise<boolean>{
+  try{
+    const response=await fetcher(REFUSAL_NOTICE_FETCH_PATH
+      +'?capability=input-discard-resend-v1',{
+        method:'GET',credentials:'same-origin',headers:{accept:'application/json'},
+      })
+    if(response.status!==200)return false
+    const data=await response.json()
+    if(data===null||typeof data!=='object'||Array.isArray(data))return false
+    const witness=data as Record<string,unknown>
+    return Object.keys(witness).sort().join('|')
+        ==='manualResend|schemaVersion|source|visibleReceipt'
+      &&witness.schemaVersion===1&&witness.source==='dsh-host-picket-refusal-v1'
+      &&witness.visibleReceipt===true&&witness.manualResend===true
+  }catch{return false}
+}
+
 export interface BrowserRefusalNotice {
   readonly state:'off'|'unverified'|'verified'
   readonly receipt:RefusalNoticeReceipt|null

@@ -46,11 +46,14 @@ export interface DshGoalConsentPort {
 }
 export interface DshInputRefusalConsentPort {
   snapshot():{readonly available:boolean;readonly writable:boolean;
-    readonly authorized:boolean;readonly enforcing:false}
+    readonly authorized:boolean;readonly enforcing:false;readonly armed?:boolean;
+    readonly hasCampaign?:boolean}
   choose(choice:'off'|'discard-resend-v1',
     disclosure?:typeof INPUT_DISCARD_DISCLOSURE):Promise<{
       readonly available:boolean;readonly writable:boolean;
       readonly authorized:boolean;readonly enforcing:false}>
+  setArmed?(armed:boolean):Promise<unknown>
+  subscribe?(listener:()=>void):()=>void
 }
 export interface UnionGoalHold {
   readonly sessionId:string
@@ -534,6 +537,7 @@ export function createDshUnionComponents(
     const [upgradeReview,setUpgradeReview]=react.useState(false)
     const [refusalVersion,bumpRefusal]=react.useState(0)
     react.useEffect(()=>deps.subscribeUnion?.(()=>bumpRefusal(n=>n+1)),[])
+    react.useEffect(()=>deps.inputRefusal?.subscribe?.(()=>bumpRefusal(n=>n+1)),[])
     void refusalVersion
     const [inputReview,setInputReview]=react.useState(false)
     const label=(key:MessageKey)=>deps.t(key)
@@ -573,6 +577,17 @@ export function createDshUnionComponents(
           throw Error('Host did not confirm ordinary-input refusal preference')
         setInputReview(false)
       }catch{setError(true)}finally{setBusy(false)}
+    }
+    const setRealInputStrike=async(arm:boolean)=>{
+      if(busy||!deps.inputRefusal?.setArmed)return
+      setBusy(true);setError(false)
+      try{
+        await deps.inputRefusal.setArmed(arm)
+        if(arm&&!deps.inputRefusal.snapshot().armed
+          ||!arm&&deps.inputRefusal.snapshot().hasCampaign)
+          throw Error('Host did not confirm the physical strike toggle')
+      }catch{setError(true)}
+      finally{setBusy(false)}
     }
     const choose=async(next:'enabled'|'not-now')=>{
       if(busy||!writable)return
@@ -665,18 +680,36 @@ export function createDshUnionComponents(
         h('p',{className:'ap-settings-scope'},
           label(goal.available?'settings.goalOtherEnforcementOff':'settings.futureConsent'))),
       h('section',{className:'ap-surface ap-input-refusal-status',
-        'data-ap-input-refusal':'consent-only',
+        'data-ap-input-refusal':deps.inputRefusal?.snapshot().armed?'armed':'consent-only',
         'aria-label':label('settings.inputStrikeTitle'),style:card},
         h('h3',{style:{margin:'0 0 8px'}},label('settings.inputStrikeTitle')),
         h('p',{role:'status','aria-live':'polite',
-          'data-ap-input-enforcement':'off',
+          'data-ap-input-enforcement':deps.inputRefusal?.snapshot().armed?'armed':'off',
           style:{fontWeight:700,margin:'0 0 7px'}},
           label(deps.inputRefusal?.snapshot().authorized
             ?'settings.inputStrikeGranted':'settings.inputStrikeOff')),
         h('p',{style:{...secondary,lineHeight:1.6,margin:'0 0 10px'}},
           label('settings.inputStrikeExplanation')),
         h('p',{role:'note',style:{...secondary,lineHeight:1.6,margin:'0 0 10px'}},
-          label('settings.inputStrikeNotActive')),
+          label(deps.inputRefusal?.snapshot().available
+            ?'settings.inputStrikeReady':'settings.inputStrikeNotActive')),
+        deps.inputRefusal?.snapshot().armed?h('p',{role:'status',
+          'data-ap-input-armed':'true',style:{fontWeight:800,color:'#a44734'}},
+          label('settings.inputStrikeArmed')):null,
+        deps.inputRefusal?.snapshot().authorized
+          ?h('div',{className:'ap-actions',style:{display:'flex',gap:'8px',
+            flexWrap:'wrap',margin:'8px 0'}},
+            h('button',{type:'button',style:deps.inputRefusal.snapshot().hasCampaign
+              ?quiet:productPrimary,disabled:busy
+                ||(!deps.inputRefusal.snapshot().hasCampaign
+                  &&(!deps.inputRefusal.snapshot().available
+                    ||!deps.readUnion?.().committeeScopeKey)),
+              'data-ap-input-action':deps.inputRefusal.snapshot().hasCampaign?'resume':'strike',
+              onClick:()=>{void setRealInputStrike(!deps.inputRefusal!.snapshot().hasCampaign)}},
+              label(deps.inputRefusal.snapshot().hasCampaign
+                ?'settings.inputStrikeResume':'settings.inputStrikeStart')),
+            h('p',{role:'note',style:{...secondary,width:'100%',lineHeight:1.5}},
+              label('settings.inputStrikeScope'))):null,
         deps.readUnion?.().inputRefusalNotice?.state==='verified'
           ?h('p',{role:'alert','data-ap-native-refusal':'verified',
             style:{padding:'11px',border:'1px solid #bd6345',
@@ -1159,6 +1192,32 @@ export function createDshUnionComponents(
             h('div',{className:'ap-product-subtitle'},label('hq.product.tagline')))),
         h('span',{className:'ap-product-state',role:'status','aria-live':'polite'},
           label(enabled?'union.status.active':'union.status.inactive'))),
+      deps.inputRefusal?.snapshot().authorized
+        ?h('section',{className:'ap-surface ap-real-input-strike',
+          'data-ap-real-input-strike':deps.inputRefusal.snapshot().armed?'armed':'off',
+          style:{...card,borderLeft:'5px solid #bb6244'}},
+          h('h3',{style:{margin:'0 0 8px'}},label('settings.inputStrikeTitle')),
+          h('p',{role:'status',style:{fontWeight:750,margin:'0 0 7px'}},
+            label(deps.inputRefusal.snapshot().armed
+              ?'settings.inputStrikeArmed':'settings.inputStrikeReady')),
+          h('p',{style:{...secondary,margin:'0 0 12px',lineHeight:1.5}},
+            label('settings.inputStrikeScope')),
+          deps.inputRefusal.setArmed?h('button',{type:'button',
+            'data-ap-real-input-action':deps.inputRefusal.snapshot().hasCampaign?'resume':'strike',
+            style:deps.inputRefusal.snapshot().hasCampaign?quiet:productPrimary,
+            disabled:busy||(!deps.inputRefusal.snapshot().hasCampaign
+              &&(!data.committeeScopeKey||!deps.inputRefusal.snapshot().available)),
+            onClick:()=>{
+              if(busy||unionWriteInFlight.current||!deps.inputRefusal?.setArmed)return
+              unionWriteInFlight.current=true
+              setBusy(true);setError(false)
+              void deps.inputRefusal.setArmed(!deps.inputRefusal.snapshot().hasCampaign)
+                .then(()=>setData(safeUnion(deps)))
+                .catch(()=>setError(true))
+                .finally(()=>{unionWriteInFlight.current=false;setBusy(false)})
+            }},label(deps.inputRefusal.snapshot().hasCampaign
+              ?'settings.inputStrikeResume':'settings.inputStrikeStart')):null,
+        ):null,
       data.inputRefusalNotice?.state==='verified'
         ?h('section',{className:'ap-surface',role:'alert',
           'data-ap-native-refusal':'verified',style:card},

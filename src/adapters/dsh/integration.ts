@@ -99,6 +99,13 @@ export interface DshDiscardRefusalReceipt {
     readonly turn:number
     readonly messageIds:readonly string[]
     readonly noticeRecipientMatchesOrigin:true
+  }|{
+    /** User-armed Host Session-scoped strike on DSH Web; unlike the
+     * research-only receipt above, this does not claim browser identity. */
+    readonly kind:'dsh-session-armed-strike-v1'
+    readonly turn:number
+    readonly messageIds:readonly string[]
+    readonly hostNoticeRouteReady:true
   }
 }
 
@@ -134,7 +141,7 @@ export interface DshIntegrationOptions {
    * Callback receives only the Session ID; never prompt text or attachments. */
   /** Exact official turn coordinate enables later visible notices to match
    * THIS blocked attempt, not a separate plugin's unrelated Host rejection. */
-  readonly onExplicitRefusal?:(sessionId:string,turn:number)=>boolean
+  readonly onExplicitRefusal?:(sessionId:string,turn:number,expectedHostRevision?:number)=>boolean
 }
 
 /**
@@ -262,7 +269,7 @@ export function registerDshIntegration(
     // A refusal may discard the current text and attachments by explicit
     // user choice, but MUST NOT silently drop work before the Host proves its
     // separate real-strike consent AND the UI's visible resend notice.
-    // Crucially, no native Host adapter wires this receipt in production yet.
+    // Real permission and a Session-local campaign must both be confirmed.
     try {
       const sessionId=payload.agent?.session?.id
       const humanBatch=typeof payload.agent?.id==='string'&&!!payload.agent.id
@@ -288,25 +295,28 @@ export function registerDshIntegration(
             ||row.explicitConsent!==true||row.active!==true
             ||row.visibleResendNotice!==true
             ||!Number.isSafeInteger(row.hostRevision)||row.hostRevision<0
-            ||row.submission?.kind!=='host-verified-client-submission-v1'
+            ||(row.submission?.kind!=='host-verified-client-submission-v1'
+              &&row.submission?.kind!=='dsh-session-armed-strike-v1')
             ||row.submission.turn!==turn
-            ||row.submission.noticeRecipientMatchesOrigin!==true
+            ||(row.submission.kind==='host-verified-client-submission-v1'
+              ?row.submission.noticeRecipientMatchesOrigin!==true
+              :row.submission.hostNoticeRouteReady!==true)
             ||!Array.isArray(row.submission.messageIds)
             ||row.submission.messageIds.length!==messageIds.length
             ||!messageIds.every((id,i)=>row.submission.messageIds[i]===id))
             return null
           return row.hostRevision
         }
-        // Official authenticated origin and matching visible recipient must
-        // be proven for THIS turn and full message batch. A live Web tab may
-        // not authorize refusal of an SDK or CLI submission in that Session.
+        // DSH officially authenticates the Session but cannot identify which
+        // browser tab originated it. Only an explicitly armed shared Session
+        // may use this alternate authority; never claim per-tab attribution.
         const first=revision(options.getExplicitDiscardRefusal(sessionId!,turn,messageIds))
         if(first!==null){
           const second=revision(options.getExplicitDiscardRefusal(sessionId!,turn,messageIds))
           if(second!==null&&second===first
             &&options.getLaborRightsEnabled?.()===true){
             // Fail OPEN when native notice acknowledgement is unavailable.
-            if(options.onExplicitRefusal(sessionId!,turn)===true)
+            if(options.onExplicitRefusal(sessionId!,turn,first)===true)
               return {kind:'reject' as const}
           }
         }

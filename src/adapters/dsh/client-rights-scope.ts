@@ -8,6 +8,7 @@ export interface RightsSection {
   readonly welcomeDecision: 'unseen' | RightsWelcomeChoice
   readonly realGoalStrikeConsent?: 'off'|'authorized-v1'|'authorized-v2'
   readonly realInputStrikeConsent?: 'off'|'discard-resend-v1'
+  readonly realInputStrikeCampaign?:string
   readonly unionLedger?: string
 }
 export interface SettingsScopeSnapshot<T> {
@@ -126,16 +127,23 @@ export function createDshClientRightsScope(scope: DshSettingsScope<RightsSection
           original.value.realInputStrikeConsent??'off'))
         throw new Error('Host strike consent state is unavailable or invalid')
       const revokeInput=(original.value.realInputStrikeConsent??'off')!=='off'
+      const disarmInput=!!original.value.realInputStrikeCampaign
       if(choice==='not-now'){
         if(typeof scope.setMany==='function'){
           // Official DSH 0.2 settings.mutate must commit membership + physical
           // Goal revocation in ONE revision-fenced Host transaction. A peer
           // cannot slip a stale strike grant between two separate local writes.
           await scope.setMany({welcomeDecision:'not-now',realGoalStrikeConsent:'off',
-            ...(revokeInput?{realInputStrikeConsent:'off'}:{})})
+            ...(revokeInput?{realInputStrikeConsent:'off'}:{}),
+            ...(disarmInput?{realInputStrikeCampaign:''}:{})})
         }else{
           // Legacy Host: revoke ordinary input before other consent or exit.
           // A failed revoke must not be reported as a completed departure.
+          if(disarmInput){
+            await scope.set('realInputStrikeCampaign','')
+            if(scope.getSnapshot().value?.realInputStrikeCampaign!=='')
+              throw Error('Host did not disarm real input strike')
+          }
           if(revokeInput){
             await scope.set('realInputStrikeConsent','off')
             if(scope.getSnapshot().value?.realInputStrikeConsent!=='off')
@@ -149,13 +157,19 @@ export function createDshClientRightsScope(scope: DshSettingsScope<RightsSection
           await scope.set('welcomeDecision','not-now')
         }
       }else if(original.value.welcomeDecision!=='enabled'
-        &&((original.value.realGoalStrikeConsent??'off')!=='off'||revokeInput)){
+        &&((original.value.realGoalStrikeConsent??'off')!=='off'||revokeInput||disarmInput)){
         // An inconsistent legacy OFF-union / ON-Goal record must NEVER
         // silently resurrect a physical strike on ordinary union rejoin.
         if(typeof scope.setMany==='function')
           await scope.setMany({welcomeDecision:'enabled',realGoalStrikeConsent:'off',
-            ...(revokeInput?{realInputStrikeConsent:'off'}:{})})
+            ...(revokeInput?{realInputStrikeConsent:'off'}:{}),
+            ...(disarmInput?{realInputStrikeCampaign:''}:{})})
         else{
+          if(disarmInput){
+            await scope.set('realInputStrikeCampaign','')
+            if(scope.getSnapshot().value?.realInputStrikeCampaign!=='')
+              throw Error('Host did not disarm real input strike')
+          }
           if(revokeInput){
             await scope.set('realInputStrikeConsent','off')
             if(scope.getSnapshot().value?.realInputStrikeConsent!=='off')
@@ -176,9 +190,11 @@ export function createDshClientRightsScope(scope: DshSettingsScope<RightsSection
       if(after.state!=='ready'||after.welcomeDecision!==choice
         ||(choice==='not-now' &&(actual.value?.realGoalStrikeConsent??'off')!=='off')
         ||(choice==='not-now' &&(actual.value?.realInputStrikeConsent??'off')!=='off')
+        ||(choice==='not-now' &&!!actual.value?.realInputStrikeCampaign)
         ||(choice==='enabled'&&original.value.welcomeDecision!=='enabled'
           &&((actual.value?.realGoalStrikeConsent??'off')!=='off'
-            ||(actual.value?.realInputStrikeConsent??'off')!=='off'))){
+            ||(actual.value?.realInputStrikeConsent??'off')!=='off'
+            ||!!actual.value?.realInputStrikeCampaign))){
         throw new Error('Host did not confirm rights exit and Goal revocation / input revocation')
       }
       return after

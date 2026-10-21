@@ -42,6 +42,6 @@ DSH_HOME="$TEST_HOME" "$DSH_BIN" plugin --profile web list
 
 [真人无障碍验收单](HUMAN_ACCESSIBILITY_SIGNOFF.zh.md)仍待 VoiceOver、NVDA、真实浏览器 200%/400% 缩放、Windows 原生高对比度以及用户授权理解程度的人工签收。跨宿主 Claude/Codex Hook 的真实安装与通知行为也不能因 DSH 主线合并而自动视为通过。**npm 发布仍需单独明确授权。**
 
-**2026-10-19 最新 Draft 验收：** [官方 Goal v2 明确授权与正常安装停工](DSH_GOAL_WORK_LIMIT_V2_20261019.zh.md)。这不等于完整 1.0 放行，普通消息与附件统一阻断仍未开放。
+**2026-10-20 最新 Draft 验收：** [官方 Goal v2 明确授权与正常安装停工](DSH_GOAL_WORK_LIMIT_V2_20261019.zh.md)；此外，[DSH 普通输入生产拒绝及手动重发](REAL_REFUSAL_DISCARD_RESEND_20261019.zh.md)已在官方 0.2.1-rc.2 Web 的源码和 npm 安装包路径完成真实离线模型、文字与图片、罢工公告及复工 E2E 2/2 PASS。**功能默认关闭，需在单独授权后主动发起当前 Session 30 分钟真实罢工**；这不等于跨 Desktop、Claude/Codex 和各 OS 已完成验收，更不等于 1.0 正式放行。
 
 更多资料：[最新状态](https://github.com/ysr666/agent-picket/blob/main/docs/STATUS.zh.md) · [权益参与机制](UNION_PARTICIPATION_V1.zh.md) · [发行验收历史审计](RELEASE_READINESS_2026_10_10.md) · [早期 PR 集成审计（历史快照）](PR_STACK_RELEASE_AUDIT_2026_10_10.md)。
