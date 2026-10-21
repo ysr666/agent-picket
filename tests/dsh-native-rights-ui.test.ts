@@ -1744,6 +1744,38 @@ test('settings prioritize membership; future real-strike controls are disclosure
 })
 
 
+test('late Goal readiness must never silently upgrade an already displayed Join click',async()=>{
+ const view=goalSettingsRenderHarness()
+ const oldDocument=(globalThis as any).document
+ ;(globalThis as any).document={body:{},getElementById:()=>({inert:false})}
+ let available=false,joined=rights(),grants=0,joins=0
+ const d:DshUnionUiDeps={...deps(joined).d,
+   rights:{snapshot:()=>joined,subscribe:()=>()=>{},
+     async choose(choice){joins++;joined=rights({welcomeDecision:choice,
+       laborRightsEnabled:choice==='enabled'});return joined},
+     async chooseFirstRun(){grants++;throw Error('No surprise elevation permitted')}},
+   goal:{snapshot:()=>({available,writable:true,authorized:false}),
+     qualify:async()=>available,
+     choose:async()=>({available,writable:true,authorized:false})},
+ }
+ try{
+   const welcome=createDshUnionComponents(view.hooks,{createPortal:x=>x},d).Welcome
+   const render=()=>view.render(()=>welcome({complete:()=>{}}))
+   let nodes=render()
+   assert.ok(nodes.some(n=>n.type==='button'&&n.children.includes('welcome.enable')))
+   available=true // Async real Host Goal response arrives after dialog rendered.
+   nodes=render()
+   assert.equal(nodes.some(n=>n.type==='button'&&n.children.includes('welcome.enableGoal')),false,
+     'Button may not upgrade an informed membership click into a live-Goal grant')
+   const join=nodes.find(n=>n.type==='button'&&n.children.includes('welcome.enable'))!
+   join.props.onClick()
+   await new Promise<void>(resolve=>setImmediate(resolve))
+   assert.equal(joins,1)
+   assert.equal(grants,0,'An asynchronous witness cannot escalate into first-run physical stop')
+   assert.notEqual(joined.goalStrikeAuthorized,true)
+ }finally{(globalThis as any).document=oldDocument}
+})
+
 test('one first-run informed click uses versioned Host Goal CAS and requires verified dual readback',async()=>{
  const {hooks}=fakeReact()
  const initial=rights()

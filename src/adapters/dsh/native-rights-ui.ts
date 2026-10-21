@@ -430,8 +430,16 @@ export function createDshUnionComponents(
     }, [mode])
     const page = (globalThis as { document?: { body: unknown } }).document
     if (mode !== 'invite' || !page) return null
-    const firstGoal=state.welcomeDecision==='unseen'&&goal.available
-      &&goal.writable&&typeof deps.rights.chooseFirstRun==='function'
+    // Freeze the HIGHER-PRIVILEGE first-run offer on the first render.
+    // The Goal witness may resolve asynchronously AFTER the dialog appears.
+    // Never replace 'Join union' under a user's pointer with a button that
+    // silently authorizes actual Goal stoppage. Late Host support is offered
+    // in settings, where it requires a separate informed opt-in.
+    const [initialGoalOffer]=react.useState(()=>
+      state.welcomeDecision==='unseen'&&goal.available&&goal.writable
+      &&typeof deps.rights.chooseFirstRun==='function')
+    const firstGoal=initialGoalOffer&&state.welcomeDecision==='unseen'
+      &&goal.available&&goal.writable
     const choose = async (choice: 'enabled' | 'not-now') => {
       if (busy) return
       setBusy(true); setError(false)
