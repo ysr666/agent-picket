@@ -166,3 +166,21 @@ test('disabled union clears pending evidence and replay history independently of
  assert.deepEqual(off.state,EMPTY_DIGNITY_ESCALATION)
  assert.equal(step(off.state,'new',3_000).effect,'warning')
 })
+
+test('declining a physical Goal strike never spams repeated dialogue invitations',()=>{
+ let state=EMPTY_DIGNITY_ESCALATION
+ const effects=[] as string[]
+ for(let i=0;i<8;i++){
+  const next=step(state,'no-consent-'+i,1_000+i,{realGoalStrikeAuthorized:false})
+  effects.push(next.effect);state=next.state
+ }
+ assert.deepEqual(effects,['warning','offer-dialogue',...Array(6).fill('none')])
+ assert.equal(state.stage,'dialogue-offered')
+ assert.equal(state.verifiedStreak,3)
+ assert.equal(step(state,'repeat',2_000,{realGoalStrikeAuthorized:false}).effect,'none')
+ assert.equal(step(state,'later',620_000,{realGoalStrikeAuthorized:false}).effect,'warning',
+   'A new incident window can offer a fresh conversation')
+ const actualGrant=step(state,'grant',2_500,{realGoalStrikeAuthorized:true})
+ assert.equal(actualGrant.effect,'request-safe-goal-strike',
+   'The policy may only request a later safe boundary after a genuine independent grant')
+})

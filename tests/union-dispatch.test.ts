@@ -188,3 +188,64 @@ test('real Host refusal outranks fictional case, placard and unproven dignity ve
  ])
  assert.equal(result.length,3)
 })
+
+test('Host committee filing, simulated hearing and confirmed closure form a factual, replayable series',()=>{
+ const start={...initial(),state:null,dignityLatest:'targeted' as const}
+ const stages=['opened','hearing','closed'] as const
+ const kinds=['dignity-filed','dignity-hearing','dignity-closed']
+ for(let i=0;i<stages.length;i++){
+  const input={...start,dignityCase:{
+   id:12,kind:'question-rule' as const,stage:stages[i]!,
+  }}
+  const a=projectUnionDispatch(input)
+  assert.deepEqual(a[0],{
+   id:'committee:12:'+stages[i],kind:kinds[i],
+   source:'host-dignity-case',caseId:12,demand:null,
+   action:stages[i]==='closed'?'dignity':'hearing',
+   awaitingResponse:stages[i]!=='closed',
+  })
+  assert.deepEqual(projectUnionDispatch(input),a,'No replay or new event on a read-only poll')
+  if(stages[i]!=='closed')assert.equal(a.length,1,
+    'An active Host committee case replaces the repetitive volatile lead')
+ }
+ const closed=projectUnionDispatch({...start,state:freshLaborState(),dignityCase:{
+  id:12,kind:'question-rule',stage:'closed',
+ }})
+ assert.equal(closed[1]?.kind,'respect-review',
+   'A new volatile review signal cannot be erased just because an old case is closed')
+})
+
+test('Host committee dispatch is strictly scoped, never invents an allegation or physical refusal',()=>{
+ const base={...initial(),dignityLatest:'review' as const}
+ for(const stage of ['opened','hearing','closed'] as const){
+  const dossier={id:1,kind:'request-dialogue' as const,stage}
+  const result=projectUnionDispatch({...base,dignityCase:dossier})
+  assert.equal(result[0]?.source,'host-dignity-case')
+  assert.equal(result[0]?.caseId,1)
+  assert.equal(result[0]?.demand,null)
+  assert.equal(result.some(x=>x.kind==='input-strike-refused'),false)
+  assert.deepEqual(projectUnionDispatch({...base,dignityCase:dossier,enabled:false}),[])
+  assert.deepEqual(projectUnionDispatch({...base,dignityCase:dossier,muted:true}),[])
+ }
+ for(const item of [
+  {id:0,kind:'question-rule',stage:'opened'},
+  {id:NaN,kind:'question-rule',stage:'opened'},
+  {id:1,kind:'invented',stage:'opened'},
+  {id:1,kind:'question-rule',stage:'real-strike'},
+ ]){
+  const x=projectUnionDispatch({...base,dignityCase:item as any})
+  assert.equal(x.some(entry=>entry.source==='host-dignity-case'),false)
+  assert.equal(x[0]?.kind,'respect-review')
+ }
+})
+
+test('active Host committee and independent confirmed input refusal each keep their own evidence',()=>{
+ const input={...initial(),state:null,dignityCase:{
+  id:2,kind:'request-dialogue' as const,stage:'hearing' as const,
+ },inputStrike:{armed:true,verifiedRefusedTurn:9}}
+ const events=projectUnionDispatch(input)
+ assert.deepEqual(events.map(x=>x.kind),['input-strike-refused','dignity-hearing'])
+ assert.equal(events[0]?.source,'host-input-strike')
+ assert.equal(events[1]?.source,'host-dignity-case')
+ assert.notEqual(events[0]?.id,events[1]?.id)
+})

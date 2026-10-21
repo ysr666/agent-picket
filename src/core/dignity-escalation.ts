@@ -90,8 +90,12 @@ export function advanceDignityEscalation(input:{
  const streak=(recent?prior.verifiedStreak:0)+1
  const stage:DignityStage=streak===1?'warned':streak===2?'dialogue-offered':
    input.realGoalStrikeAuthorized?'strike-requested':'dialogue-offered'
+ // A user who declines physical Goal action must NOT be nagged with a
+ // duplicate dialogue offer on every later qualified incident in this window.
+ // This is only a non-blocking request lifecycle, not Host enforcement.
  const effect:DignityEffect=streak===1?'warning':streak===2?'offer-dialogue':
-   input.realGoalStrikeAuthorized?'request-safe-goal-strike':'offer-dialogue'
+   input.realGoalStrikeAuthorized?'request-safe-goal-strike':
+     prior.stage==='dialogue-offered'&&recent?'none':'offer-dialogue'
  // A request is idempotent, not repeatedly scheduled for every further insult.
  if(prior.stage==='strike-requested'&&recent)return {
    effect:'none',eligibility:'verified-human',

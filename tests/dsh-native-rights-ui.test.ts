@@ -3705,3 +3705,63 @@ test('post-refusal bulletin reopens proven notice; an unverified turn can never 
   }
  }
 })
+
+test('Host committee case becomes a real, actionable bilingual Union HQ dignity dispatch',()=>{
+ const base=deps(rights({welcomeDecision:'enabled',laborRightsEnabled:true})).d
+ const fresh=()=>({available:true,state:freshLaborState(),pending:null,
+  completedTurnMs:0,coverage:'complete' as const,lifetimeMs:null,
+  committeeScopeKey:'session-hash',dignity:{
+    status:'available' as const,data:{schemaVersion:1 as const,
+      source:'dsh-host-volatile-dignity' as const,origin:'claimed-user-source' as const,
+      enforcement:false as const,persistence:'memory-only' as const,
+      checked:2,safe:0,review:1,targeted:1,latest:'review' as const},
+  }})
+ for(const locale of ['en','zh-CN'] as const){
+  for(const stage of ['opened','hearing','closed'] as const){
+   const d:DshUnionUiDeps={...base,
+    t:(key,params)=>(formatMessage as (locale:'en'|'zh-CN',key:string,
+     params?:Record<string,string|number>)=>string)(locale,key,params),
+    readUnion:()=>({...fresh(),committeeCases:{cases:[{
+      id:15,kind:'question-rule' as const,stage,
+      outcome:stage==='closed'?'share-guidance' as const:null,
+    }]}}),
+   }
+   const nodes=walk(createDshUnionComponents(fakeReact().hooks,
+     {createPortal:child=>child},d).UnionPanel())
+   const labelKind=stage==='opened'?'dignity-filed':stage==='hearing'
+     ?'dignity-hearing':'dignity-closed'
+   const card=nodes.find(n=>n.props['data-ap-bulletin-kind']===labelKind)
+   assert.ok(card,'Filed hearing state must be visible without entering casebook')
+   assert.equal(card.props['data-ap-bulletin-id'],'committee:15:'+stage)
+   assert.equal(card.props['data-ap-bulletin-source'],'host-dignity-case')
+   const action=stage==='closed'?'dignity':'hearing'
+   assert.ok(nodes.some(n=>n.props['data-ap-bulletin-action']===action),
+    'A Host case card must route to its real hearing/record room')
+   assert.ok(JSON.stringify(card).includes(
+     formatMessage(locale,'hq.bulletin.kind.'+labelKind as keyof typeof en)))
+   if(stage!=='closed')assert.equal(nodes.some(n=>
+     n.props['data-ap-bulletin-kind']==='respect-review'),false,
+     'Do not duplicate a tentative classifier signal after Host filing')
+  }
+ }
+})
+
+test('wrong Session, missing Host case scope, disabled union never fabricates committee dispatch',()=>{
+ const base=deps(rights({welcomeDecision:'enabled',laborRightsEnabled:true})).d
+ const session={cases:[{id:1,kind:'question-rule' as const,
+  stage:'opened' as const,outcome:null}]}
+ const make=(scope:string|null,enabled=true)=>walk(createDshUnionComponents(
+  fakeReact().hooks,{createPortal:x=>x},{
+   ...base,rights:{...base.rights,snapshot:()=>rights({
+    welcomeDecision:enabled?'enabled':'not-now',laborRightsEnabled:enabled})},
+   readUnion:()=>({available:true,state:freshLaborState(),pending:null,
+    completedTurnMs:0,coverage:'complete' as const,lifetimeMs:null,
+    committeeScopeKey:scope,committeeCases:session}),
+  }).UnionPanel())
+ assert.equal(make(null).some(n=>n.props['data-ap-bulletin-source']==='host-dignity-case'),
+  false,'No Session-bound case evidence')
+ assert.equal(make('confirmed',false).some(n=>
+  n.props['data-ap-bulletin-source']==='host-dignity-case'),false)
+ assert.equal(make('confirmed',true).some(n=>
+  n.props['data-ap-bulletin-source']==='host-dignity-case'),true)
+})

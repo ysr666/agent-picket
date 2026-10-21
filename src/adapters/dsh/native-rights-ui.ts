@@ -944,6 +944,8 @@ export function createDshUnionComponents(
         armed:deps.inputRefusal?.snapshot().armed===true,
         verifiedRefusedTurn:projectVerifiedUnionStrikeTicket(data)?.turn??null,
       },
+      dignityCase:data.committeeScopeKey&&data.committeeCases?.cases.length
+        ?data.committeeCases.cases.at(-1)??null:null,
     })
     const experience = projectUnionExperience({
       enabled, state:data.state, completedTurnMs:data.completedTurnMs,
@@ -1519,6 +1521,8 @@ export function createDshUnionComponents(
                 else if(notice.action==='bargain'||notice.action==='work-desk')
                   selectSpace('action','desk')
                 else if(notice.action==='records')selectSpace('records')
+                else if(notice.action==='hearing')
+                  selectSpace('action','hearing')
                 else if(notice.action==='dignity')
                   selectSpace('action','dignity')
                 else if(notice.action==='raise-placard'

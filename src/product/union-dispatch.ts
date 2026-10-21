@@ -16,14 +16,16 @@ export type DispatchKind = 'petition'|'counter'|'approved'|'refused'
   |'placard-up'|'placard-down'|'respect-review'
   |'work-milestone'|'work-checkin'
   |'input-strike-armed'|'input-strike-refused'|'input-strike-followup'
+  |'dignity-filed'|'dignity-hearing'|'dignity-closed'
 export type DispatchAction = 'bargain'|'records'|'lower-placard'
   |'raise-placard'|'dignity'|'work-desk'|'resume-input'|'review-refusal'
+  |'hearing'
 export interface UnionDispatch {
   /** Stable identity only within its Session; not a random notification ID. */
   readonly id:string
   readonly kind:DispatchKind
   readonly source:'host-case'|'host-placard'|'host-work'|'review-signal'
-    |'host-input-strike'
+    |'host-input-strike'|'host-dignity-case'
   readonly caseId:number|null
   readonly demand:LaborDemandKind|null
   readonly action:DispatchAction
@@ -39,6 +41,12 @@ export interface UnionDispatchInput {
   readonly completedTurnMs:number|null
   /** Volatile classifier verdict, explicitly NOT a confirmed human accusation. */
   readonly dignityLatest:'none'|'safe'|'review'|'targeted'|null
+  /** Session-scoped Host casebook: not evidence that abuse was verified. */
+  readonly dignityCase?:{
+    readonly id:number
+    readonly kind:'question-rule'|'request-dialogue'
+    readonly stage:'opened'|'hearing'|'closed'
+  }|null
   /** Authenticated Session scope; an armed campaign is NOT itself a refusal. */
   readonly inputStrike?:{
     readonly armed:boolean
@@ -79,7 +87,20 @@ export function projectUnionDispatch(input:UnionDispatchInput):readonly UnionDis
     result.push(item('input-followup:'+strike.verifiedRefusedTurn,
       'input-strike-followup','host-input-strike','review-refusal'))
   }
-  if(!input.state)return result
+  const review=input.dignityCase
+  const validReview=!!review&&Number.isSafeInteger(review.id)&&review.id>0
+    &&(review.kind==='question-rule'||review.kind==='request-dialogue')
+    &&['opened','hearing','closed'].includes(review.stage)
+  if(validReview){
+    // This is a user-confirmed Host committee CASE, not a classified human
+    // attack, a completed arbitration finding, or a physical model refusal.
+    const phase=review.stage==='opened'?'dignity-filed'
+      :review.stage==='hearing'?'dignity-hearing':'dignity-closed'
+    result.push(item('committee:'+review.id+':'+review.stage,phase,
+      'host-dignity-case',review.stage==='closed'?'dignity':'hearing',
+      null,review.id,review.stage!=='closed'))
+  }
+  if(!input.state)return result.slice(0,3)
   const state=input.state
   // If work reaches the next real threshold after a previous negotiation,
   // the next chapter must outrank an older filed decision. The Host still
@@ -123,7 +144,8 @@ export function projectUnionDispatch(input:UnionDispatchInput):readonly UnionDis
       input.picket.active?'placard-up':'placard-down',
       'host-placard',input.picket.active?'lower-placard':'records'))
   }
-  if(input.dignityLatest==='targeted'||input.dignityLatest==='review'){
+  if((!validReview||review?.stage==='closed')
+    &&(input.dignityLatest==='targeted'||input.dignityLatest==='review')){
     result.push(item('dignity:'+input.dignityLatest,
       'respect-review','review-signal','dignity'))
   }

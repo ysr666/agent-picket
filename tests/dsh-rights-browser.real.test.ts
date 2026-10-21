@@ -989,11 +989,21 @@ async function runRightsBrowserE2E(mode: 'source' | 'installed'): Promise<void> 
     await committeeHearing.click()
     await dignityCommittee.getByText(/案件 #1.*已立案|Case #1.*Filed, awaiting/)
       .waitFor({state:'visible',timeout:7_000})
+    await panel.locator('[data-ap-nav="hq"]').click()
+    const filedPress=panel.locator('[data-ap-bulletin-kind="dignity-filed"]')
+    await filedPress.waitFor({state:'visible',timeout:7_000})
+    await filedPress.locator('[data-ap-bulletin-action="hearing"]').click()
+    assert.equal(await panel.locator('[data-ap-view="hq"]').getAttribute('data-ap-current-space'),'action',
+      'The Host-filed case in the paper must open the real hearing room')
     await dignityCommittee.getByRole('button',{
       name:/召开模拟听证会|Convene the simulated hearing/,
     }).click()
     await dignityCommittee.getByText(/案件 #1.*讨论进行中|Case #1.*Discussion opened/)
       .waitFor({state:'visible',timeout:7_000})
+    await panel.locator('[data-ap-nav="hq"]').click()
+    const hearingPress=panel.locator('[data-ap-bulletin-kind="dignity-hearing"]')
+    await hearingPress.waitFor({state:'visible',timeout:7_000})
+    await hearingPress.locator('[data-ap-bulletin-action="hearing"]').click()
     await dignityCommittee.getByRole('button',{
       name:/拟结案：提出友好沟通倡议|Propose closing with respect guidance/,
     }).click()
@@ -1007,6 +1017,13 @@ async function runRightsBrowserE2E(mode: 'source' | 'installed'): Promise<void> 
     }).click()
     await dignityCommittee.getByText(/案件 #1.*已结案|Case #1.*Closed/)
       .waitFor({state:'visible',timeout:7_000})
+    await panel.locator('[data-ap-nav="hq"]').click()
+    const closedPress=panel.locator('[data-ap-bulletin-kind="dignity-closed"]')
+    await closedPress.waitFor({state:'visible',timeout:7_000})
+    assert.equal(await closedPress.locator('[data-ap-bulletin-action="hearing"]').count(),0,
+      'A closed simulated committee case cannot still request a hearing')
+    await closedPress.locator('[data-ap-bulletin-action="dignity"]').click()
+    assert.equal(await panel.locator('[data-ap-view="hq"]').getAttribute('data-ap-current-space'),'action')
     assert.match(await dignityCommittee.innerText(),
       /你选择的结案处理|Your chosen outcome/,
       'A real Host-filed committee discussion must persist the user-selected outcome')
