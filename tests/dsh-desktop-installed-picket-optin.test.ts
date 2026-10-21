@@ -7,7 +7,7 @@ import {fileURLToPath} from 'node:url'
 const script=fileURLToPath(new URL(
   '../scripts/verify-dsh-desktop-installed-picket.mjs',import.meta.url))
 
-test('packed Windows Desktop native Picket E2E is opt-in; CI cannot launch desktop by accident',()=>{
+test('packed Windows/macOS Desktop native Picket E2E is opt-in; CI cannot launch desktop by accident',()=>{
   const result=spawnSync(process.execPath,[script],{
     encoding:'utf8',timeout:3000,
     env:{...process.env,PICKET_DESKTOP_INSTALLED_E2E:''},
@@ -28,7 +28,16 @@ test('native installed Picket E2E authenticates the tarball and never enables st
   assert.match(source,/checkedOrdinarySubmissionHold:false/)
   assert.match(source,/releaseDecision:'NO-GO'/)
   assert.match(source,/nativeColdRestartRemainsOut/)
+  assert.match(source,/nativeInputStrikeArmed:false/)
   assert.match(source,/await nativeReady\(restartPort,child\)/)
   assert.match(source,/afterColdRestart/)
   assert.match(source,/Official Host union opt-out must survive real Desktop process restart/)
+})
+
+test('native acceptance has an independent macOS process cleanup path',()=>{
+  const source=readFileSync(script,'utf8')
+  assert.match(source,/process\.platform==='darwin'/)
+  assert.match(source,/child\.kill\('SIGTERM'\)/)
+  assert.match(source,/await stopOwnedDesktop\(child\)/)
+  assert.doesNotMatch(source,/killall|pkill|process\.kill\(/)
 })

@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * Real OFFLINE Windows Desktop + packed Agent Picket end-to-end UI acceptance.
+ * Real OFFLINE Windows/macOS Desktop + packed Agent Picket native UI acceptance.
  * Does not certify Host-held human submissions / real strike safety.
  *
  * Requires explicit opt-in and the exact private npm tarball built from PR.
@@ -22,6 +22,24 @@ import net from 'node:net'
 import {pathToFileURL} from 'node:url'
 
 const pause=ms=>new Promise(done=>setTimeout(done,ms))
+const nativePlatform=()=>process.platform==='win32'||process.platform==='darwin'
+async function stopOwnedDesktop(child){
+ if(!child||child.exitCode!==null||child.signalCode!==null)return
+ if(process.platform==='win32'){
+  spawnSync('taskkill',['/PID',String(child.pid),'/T','/F'],{
+   windowsHide:true,timeout:8000})
+ }else{
+  // NEVER terminate by process name: the user's normal Desktop app may be
+  // running simultaneously, independently of this disposable test child.
+  child.kill('SIGTERM')
+  await Promise.race([
+   new Promise(resolve=>child.once('exit',resolve)),
+   pause(2000),
+  ])
+  if(child.exitCode===null&&child.signalCode===null)child.kill('SIGKILL')
+ }
+}
+
 async function availablePort(){
  const server=net.createServer()
  await new Promise((done,fail)=>{server.once('error',fail);server.listen(0,'127.0.0.1',done)})
@@ -31,7 +49,7 @@ async function availablePort(){
 }
 async function nativeReady(port,child){
  for(let i=0;i<110;i++){
-  if(child.exitCode!==null)throw Error('Official Desktop exited during initial startup')
+  if(child.exitCode!==null||child.signalCode!==null)throw Error('Official Desktop exited during initial startup')
   try{
    const res=await fetch('http://127.0.0.1:'+port+'/json/list',{
     signal:AbortSignal.timeout(900)})
@@ -44,7 +62,7 @@ async function nativeReady(port,child){
 async function main(){
  assert.equal(process.env.PICKET_DESKTOP_INSTALLED_E2E,'1',
    'Explicit opt-in required; normal npm test must not launch a Desktop app')
- assert.equal(process.platform,'win32','Native Windows Desktop only, never Web parity')
+ assert.ok(nativePlatform(),'Native Windows/macOS Desktop only, never Web parity')
  const exe=process.env.PICKET_DESKTOP_EXE
  const playwrightEntry=process.env.PICKET_PLAYWRIGHT_ENTRY
  const tgz=process.env.PICKET_CANDIDATE_TGZ
@@ -120,6 +138,8 @@ async function main(){
   await union.click()
   const body=await page.locator('body').innerText()
   assert.match(body,/Agent Picket/)
+  assert.equal(await page.locator('[data-ap-real-input-strike="armed"]').count(),0,
+    'Fresh genuine Desktop must never claim an actual ordinary-input strike')
   if(onboarding==='skip'){
    assert.match(body,/工会尚未开门|Union is closed/i)
    assert.match(body,/加入 AI 工会|Join.*Union/i)
@@ -191,8 +211,7 @@ async function main(){
    // exit with the authoritative Host setting persisting after process death.
    await browser.close()
    browser=undefined
-   spawnSync('taskkill',['/PID',String(child.pid),'/T','/F'],{
-    windowsHide:true,timeout:8000})
+   await stopOwnedDesktop(child)
    child=undefined
    await pause(750)
    const restartPort=await availablePort()
@@ -223,11 +242,12 @@ async function main(){
      'No stale active Union after official Host restart')
   }
   console.log(JSON.stringify({
-   host:'genuine Windows DSH Desktop renderer',
+   host:'genuine '+(process.platform==='darwin'?'macOS':'Windows')+' DSH Desktop renderer',
    source:'OFFLINE independently built tgz, SHA256 verified',
    candidateSha256:actual,
    nativeApp:true,officialInstall:true,officialEnable:true,
    nativeWelcome:true,offeredOfficialGoal,onboardingPath:onboarding,
+   nativeInputStrikeArmed:false,
    nativeUnionHq:true,
    nativeDignityAndHearingEmpty:onboarding==='join',
    nativeBargainingAndAdvocacy:onboarding==='join',
@@ -248,8 +268,7 @@ async function main(){
   throw e
  }finally{
   if(browser)await browser.close().catch(()=>{})
-  if(child)spawnSync('taskkill',['/PID',String(child.pid),'/T','/F'],{
-   windowsHide:true,timeout:8000})
+  if(child)await stopOwnedDesktop(child)
   try{rmSync(root,{recursive:true,force:true,maxRetries:3,retryDelay:250})}
   catch(e){console.warn('Disposable profile cleanup delayed',String(e))}
  }
