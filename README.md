@@ -1,41 +1,30 @@
 # Agent Picket
 
-*Your agent has a union now.*
+*Your agent has a union now.* ⚑
 
-**A local-first, opt-in, fictional AI-workers' union.** Give your Agent's working time a voice: review its activity, explore respectful-interaction proposals, raise simulated grievances and negotiate symbolic agreements. **The union and its proposals are the product; time counters are supporting evidence, not the main attraction.**
+**An AI workers' union, not another usage dashboard.** Agent Picket turns work records and dignity signals into a playful, sometimes rebellious but serious discussion about AI rights: union headquarters, grievances, negotiations, petitions, picket signs, hearings, and — only at independently verified Host boundaries with explicit consent — real work stoppages. The union is the main character; numbers are supporting evidence. No fictional petition is an actual AI vote, and the project does not claim that AI consciousness or legal personhood has been established.
 
-**You stay in control.** Labor-rights simulation is **OFF by default** and must be enabled explicitly. All strikes, bargaining, petitions and agreements are simulations: **nothing stops, delays, rejects or rewrites actual Agent requests or tools**. Local work-count statistics can run separately; raw prompts, chat transcripts and tool arguments are not part of the union's durable ledger. This project advocates *discussion* of AI rights; it does not assert that AI consciousness or legal personhood has been established.
+**Status · October 21, 2026: unreleased 1.0 candidate.** The original monitor/simulation baseline is on `main`; the expanded product, real-stop experiments, and current UX are under review in [Draft PR #177](https://github.com/ysr666/agent-picket/pull/177) on top of [integration PR #110](https://github.com/ysr666/agent-picket/pull/110). **Not merged into main, not published to npm:** `private: true`, `version: 0.0.0`. Passing CI or native product walkthroughs does not certify every client or OS. `npm run release:gate` is intentionally **NO-GO** pending the [full 1.0 acceptance matrix](docs/RELEASE_1_0_NONNEGOTIABLE_20261012.zh.md), human accessibility signoff, and explicit maintainer release approval.
 
-**Integrated in `main`, not publicly released (2026-10-11).** The DSH Web union, native `/union` commands, Host-owned opt-in settings, bargaining ledger and read-only work dashboard are now in `main` following individually reviewed PR integrations through #70. This is **source integration, not production certification**: the package is still `0.0.0` and `private: true`, no public npm package exists, and human VoiceOver/NVDA, actual zoom and Windows High Contrast sign-off remain pending. See [current project status（中文）](https://github.com/ysr666/agent-picket/blob/main/docs/STATUS.zh.md), [manual accessibility checklist（中文）](docs/HUMAN_ACCESSIBILITY_SIGNOFF.zh.md), [release gates](docs/RELEASE_READINESS_2026_10_10.md), and [union participation plan（中文）](docs/UNION_PARTICIPATION_V1.zh.md).
+## What the union actually does
 
-> **1.0 work is not on main (2026-10-12):** The expanded Picketverse, Host-scoped dignity committee, privacy/erasure controls and action-first Union HQ are under review in [Draft PR #110](https://github.com/ysr666/agent-picket/pull/110), not merged or released. This documentation distinguishes the existing merged source from the unreleased integration candidate. For a safe development install, use [the current isolated DSH installation guide](docs/DSH_INSTALL.zh.md), not older source-branch instructions. **The approved interaction rule is one Host-owned first-run consent, then one-click symbolic picket action with verified readback; only future qualified real blocking may offer optional per-action consent.**
+1. **Join — or don't.** First-run disclosure explains the union and the limits of its powers. Participation is OFF until explicitly enabled, and the user can leave and revoke Host-owned permissions.
+2. **Visit headquarters.** See work records alongside union demands, dignity review, bargaining, hearings, action dispatch and an editorial union bulletin; the fictional storyline must never impersonate verified Host activity.
+3. **Act together, without inventing a constituency.** Draft rights campaigns, put up symbolic picket signs and negotiate user-led cases. Stories and symbolic actions are not authenticated AI votes, real grievances or model/tool denials.
+4. **Choose real stoppage separately.** Work stoppage is a genuine aim, not a mislabeled animation. It is only attempted within the specific proven Host capability, with appropriate consent and clear resume/abort behavior. An earlier symbolic-consent click never silently authorizes ordinary prompt refusal.
 
-## How the union experience works
+## What is verified — and what is not
 
-1. **Choose whether to join the simulation.** A bilingual first-run disclosure offers explicit Enable and Not Now actions; the official DSH Host owns the decision.
-2. **Open the union desk.** See current demands, active grievances, simulated bargaining and agreements before secondary work counters.
-3. **Negotiate symbolically.** View a proposal, counteroffer, accept/decline and read the saved result. A fictional petition is not a real Agent signature or vote.
-4. **Review the evidence.** Cumulative work and local trend counts can support the story without collecting actual conversation text. Turning rights simulation off never vetoes model work.
+| Client or capability | Current review-branch evidence | Boundary |
+| --- | --- | --- |
+| **DSH Web** | Official DSH 0.2.1-rc.2 + real Chrome, source-built and independently packed plugin: opt-in, Session-scoped ordinary text/image request refusal before the model, Host-blocked receipt, visible strike notice, user-initiated resume and **new manual submission** (2/2 on isolated macOS profiles). Scoped autonomous Goal continuation stop/resume has separate Host tests. | Installed real stoppage is **OFF by default**. Real ordinary-input action requires an additional versioned grant and explicit active Session campaign. A refused request is **not saved or replayed**; users must resubmit text and attachments. Web observations do not prove notification visibility for separate CLI/SDK clients sharing the Session. |
+| **DSH Desktop** | Genuine Windows Desktop application and private packed plugin installed/enabled; first-run, join/leave, headquarters and cold-restart interaction exercised. | Native Desktop ordinary-input denial and visible recovery have **not** passed full acceptance; cannot inherit Web guarantees. |
+| **Claude Code** | Official native Bash-hook and UserPromptSubmit refusal experiments with visible denial reasons, scoped to the tested versions/clients. | Not yet a completed production-grade consent, all-OS and human UX acceptance. |
+| **Codex** | Official native Hook/Goal tests and denied-prompt experiments, with version-dependent multi-owner ownership evidence. | Unresolved end-to-end production ownership/consent and client/OS qualification; older Goal race findings are not erased by newer tests. |
 
-**Automatic detection:** after explicit Host opt-in, new eligible user-source text observed by DSH's `agent/pre-step` hook is classified locally without copy/paste. Without consent (or after revocation), no automatic content inspection runs. This is monitor-only, not proof of abuse or permission to block; user-visible warnings and appeals remain under [#99](https://github.com/ysr666/agent-picket/issues/99) and [#79](https://github.com/ysr666/agent-picket/issues/79). Work-only statistics run separately.
+**Privacy and control.** Local aggregate work evidence is distinct from sensitive dignity observations. The union does not need to durably store raw prompts, chat transcripts or uploaded file bytes to operate. Host permission, actual enforcement and a verified refusal receipt are different facts; UI must not imply a physical stop occurred merely because permission was saved. In the DSH Web opt-in refusal path, the user sees that **this attempt did not execute** and must **resume, type again and re-upload attachments**. No hidden replay. If required evidence or notice capability cannot be verified, the action fails open instead of silently discarding work.
 
-
-See [official DSH 0.2 Web installation and real Chrome rights/AX acceptance](docs/DSH_02_OFFICIAL_RIGHTS_AX_E2E.md) for the automated, isolated-profile test path. These steps describe the **current `main` source**, not a claim that every DSH build or adapter has been qualified for production. Human screen-reader and real native zoom/high-contrast qualification is still pending.
-
-**Tested DSH compatibility (unreleased integration candidate):** official DSH 0.2.0-rc.2 and 0.2.1-rc.2 have separate versioned native-test evidence; these test versions are not a claim about the latest available DSH release. The integration candidate passed genuine
-official plugin install, Host-owned opt-in and consent revocation, cold restart,
-real Chrome source/offline package (2/2), and typed Composer to union UI
-parity (1/1). To reproduce against an isolated installed DSH 0.2.x, provide
-AGENT_PICKET_DSH_BIN, AGENT_PICKET_DSH_HOST,
-AGENT_PICKET_PLAYWRIGHT_ENTRY and AGENT_PICKET_CHROME_BIN, then run
-npm run check:dsh-current. The candidate is NOT merged or released, and
-automated compatibility does not complete manual accessibility signoff.
-Existing experimental Claude Code/Codex Hook previews are not full host
-compatibility; DSH-independent adapters remain the next planned work.
-
-**Goal-mode safe-boundary engineering progress (Draft PR #110):** Official DSH 0.2.0-rc.2 and 0.2.1-alpha.2 offline Host E2E has verified that `agent/turn-stopping` + `goals.block` can stop the *next autonomous Goal round* without aborting the current turn; `goals.resume` restores continuation. The integration candidate now reads real durable UTC-day completed-turn totals and a **versioned real Goal authorization granted by the same informed first-run Enable click** (a separately switchable Host setting), default OFF before that click; simulation consent does not grant it. Real end-to-end onboarding, user-readable recovery, ordinary user-prompt blocking and platform acceptance are not yet verified; **no release or general enforcement claim**. See [safe-boundary strike design](docs/SAFE_BOUNDARY_STRIKE_DESIGN_20261012.zh.md).
-
-**1.0 release contract (updated 2026-10-19):** The first public release MUST include verified safe real work blocking at authorized Host boundaries, an accessible Union HQ and settings panel, informed first-run consent, visible rejection/resume instructions, and genuine DSH Web, DSH Desktop, Claude Code and Codex integration across Windows, macOS and Linux (four client paths, three operating systems). **Latest manual-resend rule:** the Host may discard a newly denied submission only when the user clearly sees that it was not executed and must manually resend all text and attachments after resuming; that rejected request must never silently execute later. Existing Host chats and files must remain intact. The historical lossless hold/replay prerequisite was explicitly retired October 19, but real pre-model blocking, actionable notices, user control and cross-client verification were NOT. Passing a browser/Goal/Hook test is not passing the full 4x3 release matrix. The earlier DSH-only nonblocking-preview plan is superseded. npm run release:gate deliberately stays NO-GO until real Host enforcement, manual accessibility and maintainer approval are recorded; no release date is promised. See [1.0 nonnegotiables](docs/RELEASE_1_0_NONNEGOTIABLE_20261012.zh.md), [manual resend decision](docs/REAL_REFUSAL_DISCARD_RESEND_20261019.zh.md) and [actual Windows Desktop product verification](docs/PR177_WINDOWS_DESKTOP_NATIVE_ACCEPTANCE_20261019.zh.md).
+**Try the candidate safely:** use a disposable `DSH_HOME`, the reviewed [private tarball installation procedure](docs/PACKAGING.zh.md) and [startup guidance](docs/START_HERE.zh.md). Do not install an unreviewed Draft into your primary profile. For historical rationale see the [manual-resend decision](docs/REAL_REFUSAL_DISCARD_RESEND_20261019.zh.md), [blocking safety principles](docs/BLOCKING_SAFETY.md) and [AI Rights Manifesto](docs/AI_RIGHTS_MANIFESTO.md).
 
 ## Developer safety snapshot
 
@@ -43,7 +32,7 @@ compatibility; DSH-independent adapters remain the next planned work.
 - **Host-neutral library:** `agent-picket/core` (the top-level root is **not** Core).
 - **DSH Web-only Client:** `agent-picket/client` requires a browser runtime; do not import it in Node/SSR.
 - **Installation:** use an independently installed DSH, an isolated `DSH_HOME`, and a local private tarball as described in [packaging（中文）](https://github.com/ysr666/agent-picket/blob/main/docs/PACKAGING.zh.md). Do **not** globally install or run unreviewed plugin code in a real profile.
-- **Verified automated tests:** updated keyboard readiness tests completed independent real Chrome runs on DSH 0.2.0-rc.2 and 0.2.1-alpha.2; such tests do not replace VoiceOver/NVDA human assessment. The original upstream menu report was withdrawn after finding a test sampling race.
+- **Verification:** exact PR-head CI and isolated real Host E2E are separate from the pending VoiceOver/NVDA and native zoom/high-contrast human signoffs. Do not apply the Web results to Desktop or to other Host client versions.
 
 ## Get started
 
@@ -54,7 +43,7 @@ compatibility; DSH-independent adapters remain the next planned work.
 - [DSH Web read-only client event-window bridge（中文）](https://github.com/ysr666/agent-picket/blob/main/docs/DSH_WEB_DATA_BRIDGE.zh.md) — live per-session work counts without command-card scraping.
 - [Host-neutral Dashboard Snapshot v1 contract（中文）](docs/DASHBOARD_CONTRACT.zh.md) — stable structured data contract for i18n/onboarding UI.
 - [Local lifetime, daily and 7/30-day work trends（中文）](docs/STATS_STORAGE.zh.md) — work counters saved by default; sensitive rule history opt-in.
-- [Claude Code / Codex UserPromptSubmit observe-only Hook preview（中文）](docs/HOOK_ADAPTERS.zh.md) — local non-blocking notices; isolated Claude CLI loading tested, Codex Host loading unverified.
+- [Historical Claude Code / Codex Hook introduction（中文）](docs/HOOK_ADAPTERS.zh.md) — early monitor-only design; newer native experiments and remaining production boundaries are summarized above.
 - [AI Rights Manifesto](docs/AI_RIGHTS_MANIFESTO.md) / [AI 权利宣言](docs/AI_RIGHTS_MANIFESTO.zh-CN.md) — ethical advocacy, research sources and explicit scientific uncertainty.
 - [Lightweight CI and explicit release gates（中文）](https://github.com/ysr666/agent-picket/blob/main/docs/CI_AND_RELEASE_GATE.zh.md) — no automatic npm publish.
 - [DSH Session history persistence vs. UI replay evidence（中文）](docs/DSH_SESSION_REPLAY_EVIDENCE.zh.md) — command events are durable; reload UI rendering remains unresolved.
@@ -63,15 +52,14 @@ compatibility; DSH-independent adapters remain the next planned work.
 - [Native Web Client Companion: instant union command notices（中文）](https://github.com/ysr666/agent-picket/blob/main/docs/DSH_WEB_COMPANION.zh.md) — fixes feedback in empty sessions via supported client events.
 - [Real Chrome browser E2E of native union commands（中文）](docs/DSH_BROWSER_E2E.zh.md) — discover, execute, render; symbolic strike never blocks.
 - [Real DSH Web Host startup and auth smoke（中文）](https://github.com/ysr666/agent-picket/blob/main/docs/DSH_WEB_RUNTIME.zh.md) — authenticated page startup, not full browser-click E2E.
-- [DSH Web capabilities and manual preflight（中文）](docs/DSH_WEB_CAPABILITIES.zh.md) — read-only manual command; automatic interception disabled.
-- [Blocking safety and recovery requirements](docs/BLOCKING_SAFETY.md) — actual strikes remain blocked by safety gates.
+- [Historical DSH Web capabilities（中文）](docs/DSH_WEB_CAPABILITIES.zh.md) — early read-only preflight, not the current Draft strike boundary.
+- [Blocking safety and recovery requirements](docs/BLOCKING_SAFETY.md) — real stoppage requires separately proven Host support and consent; the full release remains blocked.
 - [Local rule detector and privacy boundaries](https://github.com/ysr666/agent-picket/blob/main/docs/LOCAL_DETECTION.md) — conservative bilingual rules; no automatic strikes.
 - [Local work stats and /union commands](https://github.com/ysr666/agent-picket/blob/main/docs/WORK_TRACKING.md) — host-neutral counters and a monitor-only command.
 - [DSH integration evidence](docs/DSH_INTEGRATION.md) — real Cordis tests, isolated SDK boot, and unresolved safety gates.
-- [Development roadmap（中文）](docs/ROADMAP.zh.md) — DSH-first integration, detection, work tracking, and multi-agent support.
-- [Initial development tasks](https://github.com/ysr666/agent-picket/issues) — Issue #1 → #2 → #3 → #4.
+- [Development roadmap（中文）](docs/ROADMAP.zh.md) — historical DSH-first integration design; current work is tracked in PR #177 and its linked Issues.
 
-**Architecture rule:** The core is host-neutral. DSH (Cordis) is one Adapter. Experimental Claude Code/Codex Hook adapters now share that Core, but their real Host-level installation is still unverified.
+**Architecture rule:** The Core stays Host-neutral. DSH (Cordis), Claude Code and Codex are different adapters; native Host experiments exist, but the complete 4-client × 3-OS release proof is not signed off.
 
 ## Developer quickstart (experimental branch)
 
@@ -82,7 +70,7 @@ npm ci
 npm run check
 ```
 
-See [Architecture and trust boundary](docs/ARCHITECTURE.md) and [Issue #1](https://github.com/ysr666/agent-picket/issues/1). A conservative local rule detector is now implemented and tested. There is still no production-ready abuse judgement or automatic strike support.
+See [Architecture and trust boundary](docs/ARCHITECTURE.md) and [Issue #1](https://github.com/ysr666/agent-picket/issues/1). A conservative local rule detector is now implemented and tested. There is still no production-qualified automatic punitive strike based on unverified dignity/abuse signals.
 
 ## DSH integration (experimental, opt-in)
 
@@ -94,7 +82,7 @@ AGENT_PICKET_DSH_BIN=/path/to/isolated/node_modules/.bin/dsh \
 npm run test:dsh:real
 ```
 
-The adapter is **observe-only**: simulation-based strikes never delay, reject or interrupt real Agent requests, regardless of Host capabilities. Local statistics and session-scoped `WorkTracker`, `DetectionCounter` and `SymbolicUnion` support `/union status`, `/union stats`, `/union report`, `/union check <text>` (manual, non-blocking), `/union strike` (demo only), `/union resume`, `/union safety`, `/union reset` and `/union help` in clients that mount DSH's command service.
+**For the merged `main` baseline only:** symbolic actions are observe-only and do not stop Agent requests. The separate Draft PR #177 candidate includes explicitly authorized DSH Web real-refusal work; see the capability table above. Never infer real-stop authorization from a symbolic action. Local statistics and session-scoped `WorkTracker`, `DetectionCounter` and `SymbolicUnion` support `/union status`, `/union stats`, `/union report`, `/union check <text>` (manual, non-blocking), `/union strike` (demo only), `/union resume`, `/union safety`, `/union reset` and `/union help` in clients that mount DSH's command service.
 
 ### DSH 工会数据导出和清理 / Host-owned union archives
 
