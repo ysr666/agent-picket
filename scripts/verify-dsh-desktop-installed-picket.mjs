@@ -97,7 +97,18 @@ async function verifyRealNativeInputStrike(page,{leaveArmed=false}={}){
   visibleReceipt:true,manualResend:true})
  await input.getByRole('button',{
   name:/查看真实普通消息罢工授权|Review real input-strike permission/}).click()
- await input.getByRole('button',{name:/我已知悉|I understand/}).click()
+ // In the REAL installed native Desktop, the user must SEE the cross-client
+ // discard risk BEFORE clicking independent versioned Host authorization.
+ // The original submitting client may be CLI/SDK and may see NO notice.
+ const warning=await input.locator('#picket-input-discard-review').innerText()
+ assert.match(warning,/CLI/)
+ assert.match(warning,/SDK/)
+ assert.match(warning,/收不到可见通知|NO visible notice/i)
+ assert.match(warning,/直接丢失|lost without a backup/i)
+ assert.match(warning,/重新上传|re-upload/i)
+ assert.match(warning,/共享会话|shared-Session/i)
+ await input.getByRole('button',{
+  name:/我接受共享会话丢弃风险|I accept shared-Session discard risk/}).click()
  const strike=input.locator('[data-ap-input-action="strike"]')
  await strike.waitFor({state:'visible',timeout:9000})
  assert.equal(await strike.isEnabled(),true,

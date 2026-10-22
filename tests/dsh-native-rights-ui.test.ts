@@ -3409,6 +3409,30 @@ test('ordinary-message strike card clearly warns about discard/resend but remain
  assert.equal(changed,0,'Rendering a simulated picket cannot enable physical refusal')
 })
 
+test('P0 informed ordinary-input consent discloses foreign submitter loss BEFORE grant, in BOTH languages',()=>{
+ for(const [locale,lang] of [['en',en],['zh',zhCN]] as const){
+  const disclosure=lang['settings.inputStrikeDisclosure']
+  const confirm=lang['settings.inputStrikeConfirm']
+  const scope=lang['settings.inputStrikeScope']
+  const explanation=lang['settings.inputStrikeExplanation']
+  assert.match(disclosure,/Session|会话/,locale+' must be Session-scoped')
+  assert.match(disclosure,/other window|其他窗口/,locale+' must warn of other UI clients')
+  assert.match(disclosure,/CLI/,locale+' must warn of official command-line clients')
+  assert.match(disclosure,/SDK/,locale+' must warn of API clients')
+  assert.match(disclosure,/NO visible notice|收不到可见通知/,locale+' must warn there may be NO origin notice')
+  assert.match(disclosure,/cannot prove|无法证明/,locale+' cannot claim source identity')
+  assert.match(disclosure,/lost without a backup|直接丢失/,locale+' must disclose irreversible loss')
+  assert.match(disclosure,/manually resend|亲自重新发送/,locale+' recovery is manual')
+  assert.match(disclosure,/re-upload|重新上传/,locale+' attachments need reupload')
+  assert.match(disclosure,/separate Start|另行点击发起/,locale+' grant != arming')
+  assert.match(confirm,/shared-Session|共享会话/,locale+' confirmation must name risk')
+  assert.match(scope,/CLI/,locale+' persistent settings warning covers CLI')
+  assert.match(scope,/SDK/,locale+' persistent settings warning covers SDK')
+  assert.match(explanation,/other DSH client|其他 DSH 客户端/,locale)
+  assert.doesNotMatch(disclosure,/current request will not run|你当前发送的请求/,
+    locale+' could imply consent only affects the present sender')
+ }
+})
 test('ordinary-input strike review must display discard warning before an independent grant',async()=>{
  const view=goalSettingsRenderHarness()
  const basis=deps(rights({welcomeDecision:'enabled',laborRightsEnabled:true}))
