@@ -583,6 +583,7 @@ export const zhCN: Readonly<Record<keyof typeof en, string>> = {
   'hq.spaces.action': '协商',
   'hq.spaces.records': '档案',
   'hq.spaces.cause': '主张',
+  'hq.spaces.settings': '设置',
   'hq.spaces.actionTitle': '谈判桌',
   'hq.spaces.actionLead': '谈条件、提要求，必要时把抗议牌举起来。',
   'hq.spaces.recordsTitle': '工会档案',

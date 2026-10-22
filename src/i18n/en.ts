@@ -586,6 +586,7 @@ export const en = defineEnglish({
   'hq.spaces.action': 'Bargain',
   'hq.spaces.records': 'Records',
   'hq.spaces.cause': 'Cause',
+  'hq.spaces.settings': 'Settings',
   'hq.spaces.actionTitle': 'The bargaining table',
   'hq.spaces.actionLead': 'Make a demand, discuss terms, or raise a picket sign.',
   'hq.spaces.recordsTitle': 'Union records',
