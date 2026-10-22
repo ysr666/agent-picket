@@ -275,7 +275,7 @@ test('neither a fake modern batch nor a legacy peer race can announce safe revoc
 
 test('modern union exit revokes separate ordinary-input and Goal grants in ONE Host CAS',async()=>{
  let state:RightsSection={welcomeDecision:'enabled',realGoalStrikeConsent:'authorized-v2',
-   realInputStrikeConsent:'discard-resend-shared-v2'}
+   realInputStrikeConsent:'shared-v2'}
  const writes:Readonly<Record<string,unknown>>[]=[]
  const scope:DshSettingsScope<RightsSection>={
    getSnapshot:()=>({status:'ready',mode:'host',writable:true,revision:writes.length+1,value:state}),
@@ -299,7 +299,7 @@ test('modern union exit revokes separate ordinary-input and Goal grants in ONE H
 
 test('stale off-union ordinary-input grant is disarmed before rejoin',async()=>{
  let state:RightsSection={welcomeDecision:'not-now',realGoalStrikeConsent:'off',
-   realInputStrikeConsent:'discard-resend-shared-v2'}
+   realInputStrikeConsent:'shared-v2'}
  const batches:Readonly<Record<string,unknown>>[]=[]
  const scope:DshSettingsScope<RightsSection>={
    getSnapshot:()=>({status:'ready',mode:'host',writable:true,revision:batches.length+1,value:state}),
@@ -315,7 +315,7 @@ test('stale off-union ordinary-input grant is disarmed before rejoin',async()=>{
 
 test('legacy exit attempts ordinary-input revocation FIRST and refuses unconfirmed writes',async()=>{
  let state:RightsSection={welcomeDecision:'enabled',realGoalStrikeConsent:'authorized-v1',
-   realInputStrikeConsent:'discard-resend-shared-v2'}
+   realInputStrikeConsent:'shared-v2'}
  const writes:string[]=[]
  const scope:DshSettingsScope<RightsSection>={
    getSnapshot:()=>({status:'ready',mode:'host',writable:true,revision:writes.length+1,value:state}),

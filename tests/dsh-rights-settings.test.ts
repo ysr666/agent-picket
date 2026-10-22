@@ -14,7 +14,7 @@ test('DSH Host schema defaults fictional rights to unseen/OFF and rejects malfor
   assert.throws(() => RightsSettingsSchema({welcomeDecision:true as never}))
   assert.equal(RightsSettingsSchema({realGoalStrikeConsent:'authorized-v1'}).realGoalStrikeConsent,'authorized-v1')
   assert.throws(()=>RightsSettingsSchema({realGoalStrikeConsent:'yes' as never}))
-  assert.equal(RightsSettingsSchema({realInputStrikeConsent:'discard-resend-shared-v2'}).realInputStrikeConsent,'discard-resend-shared-v2')
+  assert.equal(RightsSettingsSchema({realInputStrikeConsent:'shared-v2'}).realInputStrikeConsent,'shared-v2')
   assert.equal(RightsSettingsSchema({realInputStrikeConsent:'discard-resend-v1'}).realInputStrikeConsent,'discard-resend-v1')
   assert.throws(()=>RightsSettingsSchema({realInputStrikeConsent:'v2-unknown' as never}))
   assert.equal(RightsSettingsSchema({commandLocale:'zh-CN'}).commandLocale,'zh-CN')

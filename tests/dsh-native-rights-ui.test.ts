@@ -3445,8 +3445,8 @@ test('legacy v1 Host consent is explicitly marked unsafe and offers v2 re-author
  assert.ok(settings.some(n=>n.children.includes('settings.inputStrikeLegacy')))
  assert.ok(settings.find(n=>n.type==='button'&&n.children.includes('settings.inputStrikeReview')))
  assert.equal(settings.some(n=>n.props['data-ap-input-enforcement']==='armed'),false)
- assert.match(en['settings.inputStrikeLegacy'],/not eligible/)
- assert.match(zhCN['settings.inputStrikeLegacy'],/不可用于真实阻断/)
+ assert.match(en['settings.inputStrikeLegacy'],/Legacy v1: OFF/)
+ assert.match(zhCN['settings.inputStrikeLegacy'],/旧 v1 不能阻断/)
 })
 
 test('ordinary-input strike review must display discard warning before an independent grant',async()=>{
@@ -3458,7 +3458,7 @@ test('ordinary-input strike review must display discard warning before an indepe
    snapshot:()=>({available:true,writable:true,authorized,enforcing:false}),
    async choose(choice,version){
      operations.push(choice+':'+String(version))
-     if(choice==='discard-resend-shared-v2'){
+     if(choice==='shared-v2'){
        assert.equal(version,'input-discard-shared-session-manual-resend-v2')
        authorized=true
      }else{authorized=false}
@@ -3483,7 +3483,7 @@ test('ordinary-input strike review must display discard warning before an indepe
  nodes=view.render(settings)
  button(nodes,'settings.inputStrikeConfirm')!.props.onClick()
  await new Promise<void>(resolve=>setImmediate(resolve))
- assert.deepEqual(operations,['discard-resend-shared-v2:input-discard-shared-session-manual-resend-v2'])
+ assert.deepEqual(operations,['shared-v2:input-discard-shared-session-manual-resend-v2'])
  nodes=view.render(settings)
  assert.ok(nodes.some(n=>n.children.includes('settings.inputStrikeGranted')))
  assert.ok(nodes.some(n=>n.children.includes('settings.inputStrikeReady')),
@@ -3495,7 +3495,7 @@ test('ordinary-input strike review must display discard warning before an indepe
  revoke.props.onClick()
  await new Promise<void>(resolve=>setImmediate(resolve))
  assert.deepEqual(operations,[
-   'discard-resend-shared-v2:input-discard-shared-session-manual-resend-v2','off:undefined'])
+   'shared-v2:input-discard-shared-session-manual-resend-v2','off:undefined'])
 })
 
 test('Desktop with retained Web input permission must show unverified notice, never Host-ready',()=>{

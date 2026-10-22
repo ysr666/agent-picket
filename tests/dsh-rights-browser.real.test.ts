@@ -2568,7 +2568,7 @@ async function runRightsBrowserE2E(mode: 'source' | 'installed'): Promise<void> 
             ?.find((x:any)=>x.ns==='agent-picket')?.value
         })
         assert.equal(settingsReadback.welcomeDecision,'enabled')
-        assert.equal(settingsReadback.realInputStrikeConsent,'discard-resend-shared-v2')
+        assert.equal(settingsReadback.realInputStrikeConsent,'shared-v2')
         const campaign=JSON.parse(settingsReadback.realInputStrikeCampaign)
         assert.equal(campaign.sessionKey,realDignity.sessionKey)
         assert.equal(campaign.expiresAtMs-campaign.startedAtMs,1800000)

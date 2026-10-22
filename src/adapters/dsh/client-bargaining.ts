@@ -14,7 +14,7 @@ import { advanceDignityCase, parseDignityCaseLedger, MAX_DIGNITY_CASE_BYTES, MAX
 
 export interface UnionSettingsSection {
   readonly realGoalStrikeConsent?:'off'|'authorized-v1'|'authorized-v2'
-  readonly realInputStrikeConsent?:'off'|'discard-resend-v1'|'discard-resend-shared-v2'
+  readonly realInputStrikeConsent?:'off'|'discard-resend-v1'|'shared-v2'
   readonly realInputStrikeCampaign?:string
   readonly welcomeDecision: 'unseen' | 'enabled' | 'not-now'
   readonly unionLedger: string

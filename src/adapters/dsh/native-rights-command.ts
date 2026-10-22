@@ -26,7 +26,7 @@ export type NativeUnionAction =
 export interface NativeRightsSection {
   readonly welcomeDecision: Choice
   readonly realGoalStrikeConsent?: 'off'|'authorized-v1'|'authorized-v2'
-  readonly realInputStrikeConsent?:'off'|'discard-resend-v1'|'discard-resend-shared-v2'
+  readonly realInputStrikeConsent?:'off'|'discard-resend-v1'|'shared-v2'
   readonly realInputStrikeCampaign?:string
   readonly unionLedger: string
   readonly unionPicketLedger?: string
@@ -253,7 +253,7 @@ export function createNativeUnionCommandPort(settings: NativeSettingsProvider): 
       if (!view) return unavailable()
       if (view.section.welcomeDecision !== 'enabled') return disabled()
       const active=!!sessionId
-        &&view.section.realInputStrikeConsent==='discard-resend-shared-v2'
+        &&view.section.realInputStrikeConsent==='shared-v2'
         &&inputStrikeActive(view.section.realInputStrikeCampaign,
           nativeSessionKey(sessionId),Date.now())
       return text('command.native.enabled') + ' '

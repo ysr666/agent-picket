@@ -48,7 +48,7 @@ export interface DshInputRefusalConsentPort {
   snapshot():{readonly available:boolean;readonly writable:boolean;
     readonly authorized:boolean;readonly enforcing:false;readonly armed?:boolean;
     readonly hasCampaign?:boolean;readonly legacyConsent?:boolean}
-  choose(choice:'off'|'discard-resend-shared-v2',
+  choose(choice:'off'|'shared-v2',
     disclosure?:typeof INPUT_DISCARD_DISCLOSURE):Promise<{
       readonly available:boolean;readonly writable:boolean;
       readonly authorized:boolean;readonly enforcing:false}>
@@ -570,15 +570,15 @@ export function createDshUnionComponents(
         if(next==='authorized-v2')setUpgradeReview(false)
       }catch{setError(true)}finally{setBusy(false)}
     }
-    const chooseInput=async(next:'off'|'discard-resend-shared-v2')=>{
+    const chooseInput=async(next:'off'|'shared-v2')=>{
       if(busy||!deps.inputRefusal)return
       const before=deps.inputRefusal.snapshot()
       if(!before.writable||(next!=='off'&&!before.available))return
       setBusy(true);setError(false)
       try{
         const result=await deps.inputRefusal.choose(next,
-          next==='discard-resend-shared-v2'?INPUT_DISCARD_DISCLOSURE:undefined)
-        if(result.authorized!==(next==='discard-resend-shared-v2')
+          next==='shared-v2'?INPUT_DISCARD_DISCLOSURE:undefined)
+        if(result.authorized!==(next==='shared-v2')
           ||deps.inputRefusal.snapshot().authorized!==result.authorized)
           throw Error('Host did not confirm ordinary-input refusal preference')
         setInputReview(false)
@@ -749,7 +749,7 @@ export function createDshUnionComponents(
             h('div',{className:'ap-actions'},
               h('button',{type:'button',style:primary,
                 disabled:busy||!enabled||!deps.inputRefusal.snapshot().writable,
-                onClick:()=>{void chooseInput('discard-resend-shared-v2')}},
+                onClick:()=>{void chooseInput('shared-v2')}},
                 label('settings.inputStrikeConfirm')),
               h('button',{type:'button',style:quiet,disabled:busy,
                 onClick:()=>setInputReview(false)},label('settings.inputStrikeCancel'))))
