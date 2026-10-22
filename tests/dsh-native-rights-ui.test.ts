@@ -3511,6 +3511,22 @@ test('initial union disclosure no longer promises automatic recovery of discarde
  }
 })
 
+test('verified Session strike notices never claim which sharing client submitted',()=>{
+ for(const [locale,dict] of [['zh',zhCN],['en',en]] as const){
+  const title=dict['hq.inputStrikeRefusedTitle']
+  const note=dict['hq.inputStrikeRefusedNotice']
+  assert.match(title,/本会话|Session/,locale)
+  assert.match(note,/本会话|Session/,locale)
+  assert.match(note,/其他客户端|another client/,locale)
+  assert.match(note,/无法证明|cannot identify/,locale)
+  assert.match(note,/重新发送|manually resend/,locale)
+  assert.match(note,/重新上传|re-upload/,locale)
+  assert.match(dict['hq.strikeSummons.scope'],/会话|Session/,locale)
+  assert.doesNotMatch(title,/本次请求|this request|your request/i,locale)
+  assert.doesNotMatch(note,/工会已在模型和工具执行前拒绝本次请求|AI union refused this request/i,locale)
+ }
+})
+
 test('a confirmed official blocked Host turn and Picket receipt renders a visible refusal explanation',()=>{
  const {hooks}=fakeReact()
  const base=deps(rights({welcomeDecision:'enabled',laborRightsEnabled:true})).d
