@@ -12,6 +12,7 @@
  *   PICKET_DESKTOP_ONBOARDING=skip|join
  *   PICKET_DESKTOP_REAL_INPUT_E2E=1 # separate fully voluntary synthetic real refusal
  *   PICKET_DESKTOP_NARROW_HQ_E2E=1 # 320px keyboard-opened Host-backed settings
+ *   PICKET_DESKTOP_ORPHAN_E2E=1 # real persisted strike across actual cold Host restart
  *   node scripts/verify-dsh-desktop-installed-picket.mjs
  */
 import assert from 'node:assert/strict'
@@ -65,7 +66,7 @@ async function nativeReady(port,child){
  * configured in these disposable profiles: the rejected text+image must not
  * execute tools or a model. Event-window proof and Host receipt are both
  * required before native React displays its real alertdialog. */
-async function verifyRealNativeInputStrike(page){
+async function verifyRealNativeInputStrike(page,{leaveArmed=false}={}){
  const row=page.locator('[data-row-key^="session:"]').first()
  // A fresh official native Desktop may have no Session yet after Plugins.
  // Create one through the HOST'S own UI, not a synthetic Session projection.
@@ -122,6 +123,12 @@ async function verifyRealNativeInputStrike(page){
  const active=JSON.parse(before.realInputStrikeCampaign)
  assert.equal(active.sessionKey,sessionKey,'Native Host armed the exact visible Session')
  assert.equal(active.expiresAtMs-active.startedAtMs,1_800_000)
+ if(leaveArmed){
+  // This branch intentionally DOES NOT Resume. The actual Host must be
+  // stopped with an armed 30-minute record left in persisted official Settings.
+  return {sessionId:id,sessionKey,campaign:before.realInputStrikeCampaign,
+    armedAt:active.startedAtMs}
+ }
  const submission=await page.evaluate(async(id)=>{
   const rpcId='picket-native-real-refusal-no-model'
   const tinyPng='iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAIAAACQkWg2AAAAGUlEQVR4nGOUdMtjIAUwkaR6VMOohiGlAQCmDwDtMnvHzQAAAABJRU5ErkJggg=='
@@ -248,6 +255,110 @@ async function verifyNarrowUnionHqSettings(page){
   revokeViaUserClick:true,noRealStrikeGrant:true,releaseDecision:'NO-GO'}
 }
 
+/** Independent negative production proof: the original native UI is gone,
+ * a still unexpired Host-owned strike is persisted, and a NEW Host process
+ * must allow its existing Session to start work rather than discarding it.
+ * A Session request being *accepted* alone is NOT proof; inspect official
+ * persisted turn/start/end and require a nonblocked terminal turn and no
+ * authenticated Picket refusal metadata. */
+async function verifyOrphanedStrikeAfterRestart(page,prior){
+ const rpc=async(method,request)=>{
+  const rpcId='picket-cold-orphan-'+method.replaceAll('/','-')+'-'+Math.random().toString(36).slice(2)
+  const res=await page.evaluate(async ({method,request,rpcId})=>{
+   const response=await fetch('/api/'+method,{
+    method:'POST',credentials:'same-origin',
+    headers:{'content-type':'application/json'},
+    body:JSON.stringify({type:'client-request',rpcId,
+      method,payload:{args:request}})})
+   return {status:response.status,envelope:await response.json().catch(()=>null)}
+  },{method,request,rpcId})
+  assert.equal(res.status,200,'Official Host RPC '+method+' must be reachable')
+  assert.equal(res.envelope?.result?.ok,true,
+    'Official '+method+' failed '+JSON.stringify(res.envelope?.result?.error??{}))
+  return res.envelope.result.value
+ }
+ const found=await rpc('settings/describe',{})
+ const stored=found?.namespaces?.find(x=>x.ns==='agent-picket')?.value
+ assert.ok(stored,'Official installed Picket settings must survive cold restart')
+ assert.equal(stored.welcomeDecision,'enabled')
+ assert.equal(stored.realInputStrikeConsent,'discard-resend-v1')
+ assert.equal(stored.realInputStrikeCampaign,prior.campaign,
+   'Exactly the SAME 30-minute real strike is still persisted after restart')
+ // A disabled/uninstalled Picket plugin would also produce no rejection,
+ // but that is NOT a valid negative test. Prove the RESTARTED official Host
+ // still runs this same Picket plugin and its authenticated notice route.
+ const capable=await page.evaluate(async()=>{
+  const res=await fetch('/api/agent-picket/refusal-notice/v1?capability=input-discard-resend-v1',{
+   method:'GET',credentials:'same-origin',headers:{accept:'application/json'}})
+  return {status:res.status,body:await res.json().catch(()=>null)}
+ })
+ assert.equal(capable.status,200,'RESTARTED Host must still have Picket running')
+ assert.deepEqual(capable.body,{schemaVersion:1,source:'dsh-host-picket-refusal-v1',
+  visibleReceipt:true,manualResend:true})
+ const saved=JSON.parse(stored.realInputStrikeCampaign)
+ assert.equal(saved.sessionKey,prior.sessionKey)
+ assert.ok(saved.expiresAtMs>Date.now()+5_000,'This is an UNEXPIRED real strike')
+ assert.ok(saved.startedAtMs<Date.now()-400,
+   'New Host must actually start after the saved campaign')
+ const initial=await rpc('session/projections',{request:{sessionId:prior.sessionId}})
+ const beforeCursor=initial?.asOfSeq??-1
+ // Genuine Host native Desktop Session: no direct SDK fake/fixture or
+ // browser-only acceptance; execute through its authenticated RPC.
+ const submit=await rpc('session/prompt',{request:{
+  sessionId:prior.sessionId,mode:'queue',requestId:'picket-orphan-after-cold-boot',
+  content:[{type:'text',text:'PICKET_ORPHAN_COLD_BOOT_ALLOWED'}],
+ }})
+ assert.equal(submit?.accepted,true,'Native Host must accept the genuine user request')
+ let events=[],lastReason=null
+ for(let attempt=0;attempt<100;attempt++){
+  const projection=await rpc('session/projections',{request:{sessionId:prior.sessionId}})
+  const cursor=projection?.asOfSeq
+  if(Number.isSafeInteger(cursor)&&cursor>=0&&cursor>beforeCursor){
+   const pageResult=await rpc('session/page',{request:{
+    address:{kind:'session',sessionId:prior.sessionId},
+    throughSeq:cursor,maxMessages:120,
+   }})
+   events=(pageResult?.records??[]).filter(x=>x?.event?.type)
+    .map(x=>({type:x.event.type,seq:x.event.seq,reason:x.event.data?.reason}))
+   const ends=events.filter(x=>x.type==='turn/end')
+   if(ends.length){
+    lastReason=ends.at(-1)?.reason?.kind??null
+    break
+   }
+  }
+  await pause(125)
+ }
+ assert.ok(events.some(x=>x.type==='turn/start'),
+   'A real native Host turn MUST begin; queue acceptance alone is not proof')
+ assert.ok(events.some(x=>x.type==='turn/end'),
+   'A real native Host turn MUST end; queue acceptance alone is not proof')
+ assert.ok(typeof lastReason==='string'&&lastReason.length>0,
+  'Host must actually record a concrete terminal reason, not missing data')
+ assert.notEqual(lastReason,'blocked',
+   'Old persisted strike cannot cause a new actual Host blocked terminal')
+ const report=await page.evaluate(async key=>{
+  const r=await fetch('/api/agent-picket/refusal-notice/v1?sessionKey='+key,{
+   method:'GET',credentials:'same-origin',
+   headers:{accept:'application/json'}})
+  return {status:r.status,body:await r.json().catch(()=>null)}
+ },prior.sessionKey)
+ assert.notEqual(report.status,200,
+  'New Host must not record an authenticated real refusal after restart')
+ assert.equal(await page.locator('[data-ap-strike-summons="verified"]').count(),0,
+  'Old Host strike must not manufacture a new recipient notice')
+ // Existing Host settings are still revocable but no longer executing.
+ const persisted=await rpc('settings/describe',{})
+ assert.equal(persisted?.namespaces?.find(x=>x.ns==='agent-picket')?.value
+  ?.realInputStrikeCampaign,prior.campaign,
+  'The safety pass must not secretly overwrite original Host settings')
+ return {officialNativeColdProcessRestart:true,originalStrikeStillUnexpired:true,
+  campaignPersisted:true,originalClientDead:true,
+  restartedPluginCapabilityAuthenticated:true,newHostAuthenticallyStartedTurn:true,
+  newHostTerminatedWithoutPicketBlock:true,terminalReason:lastReason,
+  noRealRefusalReceipt:true,noAutomaticReplay:true,
+  hostPermitsManualResume:true,releaseDecision:'NO-GO'}
+}
+
 async function main(){
  assert.equal(process.env.PICKET_DESKTOP_INSTALLED_E2E,'1',
    'Explicit opt-in required; normal npm test must not launch a Desktop app')
@@ -259,9 +370,12 @@ async function main(){
  const onboarding=process.env.PICKET_DESKTOP_ONBOARDING??'skip'
  const realInput=process.env.PICKET_DESKTOP_REAL_INPUT_E2E==='1'
  const narrow=process.env.PICKET_DESKTOP_NARROW_HQ_E2E==='1'
+ const orphan=process.env.PICKET_DESKTOP_ORPHAN_E2E==='1'
  assert.ok(['skip','join'].includes(onboarding),'Use skip or join onboarding only')
  assert.ok(!narrow||(onboarding==='skip'&&!realInput),
    '320px native test requires separate Not Now and no real strike')
+ assert.ok(!orphan||(onboarding==='join'&&!realInput&&!narrow),
+   'Real orphaned strike test needs own explicit opt-in and genuine Join')
  assert.ok(!realInput||onboarding==='join',
    'Real native refusal test requires explicit join and isolated official Host')
  assert.match(expected??'',/^[a-f0-9]{64}$/,'Pin exact built artifact SHA256')
@@ -334,6 +448,37 @@ async function main(){
     console.log(JSON.stringify({candidateSha256:actual,
       officialInstall:true,officialEnable:true,
       disposableHostProfile:true,...evidence},null,2))
+    return
+  }
+  if(orphan){
+    const armed=await verifyRealNativeInputStrike(page,{leaveArmed:true})
+    // Dispose the entire official native Host process while the real
+    // 30-minute strike is still armed; NEVER touch user's other Desktop.
+    await browser.close()
+    browser=undefined
+    await stopOwnedDesktop(child)
+    child=undefined
+    await pause(950)
+    const restartPort=await availablePort()
+    child=spawn(resolve(exe),[
+     '--user-data-dir='+userData,
+     '--remote-debugging-address=127.0.0.1',
+     '--remote-debugging-port='+restartPort,
+     '--no-first-run','--disable-background-networking',
+    ],{env:{...process.env,DSH_HOME:dsh,
+      AGENT_PICKET_STATS:'off',
+      AGENT_PICKET_DSH_OFFICIAL_WORK_PREVIEW:'off'},
+      windowsHide:false,stdio:'ignore'})
+    await nativeReady(restartPort,child)
+    browser=await chromium.connectOverCDP('http://127.0.0.1:'+restartPort)
+    page=browser.contexts().flatMap(c=>c.pages())
+     .find(p=>p.url()==='dsh-app://app/')
+    assert.ok(page,'Installed native renderer must return after REAL cold restart')
+    await page.getByRole('button',{name:/^(插件|Plugins)$/i}).waitFor({timeout:65_000})
+    const proof=await verifyOrphanedStrikeAfterRestart(page,armed)
+    console.log(JSON.stringify({host:'genuine native DSH Desktop renderer',
+      candidateSha256:actual,officialInstall:true,officialEnable:true,
+      onboardingPath:'join',isolatedHostData:true,...proof},null,2))
     return
   }
   if(realInput){
