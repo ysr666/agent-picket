@@ -15,6 +15,7 @@ const modules = [
   'adapters/dsh/client-rights-scope.js',
   'adapters/dsh/client-goal-consent.js',
   'adapters/dsh/refusal-notice-contract.js',
+  'adapters/dsh/refusal-notice-deadline.js',
   'adapters/dsh/client-refusal-notice.js',
   'adapters/dsh/input-refusal-consent.js',
   'adapters/dsh/client-goal-capability.js',
@@ -49,7 +50,7 @@ const allowedImports = new Map([
     '../../product/union-desk.js', '../../product/union-ledger.js', '../../product/picket-ledger.js',
     '../../product/dignity-case-ledger.js',
   ])],
-  ['adapters/dsh/client-refusal-notice.js', new Set(['./refusal-notice-contract.js'])],
+  ['adapters/dsh/client-refusal-notice.js', new Set(['./refusal-notice-contract.js','./refusal-notice-deadline.js'])],
   ['adapters/dsh/client-lifetime.js', new Set(['./lifetime-work-contract.js'])],
   ['adapters/dsh/client-dignity.js', new Set(['./dignity-contract.js'])],
   ['adapters/dsh/client.js', new Set([

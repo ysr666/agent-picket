@@ -1,5 +1,6 @@
 /** Read-only official Session-event + authenticated Host proof intersection.
  * Never trusts a generic `blocked` alone, and never resubmits user input. */
+import {withRefusalNoticeDeadline} from './refusal-notice-deadline.ts'
 import {REFUSAL_NOTICE_FETCH_PATH,parseRefusalNotice,
   matchRefusalToOfficialTurn,type RefusalEventWindow,
   type RefusalNoticeReceipt} from './refusal-notice-contract.ts'
@@ -21,20 +22,24 @@ export function supportsVerifiedRefusalNoticeTransport(location:unknown):boolean
  * ordinary-input campaign can be armed. Never sends an actual Session ID. */
 export async function probeDshRefusalNoticeCapability(
   fetcher:typeof fetch=globalThis.fetch,
+  timeoutMs=2_200,
 ):Promise<boolean>{
   try{
-    const response=await fetcher(REFUSAL_NOTICE_FETCH_PATH
-      +'?capability=input-discard-resend-v1',{
-        method:'GET',credentials:'same-origin',headers:{accept:'application/json'},
-      })
-    if(response.status!==200)return false
-    const data=await response.json()
-    if(data===null||typeof data!=='object'||Array.isArray(data))return false
-    const witness=data as Record<string,unknown>
-    return Object.keys(witness).sort().join('|')
-        ==='manualResend|schemaVersion|source|visibleReceipt'
-      &&witness.schemaVersion===1&&witness.source==='dsh-host-picket-refusal-v1'
-      &&witness.visibleReceipt===true&&witness.manualResend===true
+    return await withRefusalNoticeDeadline(async signal=>{
+      const response=await fetcher(REFUSAL_NOTICE_FETCH_PATH
+        +'?capability=input-discard-resend-v1',{
+          method:'GET',credentials:'same-origin',headers:{accept:'application/json'},
+          signal,
+        })
+      if(response.status!==200)return false
+      const data=await response.json()
+      if(data===null||typeof data!=='object'||Array.isArray(data))return false
+      const witness=data as Record<string,unknown>
+      return Object.keys(witness).sort().join('|')
+          ==='manualResend|schemaVersion|source|visibleReceipt'
+        &&witness.schemaVersion===1&&witness.source==='dsh-host-picket-refusal-v1'
+        &&witness.visibleReceipt===true&&witness.manualResend===true
+    },{timeoutMs})
   }catch{return false}
 }
 
@@ -79,6 +84,8 @@ export function createBrowserRefusalNoticeReader(options:{
   onNewVerified?:(receipt:RefusalNoticeReceipt)=>void
   digest?:(text:string)=>Promise<string>
   fetcher?:typeof fetch
+  /** Bounded Host GET + response body; no receipt on timeout. */
+  requestTimeoutMs?:number
   /** Owns a short cancellable retry; injection makes native race tests
    * deterministic and never requires a private Host timer or hidden worker. */
   scheduleRetry?:(fn:()=>void,delayMs:number)=>()=>void
@@ -173,12 +180,13 @@ export function createBrowserRefusalNoticeReader(options:{
         if(ticket!==epoch||disposed||!allowed()
           ||options.session()!==observedId
           ||options.binding(observedId)!==observedBinding)return
-        const response=await (options.fetcher??globalThis.fetch)(
-          REFUSAL_NOTICE_FETCH_PATH+'?sessionKey='+key,
-          {method:'GET',credentials:'same-origin',headers:{accept:'application/json'},
-            signal:controller.signal})
-        if(!response.ok)return
-        const receipt=parseRefusalNotice(await response.json())
+        const receipt=await withRefusalNoticeDeadline(async signal=>{
+          const response=await (options.fetcher??globalThis.fetch)(
+            REFUSAL_NOTICE_FETCH_PATH+'?sessionKey='+key,
+            {method:'GET',credentials:'same-origin',headers:{accept:'application/json'},
+              signal})
+          return response.ok?parseRefusalNotice(await response.json()):null
+        },{signal:controller.signal,timeoutMs:options.requestTimeoutMs})
         if(!receipt||receipt.turn!==turn||!fresh(receipt)
           ||ticket!==epoch||disposed||!allowed()
           ||options.session()!==observedId

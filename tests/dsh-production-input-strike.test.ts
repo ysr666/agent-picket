@@ -160,6 +160,21 @@ test('official native Host capability probe rejects HTTP failures and forged JSO
  assert.equal(await probeDshRefusalNoticeCapability(async()=>{throw Error('offline')}),false)
 })
 
+test('a hanging official Host capability fetch OR JSON body never authorizes a strike',async()=>{
+ let aborts=0
+ const never=async(_path:any,init:any)=>new Promise<Response>(()=>{
+   init.signal.addEventListener('abort',()=>aborts++)
+ })
+ assert.equal(await probeDshRefusalNoticeCapability(never as typeof fetch,18),false)
+ assert.equal(aborts,1,'The stale Host request must be physically aborted')
+ const stuckBody=async()=>({status:200,json:async()=>new Promise(()=>{})}) as unknown as Response
+ assert.equal(await probeDshRefusalNoticeCapability(stuckBody as typeof fetch,18),false,
+   'HTTP 200 alone is not a verified notice capability: JSON must finish in time')
+ // Expired/invalid bounds cannot accidentally enable physical refusal.
+ assert.equal(await probeDshRefusalNoticeCapability(
+   (async()=>{throw Error('should not run')}) as typeof fetch,0),false)
+})
+
 test('only genuine DSH Web or Desktop app origin can qualify for a SEPARATE real Host notice probe',()=>{
   assert.equal(supportsVerifiedRefusalNoticeTransport({protocol:'http:',hostname:'localhost'}),true)
   assert.equal(supportsVerifiedRefusalNoticeTransport({protocol:'https:',hostname:'example.com'}),true)
