@@ -22,15 +22,15 @@ test('ordinary refusal permission is independent of Goal v2, simulated welcome, 
    async update(){assert.fail('Read must never mutate Host settings')},
  }
  assert.equal(readHostInputRefusalGrant(settings),null)
- section={...section,realInputStrikeConsent:'discard-resend-v1'}
+ section={...section,realInputStrikeConsent:'discard-resend-shared-v2'}
  assert.deepEqual(readHostInputRefusalGrant(settings),{
-   kind:'agent-picket-input-discard-consent-v1',hostAuthenticated:true,hostRevision:4,
+   kind:'agent-picket-input-discard-consent-v2',hostAuthenticated:true,hostRevision:4,
  })
  section={...section,welcomeDecision:'not-now'}
  assert.equal(readHostInputRefusalGrant(settings),null)
  section={...section,welcomeDecision:'enabled',realInputStrikeConsent:'future-v2'}
  assert.equal(readHostInputRefusalGrant(settings),null)
- section={...section,realInputStrikeConsent:'discard-resend-v1'}
+ section={...section,realInputStrikeConsent:'discard-resend-shared-v2'}
  reads=0;mutateDuringRead=true
  assert.equal(readHostInputRefusalGrant(settings),null,
    'Revocation or peer changes between official reads invalidate the grant')
@@ -53,20 +53,20 @@ test('Host ordinary refusal choice needs fresh disclosure and a verified notice 
  const control=createDshInputRefusalConsentControl(scope,()=>capable)
  assert.equal(control.snapshot().enforcing,false)
  assert.equal(control.snapshot().authorized,false)
- await assert.rejects(control.choose('discard-resend-v1'),/agreement/)
+ await assert.rejects(control.choose('discard-resend-shared-v2'),/agreement/)
  assert.deepEqual(writes,[])
  capable=true
- await assert.rejects(control.choose('discard-resend-v1'),/agreement/)
- await control.choose('discard-resend-v1',INPUT_DISCARD_DISCLOSURE)
+ await assert.rejects(control.choose('discard-resend-shared-v2'),/agreement/)
+ await control.choose('discard-resend-shared-v2',INPUT_DISCARD_DISCLOSURE)
  assert.equal(control.snapshot().authorized,true)
  assert.equal(control.snapshot().enforcing,false,
    'Saving consent is not the same thing as an active physical strike')
- assert.deepEqual(writes,['realInputStrikeConsent:discard-resend-v1'])
+ assert.deepEqual(writes,['realInputStrikeConsent:discard-resend-shared-v2'])
  capable=false
  assert.equal(control.snapshot().available,false)
  await control.choose('off')
  assert.deepEqual(writes,[
-   'realInputStrikeConsent:discard-resend-v1','realInputStrikeConsent:off'])
+   'realInputStrikeConsent:discard-resend-shared-v2','realInputStrikeConsent:off'])
 })
 
 test('cross-tab revocation and unconfirmed Host writes never claim ordinary refusal consent',async()=>{
@@ -79,17 +79,17 @@ test('cross-tab revocation and unconfirmed Host writes never claim ordinary refu
      value={...value,[field]:choice};revision++},
  }
  const control=createDshInputRefusalConsentControl(scope,()=>capable)
- await assert.rejects(control.choose('discard-resend-v1',INPUT_DISCARD_DISCLOSURE),
+ await assert.rejects(control.choose('discard-resend-shared-v2',INPUT_DISCARD_DISCLOSURE),
    /did not confirm/)
  assert.equal(control.snapshot().authorized,false)
  value={...value,welcomeDecision:'not-now'}
- await assert.rejects(control.choose('discard-resend-v1',INPUT_DISCARD_DISCLOSURE),
+ await assert.rejects(control.choose('discard-resend-shared-v2',INPUT_DISCARD_DISCLOSURE),
    /agreement/)
  value={...value,welcomeDecision:'enabled'};writeShouldFail=false
  // Simulate the authenticated notice owner disappearing between two reads.
  let checks=0
  const capFail=createDshInputRefusalConsentControl(scope,()=>++checks===1)
- await assert.rejects(capFail.choose('discard-resend-v1',INPUT_DISCARD_DISCLOSURE),
+ await assert.rejects(capFail.choose('discard-resend-shared-v2',INPUT_DISCARD_DISCLOSURE),
    /changed/)
  assert.equal(value.realInputStrikeConsent,'off')
  capable=false

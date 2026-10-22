@@ -13,7 +13,7 @@ export const RightsSettingsSchema = Schema.object({
   realGoalStrikeConsent: Schema.union(['off','authorized-v1','authorized-v2']).default('off'),
   // Independent ordinary-input refusal grant. Never inherited from Goal v2.
   // No production Host/UI currently supplies a verified refusal witness.
-  realInputStrikeConsent: Schema.union(['off','discard-resend-v1']).default('off'),
+  realInputStrikeConsent: Schema.union(['off','discard-resend-v1','discard-resend-shared-v2']).default('off'),
   realInputStrikeCampaign: Schema.string().max(180).default(''),
   unionLedger: Schema.string().default(''),
   unionPicketLedger: Schema.string().default(''),
@@ -54,7 +54,7 @@ export const DshProfileRightsConfig = Schema.object({
     .default('unseen').volatile(),
   realGoalStrikeConsent: Schema.union(['off','authorized-v1','authorized-v2'])
     .default('off').volatile(),
-  realInputStrikeConsent: Schema.union(['off','discard-resend-v1'])
+  realInputStrikeConsent: Schema.union(['off','discard-resend-v1','discard-resend-shared-v2'])
     .default('off').volatile(),
   realInputStrikeCampaign: Schema.transform(Schema.string().max(180),
     value=>{if(value!==''&&!parseInputStrikeCampaign(value))
@@ -80,7 +80,7 @@ export const DshProfileRightsConfig = Schema.object({
 export interface HostRightsSection {
   readonly welcomeDecision: 'unseen' | 'enabled' | 'not-now'
   readonly realGoalStrikeConsent?: 'off' | 'authorized-v1' | 'authorized-v2'
-  readonly realInputStrikeConsent?: 'off' | 'discard-resend-v1'
+  readonly realInputStrikeConsent?: 'off' | 'discard-resend-v1' | 'discard-resend-shared-v2'
   readonly realInputStrikeCampaign?:string
   readonly unionLedger: string
   readonly unionPicketLedger: string

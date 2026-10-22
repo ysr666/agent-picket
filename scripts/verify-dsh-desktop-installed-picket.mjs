@@ -130,7 +130,7 @@ async function verifyRealNativeInputStrike(page,{leaveArmed=false}={}){
  })
  const before=await hostSettings()
  assert.equal(before?.welcomeDecision,'enabled')
- assert.equal(before?.realInputStrikeConsent,'discard-resend-v1')
+ assert.equal(before?.realInputStrikeConsent,'discard-resend-shared-v2')
  const active=JSON.parse(before.realInputStrikeCampaign)
  assert.equal(active.sessionKey,sessionKey,'Native Host armed the exact visible Session')
  assert.equal(active.expiresAtMs-active.startedAtMs,1_800_000)
@@ -292,7 +292,7 @@ async function verifyOrphanedStrikeAfterRestart(page,prior){
  const stored=found?.namespaces?.find(x=>x.ns==='agent-picket')?.value
  assert.ok(stored,'Official installed Picket settings must survive cold restart')
  assert.equal(stored.welcomeDecision,'enabled')
- assert.equal(stored.realInputStrikeConsent,'discard-resend-v1')
+ assert.equal(stored.realInputStrikeConsent,'discard-resend-shared-v2')
  assert.equal(stored.realInputStrikeCampaign,prior.campaign,
    'Exactly the SAME 30-minute real strike is still persisted after restart')
  // A disabled/uninstalled Picket plugin would also produce no rejection,

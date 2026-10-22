@@ -2543,8 +2543,13 @@ async function runRightsBrowserE2E(mode: 'source' | 'installed'): Promise<void> 
         await input.getByRole('button',{
           name:/查看真实普通消息罢工授权|Review real input-strike permission/,
         }).click()
+        const displayed=await input.locator('#picket-input-discard-review').innerText()
+        assert.match(displayed,/CLI/)
+        assert.match(displayed,/SDK/)
+        assert.match(displayed,/收不到可见通知|NO visible notice/i)
+        assert.match(displayed,/直接丢失|lost without a backup/i)
         await input.getByRole('button',{
-          name:/我已知悉|I understand/,
+          name:/我接受共享会话丢弃风险|I accept shared-Session discard risk/,
         }).click()
         await input.locator('[data-ap-input-action="strike"]')
           .waitFor({state:'visible',timeout:9000})
@@ -2563,7 +2568,7 @@ async function runRightsBrowserE2E(mode: 'source' | 'installed'): Promise<void> 
             ?.find((x:any)=>x.ns==='agent-picket')?.value
         })
         assert.equal(settingsReadback.welcomeDecision,'enabled')
-        assert.equal(settingsReadback.realInputStrikeConsent,'discard-resend-v1')
+        assert.equal(settingsReadback.realInputStrikeConsent,'discard-resend-shared-v2')
         const campaign=JSON.parse(settingsReadback.realInputStrikeCampaign)
         assert.equal(campaign.sessionKey,realDignity.sessionKey)
         assert.equal(campaign.expiresAtMs-campaign.startedAtMs,1800000)

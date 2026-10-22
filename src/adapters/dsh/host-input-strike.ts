@@ -33,7 +33,7 @@ export function readHostActiveInputStrike(
       if(!raw||typeof raw!=='object'||Array.isArray(raw))return false
       const state=raw as Record<string,unknown>
       return state.welcomeDecision==='enabled'
-        &&state.realInputStrikeConsent==='discard-resend-v1'
+        &&state.realInputStrikeConsent==='discard-resend-shared-v2'
         &&inputStrikeActive(state.realInputStrikeCampaign,
           createHash('sha256').update(sessionId,'utf8').digest('hex'),now)
         // A persisted strike from an OLD Host process is NOT proof that
