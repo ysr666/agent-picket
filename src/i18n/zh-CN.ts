@@ -252,7 +252,7 @@ export const zhCN: Readonly<Record<keyof typeof en, string>> = {
   'settings.inputStrikeGranted': '已保存独立的拒绝并重发授权 · 尚未实际阻断',
   'settings.inputStrikeExplanation': '真正罢工在通过 Host 验收后启用时，下一次请求会在调用模型或工具前直接被拒绝；被拒绝的文字、图片和文件不会在复工后自动重放。复工后，你需要亲自重新发送文字，并重新上传所有附件。',
   'settings.inputStrikeReady': '已检测到官方 Host 的拒绝回执通道。只有本会话经过独立授权、主动发起且尚未过期的真实罢工，才可能在执行前拒绝新请求。',
-  'settings.inputStrikeArmed': '⚑ 真实罢工已启动 · 本会话符合条件的新请求可能在模型和工具执行前被拒绝。',
+  'settings.inputStrikeArmed': '⚑ 真实罢工已启动 · 当前 Host 进程内的合格新请求可能被拒绝。Host 重启后旧罢工不再实际阻断，即使设置仍显示已启动；请先复工，再重新主动发起。',
   'settings.inputStrikeStart': '⚑ 发起本会话真实罢工',
   'settings.inputStrikeResume': '复工 · 解除真实输入阻断',
   'settings.inputStrikeScope': '真实罢工限时 30 分钟，与象征性举牌完全独立。同一 DSH 会话的其他客户端也可能受到影响。拒绝的文字、图片和文件不会被 Picket 保存或自动重发；随时可在此复工。',
