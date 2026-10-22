@@ -367,6 +367,68 @@ test('failed Host notice GET retries only twice, not indefinitely or without pro
  reader.dispose()
 })
 
+test('stalled receipt transport fails UNVERIFIED with bounded retries and no toast',async()=>{
+ let eventWindow:RefusalEventWindow={hasMore:false,entries:[]}
+ const scheduled:Array<()=>void>=[]
+ let started=0,aborted=0,announced=0
+ const reader=createBrowserRefusalNoticeReader({
+  session:()=> 'real-session',binding:()=> 'bound',window:()=>eventWindow,
+  authorized:()=>true,now:()=>1000,digest:async id=>fingerprint(id),
+  requestTimeoutMs:17,
+  fetcher:async(_url,init)=>new Promise<Response>(()=>{
+   started++
+   init?.signal?.addEventListener('abort',()=>aborted++)
+  }),
+  onNewVerified:()=>announced++,
+  scheduleRetry:fn=>{scheduled.push(fn);return()=>{}},
+ })
+ reader.refresh()
+ eventWindow=blocked()
+ reader.refresh()
+ const delay=(ms:number)=>new Promise(ok=>setTimeout(ok,ms))
+ await delay(35)
+ assert.equal(reader.snapshot().state,'unverified',
+   'Never convert an official blocked event into a Picket refusal without Host receipt')
+ assert.equal(announced,0)
+ assert.equal(started,1)
+ assert.equal(aborted,1)
+ assert.equal(scheduled.length,1)
+ scheduled.shift()!()
+ await delay(35)
+ assert.equal(started,2)
+ assert.equal(announced,0)
+ scheduled.shift()!()
+ await delay(35)
+ assert.equal(started,3,'Exactly three physical Host requests')
+ assert.equal(aborted,3,'All stalled transports must be cancelled')
+ assert.equal(scheduled.length,0,'No endless polling of an unhealthy Host')
+ assert.equal(reader.snapshot().state,'unverified')
+ reader.dispose()
+})
+
+test('external Host session cancellation cannot leave an unbounded read or late refusal',async()=>{
+ let events:RefusalEventWindow={hasMore:false,entries:[]}
+ let aborts=0,announced=0
+ const reader=createBrowserRefusalNoticeReader({
+  session:()=> 'session',binding:()=> 'bound',window:()=>events,
+  authorized:()=>true,now:()=>1000,digest:async id=>fingerprint(id),
+  requestTimeoutMs:150,
+  fetcher:async(_url,init)=>new Promise<Response>(()=>{
+   init?.signal?.addEventListener('abort',()=>aborts++)
+  }),
+  onNewVerified:()=>announced++,
+ })
+ reader.refresh()
+ events=blocked()
+ reader.refresh()
+ await settle()
+ reader.dispose()
+ await settle()
+ assert.equal(aborts,1,'Abandoning the original Session aborts outstanding Host GET')
+ assert.equal(announced,0)
+ assert.equal(reader.snapshot().state,'off')
+})
+
 test('a scheduled refused-turn retry cannot cross Session, permission revoke or disposal',async()=>{
  let id='a',binding:object={id:'a'},allowed=true
  const tasks:Array<{fn:()=>void;cancelled:boolean}>=[]
