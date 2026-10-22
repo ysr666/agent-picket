@@ -159,8 +159,18 @@ async function verifyRealNativeInputStrike(page){
   'Native Desktop user MUST be told to manually re-upload attachments')
  assert.doesNotMatch(noticeText,/PICKET_NATIVE_PROOF_NEVER_INVOKE_MODEL/,
   'Native notice cannot echo discarded prompt content')
- assert.equal(await page.locator('[data-ap-native-refusal="verified"]').count(),1,
+ const nativeStatus=page.locator('[data-ap-native-refusal="verified"]')
+ assert.equal(await nativeStatus.count(),1,
   'Visible notice must match original blocked turn plus Host Picket receipt')
+ const statusText=await nativeStatus.innerText()
+ assert.match(statusText,/本会话|Session/,
+  'Native real refusal must disclose that Host proof is Session-scoped')
+ assert.match(statusText,/其他客户端|another client/,
+  'Native real refusal must disclose possible other-client submitter')
+ assert.match(statusText,/无法证明|cannot identify/,
+  'Native notice cannot pretend it knows which window submitted the request')
+ assert.doesNotMatch(statusText,/拒绝本次请求|refused this request/i,
+  'Session-only proof may not falsely claim this client submitted work')
  await notice.getByRole('button',{name:/收起公告|Close notice/i}).click()
  await input.locator('[data-ap-input-action="resume"]')
    .waitFor({state:'visible',timeout:7000})
