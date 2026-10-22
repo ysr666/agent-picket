@@ -32,6 +32,11 @@ export const name = 'agent-picket'
 export const Config = DshProfileRightsConfig
 
 export function apply(ctx: DshIntegrationContext): void {
+  // A persisted 30-minute campaign must NEVER silently resume refusing
+  // requests after the UI/Host that announced it has disappeared. Host
+  // settings remain revocable, but physical blocking requires a fresh
+  // user arming in THIS installed Host incarnation.
+  const hostBootStartedAtMs=Date.now()
   // Native DSH settings namespace, independent of default-on local work stats.
   let nativeUnion: NativeUnionCommandPort | undefined
   let nativeSettings: NativeSettingsProvider | undefined
@@ -137,7 +142,7 @@ export function apply(ctx: DshIntegrationContext): void {
     getLaborRightsEnabled: () => nativeUnion?.enabled() === true,
     getExplicitDiscardRefusal:(sessionId,turn,messageIds)=>{
       if(!nativeRefusalNoticeReady())return null
-      const armed=readHostActiveInputStrike(nativeSettings,sessionId,Date.now())
+      const armed=readHostActiveInputStrike(nativeSettings,sessionId,Date.now(),hostBootStartedAtMs)
       if(!armed)return null
       return {kind:'agent-picket-discard-refusal-v1' as const,
         sessionId,hostAuthenticated:true as const,explicitConsent:true as const,
@@ -149,7 +154,7 @@ export function apply(ctx: DshIntegrationContext): void {
     onExplicitRefusal:(sessionId,turn,expectedHostRevision)=>{
       // A revoked/expired/overwritten Host campaign between the TWO pre-step
       // snapshots and this commit cannot create a new blocking receipt.
-      const latest=readHostActiveInputStrike(nativeSettings,sessionId,Date.now())
+      const latest=readHostActiveInputStrike(nativeSettings,sessionId,Date.now(),hostBootStartedAtMs)
       return nativeRefusalNoticeReady()
         &&latest!==null&&latest.hostRevision===expectedHostRevision
         &&(refusalNotices.record(sessionId,turn)

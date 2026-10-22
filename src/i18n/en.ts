@@ -255,7 +255,7 @@ export const en = defineEnglish({
   'settings.inputStrikeGranted': 'Separate discard-and-resend permission saved · not enforcing',
   'settings.inputStrikeExplanation': 'If a genuine strike is activated on a certified Host, your next request will be REFUSED before any model/tool work. That text and any images or files from the rejected request will NOT be replayed. After the union resumes, you must manually send the text again and re-upload every attachment.',
   'settings.inputStrikeReady': 'Host notice channel verified. The union can refuse new requests only during a separately armed, expiring strike in this DSH Session.',
-  'settings.inputStrikeArmed': '⚑ REAL STRIKE ARMED · Next qualifying new request in this Session may be refused before model/tool work.',
+  'settings.inputStrikeArmed': '⚑ REAL STRIKE ARMED · This saved Session strike may refuse qualifying new work in the current Host process. After a Host restart it no longer blocks; Resume and explicitly start again.',
   'settings.inputStrikeStart': '⚑ Begin real strike · this Session',
   'settings.inputStrikeResume': 'Resume normal requests · end real strike',
   'settings.inputStrikeScope': 'This 30-minute Session-specific action is separate from a symbolic sign. Other DSH clients using the same Session may also be affected. During a strike, rejected text/files will not be saved or replayed by Picket. Use Resume here to stop immediately.',

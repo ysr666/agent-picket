@@ -83,16 +83,16 @@ test('native rights off revokes the real Host Session strike and permissions wit
    welcomeDecision:'enabled',realGoalStrikeConsent:'authorized-v2',
    realInputStrikeConsent:'discard-resend-v1',realInputStrikeCampaign:armed,
  },h.revision())
- assert.ok(readHostActiveInputStrike(h.provider,session,Date.now()))
+ assert.ok(readHostActiveInputStrike(h.provider,session,Date.now(),Date.now()-60_000))
  assert.match((await h.call('status')).text,/REAL INPUT STRIKE ACTIVE/)
  assert.equal((await h.call('rights off')).kind,'success')
  assert.equal(h.read().welcomeDecision,'not-now')
  assert.equal(h.read().realGoalStrikeConsent,'off')
  assert.equal(h.read().realInputStrikeConsent,'off')
  assert.equal(h.read().realInputStrikeCampaign,'')
- assert.equal(readHostActiveInputStrike(h.provider,session,Date.now()),null)
+ assert.equal(readHostActiveInputStrike(h.provider,session,Date.now(),Date.now()-60_000),null)
  assert.equal((await h.call('rights on')).kind,'success')
- assert.equal(readHostActiveInputStrike(h.provider,session,Date.now()),null,
+ assert.equal(readHostActiveInputStrike(h.provider,session,Date.now(),Date.now()-60_000),null,
    'Rejoin must never automatically replay an old rejected prompt or campaign')
  assert.match((await h.call('status')).text,/Real input strike: OFF/)
 })
@@ -109,7 +109,7 @@ test('legacy OFF grant is cleared on CLI rejoin; rejected/silent Host revocation
  assert.equal(h.read().realInputStrikeCampaign,'')
  assert.equal(h.read().realInputStrikeConsent,'off')
  assert.equal(h.read().realGoalStrikeConsent,'off')
- assert.equal(readHostActiveInputStrike(h.provider,session,Date.now()),null)
+ assert.equal(readHostActiveInputStrike(h.provider,session,Date.now(),Date.now()-60_000),null)
  await h.provider.update('agent-picket',{
    realInputStrikeConsent:'discard-resend-v1',realInputStrikeCampaign:armed,
  },h.revision())
@@ -117,12 +117,12 @@ test('legacy OFF grant is cleared on CLI rejoin; rejected/silent Host revocation
    h.storage(mode)
    assert.equal((await h.call('rights off')).kind,'error',mode)
    assert.equal(h.read().welcomeDecision,'enabled')
-   assert.ok(readHostActiveInputStrike(h.provider,session,Date.now()),
+   assert.ok(readHostActiveInputStrike(h.provider,session,Date.now(),Date.now()-60_000),
      'Failed revocation must not manufacture a stop receipt')
  }
  h.storage('normal')
  assert.equal((await h.call('rights off')).kind,'success')
- assert.equal(readHostActiveInputStrike(h.provider,session,Date.now()),null)
+ assert.equal(readHostActiveInputStrike(h.provider,session,Date.now(),Date.now()-60_000),null)
 })
 
 test('concurrent browser Host CAS prevents stale CLI rights off from claiming revocation',async()=>{
@@ -144,10 +144,10 @@ test('concurrent browser Host CAS prevents stale CLI rights off from claiming re
  }
  assert.equal((await h.call('rights off')).kind,'error')
  assert.equal(h.read().welcomeDecision,'enabled')
- assert.ok(readHostActiveInputStrike(h.provider,session,Date.now()))
+ assert.ok(readHostActiveInputStrike(h.provider,session,Date.now(),Date.now()-60_000))
  h.provider.update=original
  assert.equal((await h.call('rights off')).kind,'success')
- assert.equal(readHostActiveInputStrike(h.provider,session,Date.now()),null)
+ assert.equal(readHostActiveInputStrike(h.provider,session,Date.now(),Date.now()-60_000),null)
 })
 
 test('native petition/counter/resolve really changes the same ledger Web reads',async()=>{

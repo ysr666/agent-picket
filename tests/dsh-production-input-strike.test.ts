@@ -11,6 +11,8 @@ import {probeDshRefusalNoticeCapability,
   supportsVerifiedRefusalNoticeTransport} from '../src/adapters/dsh/client-refusal-notice.ts'
 import type {DshSettingsScope} from '../src/adapters/dsh/client-rights-scope.ts'
 import type {NativeSettingsProvider} from '../src/adapters/dsh/native-rights-command.ts'
+import {en} from '../src/i18n/en.ts'
+import {zhCN} from '../src/i18n/zh-CN.ts'
 
 const key=(id:string)=>createHash('sha256').update(id).digest('hex')
 const now=1_800_000_000_000
@@ -54,21 +56,70 @@ test('Host double-read grants only exact, live Session with separate consent and
    return duplicates?[row,row]:[row]
   },async update(){throw Error('read-only')}
  }
- assert.deepEqual(readHostActiveInputStrike(settings,'session-A',now),{
+ assert.deepEqual(readHostActiveInputStrike(settings,'session-A',now,now-1),{
   sessionId:'session-A',hostRevision:4,
  })
- assert.equal(readHostActiveInputStrike(settings,'session-B',now),null)
- assert.equal(readHostActiveInputStrike(settings,'session-A',now+INPUT_STRIKE_DURATION_MS),null)
+ assert.equal(readHostActiveInputStrike(settings,'session-B',now,now-1),null)
+ assert.equal(readHostActiveInputStrike(settings,'session-A',now+INPUT_STRIKE_DURATION_MS,now-1),null)
  data={...data,realInputStrikeConsent:'off'}
- assert.equal(readHostActiveInputStrike(settings,'session-A',now),null)
+ assert.equal(readHostActiveInputStrike(settings,'session-A',now,now-1),null)
  data={...data,realInputStrikeConsent:'discard-resend-v1',welcomeDecision:'not-now'}
- assert.equal(readHostActiveInputStrike(settings,'session-A',now),null)
+ assert.equal(readHostActiveInputStrike(settings,'session-A',now,now-1),null)
  data={...data,welcomeDecision:'enabled'}
  reads=0;mutateRevision=true
- assert.equal(readHostActiveInputStrike(settings,'session-A',now),null)
+ assert.equal(readHostActiveInputStrike(settings,'session-A',now,now-1),null)
  mutateRevision=false;duplicates=true
- assert.equal(readHostActiveInputStrike(settings,'session-A',now),null)
- assert.equal(readHostActiveInputStrike(undefined,'session-A',now),null)
+ assert.equal(readHostActiveInputStrike(settings,'session-A',now,now-1),null)
+ assert.equal(readHostActiveInputStrike(undefined,'session-A',now,now-1),null)
+})
+
+test('real strike setting discloses the Host restart safety downgrade in BOTH locales',()=>{
+  assert.match(en['settings.inputStrikeArmed'],/After a Host restart/)
+  assert.match(en['settings.inputStrikeArmed'],/Resume and explicitly start again/)
+  assert.match(zhCN['settings.inputStrikeArmed'],/Host 重启后/)
+  assert.match(zhCN['settings.inputStrikeArmed'],/旧罢工不再实际阻断/)
+  assert.match(zhCN['settings.inputStrikeArmed'],/先复工，再重新主动发起/)
+})
+
+test('cold Host restart never resurrects an earlier saved 30-minute real refusal',()=>{
+ const row:Record<string,unknown>={
+  welcomeDecision:'enabled',realInputStrikeConsent:'discard-resend-v1',
+  realInputStrikeCampaign:campaign,
+ }
+ let revision=7
+ const provider:NativeSettingsProvider={
+  get:()=>row,
+  describe:()=>[{ns:'agent-picket',revision,value:row}],
+  async update(){throw Error('read-only')}
+ }
+ const beforeRestart=now-3_000
+ assert.ok(readHostActiveInputStrike(provider,'session-A',now,beforeRestart),
+   'Current physical Host must still honor separately armed real strike')
+ const restartedAt=now+2
+ assert.equal(readHostActiveInputStrike(provider,'session-A',now+3,restartedAt),null,
+   'The same persisted campaign is NOT proof of a fresh native notice after Host restart')
+ assert.equal(readHostActiveInputStrike(provider,'session-B',now+3,beforeRestart),null,
+   'No other Session can inherit an old campaign')
+ assert.equal(readHostActiveInputStrike(provider,'session-A',now+3,now+5),null,
+   'Clock going backward compared with Host startup must fail open')
+ assert.equal(readHostActiveInputStrike(provider,'session-A',now+3,-1),null)
+ assert.equal(readHostActiveInputStrike(provider,'session-A',now+3,NaN),null)
+ assert.equal(readHostActiveInputStrike(provider,'session-A',now+3,Infinity),null)
+ // Only an independently renewed, exact current-Host campaign can work.
+ row.realInputStrikeCampaign=encodeInputStrikeCampaign(key('session-A'),restartedAt)
+ revision++
+ assert.deepEqual(readHostActiveInputStrike(provider,'session-A',now+3,restartedAt),{
+   sessionId:'session-A',hostRevision:revision,
+ })
+ assert.equal(readHostActiveInputStrike(provider,'session-A',now+3,restartedAt+1),null,
+   'Another installed Host reincarnation must fail open yet again')
+ // Even an old campaign with remaining TTL never gains authority from the
+ // new process simply because the same Host settings revision persisted.
+ row.realInputStrikeCampaign=campaign
+ revision++
+ assert.equal(readHostActiveInputStrike(provider,'session-A',now+4,restartedAt),null)
+ assert.equal(readHostActiveInputStrike(provider,'session-A',
+   now+INPUT_STRIKE_DURATION_MS,beforeRestart),null)
 })
 
 function harness(){
