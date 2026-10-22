@@ -148,6 +148,30 @@ test('no modal when preference already chosen or Host is missing',()=>{
  assert.equal(b.Welcome({complete:()=>{}}),null)
 })
 
+test('Host settings 320px escape route is in Union HQ using same official SettingsPanel',()=>{
+ const {hooks}=fakeReact()
+ for(const participation of ['enabled','not-now'] as const){
+  const original=deps(rights({welcomeDecision:participation,
+   laborRightsEnabled:participation==='enabled'}))
+  const ui=createDshUnionComponents(hooks,{createPortal:x=>x},original.d)
+  const nodes=walk(ui.UnionPanel())
+  const nav=nodes.find(n=>n.props['data-ap-nav']==='settings')
+  assert.ok(nav,'Settings navigation must remain available even after opt-out')
+  assert.equal(nav.children[0],'hq.spaces.settings')
+  assert.equal(nav.props.type,'button')
+  assert.equal(nav.props['aria-current'],undefined)
+  assert.ok(nodes.find(n=>n.props['data-ap-nav']==='hq'))
+  assert.equal(nodes.some(n=>n.props['data-ap-union-settings-route']==='hq'),false,
+   'Do not duplicate unmounted Host-backed settings in all other HQ rooms')
+  const css=nodes.find(n=>n.type==='style'
+   &&n.props['data-agent-picket-style']==='v1')!.children[0]
+  assert.match(String(css),/data-ap-current-space="settings"/)
+  assert.match(String(css),/ap-space-settings/)
+  assert.equal(en['hq.spaces.settings'],'Settings')
+  assert.equal(zhCN['hq.spaces.settings'],'设置')
+ }
+})
+
 test('union-first page leads with rights status; unknown stats are not presented as zero',()=>{
  const {hooks}=fakeReact()
  const {d}=deps(rights({welcomeDecision:'enabled',laborRightsEnabled:true}))

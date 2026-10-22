@@ -11,6 +11,7 @@
  *   PICKET_CANDIDATE_SHA256="<expected sha256>"
  *   PICKET_DESKTOP_ONBOARDING=skip|join
  *   PICKET_DESKTOP_REAL_INPUT_E2E=1 # separate fully voluntary synthetic real refusal
+ *   PICKET_DESKTOP_NARROW_HQ_E2E=1 # 320px keyboard-opened Host-backed settings
  *   node scripts/verify-dsh-desktop-installed-picket.mjs
  */
 import assert from 'node:assert/strict'
@@ -185,6 +186,68 @@ async function verifyRealNativeInputStrike(page){
    releaseDecision:'NO-GO'}
 }
 
+/** Real native narrow-display permission recovery without Host CSS edits.
+ * This path deliberately chooses Not Now first: navigation to the union's own
+ * HQ Settings does NOT imply membership or any physical strike consent. */
+async function verifyNarrowUnionHqSettings(page){
+ await page.setViewportSize({width:320,height:640})
+ const union=page.getByRole('button',{name:/AI 工会|AI Union/i})
+ // The official native Host at 320px overlays the sidebar with its plugin
+ // pane, intercepting POINTER clicks on its footer. This is issue #124.
+ // An actual keyboard user can still focus/activate the real Host slot.
+ await union.focus()
+ await union.press('Enter')
+ const dialog=page.locator('#picket-union-dialog')
+ await dialog.waitFor({state:'visible',timeout:8000})
+ const nav=dialog.locator('[data-ap-nav="settings"]')
+ await nav.waitFor({state:'visible',timeout:9000})
+ await nav.click()
+ const route=dialog.locator('[data-ap-union-settings-route="hq"]')
+ await route.waitFor({state:'visible',timeout:8500})
+ const settings=route.locator('[data-ap-view="settings"]')
+ await settings.waitFor({state:'visible',timeout:8500})
+ const meas=await settings.evaluate(node=>{
+  const rect=node.getBoundingClientRect()
+  const main=node.querySelector('.ap-settings-main')
+  const box=main?.getBoundingClientRect()
+  return {viewport:innerWidth,routeWidth:rect.width,routeLeft:rect.left,
+   routeRight:rect.right,mainWidth:box?.width??0,
+   mainScrollWidth:main?.scrollWidth??0,mainClientWidth:main?.clientWidth??0}
+ })
+ assert.equal(meas.viewport,320,'Use actual 320 CSS px viewport')
+ assert.ok(meas.routeWidth>=240&&meas.mainWidth>=240,
+  'Our own native Settings must provide enough width for readable consent')
+ assert.ok(meas.routeLeft>=0&&meas.routeRight<=321,
+  'Union Settings content must remain in visible screen bounds')
+ assert.ok(meas.mainScrollWidth<=meas.mainClientWidth+3,
+  'No horizontal overflow in own Host-backed permission card')
+ const choice=settings.locator('.ap-settings-main button')
+ await choice.waitFor({state:'visible',timeout:7500})
+ assert.equal(await choice.getAttribute('aria-pressed'),'false',
+  'Not Now first-run choice must NOT silently turn on union membership')
+ await choice.focus()
+ await choice.press('Enter')
+ await page.waitForFunction(()=>{
+  const btn=document.querySelector('[data-ap-union-settings-route="hq"] .ap-settings-main button')
+  return btn?.getAttribute('aria-pressed')==='true'
+ },null,{timeout:9000})
+ assert.equal(await choice.getAttribute('aria-pressed'),'true',
+  'Keyboard activation must confirm native official Host membership')
+ await choice.click()
+ await page.waitForFunction(()=>{
+  const btn=document.querySelector('[data-ap-union-settings-route="hq"] .ap-settings-main button')
+  return btn?.getAttribute('aria-pressed')==='false'
+ },null,{timeout:9000})
+ assert.equal(await choice.getAttribute('aria-pressed'),'false',
+  'Explicit mobile opt-out must revoke union membership in real Host')
+ assert.equal(await dialog.locator('[data-ap-nav="settings"]').count(),1,
+  'Permission recovery remains accessible even after leaving the union')
+ return {officialNativeDesktop:true,viewportCssPx:meas.viewport,
+  independentHqSettingsWidthPx:Math.round(meas.mainWidth),
+  officialHostCssOverridden:false,joinViaKeyboard:true,
+  revokeViaUserClick:true,noRealStrikeGrant:true,releaseDecision:'NO-GO'}
+}
+
 async function main(){
  assert.equal(process.env.PICKET_DESKTOP_INSTALLED_E2E,'1',
    'Explicit opt-in required; normal npm test must not launch a Desktop app')
@@ -195,7 +258,10 @@ async function main(){
  const expected=process.env.PICKET_CANDIDATE_SHA256?.toLowerCase()
  const onboarding=process.env.PICKET_DESKTOP_ONBOARDING??'skip'
  const realInput=process.env.PICKET_DESKTOP_REAL_INPUT_E2E==='1'
+ const narrow=process.env.PICKET_DESKTOP_NARROW_HQ_E2E==='1'
  assert.ok(['skip','join'].includes(onboarding),'Use skip or join onboarding only')
+ assert.ok(!narrow||(onboarding==='skip'&&!realInput),
+   '320px native test requires separate Not Now and no real strike')
  assert.ok(!realInput||onboarding==='join',
    'Real native refusal test requires explicit join and isolated official Host')
  assert.match(expected??'',/^[a-f0-9]{64}$/,'Pin exact built artifact SHA256')
@@ -263,6 +329,13 @@ async function main(){
    await welcome.getByRole('button',{name:/^(暂不开启|Not Now)$/i}).click()
   }
   await welcome.waitFor({state:'hidden',timeout:18000})
+  if(narrow){
+    const evidence=await verifyNarrowUnionHqSettings(page)
+    console.log(JSON.stringify({candidateSha256:actual,
+      officialInstall:true,officialEnable:true,
+      disposableHostProfile:true,...evidence},null,2))
+    return
+  }
   if(realInput){
     const proof=await verifyRealNativeInputStrike(page)
     console.log(JSON.stringify({host:'genuine native DSH Desktop renderer',

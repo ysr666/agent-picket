@@ -62,3 +62,17 @@ test('actual Desktop text+image refusal is independent opt-in, uses real Host an
   assert.match(source,/releaseDecision:'NO-GO'/)
   assert.doesNotMatch(source,/killall|pkill/)
 })
+
+test('320px standalone HQ settings test requires Not Now and never grants strike',()=>{
+ const source=readFileSync(script,'utf8')
+ assert.match(source,/PICKET_DESKTOP_NARROW_HQ_E2E==='1'/)
+ assert.match(source,/onboarding==='skip'&&!realInput/)
+ assert.match(source,/verifyNarrowUnionHqSettings/)
+ assert.match(source,/page\.setViewportSize\(\{width:320,height:640\}\)/)
+ assert.match(source,/data-ap-union-settings-route="hq"/)
+ assert.match(source,/mainScrollWidth<=meas\.mainClientWidth\+3/)
+ assert.match(source,/union\.press\('Enter'\)/)
+ assert.match(source,/choice\.press\('Enter'\)/)
+ assert.match(source,/noRealStrikeGrant:true/)
+ assert.match(source,/releaseDecision:'NO-GO'/)
+})
