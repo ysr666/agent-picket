@@ -2576,7 +2576,33 @@ async function runRightsBrowserE2E(mode: 'source' | 'installed'): Promise<void> 
           ?readFileSync(callLog,'utf8').split('model-call').length-1:0
         const initialCalls=countModel()
         const tinyPng='iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAIAAACQkWg2AAAAGUlEQVR4nGOUdMtjIAUwkaR6VMOohiGlAQCmDwDtMnvHzQAAAABJRU5ErkJggg=='
-        const attempted=await page.evaluate(async ({sessionId,tinyPng}:{sessionId:string,tinyPng:string})=>{
+        // P0 original-client provenance: two *real* authenticated Chrome
+        // tabs, connected to the same official DSH Host and Session. Tab A
+        // accepted independent shared-v2 grant and manually armed the strike;
+        // tab B has NOT performed either permission gesture, but can submit.
+        // Native Electron blocks Target.createTarget, so do not fake a second
+        // Desktop. This is a genuine OFFICIAL DSH WEB cross-client proof only.
+        let foreignTab:any=null
+        if(process.env.PICKET_CROSS_CLIENT_E2E==='1'){
+          foreignTab=await context.newPage()
+          foreignTab.on('pageerror',(error:Error)=>browserErrors.push(error.name))
+          await foreignTab.goto(origin,{waitUntil:'domcontentloaded',timeout:15_000})
+          const continueButton=foreignTab.getByRole('button',{name:/^(继续|Continue)$/})
+          if(await continueButton.count())await continueButton.click({timeout:7_000})
+          await skipOfficialProvider(foreignTab)
+          const actualForeignSession=foreignTab.locator(
+            '[data-row-key="session:'+realDignity.sessionId+'"]')
+          await actualForeignSession.waitFor({state:'visible',timeout:10_000})
+          await actualForeignSession.click()
+          assert.notEqual(foreignTab,page,
+            'The submitter MUST be a separate actual Chrome tab from the arming client')
+          assert.notEqual(foreignTab.url(),'about:blank')
+          assert.equal(await foreignTab.locator('[data-row-key="session:'
+            +realDignity.sessionId+'"]').count(),1)
+          assert.equal(await foreignTab.locator('#picket-input-discard-review').count(),0,
+            'The SECOND browser tab never accepted the new input-discard agreement')
+        }
+        const attempted=await (foreignTab??page).evaluate(async ({sessionId,tinyPng}:{sessionId:string,tinyPng:string})=>{
           const rpcId='picket-production-block-input-with-image'
           const response=await fetch('/api/session/prompt',{
             method:'POST',credentials:'same-origin',
@@ -2611,6 +2637,39 @@ async function runRightsBrowserE2E(mode: 'source' | 'installed'): Promise<void> 
         assert.equal(proof.automaticReplay,false)
         assert.equal(countModel(),initialCalls,
           'A physically rejected prompt and image must never call the offline model')
+        if(foreignTab){
+          // Whether the submitter sees a notice is OBSERVED, not assumed.
+          // A Session-wide receipt is never proof of the original tab ID.
+          const foreignNotice=foreignTab.locator('[data-ap-strike-summons="verified"]')
+          const foreignNoticeVisible=await foreignNotice.waitFor({
+            state:'visible',timeout:4_500}).then(()=>true,()=>false)
+          assert.equal(foreignNoticeVisible,true,
+            'The REAL submitting Chrome tab B must see the actual Host-confirmed refusal notice')
+          assert.equal(await foreignNotice.getAttribute('role'),'alertdialog')
+          assert.match(await foreignNotice.innerText(),/重新上传|re-upload/,
+            'The original submitting client must be told to manually reupload attachments')
+          const foreignStatus=foreignTab.locator('[data-ap-native-refusal="verified"]')
+          const originalStatus=page.locator('[data-ap-native-refusal="verified"]')
+          console.log('PICKET_AUTHENTIC_TWO_TAB_EVIDENCE '+JSON.stringify({
+            genuineChromeSecondTab:true,
+            separateSubmittingAndArmingTabs:true,
+            originalSenderDidNotGrantV2InThisTab:true,
+            sameActualHostSession:true,
+            actualForeignSubmissionAccepted:true,
+            actualHostRefusalForForeignSubmission:true,
+            noModelInvocation:true,
+            independentOriginTabNoticeVisible:foreignNoticeVisible,
+            originTabVerifiedStatusCount:await foreignStatus.count(),
+            armingTabVerifiedStatusCount:await originalStatus.count(),
+            authenticatedSubmittingTabId:null,
+            receiverProvenanceVerified:false,
+            releaseDecision:'NO-GO',
+          }))
+          assert.equal(await foreignTab.getByText(
+            /BLOCKED_INPUT_MUST_NOT_REACH_MODEL/).count(),0,
+            'No discarded input text can leak into foreign tab UI')
+          await foreignTab.close()
+        }
         const summons=page.locator('[data-ap-strike-summons="verified"]')
         await summons.waitFor({state:'visible',timeout:9000})
         assert.equal(await summons.getAttribute('role'),'alertdialog')

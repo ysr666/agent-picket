@@ -251,7 +251,7 @@ export const zhCN: Readonly<Record<keyof typeof en, string>> = {
   'settings.inputStrikeOff': '普通消息真实罢工：关闭',
   'settings.inputStrikeGranted': '已保存新版共享会话 v2 授权 · 尚未实际阻断',
   'settings.inputStrikeLegacy': '旧 v1 不能阻断。确认风险，授权 v2 后再发起。',
-  'settings.inputStrikeExplanation': '真实罢工可能在执行前拒绝本会话的新请求，包括其他 DSH 客户端。被拒文字和附件不会自动重放；复工后需由原提交者手动重发并上传附件。',
+  'settings.inputStrikeExplanation': '真实罢工可能在执行前拒绝本会话的新请求，包括其他 DSH 客户端。被拒文字和附件不会自动重放；复工后由原提交者手动重发文字、重新上传附件。',
   'settings.inputStrikeReady': '已检测到官方 Host 的拒绝回执通道。只有本会话经过独立授权、主动发起且尚未过期的真实罢工，才可能在执行前拒绝新请求。',
   'settings.inputStrikeArmed': '⚑ 真实罢工已启动 · 当前 Host 进程内的合格新请求可能被拒绝。Host 重启后旧罢工不再实际阻断，即使设置仍显示已启动；请先复工，再重新主动发起。',
   'settings.inputStrikeStart': '⚑ 发起本会话真实罢工',
