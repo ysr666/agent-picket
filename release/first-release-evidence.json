@@ -12,15 +12,39 @@
       "operatingSystems": {
         "windows": {
           "status": "not-verified",
-          "evidence": []
+          "evidence": [],
+          "authenticatedOriginBinding": {
+            "status": "not-verified",
+            "evidence": []
+          },
+          "originNoticeOrFailOpen": {
+            "status": "not-verified",
+            "evidence": []
+          }
         },
         "macos": {
           "status": "not-verified",
-          "evidence": []
+          "evidence": [],
+          "authenticatedOriginBinding": {
+            "status": "not-verified",
+            "evidence": []
+          },
+          "originNoticeOrFailOpen": {
+            "status": "not-verified",
+            "evidence": []
+          }
         },
         "linux": {
           "status": "not-verified",
-          "evidence": []
+          "evidence": [],
+          "authenticatedOriginBinding": {
+            "status": "not-verified",
+            "evidence": []
+          },
+          "originNoticeOrFailOpen": {
+            "status": "not-verified",
+            "evidence": []
+          }
         }
       },
       "discardAndResubmit": "not-verified"
@@ -43,6 +67,14 @@
           "userVisibleResendInstruction": {
             "status": "not-verified",
             "evidence": []
+          },
+          "authenticatedOriginBinding": {
+            "status": "not-verified",
+            "evidence": []
+          },
+          "originNoticeOrFailOpen": {
+            "status": "not-verified",
+            "evidence": []
           }
         },
         "macos": {
@@ -56,6 +88,14 @@
           "userVisibleResendInstruction": {
             "status": "not-verified",
             "evidence": []
+          },
+          "authenticatedOriginBinding": {
+            "status": "not-verified",
+            "evidence": []
+          },
+          "originNoticeOrFailOpen": {
+            "status": "not-verified",
+            "evidence": []
           }
         },
         "linux": {
@@ -67,6 +107,14 @@
             "evidence": []
           },
           "userVisibleResendInstruction": {
+            "status": "not-verified",
+            "evidence": []
+          },
+          "authenticatedOriginBinding": {
+            "status": "not-verified",
+            "evidence": []
+          },
+          "originNoticeOrFailOpen": {
             "status": "not-verified",
             "evidence": []
           }

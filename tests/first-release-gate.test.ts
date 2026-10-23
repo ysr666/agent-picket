@@ -26,6 +26,34 @@ test('forged suite result and missing UI review never authorize release',()=>{
  assert.ok(checkFirstRelease(copy).some(s=>s.includes('unionHeadquarters')))
  assert.ok(checkFirstRelease(copy).some(s=>s.includes('Maintainer sign-off')))
 })
+test('P0: Web two-tab notice and an authenticated headless Host refusal cannot sign off ORIGINAL submitter delivery',()=>{
+ const copy=structuredClone(manifest)
+ for(const name of ['dsh-web','dsh-desktop'] as const){
+  for(const os of ['windows','macos','linux'] as const){
+   const cell=copy.targets[name].operatingSystems[os]
+   cell.authenticatedOriginBinding={status:'verified',
+     evidence:['test://two-real-Chrome-tabs-share-a-Session-but-no-origin-id']}
+   assert.ok(checkFirstRelease(copy).some(s=>
+     s.includes(name+'/'+os+'/originNoticeOrFailOpen')))
+   cell.originNoticeOrFailOpen={status:'verified',
+     evidence:['test://headless-HTTP-client-cannot-display-alert-and-was-refused']}
+  }
+ }
+ // Even alleged verified origin evidence cannot override other release gaps.
+ assert.ok(checkFirstRelease(copy).some(s=>s.includes('Maintainer sign-off')))
+ const noProof=structuredClone(copy)
+ noProof.targets['dsh-web'].operatingSystems.macos
+   .authenticatedOriginBinding.evidence=[]
+ assert.ok(checkFirstRelease(noProof).some(s=>
+   s.includes('dsh-web/macos/authenticatedOriginBinding')))
+ noProof.targets['dsh-web'].operatingSystems.macos
+   .authenticatedOriginBinding.evidence=['test://independent-Host-client-origin-proof']
+ noProof.targets['dsh-web'].operatingSystems.macos
+   .originNoticeOrFailOpen.status='not-verified'
+ assert.ok(checkFirstRelease(noProof).some(s=>
+   s.includes('dsh-web/macos/originNoticeOrFailOpen')))
+})
+
 test('user-approved discard-and-resend policy replaces auto-recovery, not safe refusal evidence',()=>{
  const old=structuredClone(manifest)
  assert.equal(old.schemaVersion,3)
@@ -56,6 +84,10 @@ test('release demands an independent target-by-OS matrix, not aggregate OS or AC
      'verifiedHumanProvenance','visibleRefusalAndResume'])target[key]='verified'
    for(const os of Object.values(target.operatingSystems) as any[]){
      os.status='verified';os.evidence=['test://real-windows-mac-linux-e2e']
+     if(name==='dsh-web'||name==='dsh-desktop'){
+       for(const field of ['authenticatedOriginBinding','originNoticeOrFailOpen'])
+         os[field]={status:'verified',evidence:['test://synthetic-future-Host-bound-original-client-notice']}
+     }
      if(name==='dsh-desktop'){
        // Synthetic future-build SHAPE only; this does not certify a Host.
        os.officialHostVersion='9.999.0'
