@@ -112,3 +112,15 @@ test('two real DSH Web Chrome tabs are used for cross-client refusal, never a fa
  assert.match(source,/receiverProvenanceVerified:false/)
  assert.match(source,/releaseDecision:'NO-GO'/)
 })
+
+test('headless Node Host-RPC client regression proves no submitter UI, and never claims native CLI/SDK source',()=>{
+ const source=readFileSync(new URL('../tests/dsh-rights-browser.real.test.ts',import.meta.url),'utf8')
+ assert.match(source,/PICKET_HEADLESS_CLIENT_E2E==='1'/)
+ assert.match(source,/mode==='source'/)
+ assert.match(source,/new URL\('\/api\/session\/prompt',origin\)/)
+ assert.match(source,/cookie:renewedCookie\.name/)
+ assert.match(source,/originalNodeClientHasNoUi:true/)
+ assert.match(source,/visibleNoticeAtSubmittingClient:false/)
+ assert.match(source,/authenticatedSubmittingClientId:null/)
+ assert.match(source,/releaseDecision:'NO-GO'/)
+})
