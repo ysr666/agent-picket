@@ -76,6 +76,8 @@
     "LICENSE",
     "cordis.patch.yml",
     "docs/",
+    "!docs/DSH_ORIGINAL_CLIENT_NOTICE_HOST_PROTOCOL_20261024.md",
+    "!docs/DSH_INSTALL.zh.md",
     "!docs/PR_CHAIN_CONVERGENCE_20261016.zh.md",
     "!docs/PICKETVERSE_SHIFT_AGENDA_20261019.zh.md",
     "!docs/REAL_REFUSAL_DISCARD_RESEND_20261019.zh.md",
