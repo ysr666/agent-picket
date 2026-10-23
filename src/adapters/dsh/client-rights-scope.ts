@@ -7,7 +7,7 @@ export type RightsWelcomeChoice = 'enabled' | 'not-now'
 export interface RightsSection {
   readonly welcomeDecision: 'unseen' | RightsWelcomeChoice
   readonly realGoalStrikeConsent?: 'off'|'authorized-v1'|'authorized-v2'
-  readonly realInputStrikeConsent?: 'off'|'discard-resend-v1'
+  readonly realInputStrikeConsent?: 'off'|'discard-resend-v1'|'shared-v2'
   readonly realInputStrikeCampaign?:string
   readonly unionLedger?: string
 }
@@ -123,7 +123,7 @@ export function createDshClientRightsScope(scope: DshSettingsScope<RightsSection
       if(original.status!=='ready'||original.mode!=='host'||!original.writable
         ||!original.value||!['off','authorized-v1','authorized-v2'].includes(
           original.value.realGoalStrikeConsent??'off')
-        ||!['off','discard-resend-v1'].includes(
+        ||!['off','discard-resend-v1','shared-v2'].includes(
           original.value.realInputStrikeConsent??'off'))
         throw new Error('Host strike consent state is unavailable or invalid')
       const revokeInput=(original.value.realInputStrikeConsent??'off')!=='off'

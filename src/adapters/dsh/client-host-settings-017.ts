@@ -46,8 +46,8 @@ const NAMESPACE = 'agent-picket'
 const safeMode = (value:unknown):value is 'visible'|'quiet' => value==='visible'||value==='quiet'
 const isRealGoalConsent=(value:unknown):value is 'off'|'authorized-v1'|'authorized-v2'=>
   value==='off'||value==='authorized-v1'||value==='authorized-v2'
-const isRealInputConsent=(value:unknown):value is 'off'|'discard-resend-v1'=>
-  value==='off'||value==='discard-resend-v1'
+const isRealInputConsent=(value:unknown):value is 'off'|'discard-resend-v1'|'shared-v2'=>
+  value==='off'||value==='discard-resend-v1'||value==='shared-v2'
 const isChoice = (value: unknown): value is UnionSettingsSection['welcomeDecision'] =>
   value === 'unseen' || value === 'enabled' || value === 'not-now'
 function safeLedger(value: unknown): value is string {

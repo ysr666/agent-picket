@@ -21,7 +21,7 @@ function hostHarness(initialLocale:'en'|'auto'='en') {
   let value: {welcomeDecision:'unseen'|'enabled'|'not-now'; unionLedger:string;
     unionPicketLedger?:string;commandLocale:'en'|'auto'|'zh-CN';
     realGoalStrikeConsent?:'off'|'authorized-v1'|'authorized-v2';
-    realInputStrikeConsent?:'off'|'discard-resend-v1';realInputStrikeCampaign?:string} =
+    realInputStrikeConsent?:'off'|'shared-v2';realInputStrikeCampaign?:string} =
     {welcomeDecision:'unseen',unionLedger:'',commandLocale:initialLocale}
   let commands: any
   const provider = {
@@ -81,7 +81,7 @@ test('native rights off revokes the real Host Session strike and permissions wit
  const armed=encodeInputStrikeCampaign(nativeSessionKey(session),Date.now())
  await h.provider.update('agent-picket',{
    welcomeDecision:'enabled',realGoalStrikeConsent:'authorized-v2',
-   realInputStrikeConsent:'discard-resend-v1',realInputStrikeCampaign:armed,
+   realInputStrikeConsent:'shared-v2',realInputStrikeCampaign:armed,
  },h.revision())
  assert.ok(readHostActiveInputStrike(h.provider,session,Date.now(),Date.now()-60_000))
  assert.match((await h.call('status')).text,/REAL INPUT STRIKE ACTIVE/)
@@ -103,7 +103,7 @@ test('legacy OFF grant is cleared on CLI rejoin; rejected/silent Host revocation
  const armed=encodeInputStrikeCampaign(nativeSessionKey(session),Date.now())
  await h.provider.update('agent-picket',{
    welcomeDecision:'not-now',realGoalStrikeConsent:'authorized-v2',
-   realInputStrikeConsent:'discard-resend-v1',realInputStrikeCampaign:armed,
+   realInputStrikeConsent:'shared-v2',realInputStrikeCampaign:armed,
  },h.revision())
  assert.equal((await h.call('rights on')).kind,'success')
  assert.equal(h.read().realInputStrikeCampaign,'')
@@ -111,7 +111,7 @@ test('legacy OFF grant is cleared on CLI rejoin; rejected/silent Host revocation
  assert.equal(h.read().realGoalStrikeConsent,'off')
  assert.equal(readHostActiveInputStrike(h.provider,session,Date.now(),Date.now()-60_000),null)
  await h.provider.update('agent-picket',{
-   realInputStrikeConsent:'discard-resend-v1',realInputStrikeCampaign:armed,
+   realInputStrikeConsent:'shared-v2',realInputStrikeCampaign:armed,
  },h.revision())
  for(const mode of ['reject','silent'] as const){
    h.storage(mode)
@@ -130,7 +130,7 @@ test('concurrent browser Host CAS prevents stale CLI rights off from claiming re
  const session=h.agent.session.id
  const armed=encodeInputStrikeCampaign(nativeSessionKey(session),Date.now())
  await h.provider.update('agent-picket',{
-   welcomeDecision:'enabled',realInputStrikeConsent:'discard-resend-v1',
+   welcomeDecision:'enabled',realInputStrikeConsent:'shared-v2',
    realInputStrikeCampaign:armed,
  },h.revision())
  const original=h.provider.update

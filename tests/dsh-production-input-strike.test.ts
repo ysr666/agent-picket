@@ -46,7 +46,7 @@ test('real strike record is a bounded canonical Host Session hash, never a conve
 
 test('Host double-read grants only exact, live Session with separate consent and genuine setting revision',()=>{
  let data:Record<string,unknown>={...initial,welcomeDecision:'enabled',
-  realInputStrikeConsent:'discard-resend-v1',realInputStrikeCampaign:campaign}
+  realInputStrikeConsent:'shared-v2',realInputStrikeCampaign:campaign}
  let revision=4,reads=0,mutateRevision=false,duplicates=false
  const settings:NativeSettingsProvider={
   get:()=>data,describe(){
@@ -63,7 +63,7 @@ test('Host double-read grants only exact, live Session with separate consent and
  assert.equal(readHostActiveInputStrike(settings,'session-A',now+INPUT_STRIKE_DURATION_MS,now-1),null)
  data={...data,realInputStrikeConsent:'off'}
  assert.equal(readHostActiveInputStrike(settings,'session-A',now,now-1),null)
- data={...data,realInputStrikeConsent:'discard-resend-v1',welcomeDecision:'not-now'}
+ data={...data,realInputStrikeConsent:'shared-v2',welcomeDecision:'not-now'}
  assert.equal(readHostActiveInputStrike(settings,'session-A',now,now-1),null)
  data={...data,welcomeDecision:'enabled'}
  reads=0;mutateRevision=true
@@ -71,6 +71,77 @@ test('Host double-read grants only exact, live Session with separate consent and
  mutateRevision=false;duplicates=true
  assert.equal(readHostActiveInputStrike(settings,'session-A',now,now-1),null)
  assert.equal(readHostActiveInputStrike(undefined,'session-A',now,now-1),null)
+})
+
+test('LEGACY v1 Host consent and still-live campaign fail open until NEW v2 human acknowledgment and deliberate rearm',async()=>{
+ let value:InputRefusalSection={welcomeDecision:'enabled',
+  realInputStrikeConsent:'discard-resend-v1',realInputStrikeCampaign:campaign}
+ let revision=17
+ const settings:NativeSettingsProvider={
+  get:()=>value,describe:()=>[{ns:'agent-picket',revision,value}],
+  async update(){throw Error('Must use client Host CAS')}
+ }
+ const writes:Record<string,unknown>[]=[]
+ const scope:DshSettingsScope<InputRefusalSection>={
+  getSnapshot:()=>({status:'ready',mode:'host',writable:true,revision,value}),
+  subscribe:()=>()=>{},
+  async set(field,choice){writes.push({[field]:choice});
+   value={...value,[field]:choice};revision++},
+  async setMany(patch){writes.push({...patch});value={...value,...patch};revision++},
+ }
+ const control=createDshInputRefusalConsentControl(scope,()=>true,()=>key('session-A'),()=>now)
+ assert.equal(readHostActiveInputStrike(settings,'session-A',now,now-1),null,
+  'Even still-unexpired v1 Host campaign MUST NOT physically reject')
+ assert.equal(control.snapshot().authorized,false)
+ assert.equal(control.snapshot().legacyConsent,true)
+ assert.equal(control.snapshot().armed,false)
+ await assert.rejects(control.setArmed(true),/Separate consent/)
+ await assert.rejects(control.choose('shared-v2'),/consent/)
+ assert.equal(writes.length,0,'Legacy permission is never silently upgraded')
+ await control.choose('shared-v2',INPUT_DISCARD_DISCLOSURE)
+ assert.deepEqual(writes,[{
+  realInputStrikeConsent:'shared-v2',realInputStrikeCampaign:'',
+ }],'One official Host CAS clears retained old physical action during migration')
+ assert.equal(control.snapshot().legacyConsent,false)
+ assert.equal(control.snapshot().authorized,true)
+ assert.equal(control.snapshot().armed,false,
+  'Newly authorized v2 must still require separate deliberate Start')
+ assert.equal(readHostActiveInputStrike(settings,'session-A',now,now-1),null)
+ await control.setArmed(true)
+ assert.ok(readHostActiveInputStrike(settings,'session-A',now,now-1),
+  'Only a new, explicitly armed Session with new v2 grant can reject')
+ await control.choose('off')
+ assert.equal(readHostActiveInputStrike(settings,'session-A',now,now-1),null)
+ assert.equal(value.realInputStrikeCampaign,'')
+})
+
+test('legacy single-write migration first disarms, and a failed disarm never grants v2',async()=>{
+ let value:InputRefusalSection={welcomeDecision:'enabled',
+  realInputStrikeConsent:'discard-resend-v1',realInputStrikeCampaign:campaign}
+ let revision=4,failClear=true
+ const writes:string[]=[]
+ const scope:DshSettingsScope<InputRefusalSection>={
+  getSnapshot:()=>({status:'ready',mode:'host',writable:true,revision,value}),
+  subscribe:()=>()=>{},
+  async set(field,choice){
+   writes.push(field+':'+String(choice))
+   if(failClear&&field==='realInputStrikeCampaign')return
+   value={...value,[field]:choice};revision++
+  },
+ }
+ const control=createDshInputRefusalConsentControl(scope,()=>true,()=>key('session-A'),()=>now)
+ await assert.rejects(control.choose('shared-v2',INPUT_DISCARD_DISCLOSURE),
+  /not disarmed/)
+ assert.deepEqual(writes,['realInputStrikeCampaign:'])
+ assert.equal(value.realInputStrikeConsent,'discard-resend-v1')
+ assert.equal(control.snapshot().authorized,false)
+ failClear=false
+ await control.choose('shared-v2',INPUT_DISCARD_DISCLOSURE)
+ assert.equal(writes[1],'realInputStrikeCampaign:')
+ assert.equal(writes[2],'realInputStrikeConsent:shared-v2')
+ assert.equal(control.snapshot().authorized,true)
+ assert.equal(control.snapshot().armed,false)
+ assert.equal(value.realInputStrikeCampaign,'')
 })
 
 test('real strike setting discloses the Host restart safety downgrade in BOTH locales',()=>{
@@ -83,7 +154,7 @@ test('real strike setting discloses the Host restart safety downgrade in BOTH lo
 
 test('cold Host restart never resurrects an earlier saved 30-minute real refusal',()=>{
  const row:Record<string,unknown>={
-  welcomeDecision:'enabled',realInputStrikeConsent:'discard-resend-v1',
+  welcomeDecision:'enabled',realInputStrikeConsent:'shared-v2',
   realInputStrikeCampaign:campaign,
  }
  let revision=7
@@ -151,8 +222,8 @@ test('real Host CAS: consent, arming, Session-scoped expiry, restart and release
  assert.equal(h.control.snapshot().available,true)
  assert.equal(h.control.snapshot().armed,false)
  await assert.rejects(h.control.setArmed(true),/Separate consent/)
- await assert.rejects(h.control.choose('discard-resend-v1'),/agreement/)
- await h.control.choose('discard-resend-v1',INPUT_DISCARD_DISCLOSURE)
+ await assert.rejects(h.control.choose('shared-v2'),/consent/)
+ await h.control.choose('shared-v2',INPUT_DISCARD_DISCLOSURE)
  assert.equal(h.control.snapshot().authorized,true)
  assert.equal(h.control.snapshot().armed,false)
  await h.control.setArmed(true)
@@ -182,7 +253,7 @@ test('real Host CAS: consent, arming, Session-scoped expiry, restart and release
 
 test('revoking consent atomically disarms a live Host campaign, and failed Host write cannot report success',async()=>{
  const h=harness()
- await h.control.choose('discard-resend-v1',INPUT_DISCARD_DISCLOSURE)
+ await h.control.choose('shared-v2',INPUT_DISCARD_DISCLOSURE)
  await h.control.setArmed(true)
  await h.control.choose('off')
  assert.deepEqual(h.writes.at(-1),{
@@ -190,9 +261,9 @@ test('revoking consent atomically disarms a live Host campaign, and failed Host 
  })
  assert.equal(h.control.snapshot().armed,false)
  const second=harness()
- await second.control.choose('discard-resend-v1',INPUT_DISCARD_DISCLOSURE)
+ await second.control.choose('shared-v2',INPUT_DISCARD_DISCLOSURE)
  second.breakWrites()
- await assert.rejects(second.control.setArmed(true),/Host did not confirm/)
+ await assert.rejects(second.control.setArmed(true),/unconfirmed/)
  assert.equal(second.control.snapshot().armed,false)
 })
 

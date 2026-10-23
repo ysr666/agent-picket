@@ -47,8 +47,8 @@ export interface DshGoalConsentPort {
 export interface DshInputRefusalConsentPort {
   snapshot():{readonly available:boolean;readonly writable:boolean;
     readonly authorized:boolean;readonly enforcing:false;readonly armed?:boolean;
-    readonly hasCampaign?:boolean}
-  choose(choice:'off'|'discard-resend-v1',
+    readonly hasCampaign?:boolean;readonly legacyConsent?:boolean}
+  choose(choice:'off'|'shared-v2',
     disclosure?:typeof INPUT_DISCARD_DISCLOSURE):Promise<{
       readonly available:boolean;readonly writable:boolean;
       readonly authorized:boolean;readonly enforcing:false}>
@@ -570,15 +570,15 @@ export function createDshUnionComponents(
         if(next==='authorized-v2')setUpgradeReview(false)
       }catch{setError(true)}finally{setBusy(false)}
     }
-    const chooseInput=async(next:'off'|'discard-resend-v1')=>{
+    const chooseInput=async(next:'off'|'shared-v2')=>{
       if(busy||!deps.inputRefusal)return
       const before=deps.inputRefusal.snapshot()
       if(!before.writable||(next!=='off'&&!before.available))return
       setBusy(true);setError(false)
       try{
         const result=await deps.inputRefusal.choose(next,
-          next==='discard-resend-v1'?INPUT_DISCARD_DISCLOSURE:undefined)
-        if(result.authorized!==(next==='discard-resend-v1')
+          next==='shared-v2'?INPUT_DISCARD_DISCLOSURE:undefined)
+        if(result.authorized!==(next==='shared-v2')
           ||deps.inputRefusal.snapshot().authorized!==result.authorized)
           throw Error('Host did not confirm ordinary-input refusal preference')
         setInputReview(false)
@@ -697,7 +697,9 @@ export function createDshUnionComponents(
               ?'unverified':'off',
           style:{fontWeight:700,margin:'0 0 7px'}},
           label(deps.inputRefusal?.snapshot().authorized
-            ?'settings.inputStrikeGranted':'settings.inputStrikeOff')),
+            ?'settings.inputStrikeGranted'
+            :deps.inputRefusal?.snapshot().legacyConsent
+              ?'settings.inputStrikeLegacy':'settings.inputStrikeOff')),
         h('p',{style:{...secondary,lineHeight:1.6,margin:'0 0 10px'}},
           label('settings.inputStrikeExplanation')),
         h('p',{role:'note',style:{...secondary,lineHeight:1.6,margin:'0 0 10px'}},
@@ -747,7 +749,7 @@ export function createDshUnionComponents(
             h('div',{className:'ap-actions'},
               h('button',{type:'button',style:primary,
                 disabled:busy||!enabled||!deps.inputRefusal.snapshot().writable,
-                onClick:()=>{void chooseInput('discard-resend-v1')}},
+                onClick:()=>{void chooseInput('shared-v2')}},
                 label('settings.inputStrikeConfirm')),
               h('button',{type:'button',style:quiet,disabled:busy,
                 onClick:()=>setInputReview(false)},label('settings.inputStrikeCancel'))))

@@ -6,7 +6,7 @@ import type { DshSettingsScope } from './client-rights-scope.ts'
  * Production cannot refuse human messages merely because this grant exists.
  */
 export interface HostInputRefusalGrant {
-  readonly kind: 'agent-picket-input-discard-consent-v1'
+  readonly kind: 'agent-picket-input-discard-consent-v2'
   readonly hostAuthenticated: true
   readonly hostRevision: number
 }
@@ -29,12 +29,12 @@ export function readHostInputRefusalGrant(
     const active = (value: unknown) => value !== null && typeof value === 'object'
       && !Array.isArray(value)
       && (value as Record<string, unknown>).welcomeDecision === 'enabled'
-      && (value as Record<string, unknown>).realInputStrikeConsent === 'discard-resend-v1'
+      && (value as Record<string, unknown>).realInputStrikeConsent === 'shared-v2'
     if (!active(section)) return null
     const second = rows()
     if (second.length !== 1 || second[0]!.revision !== view.revision
       || (second[0]!.value !== undefined && !active(second[0]!.value))) return null
-    return { kind: 'agent-picket-input-discard-consent-v1',
+    return { kind: 'agent-picket-input-discard-consent-v2',
       hostAuthenticated: true, hostRevision: view.revision }
   } catch { return null }
 }
@@ -80,10 +80,10 @@ export function encodeInputStrikeCampaign(key:string,now:number):string{
     expiresAtMs:now+INPUT_STRIKE_DURATION_MS})
 }
 
-export const INPUT_DISCARD_DISCLOSURE = 'input-discard-manual-resend-v1' as const
+export const INPUT_DISCARD_DISCLOSURE = 'input-discard-shared-session-manual-resend-v2' as const
 export interface InputRefusalSection {
   readonly welcomeDecision: 'unseen'|'enabled'|'not-now'
-  readonly realInputStrikeConsent?: 'off'|'discard-resend-v1'
+  readonly realInputStrikeConsent?: 'off'|'discard-resend-v1'|'shared-v2'
   readonly realInputStrikeCampaign?:string
 }
 
@@ -102,16 +102,17 @@ export function createDshInputRefusalConsentControl(
       const current = scope.getSnapshot()
       const valid = current.status === 'ready' && current.mode === 'host'
         && !!current.value
-        && ['off','discard-resend-v1'].includes(
+        && ['off','discard-resend-v1','shared-v2'].includes(
           current.value.realInputStrikeConsent ?? 'off')
       return {
         available: valid && verifiedNoticeCapability() === true,
         writable: valid && current.writable,
         authorized: valid && current.value!.welcomeDecision === 'enabled'
-          && current.value!.realInputStrikeConsent === 'discard-resend-v1',
+          && current.value!.realInputStrikeConsent === 'shared-v2',
+        legacyConsent: valid && current.value!.realInputStrikeConsent === 'discard-resend-v1',
         enforcing: false as const,
         armed:valid && current.value!.welcomeDecision === 'enabled'
-          &&current.value!.realInputStrikeConsent==='discard-resend-v1'
+          &&current.value!.realInputStrikeConsent==='shared-v2'
           &&verifiedNoticeCapability()===true
           &&inputStrikeActive(current.value!.realInputStrikeCampaign,
             activeSessionKey(),now()),
@@ -122,20 +123,20 @@ export function createDshInputRefusalConsentControl(
   }
   return {
     snapshot,
-    async choose(choice: 'off'|'discard-resend-v1',
+    async choose(choice: 'off'|'shared-v2',
       disclosure?: typeof INPUT_DISCARD_DISCLOSURE) {
-      if (choice !== 'off' && choice !== 'discard-resend-v1')
+      if (choice !== 'off' && choice !== 'shared-v2')
         throw new TypeError('Unknown ordinary-input refusal preference')
       const before = scope.getSnapshot()
       if (before.status !== 'ready' || before.mode !== 'host'
         || !before.writable || before.revision === undefined
-        || !before.value || !['off','discard-resend-v1'].includes(
+        || !before.value || !['off','discard-resend-v1','shared-v2'].includes(
           before.value.realInputStrikeConsent ?? 'off'))
-        throw Error('Verified Host input-refusal settings unavailable')
+        throw Error('Host refusal settings unavailable')
       if (choice !== 'off' && (disclosure !== INPUT_DISCARD_DISCLOSURE
         || before.value.welcomeDecision !== 'enabled'
         || verifiedNoticeCapability() !== true))
-        throw Error('Explicit discard-and-resend agreement and native notice proof required')
+        throw Error('Shared Session consent or Host notice missing')
       // Even a synchronous notice witness can be invalidated by the UI before
       // the Host's revision-fenced write. The official settings scope owns CAS.
       const latest = scope.getSnapshot()
@@ -144,8 +145,20 @@ export function createDshInputRefusalConsentControl(
         || latest.value?.welcomeDecision !== before.value.welcomeDecision
         || latest.value?.realInputStrikeConsent !== before.value.realInputStrikeConsent
         || (choice !== 'off' && verifiedNoticeCapability() !== true))
-        throw Error('Host input-refusal consent changed before write')
-      if(choice==='off'&&typeof scope.setMany==='function'
+        throw Error('Host consent changed')
+      // Legacy v1 was signed before the shared-Session / other-client loss
+      // risk was properly explained. Upgrading it MUST atomically disarm any
+      // retained v1 campaign, then require a NEW deliberate Start gesture.
+      if(choice==='shared-v2'&&before.value.realInputStrikeCampaign){
+        if(typeof scope.setMany==='function')
+          await scope.setMany({realInputStrikeConsent:choice,realInputStrikeCampaign:''})
+        else{
+          await scope.set('realInputStrikeCampaign','')
+          if(scope.getSnapshot().value?.realInputStrikeCampaign!=='')
+            throw Error('Legacy strike not disarmed')
+          await scope.set('realInputStrikeConsent',choice)
+        }
+      }else if(choice==='off'&&typeof scope.setMany==='function'
         &&before.value.realInputStrikeCampaign)
         await scope.setMany({realInputStrikeConsent:'off',realInputStrikeCampaign:''})
       else if(choice==='off'&&before.value.realInputStrikeCampaign){
@@ -159,9 +172,10 @@ export function createDshInputRefusalConsentControl(
       if (after.status !== 'ready' || after.mode !== 'host'
         || after.value?.realInputStrikeConsent !== choice
         || (choice !== 'off' && after.value?.welcomeDecision !== 'enabled'))
-        throw Error('Host did not confirm input-refusal permission')
-      if(choice==='off' &&after.value?.realInputStrikeCampaign)
-        throw Error('Host still has an armed input campaign')
+        throw Error('Host consent unconfirmed')
+      if((choice==='off'||choice==='shared-v2')
+        &&before.value.realInputStrikeCampaign&&after.value?.realInputStrikeCampaign)
+        throw Error('Old strike remains')
       return snapshot()
     },
     async setArmed(armed:boolean){
@@ -171,7 +185,7 @@ export function createDshInputRefusalConsentControl(
       if(!valid)throw Error('Host settings unavailable')
       const key=activeSessionKey()
       if(armed&&(before.value!.welcomeDecision!=='enabled'
-        ||before.value!.realInputStrikeConsent!=='discard-resend-v1'
+        ||before.value!.realInputStrikeConsent!=='shared-v2'
         ||verifiedNoticeCapability()!==true||!key))
         throw Error('Separate consent and visible Session required')
       const old=before.value!.realInputStrikeCampaign??''
@@ -189,7 +203,7 @@ export function createDshInputRefusalConsentControl(
       if(after.status!=='ready'||after.mode!=='host'
         ||after.value?.realInputStrikeCampaign!==next
         ||(armed&&(!snapshot().armed||activeSessionKey()!==key)))
-        throw Error('Host did not confirm real input strike state')
+        throw Error('Host strike unconfirmed')
       return snapshot()
     },
   }
