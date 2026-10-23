@@ -2582,8 +2582,14 @@ async function runRightsBrowserE2E(mode: 'source' | 'installed'): Promise<void> 
         // tab B has NOT performed either permission gesture, but can submit.
         // Native Electron blocks Target.createTarget, so do not fake a second
         // Desktop. This is a genuine OFFICIAL DSH WEB cross-client proof only.
+        // Source flavor additionally measures a genuine authenticated,
+        // independent NODE HTTP client with NO UI or banner capability.
+        // Never call this the official DSH CLI/SDK: it is its actual
+        // versioned Host RPC over loopback, using the official login cookie.
+        const headless=process.env.PICKET_HEADLESS_CLIENT_E2E==='1'
+          &&mode==='source'
         let foreignTab:any=null
-        if(process.env.PICKET_CROSS_CLIENT_E2E==='1'){
+        if(!headless&&process.env.PICKET_CROSS_CLIENT_E2E==='1'){
           foreignTab=await context.newPage()
           foreignTab.on('pageerror',(error:Error)=>browserErrors.push(error.name))
           await foreignTab.goto(origin,{waitUntil:'domcontentloaded',timeout:15_000})
@@ -2602,7 +2608,22 @@ async function runRightsBrowserE2E(mode: 'source' | 'installed'): Promise<void> 
           assert.equal(await foreignTab.locator('#picket-input-discard-review').count(),0,
             'The SECOND browser tab never accepted the new input-discard agreement')
         }
-        const attempted=await (foreignTab??page).evaluate(async ({sessionId,tinyPng}:{sessionId:string,tinyPng:string})=>{
+        const attempted=headless?await (async()=>{
+          const rpcId='picket-real-node-client-no-renderer'
+          const body={type:'client-request',rpcId,method:'session/prompt',
+            payload:{args:{request:{
+              sessionId:realDignity.sessionId,mode:'queue',requestId:rpcId,
+              content:[{type:'text',text:'BLOCKED_INPUT_MUST_NOT_REACH_MODEL'},
+                {type:'image',mediaType:'image/png',data:tinyPng}],
+            }}}}
+          const response=await fetch(new URL('/api/session/prompt',origin),{
+            method:'POST',signal:AbortSignal.timeout(12_000),
+            headers:{'content-type':'application/json',
+              cookie:renewedCookie.name+'='+renewedCookie.value},
+            body:JSON.stringify(body),
+          })
+          return {status:response.status,value:await response.json().catch(()=>null)}
+        })():await (foreignTab??page).evaluate(async ({sessionId,tinyPng}:{sessionId:string,tinyPng:string})=>{
           const rpcId='picket-production-block-input-with-image'
           const response=await fetch('/api/session/prompt',{
             method:'POST',credentials:'same-origin',
@@ -2637,6 +2658,22 @@ async function runRightsBrowserE2E(mode: 'source' | 'installed'): Promise<void> 
         assert.equal(proof.automaticReplay,false)
         assert.equal(countModel(),initialCalls,
           'A physically rejected prompt and image must never call the offline model')
+        if(headless){
+          // No UI exists for this independent authenticated Node caller,
+          // so even if the arming browser A receives a Session banner,
+          // B cannot possibly see that banner. This is precisely the
+          // unproven original-client delivery boundary of #80.
+          assert.equal(foreignTab,null)
+          console.log('PICKET_HEADLESS_CLIENT_NO_NOTICE_EVIDENCE '+JSON.stringify({
+            genuineSeparateNodeClient:true,officialAuthenticatedHostRpc:true,
+            sameHostSession:true,originalNodeClientHasNoUi:true,
+            accepted:true,actuallyRefusedPreModel:true,modelInvocations:0,
+            authenticatedSubmittingClientId:null,
+            visibleNoticeAtSubmittingClient:false,
+            armingBrowserCanShowSessionNotice:true,
+            releaseDecision:'NO-GO',
+          }))
+        }
         if(foreignTab){
           // Whether the submitter sees a notice is OBSERVED, not assumed.
           // A Session-wide receipt is never proof of the original tab ID.
