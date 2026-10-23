@@ -100,6 +100,7 @@ jobs:
           PICKET_DIGNITY_E2E: '1'
           PICKET_DIGNITY_REFRESH_E2E: '1'
           PICKET_INPUT_STRIKE_E2E: '1'
+          PICKET_CROSS_CLIENT_E2E: '1'
           AGENT_PICKET_DSH_BIN: ${{ github.workspace }}/.dsh-web-host/node_modules/.bin/dsh
           AGENT_PICKET_DSH_HOST: ${{ github.workspace }}/.dsh-web-host/node_modules
           AGENT_PICKET_PLAYWRIGHT_ENTRY: ${{ github.workspace }}/.dsh-web-browser/node_modules/playwright-core/index.mjs

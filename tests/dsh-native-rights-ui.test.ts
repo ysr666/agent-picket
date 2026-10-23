@@ -3409,6 +3409,13 @@ test('ordinary-message strike card clearly warns about discard/resend but remain
  assert.equal(changed,0,'Rendering a simulated picket cannot enable physical refusal')
 })
 
+test('Settings ordinary-input refusal guidance must spell out MANUAL reupload, not merely upload',()=>{
+ assert.match(zhCN['settings.inputStrikeExplanation'],/重新上传附件/,
+  'Users must not expect a discarded prior attachment to return automatically')
+ assert.match(en['settings.inputStrikeExplanation'],/re-upload attachments/)
+ assert.match(zhCN['settings.inputStrikeDisclosure'],/重新上传附件/)
+})
+
 test('P0 informed ordinary-input consent discloses foreign submitter loss BEFORE grant, in BOTH languages',()=>{
  for(const [locale,lang] of [['en',en],['zh',zhCN]] as const){
   const disclosure=lang['settings.inputStrikeDisclosure']
