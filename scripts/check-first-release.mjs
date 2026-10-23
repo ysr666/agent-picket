@@ -37,6 +37,19 @@ export function checkFirstRelease(value){
       proof(target?.operatingSystems, os, name+'/'+os)
     }
   }
+  // A Session-wide Host receipt or a banner in the ARMING Web window
+  // does not prove the SUBMITTING client received notice. Real 0.2.1-rc.2
+  // official DSH can accept and physically discard a synthetic request
+  // from an authenticated headless HTTP client that has no renderer.
+  // Both DSH targets need independent client-origin binding PLUS
+  // either confirmed delivery OR fail-open for non-notifiable clients.
+  for(const name of ['dsh-web','dsh-desktop']){
+    for(const os of ['windows','macos','linux']){
+      const cell=value.targets?.[name]?.operatingSystems?.[os]
+      proof(cell,'authenticatedOriginBinding',name+'/'+os+'/authenticatedOriginBinding')
+      proof(cell,'originNoticeOrFailOpen',name+'/'+os+'/originNoticeOrFailOpen')
+    }
+  }
   // Official Codex 0.146.1 can store a paused/blocked Goal across cold
   // restarts, yet TWO separate app-server processes can independently launch
   // distinct live Turns for the SAME active Goal on ALL THREE operating systems.
