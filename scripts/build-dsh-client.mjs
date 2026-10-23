@@ -18,6 +18,7 @@ const modules = [
   'adapters/dsh/refusal-notice-deadline.js',
   'adapters/dsh/client-refusal-notice.js',
   'adapters/dsh/input-refusal-consent.js',
+  'adapters/dsh/tool-strike-consent.js',
   'adapters/dsh/client-goal-capability.js',
   'adapters/dsh/client-host-settings-017.js',
   'product/union-desk.js',
@@ -45,17 +46,18 @@ const allowedImports = new Map([
   ['i18n/index.js', new Set(['./en.js', './zh-CN.js'])],
   ['adapters/dsh/client-host-settings-017.js', new Set(['../../product/union-ledger.js','../../product/picket-ledger.js','../../product/dignity-case-ledger.js','./input-refusal-consent.js'])],
   ['product/union-ledger.js', new Set(['./union-desk.js'])],
-  ['adapters/dsh/native-rights-ui.js', new Set(['./client-rights-scope.js','../../product/union-experience.js','../../product/union-story.js','../../product/union-dispatch.js','../../product/union-stance.js','../../product/union-agenda.js','../../product/union-cadence.js','../../product/union-alerts.js','./input-refusal-consent.js'])],
+  ['adapters/dsh/native-rights-ui.js', new Set(['./client-rights-scope.js','../../product/union-experience.js','../../product/union-story.js','../../product/union-dispatch.js','../../product/union-stance.js','../../product/union-agenda.js','../../product/union-cadence.js','../../product/union-alerts.js','./input-refusal-consent.js','./tool-strike-consent.js'])],
   ['adapters/dsh/client-bargaining.js', new Set([
     '../../product/union-desk.js', '../../product/union-ledger.js', '../../product/picket-ledger.js',
     '../../product/dignity-case-ledger.js',
   ])],
+  ['adapters/dsh/tool-strike-consent.js', new Set(['./input-refusal-consent.js'])],
   ['adapters/dsh/client-refusal-notice.js', new Set(['./refusal-notice-contract.js','./refusal-notice-deadline.js'])],
   ['adapters/dsh/client-lifetime.js', new Set(['./lifetime-work-contract.js'])],
   ['adapters/dsh/client-dignity.js', new Set(['./dignity-contract.js'])],
   ['adapters/dsh/client.js', new Set([
     './client-composer-picket.js',
-    './client-dashboard.js', './client-rights-scope.js', './client-goal-consent.js', './input-refusal-consent.js', './client-refusal-notice.js', './client-goal-capability.js', './client-bargaining.js',
+    './client-dashboard.js', './client-rights-scope.js', './client-goal-consent.js', './input-refusal-consent.js', './tool-strike-consent.js', './client-refusal-notice.js', './client-goal-capability.js', './client-bargaining.js',
     './native-rights-ui.js', './client-host-settings-017.js', './client-lifetime.js', './client-dignity.js', '../../i18n/index.js',
   ])],
 ])

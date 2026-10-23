@@ -142,10 +142,31 @@ test('npm dry-run tarball contains prebuilt plugin and no source, tests, or runt
   }
   assert.ok(files.has('dist/adapters/dsh/native-rights-ui.d.ts'),
     'Keep the internal native React Slot types referenced by client.d.ts')
+  assert.equal(files.has('dist/adapters/dsh/client-bargaining.js'),false,
+    'Prebuilt browser client inlines the bargaining module; no duplicate JS')
+  assert.ok(files.has('dist/adapters/dsh/client-bargaining.d.ts'),
+    'Public client types can still reference the inlined bargaining module')
+  for(const inlined of ['client-goal-consent','client-lifetime','client-dignity',
+    'client-dashboard']){
+    assert.equal(files.has('dist/adapters/dsh/'+inlined+'.js'),false,
+      'Reviewed browser bundle inlines this private client JS: '+inlined)
+    assert.ok(files.has('dist/adapters/dsh/'+inlined+'.d.ts'),
+      'Keep client declarations: '+inlined)
+  }
+  assert.equal(files.has('dist/adapters/dsh/client-rights-scope.js'),false,
+    'The bundled DSH Browser client already owns its client-only rights module')
+  assert.ok(files.has('dist/adapters/dsh/client-rights-scope.d.ts'),
+    'Public Client type references still resolve')
+  assert.equal(files.has('dist/adapters/dsh/tool-strike-consent.js'),false,
+    'Client-only tool permission is inlined in the reviewed browser bundle')
+  assert.ok(files.has('dist/adapters/dsh/tool-strike-consent.d.ts'),
+    'Client-only tool permission types remain for declaration imports')
   assert.equal(files.has('dist/adapters/dsh/client-composer-picket.js'),false,
     'Local composer control must only ship once, in the prebuilt browser bundle')
   assert.ok(files.has('dist/adapters/dsh/client-composer-picket.d.ts'),
     'Keep composer control types referenced by public client.d.ts')
+  assert.ok(files.has('docs/START_HERE.zh.md'),
+    'The README links to the bundled Chinese setup guide')
   assert.equal(files.has('docs/DSH_INSTALL.zh.md'),false,
     'Historical DSH source-install instructions stay in Git; npm ships the current README')
   assert.equal(files.has('docs/DSH_ORIGINAL_CLIENT_NOTICE_HOST_PROTOCOL_20261024.md'),false,

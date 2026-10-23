@@ -15,6 +15,8 @@ export const RightsSettingsSchema = Schema.object({
   // No production Host/UI currently supplies a verified refusal witness.
   realInputStrikeConsent: Schema.union(['off','discard-resend-v1','shared-v2']).default('off'),
   realInputStrikeCampaign: Schema.string().max(180).default(''),
+  realToolStrikeConsent:Schema.union(['off','authorized-v1']).default('off'),
+  realToolStrikeCampaign:Schema.string().max(180).default(''),
   unionLedger: Schema.string().default(''),
   unionPicketLedger: Schema.string().default(''),
   unionDignityCases: Schema.string().default(''),
@@ -60,6 +62,11 @@ export const DshProfileRightsConfig = Schema.object({
     value=>{if(value!==''&&!parseInputStrikeCampaign(value))
       throw new Error('Invalid Session-bound real input strike campaign')
       return value},true).default('').volatile(),
+  realToolStrikeConsent:Schema.union(['off','authorized-v1']).default('off').volatile(),
+  realToolStrikeCampaign:Schema.transform(Schema.string().max(180),
+    value=>{if(value!==''&&!parseInputStrikeCampaign(value))
+      throw Error('Invalid union tool campaign')
+      return value},true).default('').volatile(),
   unionLedger: Schema.transform(
     Schema.string().max(MAX_UNION_LEDGER_BYTES),
     value => { requireSafeLedger(value); return value }, true,
@@ -82,6 +89,8 @@ export interface HostRightsSection {
   readonly realGoalStrikeConsent?: 'off' | 'authorized-v1' | 'authorized-v2'
   readonly realInputStrikeConsent?: 'off' | 'discard-resend-v1' | 'shared-v2'
   readonly realInputStrikeCampaign?:string
+  readonly realToolStrikeConsent?:'off'|'authorized-v1'
+  readonly realToolStrikeCampaign?:string
   readonly unionLedger: string
   readonly unionPicketLedger: string
   readonly unionDignityCases: string

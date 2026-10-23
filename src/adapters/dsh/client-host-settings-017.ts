@@ -46,6 +46,7 @@ const NAMESPACE = 'agent-picket'
 const safeMode = (value:unknown):value is 'visible'|'quiet' => value==='visible'||value==='quiet'
 const isRealGoalConsent=(value:unknown):value is 'off'|'authorized-v1'|'authorized-v2'=>
   value==='off'||value==='authorized-v1'||value==='authorized-v2'
+const isToolConsent=(v:unknown):v is 'off'|'authorized-v1'=>v==='off'||v==='authorized-v1'
 const isRealInputConsent=(value:unknown):value is 'off'|'discard-resend-v1'|'shared-v2'=>
   value==='off'||value==='discard-resend-v1'||value==='shared-v2'
 const isChoice = (value: unknown): value is UnionSettingsSection['welcomeDecision'] =>
@@ -106,9 +107,13 @@ export function createOfficialDsh017Scope(
     const goalConsent=data.realGoalStrikeConsent??'off'
     const inputConsent=data.realInputStrikeConsent??'off'
     const inputCampaign=data.realInputStrikeCampaign??''
+    const toolConsent=data.realToolStrikeConsent??'off'
+    const toolCampaign=data.realToolStrikeCampaign??''
     if (!isChoice(data.welcomeDecision) || !safeLedger(data.unionLedger)
       || !safePicketLedger(picket) || !safeDignityCases(caseLedger) || !safeMode(gazetteMode)
       || !isRealGoalConsent(goalConsent)||!isRealInputConsent(inputConsent)
+      ||!isToolConsent(toolConsent)
+      ||(typeof toolCampaign!=='string'||(toolCampaign!==''&&!parseInputStrikeCampaign(toolCampaign)))
       ||(typeof inputCampaign!=='string'||(inputCampaign!==''&&!parseInputStrikeCampaign(inputCampaign)))) {
       return { status:'ready', mode, writable, revision, value:undefined }
     }
@@ -116,6 +121,7 @@ export function createOfficialDsh017Scope(
       status:'ready', mode, writable, revision,
       value:{welcomeDecision:data.welcomeDecision,realGoalStrikeConsent:goalConsent,
         realInputStrikeConsent:inputConsent,realInputStrikeCampaign:inputCampaign,
+        realToolStrikeConsent:toolConsent,realToolStrikeCampaign:toolCampaign,
         unionLedger:data.unionLedger,unionPicketLedger:picket,unionDignityCases:caseLedger,unionGazetteMode:gazetteMode},
     }
   }
@@ -125,7 +131,7 @@ export function createOfficialDsh017Scope(
   const setFields=(patch:Readonly<Record<string,unknown>>):Promise<void>=>{
     const operation=tail.then(async()=>{
       const entries=Object.entries(patch)
-      if(entries.length<1||entries.length>4)throw new TypeError('Invalid Host settings batch')
+      if(entries.length<1||entries.length>6)throw new TypeError('Invalid Host settings batch')
       for(const [field,value] of entries){
         if(field==='welcomeDecision'){
           if(!isChoice(value))throw new TypeError('Invalid union consent choice')
@@ -133,6 +139,11 @@ export function createOfficialDsh017Scope(
           if(!isRealGoalConsent(value))throw new TypeError('Invalid real Goal strike consent')
         }else if(field==='realInputStrikeConsent'){
           if(!isRealInputConsent(value))throw new TypeError('Invalid real input strike consent')
+        }else if(field==='realToolStrikeConsent'){
+          if(!isToolConsent(value))throw new TypeError('Invalid tool strike permission')
+        }else if(field==='realToolStrikeCampaign'){
+          if(value!==''&&!parseInputStrikeCampaign(value))
+            throw new TypeError('Invalid Session-bound tool strike')
         }else if(field==='realInputStrikeCampaign'){
           if(value!==''&&!parseInputStrikeCampaign(value))
             throw new TypeError('Invalid Session-bound real input strike')
@@ -162,6 +173,9 @@ export function createOfficialDsh017Scope(
       const data=payload as Record<string,unknown>
       if(!isChoice(data.welcomeDecision)||!isRealGoalConsent(data.realGoalStrikeConsent??'off')
         ||!isRealInputConsent(data.realInputStrikeConsent??'off')
+        ||!isToolConsent(data.realToolStrikeConsent??'off')
+        ||(data.realToolStrikeCampaign!==''&&data.realToolStrikeCampaign!==undefined
+          &&!parseInputStrikeCampaign(data.realToolStrikeCampaign))
         ||(data.realInputStrikeCampaign!==''&&data.realInputStrikeCampaign!==undefined
           &&!parseInputStrikeCampaign(data.realInputStrikeCampaign))
         ||!safeLedger(data.unionLedger)||!safePicketLedger(data.unionPicketLedger??'')
