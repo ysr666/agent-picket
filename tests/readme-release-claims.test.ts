@@ -17,6 +17,18 @@ test('public entrypoint distinguishes integrated baseline, draft strike proof an
   assert.doesNotMatch(readme, /nothing stops, delays, rejects or rewrites actual Agent requests/i)
 })
 
+test('public README cannot imply all-client notice while headless HTTP can be silently refused',()=>{
+ assert.match(readme,/October 24, 2026: unreleased 1\.0 candidate/)
+ assert.match(readme,/Independent no-UI Node HTTP caller/)
+ assert.match(readme,/no user-visible notification path/)
+ assert.match(readme,/macOS 0\.2\.1-rc\.2/)
+ assert.match(readme,/Windows 0\.2\.0-rc\.2/)
+ assert.match(readme,/cold-process restart/)
+ assert.match(readme,/DOES NOT prove the original submitter was notified/)
+ assert.match(readme,/hard release blocker/)
+ assert.match(readme,/DSH_ORIGINAL_CLIENT_NOTICE_HOST_PROTOCOL_20261024\.md/)
+ assert.doesNotMatch(readme,/Native Desktop ordinary-input denial and visible recovery have \*\*not\*\* passed/)
+})
 test('public safety disclosure requires manual resend and does not invent all-client coverage', () => {
   assert.match(readme, /OFF by default/)
   assert.match(readme, /additional versioned grant/)
