@@ -11,6 +11,8 @@ import {join} from 'node:path'
 
 const bin=process.env.AGENT_PICKET_CODEX_BIN
 const eligible=!!bin&&process.env.AGENT_PICKET_CODEX_GOAL_NATIVE==='1'
+const holdStatus=process.env.AGENT_PICKET_CODEX_HOLD_STATUS==='paused'
+  ? 'paused' as const : 'blocked' as const
 type Frame={id?:number;result?:any;error?:{message?:string};method?:string;params?:{
   threadId?:string;turn?:{id?:string;status?:string};item?:{
    type?:string;status?:string;exitCode?:number;aggregatedOutput?:string
@@ -128,20 +130,20 @@ test('native Codex completes in-flight autonomous Turn, holds next round and col
   assert.equal((await external.rpc('thread/goal/get',{threadId}))
    .goal?.status,'active',
    'External official Goal getter works without resuming the Thread')
-  assert.equal((await external.rpc('thread/goal/set',{threadId,status:'blocked'}))
-   .goal?.status,'blocked',
+  assert.equal((await external.rpc('thread/goal/set',{threadId,status:holdStatus}))
+   .goal?.status,holdStatus,
    'External official Goal setter must block without loading the Thread')
   assert.equal((await first.rpc('thread/goal/get',{threadId})).goal?.status,
-   'blocked','Active owner must observe external block')
+   holdStatus,'Active owner must observe external block')
   // CRITICAL negative: a stale external client can silently override a
   // newer hold. Official goal/set has NO expectedRevision/CAS. Restore the
   // synthetic block immediately, before releasing the in-flight tool.
   assert.equal((await external.rpc('thread/goal/set',{threadId,status:'active'}))
    .goal?.status,'active','Unconditional external write can undo a hold')
   assert.equal((await first.rpc('thread/goal/get',{threadId})).goal?.status,'active')
-  assert.equal((await external.rpc('thread/goal/set',{threadId,status:'blocked'}))
-   .goal?.status,'blocked','Synthetic test must leave Goal held')
-  assert.equal((await first.rpc('thread/goal/get',{threadId})).goal?.status,'blocked')
+  assert.equal((await external.rpc('thread/goal/set',{threadId,status:holdStatus}))
+   .goal?.status,holdStatus,'Synthetic test must leave Goal held')
+  assert.equal((await first.rpc('thread/goal/get',{threadId})).goal?.status,holdStatus)
   assert.equal(external.notifications.some(n=>n.method==='turn/started'),false,
    'External non-resuming control plane must not start work')
   assert.equal(requests.length,1,'No competing Goal Turn started by controller')
@@ -169,14 +171,14 @@ test('native Codex completes in-flight autonomous Turn, holds next round and col
    'Host must persist the synthetic model output item before holding')
   await new Promise(resolve=>setTimeout(resolve,450))
   assert.equal(requests.length,2,'No automatic NEXT TURN model request while blocked')
-  assert.equal((await first.rpc('thread/goal/get',{threadId})).goal?.status,'blocked')
+  assert.equal((await first.rpc('thread/goal/get',{threadId})).goal?.status,holdStatus)
   assert.equal(external.notifications.some(n=>n.method==='turn/started'),false)
   await external.close();external=undefined
 
   await first.close();first=undefined
   second=await launch()
   assert.equal((await second.rpc('thread/resume',{threadId})).thread?.id,threadId)
-  assert.equal((await second.rpc('thread/goal/get',{threadId})).goal?.status,'blocked')
+  assert.equal((await second.rpc('thread/goal/get',{threadId})).goal?.status,holdStatus)
   const restored=await second.rpc('thread/read',{threadId,includeTurns:true})
   assert.equal(restored.thread?.id,threadId)
   const retainedTurn=restored.thread?.turns?.find((turn:{id?:string})=>turn.id===firstTurnId)
@@ -202,8 +204,8 @@ test('native Codex completes in-flight autonomous Turn, holds next round and col
    true)
   const resumedTurnId=second.notifications.find(n=>n.method==='turn/started')?.params?.turn?.id
   assert.notEqual(resumedTurnId,firstTurnId,'Resume must use a new Turn ID')
-  assert.equal((await second.rpc('thread/goal/set',{threadId,status:'blocked'}))
-   .goal?.status,'blocked')
+  assert.equal((await second.rpc('thread/goal/set',{threadId,status:holdStatus}))
+   .goal?.status,holdStatus)
   finishResponse(requests[2]!, 'SYNTHETIC-SECOND-ROUND-COMPLETED')
   assert.equal(await until(()=>second!.notifications.some(n=>
    n.method==='turn/completed'&&n.params?.turn?.id===resumedTurnId)),true)
@@ -211,7 +213,7 @@ test('native Codex completes in-flight autonomous Turn, holds next round and col
    &&n.params?.turn?.id===resumedTurnId)?.params?.turn?.status,'completed')
   await new Promise(resolve=>setTimeout(resolve,450))
   assert.equal(requests.length,3,'No duplicate or third automatic round')
-  assert.equal((await second.rpc('thread/goal/get',{threadId})).goal?.status,'blocked')
+  assert.equal((await second.rpc('thread/goal/get',{threadId})).goal?.status,holdStatus)
  }finally{
   await Promise.allSettled([first?.close(),external?.close(),second?.close()])
   for(const request of requests)try{request.response.end()}catch{/* cleanup */}

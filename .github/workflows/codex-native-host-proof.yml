@@ -63,6 +63,14 @@ jobs:
           - os: windows-latest
             codexVersion: '0.164.0'
             probe: codex-goal-exclusive-owner.real.test.ts
+          # Goal-level pause: finish the current model/tool Turn before stopping
+          # the NEXT automatic round. No new prompt/attachment is rejected.
+          - os: ubuntu-latest
+            codexVersion: '0.164.0'
+            probe: codex-goal-controlled-boundary.real.test.ts
+          - os: macos-latest
+            codexVersion: '0.164.0'
+            probe: codex-goal-controlled-boundary.real.test.ts
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -117,6 +125,7 @@ jobs:
         env:
           AGENT_PICKET_CODEX_GOAL_NATIVE: '1'
           AGENT_PICKET_CODEX_EXPECT_VERSION: ${{ matrix.codexVersion || '0.146.1' }}
+          AGENT_PICKET_CODEX_HOLD_STATUS: ${{ matrix.codexVersion == '0.164.0' && 'paused' || 'blocked' }}
         run: >
           node --experimental-strip-types --test --test-reporter=tap
           tests/${{ matrix.probe }}
@@ -128,4 +137,5 @@ jobs:
         env:
           AGENT_PICKET_CODEX_GOAL_NATIVE: '1'
           AGENT_PICKET_CODEX_EXPECT_VERSION: ${{ matrix.codexVersion || '0.146.1' }}
+          AGENT_PICKET_CODEX_HOLD_STATUS: ${{ matrix.codexVersion == '0.164.0' && 'paused' || 'blocked' }}
         run: node scripts/codex-goal-windows-watchdog.mjs ${{ matrix.probe }}
