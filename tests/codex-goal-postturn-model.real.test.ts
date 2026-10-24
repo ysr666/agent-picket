@@ -9,6 +9,7 @@ import {tmpdir} from 'node:os'
 import {join} from 'node:path'
 import {parseCodexGoalReadback} from '../src/adapters/codex/goal-readiness.ts'
 import {projectCodexGoalUnionStatus} from '../src/adapters/codex/goal-union-status.ts'
+import {gateCodexClientNewTurn} from '../src/adapters/codex/client-new-turn-gate.ts'
 
 const bin=process.env.AGENT_PICKET_CODEX_BIN
 const enabled=!!bin&&process.env.AGENT_PICKET_CODEX_GOAL_NATIVE==='1'
@@ -86,6 +87,21 @@ test('native Codex pauses only NEXT autonomous model Turn and safely resumes',{
   }).phase,'finishing-turn')
   assert.equal(first.turnCompleted(threadId).length,0,
    'Pause must not invent an early completed Turn')
+  let submittedBeforeTurnEnded=0
+  const earlyNewWork=await gateCodexClientNewTurn({
+   readHostProof:async()=>({source:'verified-owner-control-plane',threadId,
+    ownerVerified:true,realStrikeOptIn:true,
+    unionHoldAuthorized:true,unionHoldActive:true,
+    turnState:'running',canShowPreSubmitNotice:true}),
+  },threadId,async()=>{
+   submittedBeforeTurnEnded++
+   return first!.rpc('turn/start',{threadId,
+    input:[{type:'text',text:'SYNTHETIC_QUEUED_NEW_TURN'}]})
+  })
+  assert.deepEqual(earlyNewWork,{action:'held',
+   notice:'union-current-turn-finishing'})
+  assert.equal(submittedBeforeTurnEnded,0,
+   'Existing Turn may finish, but a NEW Turn must not queue during strike')
   complete(requests[0]!,'SYNTHETIC_FIRST_TURN_DONE')
   assert.equal(await until(()=>first!.turnCompleted(threadId).includes(initialId)),
    true,'In-flight model Turn must complete normally')
@@ -98,6 +114,42 @@ test('native Codex pauses only NEXT autonomous model Turn and safely resumes',{
    threadId,goal:held,consent:'authorized',
    ownerVerified:true,turn:'idle',unionPauseAcknowledged:true,
   }).phase,'paused')
+  // A client-integrated gate executes BEFORE constructing an official input.
+  // This is a test-owned authorized proof, NOT the production Host trust API.
+  let builtPayload=0
+  const heldFromClient=await gateCodexClientNewTurn({
+   readHostProof:async()=>({
+    source:'verified-owner-control-plane',threadId,
+    ownerVerified:true,realStrikeOptIn:true,
+    unionHoldAuthorized:true,unionHoldActive:true,
+    turnState:'idle',canShowPreSubmitNotice:true,
+   }),
+  },threadId,async()=>{
+   builtPayload++
+   return first!.rpc('turn/start',{threadId,
+    input:[{type:'text',text:'SYNTHETIC_NEVER_SUBMITTED'}]})
+  })
+  assert.deepEqual(heldFromClient,{action:'held',notice:'union-new-work-hold'})
+  assert.equal(builtPayload,0,'Client hold must not even construct new input')
+  assert.equal(requests.length,1,'Client HOLD must not reach the model')
+
+  if(process.env.AGENT_PICKET_CODEX_DIRECT_BYPASS_PROBE==='1'){
+   // IMPORTANT NEGATIVE: the unmodified official App-Server still accepts
+   // ordinary user turn/start. An integrated client gate cannot secure
+   // TUI/Desktop/SDK or a second client that bypasses this function.
+   const bypass=await first.rpc('turn/start',{threadId,
+    input:[{type:'text',text:'SYNTHETIC_OUTSIDE_CLIENT_GATE'}]})
+   assert.equal(typeof bypass.turn?.id,'string')
+   assert.equal(await until(()=>requests.length===2),true,
+    'A direct native turn/start STILL bypasses Goal=paused')
+   assert.equal((await first.rpc('thread/goal/get',{threadId})).goal?.status,
+    'paused','Goal remains paused during the client-bypass new Turn')
+   complete(requests[1]!,'SYNTHETIC_BYPASS_PROOF_DONE')
+   assert.equal(await until(()=>first!.turnCompleted(threadId)
+    .includes(bypass.turn.id)),true)
+   console.log('CODEX_0164_DIRECT_NEW_TURN_BYPASSES_GOAL_PAUSE=CONFIRMED')
+   return
+  }
   await first.close();first=undefined
   restored=await launch()
   assert.equal((await restored.rpc('thread/resume',{threadId})).thread?.id,
