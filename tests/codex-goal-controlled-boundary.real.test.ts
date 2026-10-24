@@ -8,6 +8,8 @@ import {mkdtempSync,mkdirSync,rmSync,realpathSync,writeFileSync,
  readdirSync,readFileSync,statSync} from 'node:fs'
 import {tmpdir} from 'node:os'
 import {join} from 'node:path'
+import {parseCodexGoalReadback} from '../src/adapters/codex/goal-readiness.ts'
+import {projectCodexGoalUnionStatus} from '../src/adapters/codex/goal-union-status.ts'
 
 const bin=process.env.AGENT_PICKET_CODEX_BIN
 const eligible=!!bin&&process.env.AGENT_PICKET_CODEX_GOAL_NATIVE==='1'
@@ -147,6 +149,16 @@ test('native Codex completes in-flight autonomous Turn, holds next round and col
   assert.equal(external.notifications.some(n=>n.method==='turn/started'),false,
    'External non-resuming control plane must not start work')
   assert.equal(requests.length,1,'No competing Goal Turn started by controller')
+  if(holdStatus==='paused'){
+   const proof=parseCodexGoalReadback(
+     await first.rpc('thread/goal/get',{threadId}),threadId)
+   const view=projectCodexGoalUnionStatus({threadId,goal:proof,
+     consent:'authorized',ownerVerified:true,turn:'running',
+     unionPauseAcknowledged:true})
+   assert.equal(view.phase,'finishing-turn',
+     'Official Goal=paused before tool completion is only a PENDING strike')
+   assert.equal(view.canClaimUnionPause,false)
+  }
   writeFileSync(join(root,'release.flag'),'synthetic release')
   assert.equal(await until(()=>first!.notifications.some(n=>
    n.method==='item/completed'&&n.params?.item?.type==='commandExecution')),
@@ -172,6 +184,16 @@ test('native Codex completes in-flight autonomous Turn, holds next round and col
   await new Promise(resolve=>setTimeout(resolve,450))
   assert.equal(requests.length,2,'No automatic NEXT TURN model request while blocked')
   assert.equal((await first.rpc('thread/goal/get',{threadId})).goal?.status,holdStatus)
+  if(holdStatus==='paused'){
+   const proof=parseCodexGoalReadback(
+     await first.rpc('thread/goal/get',{threadId}),threadId)
+   const view=projectCodexGoalUnionStatus({threadId,goal:proof,
+     consent:'authorized',ownerVerified:true,turn:'idle',
+     unionPauseAcknowledged:true})
+   assert.equal(view.phase,'paused',
+     'Only actual completed native Turn plus Host paused authorizes UI claim')
+   assert.equal(view.canClaimUnionPause,true)
+  }
   assert.equal(external.notifications.some(n=>n.method==='turn/started'),false)
   await external.close();external=undefined
 
