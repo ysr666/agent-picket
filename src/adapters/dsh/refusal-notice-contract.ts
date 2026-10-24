@@ -31,28 +31,43 @@ export interface RefusalEventWindow {
 }
 /** An unrelated blocked event cannot be attributed to Picket merely because
  * its public reason.kind is `blocked`. Require a matching Host Picket receipt,
- * one real turn/start and turn/end, and NO model/tool step for that turn. */
+ * one real turn/start and turn/end, and NO model/tool step for that turn.
+ *
+ * Some official Host event varieties can omit data.turn. Once the full ordered
+ * Session window proves a target Turn's start/end boundaries, ANY potentially
+ * model/tool-executing event inside those boundaries is counter-evidence,
+ * even if the event omitted (or mislabeled) its Turn number. Fail closed:
+ * missing attribution cannot become a claim that no work happened.
+ */
 export function matchRefusalToOfficialTurn(window:RefusalEventWindow|undefined,
   receipt:RefusalNoticeReceipt|null):boolean{
   if(!window||window.hasMore||!receipt)return false
-  let starts=0,ends=0,startSeq=-1,endSeq=-1,steps=0
-  const seen=new Set<number>()
+  const records:{type:string;seq:number;turn:unknown}[]=[]
+  let starts=0,ends=0,startSeq=-1,endSeq=-1,previousSeq=-1
   for(const entry of window.entries){
     if(entry.type!=='event')continue
     const e=entry.event
     if(!e||typeof e.type!=='string'||!Number.isSafeInteger(e.seq)
-      ||(e.seq as number)<0||seen.has(e.seq as number))return false
-    seen.add(e.seq as number)
-    if(!e.data||typeof e.data!=='object'||Array.isArray(e.data))continue
-    const data=e.data as {turn?:unknown;reason?:{kind?:unknown}}
-    if(data.turn!==receipt.turn)continue
-    if(e.type==='turn/start'){starts++;startSeq=e.seq as number}
+      ||(e.seq as number)<0||(e.seq as number)<=previousSeq)return false
+    const seq=e.seq as number
+    previousSeq=seq
+    const data=e.data&&typeof e.data==='object'&&!Array.isArray(e.data)
+      ?e.data as {turn?:unknown;reason?:{kind?:unknown}}:null
+    records.push({type:e.type,seq,turn:data?.turn})
+    if(data?.turn!==receipt.turn)continue
+    if(e.type==='turn/start'){starts++;startSeq=seq}
     if(e.type==='turn/end'){
       if(data.reason?.kind!=='blocked')return false
-      ends++;endSeq=e.seq as number
+      ends++;endSeq=seq
     }
-    if(['step/start','step/end','request/header','assistant/message',
-      'assistant/attempt','tool/call','tool/result'].includes(e.type))steps++
   }
-  return starts===1&&ends===1&&steps===0&&startSeq<endSeq
+  if(starts!==1||ends!==1||startSeq>=endSeq)return false
+  return !records.some(event=>{
+    const inside=event.seq>startSeq&&event.seq<endSeq
+    // A nested/unattributed Turn boundary also makes the interval uncertain.
+    if(inside&&(event.type==='turn/start'||event.type==='turn/end'))
+      return true
+    const mayExecute=/^(?:step|request|assistant|tool|model)\//.test(event.type)
+    return mayExecute&&(event.turn===receipt.turn||inside)
+  })
 }

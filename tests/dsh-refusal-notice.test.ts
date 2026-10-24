@@ -33,6 +33,50 @@ test('refusal receipt requires exact Host proof AND official no-step blocked tur
   assert.equal(matchRefusalToOfficialTurn({...blocked(),entries:[
     ...blocked().entries,blocked().entries[1]!,
   ]},valid),false,'A duplicate event Seq invalidates Host attribution')
+  // A model/tool event may have no explicit turn in some Host event shapes.
+  // Sequence order still places it inside the refused Turn; ignoring that
+  // missing field would falsely claim no model/tool work occurred.
+  const ambiguousEvents=['step/start','request/header','assistant/message',
+    'tool/call','tool/result','assistant/token']
+  for(const kind of ambiguousEvents){
+    const events:RefusalEventWindow={hasMore:false,entries:[
+      {type:'event',event:{type:'turn/start',seq:10,data:{turn:2}}},
+      {type:'event',event:{type:kind,seq:11,data:{step:1}}},
+      {type:'event',event:{type:'turn/end',seq:12,
+        data:{turn:2,reason:{kind:'blocked'}}}},
+    ]}
+    assert.equal(matchRefusalToOfficialTurn(events,valid),false,
+      kind+' without turn must not manufacture a no-model refusal')
+  }
+  // A step from a prior completed turn must NOT poison a later genuinely
+  // blocked Turn; only the target Turn's sequence window is ambiguous.
+  const oldTurn:RefusalEventWindow={hasMore:false,entries:[
+    {type:'event',event:{type:'turn/start',seq:1,data:{turn:1}}},
+    {type:'event',event:{type:'step/start',seq:2,data:{step:1}}},
+    {type:'event',event:{type:'turn/end',seq:3,
+      data:{turn:1,reason:{kind:'completed'}}}},
+    {type:'event',event:{type:'turn/start',seq:4,data:{turn:2}}},
+    {type:'event',event:{type:'turn/end',seq:5,
+      data:{turn:2,reason:{kind:'blocked'}}}},
+  ]}
+  assert.equal(matchRefusalToOfficialTurn(oldTurn,valid),true,
+    'Unrelated prior-turn events do not invalidate a later native refusal')
+  const nestedBoundary:RefusalEventWindow={hasMore:false,entries:[
+    {type:'event',event:{type:'turn/start',seq:10,data:{turn:2}}},
+    {type:'event',event:{type:'turn/start',seq:11,data:{turn:99}}},
+    {type:'event',event:{type:'turn/end',seq:12,
+      data:{turn:2,reason:{kind:'blocked'}}}},
+  ]}
+  assert.equal(matchRefusalToOfficialTurn(nestedBoundary,valid),false,
+    'An unexpected Host Turn boundary invalidates no-execution attribution')
+  const missingData:RefusalEventWindow={hasMore:false,entries:[
+    {type:'event',event:{type:'turn/start',seq:10,data:{turn:2}}},
+    {type:'event',event:{type:'tool/result',seq:11}},
+    {type:'event',event:{type:'turn/end',seq:12,
+      data:{turn:2,reason:{kind:'blocked'}}}},
+  ]}
+  assert.equal(matchRefusalToOfficialTurn(missingData,valid),false,
+    'Missing entire event data cannot prove tool was never run')
   assert.equal(matchRefusalToOfficialTurn(blocked(),null),false)
   assert.equal(latestNativeBlockedTurn(blocked()),2)
   assert.equal(latestNativeBlockedTurn(blocked(2,'completed')),null)
