@@ -12,7 +12,7 @@ export function checkFirstRelease(value){
   const invalid=(message)=>reasons.push(message)
   if(!value || typeof value!=='object' || Array.isArray(value))
     return ['Release attestation missing or invalid']
-  if(value.schemaVersion!==3 || value.release!=='1.0.0')
+  if(value.schemaVersion!==4 || value.release!=='1.0.0')
     invalid('Unexpected release acceptance schema/version')
   const proof=(section,name,display=name)=>{
     const evidence=section?.[name]
@@ -29,8 +29,14 @@ export function checkFirstRelease(value){
   for(const name of ['dsh-web','dsh-desktop','claude-code','codex']){
     const target=value.targets?.[name]
     proof(value.targets,name)
-    for(const key of ['realEnforcement','discardAndResubmit',
-      'verifiedHumanProvenance','visibleRefusalAndResume']){
+    // Codex only pauses automatic Goal work after an accepted Turn completes.
+    // Input/attachment discard and resend apply to separate rejection modes.
+    const keys=name==='codex'
+      ? ['realEnforcement','informedHostConsent',
+        'turnBoundaryHoldAndResume','visibleHoldAndResume']
+      : ['realEnforcement','discardAndResubmit',
+        'verifiedHumanProvenance','visibleRefusalAndResume']
+    for(const key of keys){
       if(target?.[key]!=='verified')invalid(name+'.'+key+': not proven')
     }
     for(const os of ['windows','macos','linux']){

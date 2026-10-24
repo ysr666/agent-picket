@@ -8,7 +8,8 @@ test('first release cannot pass until four client targets on three operating sys
  assert.ok(problems.length>=30)
  assert.ok(problems.some(s=>s.includes('dsh-web.discardAndResubmit')))
  assert.ok(problems.some(s=>s.includes('dsh-desktop/windows')))
- assert.ok(problems.some(s=>s.includes('codex.verifiedHumanProvenance')))
+ assert.ok(problems.some(s=>s.includes('codex.informedHostConsent')))
+ assert.ok(problems.some(s=>s.includes('codex.turnBoundaryHoldAndResume')))
  assert.ok(problems.some(s=>s.includes('claude-code.realEnforcement')))
  assert.ok(!problems.some(s=>s.includes('acp:')))
  assert.ok(!problems.some(s=>s.includes('cli:')))
@@ -17,8 +18,12 @@ test('forged suite result and missing UI review never authorize release',()=>{
  const copy=structuredClone(manifest)
  for(const item of Object.values(copy.targets as Record<string,any>)){
    item.status='verified';item.evidence=['test://real-blocking-e2e-proof']
-   for(const key of ['realEnforcement','discardAndResubmit',
-     'verifiedHumanProvenance','visibleRefusalAndResume']) item[key]='verified'
+   const keys=item===copy.targets.codex
+     ? ['realEnforcement','informedHostConsent',
+       'turnBoundaryHoldAndResume','visibleHoldAndResume']
+     : ['realEnforcement','discardAndResubmit',
+       'verifiedHumanProvenance','visibleRefusalAndResume']
+   for(const key of keys)item[key]='verified'
    for(const evidence of Object.values(item.operatingSystems) as any[]){
      evidence.status='verified';evidence.evidence=['test://target-os-host-real-e2e-proof']
    }
@@ -56,8 +61,8 @@ test('P0: Web two-tab notice and an authenticated headless Host refusal cannot s
 
 test('user-approved discard-and-resend policy replaces auto-recovery, not safe refusal evidence',()=>{
  const old=structuredClone(manifest)
- assert.equal(old.schemaVersion,3)
- old.schemaVersion=2
+ assert.equal(old.schemaVersion,4)
+ old.schemaVersion=3
  assert.ok(checkFirstRelease(old).some(s=>s.includes('schema/version')),
   'Old lossless-recovery release manifests cannot silently bypass the new consent contract')
  const candidate=structuredClone(manifest)
@@ -68,6 +73,36 @@ test('user-approved discard-and-resend policy replaces auto-recovery, not safe r
  assert.ok(checkFirstRelease(candidate).some(s=>s.includes('dsh-web.realEnforcement')))
  assert.ok(checkFirstRelease(candidate).some(s=>s.includes('dsh-web.visibleRefusalAndResume')))
 })
+test('Codex post-Turn Goal pause cannot be rejected-input recovery',()=>{
+ const copy=structuredClone(manifest)
+ const codex=copy.targets.codex
+ // This mode never vetoes an accepted prompt or attachment. Old attestations
+ // (even forged as verified) cannot silently replace native Goal evidence.
+ codex.discardAndResubmit='verified'
+ codex.verifiedHumanProvenance='verified'
+ codex.visibleRefusalAndResume='verified'
+ for(const field of ['informedHostConsent','turnBoundaryHoldAndResume',
+   'visibleHoldAndResume'])assert.ok(checkFirstRelease(copy).some(s=>
+     s.includes('codex.'+field)),field)
+ assert.ok(!checkFirstRelease(copy).some(s=>
+   s.includes('codex.discardAndResubmit')))
+ for(const field of ['informedHostConsent','turnBoundaryHoldAndResume',
+   'visibleHoldAndResume'])codex[field]='verified'
+ for(const field of ['informedHostConsent','turnBoundaryHoldAndResume',
+   'visibleHoldAndResume'])assert.ok(!checkFirstRelease(copy).some(s=>
+   s.includes('codex.'+field)),
+   'Scoped Goal acceptance keys can be satisfied independently')
+ assert.ok(checkFirstRelease(copy).some(s=>
+   s.includes('codex.realEnforcement')),
+   'Post-Turn simplification never certifies installed real enforcement')
+ assert.ok(checkFirstRelease(copy).some(s=>
+   s.includes('dsh-web.discardAndResubmit')),
+   'DSH ordinary-input rejection keeps the original resubmit gate')
+ const stale=structuredClone(copy)
+ stale.schemaVersion=3
+ assert.ok(checkFirstRelease(stale).some(s=>s.includes('schema/version')))
+})
+
 test('missing or malformed evidence must fail closed',()=>{
  assert.ok(checkFirstRelease(null).length)
  const fake=structuredClone(manifest)
@@ -80,8 +115,12 @@ test('release demands an independent target-by-OS matrix, not aggregate OS or AC
  const pass=structuredClone(manifest)
  for(const [name,target] of Object.entries(pass.targets) as [string,any][]){
    target.status='verified';target.evidence=['test://verified-host-runtime-flow']
-   for(const key of ['realEnforcement','discardAndResubmit',
-     'verifiedHumanProvenance','visibleRefusalAndResume'])target[key]='verified'
+   const keys=name==='codex'
+     ? ['realEnforcement','informedHostConsent',
+       'turnBoundaryHoldAndResume','visibleHoldAndResume']
+     : ['realEnforcement','discardAndResubmit',
+       'verifiedHumanProvenance','visibleRefusalAndResume']
+   for(const key of keys)target[key]='verified'
    for(const os of Object.values(target.operatingSystems) as any[]){
      os.status='verified';os.evidence=['test://real-windows-mac-linux-e2e']
      if(name==='dsh-web'||name==='dsh-desktop'){
