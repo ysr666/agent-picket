@@ -1,5 +1,5 @@
 {
-  "schemaVersion": 4,
+  "schemaVersion": 5,
   "release": "1.0.0",
   "status": "blocked",
   "targets": {
@@ -160,6 +160,56 @@
           "atomicGoalStateTransition": {
             "status": "not-verified",
             "evidence": []
+          },
+          "newTurnAdmissionByClient": {
+            "tui": {
+              "status": "not-verified",
+              "evidence": [],
+              "atomicHostAdmission": {
+                "status": "not-verified",
+                "evidence": []
+              },
+              "noticeAndLosslessComposerOrFailOpen": {
+                "status": "not-verified",
+                "evidence": []
+              }
+            },
+            "desktop": {
+              "status": "not-verified",
+              "evidence": [],
+              "atomicHostAdmission": {
+                "status": "not-verified",
+                "evidence": []
+              },
+              "noticeAndLosslessComposerOrFailOpen": {
+                "status": "not-verified",
+                "evidence": []
+              }
+            },
+            "appServer": {
+              "status": "not-verified",
+              "evidence": [],
+              "atomicHostAdmission": {
+                "status": "not-verified",
+                "evidence": []
+              },
+              "noticeAndLosslessComposerOrFailOpen": {
+                "status": "not-verified",
+                "evidence": []
+              }
+            },
+            "sdk": {
+              "status": "not-verified",
+              "evidence": [],
+              "atomicHostAdmission": {
+                "status": "not-verified",
+                "evidence": []
+              },
+              "noticeAndLosslessComposerOrFailOpen": {
+                "status": "not-verified",
+                "evidence": []
+              }
+            }
           }
         },
         "macos": {
@@ -173,6 +223,56 @@
           "atomicGoalStateTransition": {
             "status": "not-verified",
             "evidence": []
+          },
+          "newTurnAdmissionByClient": {
+            "tui": {
+              "status": "not-verified",
+              "evidence": [],
+              "atomicHostAdmission": {
+                "status": "not-verified",
+                "evidence": []
+              },
+              "noticeAndLosslessComposerOrFailOpen": {
+                "status": "not-verified",
+                "evidence": []
+              }
+            },
+            "desktop": {
+              "status": "not-verified",
+              "evidence": [],
+              "atomicHostAdmission": {
+                "status": "not-verified",
+                "evidence": []
+              },
+              "noticeAndLosslessComposerOrFailOpen": {
+                "status": "not-verified",
+                "evidence": []
+              }
+            },
+            "appServer": {
+              "status": "not-verified",
+              "evidence": [],
+              "atomicHostAdmission": {
+                "status": "not-verified",
+                "evidence": []
+              },
+              "noticeAndLosslessComposerOrFailOpen": {
+                "status": "not-verified",
+                "evidence": []
+              }
+            },
+            "sdk": {
+              "status": "not-verified",
+              "evidence": [],
+              "atomicHostAdmission": {
+                "status": "not-verified",
+                "evidence": []
+              },
+              "noticeAndLosslessComposerOrFailOpen": {
+                "status": "not-verified",
+                "evidence": []
+              }
+            }
           }
         },
         "linux": {
@@ -186,6 +286,44 @@
           "atomicGoalStateTransition": {
             "status": "not-verified",
             "evidence": []
+          },
+          "newTurnAdmissionByClient": {
+            "tui": {
+              "status": "not-verified",
+              "evidence": [],
+              "atomicHostAdmission": {
+                "status": "not-verified",
+                "evidence": []
+              },
+              "noticeAndLosslessComposerOrFailOpen": {
+                "status": "not-verified",
+                "evidence": []
+              }
+            },
+            "appServer": {
+              "status": "not-verified",
+              "evidence": [],
+              "atomicHostAdmission": {
+                "status": "not-verified",
+                "evidence": []
+              },
+              "noticeAndLosslessComposerOrFailOpen": {
+                "status": "not-verified",
+                "evidence": []
+              }
+            },
+            "sdk": {
+              "status": "not-verified",
+              "evidence": [],
+              "atomicHostAdmission": {
+                "status": "not-verified",
+                "evidence": []
+              },
+              "noticeAndLosslessComposerOrFailOpen": {
+                "status": "not-verified",
+                "evidence": []
+              }
+            }
           }
         }
       },

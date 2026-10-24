@@ -61,8 +61,8 @@ test('P0: Web two-tab notice and an authenticated headless Host refusal cannot s
 
 test('user-approved discard-and-resend policy replaces auto-recovery, not safe refusal evidence',()=>{
  const old=structuredClone(manifest)
- assert.equal(old.schemaVersion,4)
- old.schemaVersion=3
+ assert.equal(old.schemaVersion,5)
+ old.schemaVersion=4
  assert.ok(checkFirstRelease(old).some(s=>s.includes('schema/version')),
   'Old lossless-recovery release manifests cannot silently bypass the new consent contract')
  const candidate=structuredClone(manifest)
@@ -143,6 +143,13 @@ test('release demands an independent target-by-OS matrix, not aggregate OS or AC
        for(const key of ['exclusiveLiveGoalOwnership','atomicGoalStateTransition']){
          os[key]={status:'verified',evidence:['test://independent-cross-owner-goal-proof']}
        }
+       for(const item of Object.values(os.newTurnAdmissionByClient) as any[]){
+         item.status='verified'
+         item.evidence=['test://fictional-future-per-client-admission-proof']
+         for(const key of ['atomicHostAdmission','noticeAndLosslessComposerOrFailOpen'])
+           item[key]={status:'verified',
+             evidence:['test://fictional-future-input-safe-host-proof']}
+       }
      }
    }
  }
@@ -158,6 +165,10 @@ test('release demands an independent target-by-OS matrix, not aggregate OS or AC
  win.officialHostVersion='0.146.1'
  assert.ok(checkFirstRelease(pass).some(s=>
   s.includes('codex/windows: Codex 0.146.1 has a verified duplicate')))
+ win.officialHostVersion='0.164.0'
+ assert.ok(checkFirstRelease(pass).some(s=>
+  s.includes('codex/windows: Codex 0.164.0 accepts ordinary new Turn')),
+  'Even forged Goal proof cannot certify the observed manual turn bypass')
  win.officialHostVersion='9.999.0'
  win.exclusiveLiveGoalOwnership.status='not-verified'
  assert.ok(checkFirstRelease(pass).some(s=>
@@ -167,6 +178,17 @@ test('release demands an independent target-by-OS matrix, not aggregate OS or AC
  assert.ok(checkFirstRelease(pass).some(s=>
   s.includes('codex/windows/atomicGoalStateTransition')))
  win.atomicGoalStateTransition.evidence=['test://synthetic-future-atomic-goal-proof']
+ win.newTurnAdmissionByClient.appServer.atomicHostAdmission.status='not-verified'
+ assert.ok(checkFirstRelease(pass).some(s=>
+  s.includes('codex/windows/appServer/atomicHostAdmission')),
+  'One direct App-Server client can bypass a synthetic Picket client guard')
+ win.newTurnAdmissionByClient.appServer.atomicHostAdmission.status='verified'
+ win.newTurnAdmissionByClient.desktop.noticeAndLosslessComposerOrFailOpen.evidence=[]
+ assert.ok(checkFirstRelease(pass).some(s=>
+  s.includes('codex/windows/desktop/noticeAndLosslessComposerOrFailOpen')),
+  'An admission block that loses composer content cannot certify release')
+ win.newTurnAdmissionByClient.desktop.noticeAndLosslessComposerOrFailOpen.evidence=
+  ['test://fictional-future-input-safe-host-proof']
  win.officialHostVersion='UNKNOWN'
  assert.ok(checkFirstRelease(pass).some(s=>
   s.includes('codex/windows: exact official Host version')))
