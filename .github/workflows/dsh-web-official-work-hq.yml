@@ -12,6 +12,12 @@ on:
       - 'src/adapters/dsh/client-host-settings-017.ts'
       - 'src/adapters/dsh/rights-settings.ts'
       - 'src/adapters/dsh/input-refusal-consent.ts'
+      # A change to refusal-proof attribution must rerun the real official
+      # rc.2 native Web same-Session notice and headless-client negative E2E.
+      - 'src/adapters/dsh/refusal-notice-contract.ts'
+      - 'src/adapters/dsh/refusal-notice-host.ts'
+      - 'src/adapters/dsh/client-refusal-notice.ts'
+      - 'tests/dsh-refusal-notice.test.ts'
       - 'src/adapters/dsh/native-rights-ui.ts'
       - 'src/adapters/dsh/official-persisted-work-preview.ts'
       - 'src/adapters/dsh/plugin.ts'
