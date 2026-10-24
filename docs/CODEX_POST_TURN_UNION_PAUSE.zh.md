@@ -20,3 +20,11 @@
 **未完成**：在实际 Codex UI 中绑定 Agent Picket 的权威工会授权、轮次待停/已停视觉状态、可靠的用户恢复，以及各平台并发与真实用户体验验收。跨进程 Goal CAS 未由官方 `thread/goal/set` 协议显式提供。不能用仅有测试成功就宣称 1.0 生产停工可用或放行发布。
 
 与 DSH “拒绝并丢弃新的输入请求”不同，该路径**不需要输入与附件恢复合同**。原有全项目 release gate 继续 NO-GO，修改其正式验收契约须独立审阅，不在实现本简化模式时暗中削弱安全门禁。
+
+## 1.0 正式验收合同（Schema v4）
+
+Codex 仅验收 `realEnforcement`、`informedHostConsent`、`turnBoundaryHoldAndResume`、`visibleHoldAndResume`，外加 Codex 每个操作系统既有的官方 Host 版本、独占 Goal 所有权与原子状态转换验证。`turnBoundaryHoldAndResume` 必须包含实际当前 Turn 的工具/模型完整结束、没有下一轮自动开始、重新连接仍保持暂停，以及人类明确恢复的证据。
+
+Codex Goal **不再要求** `discardAndResubmit`、`verifiedHumanProvenance`（输入拦截意义）或 `visibleRefusalAndResume`（拒绝新消息意义）；人类授权并没有被免除，而是作为 `informedHostConsent` 独立证明。DSH Web/Desktop 和 Claude Code 的原有输入拦截合同不受影响。
+
+发布清单仍全为 `not-verified`，即使当前 Mac/Linux 原生测试通过，既不自动写入 `verified`，也不允许 AI 绕过人工复核或 1.0 NO-GO。旧 Schema v3 不能被新校验器接受。

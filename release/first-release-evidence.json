@@ -1,5 +1,5 @@
 {
-  "schemaVersion": 3,
+  "schemaVersion": 4,
   "release": "1.0.0",
   "status": "blocked",
   "targets": {
@@ -147,8 +147,6 @@
     "codex": {
       "status": "not-verified",
       "realEnforcement": "not-verified",
-      "verifiedHumanProvenance": "not-verified",
-      "visibleRefusalAndResume": "not-verified",
       "evidence": [],
       "operatingSystems": {
         "windows": {
@@ -191,7 +189,9 @@
           }
         }
       },
-      "discardAndResubmit": "not-verified"
+      "informedHostConsent": "not-verified",
+      "turnBoundaryHoldAndResume": "not-verified",
+      "visibleHoldAndResume": "not-verified"
     }
   },
   "userExperience": {
