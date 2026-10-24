@@ -83,6 +83,7 @@
     "LICENSE",
     "cordis.patch.yml",
     "docs/",
+    "!docs/CODEX_POST_TURN_UNION_PAUSE.zh.md",
     "!docs/DSH_ORIGINAL_CLIENT_NOTICE_HOST_PROTOCOL_20261024.md",
     "!docs/DSH_INSTALL.zh.md",
     "!docs/PR_CHAIN_CONVERGENCE_20261016.zh.md",

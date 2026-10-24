@@ -165,6 +165,8 @@ test('npm dry-run tarball contains prebuilt plugin and no source, tests, or runt
     'Local composer control must only ship once, in the prebuilt browser bundle')
   assert.ok(files.has('dist/adapters/dsh/client-composer-picket.d.ts'),
     'Keep composer control types referenced by public client.d.ts')
+  assert.equal(files.has('docs/CODEX_POST_TURN_UNION_PAUSE.zh.md'),false,
+    'Internal Codex Goal design stays on GitHub and out of the runtime tarball')
   assert.ok(files.has('docs/START_HERE.zh.md'),
     'The README links to the bundled Chinese setup guide')
   assert.equal(files.has('docs/DSH_INSTALL.zh.md'),false,
