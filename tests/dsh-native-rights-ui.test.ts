@@ -3509,11 +3509,24 @@ test('tool strike UI requires separate review, then separate Start; Host revocat
  await new Promise<void>(r=>setImmediate(r))
  assert.equal(armed,false)
  assert.equal(hasCampaign,false)
+ // Switching Session or reloading an expired campaign must never call a
+ // global record clear "Resume this Session"; only the stored record is cleared.
+ button(view.render(panel),'settings.toolStrikeStart')!.props.onClick()
+ await new Promise<void>(r=>setImmediate(r))
+ armed=false
+ nodes=view.render(panel)
+ assert.ok(nodes.some(n=>n.props['data-ap-tool-enforcement']==='stored-unverified'))
+ assert.ok(nodes.some(n=>n.children.includes('settings.toolStrikeStored')))
+ assert.ok(button(nodes,'settings.toolStrikeClear'))
+ assert.equal(button(nodes,'settings.toolStrikeResume'),undefined)
+ button(nodes,'settings.toolStrikeClear')!.props.onClick()
+ await new Promise<void>(r=>setImmediate(r))
+ assert.equal(hasCampaign,false)
  button(view.render(panel),'settings.toolStrikeRevoke')!.props.onClick()
  await new Promise<void>(r=>setImmediate(r))
  assert.deepEqual(writes,[
   'grant:authorized-v1:tool-strike-current-session-v1',
-  'armed:true','armed:false','grant:off:undefined',
+  'armed:true','armed:false','armed:true','armed:false','grant:off:undefined',
  ])
  assert.equal(permission,false)
 })
