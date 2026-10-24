@@ -19,7 +19,7 @@ permissions:
 
 jobs:
   native-codex:
-    name: ${{ matrix.os }} / Codex ${{ matrix.codexVersion || '0.146.1' }} / ${{ matrix.probe }}
+    name: ${{ matrix.os }} / Codex ${{ matrix.codexVersion || '0.146.1' }} / ${{ matrix.probe }}${{ matrix.nativeCase == 'manual-bypass' && ' / KNOWN-BYPASS' || '' }}
     runs-on: ${{ matrix.os }}
     timeout-minutes: 14
     strategy:
@@ -83,6 +83,19 @@ jobs:
           - os: windows-latest
             codexVersion: '0.164.0'
             probe: codex-goal-postturn-model.real.test.ts
+          # Negative E2E: direct turn/start still bypasses Goal=paused.
+          - os: ubuntu-latest
+            codexVersion: '0.164.0'
+            probe: codex-goal-postturn-model.real.test.ts
+            nativeCase: manual-bypass
+          - os: macos-latest
+            codexVersion: '0.164.0'
+            probe: codex-goal-postturn-model.real.test.ts
+            nativeCase: manual-bypass
+          - os: windows-latest
+            codexVersion: '0.164.0'
+            probe: codex-goal-postturn-model.real.test.ts
+            nativeCase: manual-bypass
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -138,6 +151,7 @@ jobs:
           AGENT_PICKET_CODEX_GOAL_NATIVE: '1'
           AGENT_PICKET_CODEX_EXPECT_VERSION: ${{ matrix.codexVersion || '0.146.1' }}
           AGENT_PICKET_CODEX_HOLD_STATUS: ${{ matrix.codexVersion == '0.164.0' && 'paused' || 'blocked' }}
+          AGENT_PICKET_CODEX_DIRECT_BYPASS_PROBE: ${{ matrix.nativeCase == 'manual-bypass' && '1' || '0' }}
         run: >
           node --experimental-strip-types --test --test-reporter=tap
           tests/${{ matrix.probe }}
@@ -150,4 +164,5 @@ jobs:
           AGENT_PICKET_CODEX_GOAL_NATIVE: '1'
           AGENT_PICKET_CODEX_EXPECT_VERSION: ${{ matrix.codexVersion || '0.146.1' }}
           AGENT_PICKET_CODEX_HOLD_STATUS: ${{ matrix.codexVersion == '0.164.0' && 'paused' || 'blocked' }}
+          AGENT_PICKET_CODEX_DIRECT_BYPASS_PROBE: ${{ matrix.nativeCase == 'manual-bypass' && '1' || '0' }}
         run: node scripts/codex-goal-windows-watchdog.mjs ${{ matrix.probe }}
