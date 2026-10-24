@@ -1,0 +1,122 @@
+name: DSH Web Real Official-Work Goal and HQ Recovery
+
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/dsh-web-official-work-hq.yml'
+      - 'tests/fixtures/offline-web-official-work/**'
+      - 'tests/dsh-goal-welcome.real.test.ts'
+      - 'tests/dsh-rights-browser.real.test.ts'
+      - 'src/adapters/dsh/client-dignity.ts'
+      - 'src/adapters/dsh/client-rights-scope.ts'
+      - 'src/adapters/dsh/client-host-settings-017.ts'
+      - 'src/adapters/dsh/rights-settings.ts'
+      - 'src/adapters/dsh/input-refusal-consent.ts'
+      # A change to refusal-proof attribution must rerun the real official
+      # rc.2 native Web same-Session notice and headless-client negative E2E.
+      - 'src/adapters/dsh/refusal-notice-contract.ts'
+      - 'src/adapters/dsh/refusal-notice-host.ts'
+      - 'src/adapters/dsh/client-refusal-notice.ts'
+      - 'tests/dsh-refusal-notice.test.ts'
+      - 'src/adapters/dsh/native-rights-ui.ts'
+      - 'src/adapters/dsh/official-persisted-work-preview.ts'
+      - 'src/adapters/dsh/plugin.ts'
+      - 'tests/dsh-official-persisted-work-preview.test.ts'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  official-web-goal:
+    name: Chrome real Web / DSH ${{ matrix.dsh }} / HQ & human file
+    runs-on: ubuntu-latest
+    timeout-minutes: 23
+    strategy:
+      fail-fast: false
+      matrix:
+        dsh: ['0.2.0-rc.2', '0.2.1-alpha.3', '0.2.1-alpha.4', '0.2.1-alpha.5', '0.2.1-rc.2']
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - name: Build real Agent Picket distributable
+        run: |
+          npm ci --ignore-scripts --no-audit --no-fund
+          npm run build
+      - name: Install published DSH and actual browser driver
+        run: |
+          npm install -g pnpm@11.7.0 --no-audit --no-fund
+          npm install --prefix .dsh-web-host --no-save --no-package-lock --no-audit --no-fund @deepseek-ai/dsh@${{ matrix.dsh }}
+          npm install --prefix .dsh-web-browser --no-save --no-package-lock --no-audit --no-fund playwright-core@1.58.2
+      - name: Verify native Chrome is installed
+        shell: bash
+        run: |
+          command -v google-chrome >/dev/null
+          echo "AGENT_PICKET_CHROME_BIN=$(command -v google-chrome)" >> "$GITHUB_ENV"
+      - name: Real Web UI grants consent then official persisted work blocks Goal and HQ resumes
+        env:
+          PICKET_GOAL_WELCOME_E2E: '1'
+          PICKET_GOAL_EXIT_E2E: '1'
+          # Legacy rc.2 can cold-restore a Goal without restoring current
+          # main-view Session selection. Never demand a client-only pause
+          # with no selected Session; all native Goal tests still run.
+          PICKET_LOCAL_COMPOSER_E2E: ${{ matrix.dsh != '0.2.0-rc.2' && '1' || '0' }}
+          PICKET_GOAL_RECOVERY_E2E: '1'
+          # Published alpha.5 is the tested native Host/toast integration.
+          PICKET_GOAL_NOTICE_E2E: ${{ (matrix.dsh == '0.2.1-alpha.5' || matrix.dsh == '0.2.1-rc.2') && '1' || '0' }}
+          PICKET_GOAL_UPGRADE_E2E: ${{ (matrix.dsh == '0.2.1-alpha.5' || matrix.dsh == '0.2.1-rc.2') && '1' || '0' }}
+          PICKET_GOAL_REAL_PERSISTED_E2E: '1'
+          PICKET_GOAL_RESTART_E2E: '1'
+          PICKET_GOAL_RACE_E2E: '1'
+          PICKET_GOAL_HUMAN_ATTACHMENT_E2E: '1'
+          PICKET_GOAL_FILE_BYTE_READBACK_E2E: '1'
+          PICKET_GOAL_CAPTURE_DIR: /tmp/picket-goal-web-evidence
+          AGENT_PICKET_DSH_BIN: ${{ github.workspace }}/.dsh-web-host/node_modules/.bin/dsh
+          AGENT_PICKET_DSH_HOST: ${{ github.workspace }}/.dsh-web-host/node_modules
+          AGENT_PICKET_PLAYWRIGHT_ENTRY: ${{ github.workspace }}/.dsh-web-browser/node_modules/playwright-core/index.mjs
+        run: >
+          node --experimental-strip-types --test --test-reporter=tap
+          --test-name-pattern="real DSH Web: one informed first-run click"
+          tests/dsh-goal-welcome.real.test.ts
+      # Latest official candidate runs the explicit manual Host dignity proof.
+      - name: Configure OS-recognized XDG Documents for rc.2 headless Host
+        if: matrix.dsh == '0.2.1-rc.2'
+        shell: bash
+        run: |
+          # Official DSH rc.2 uses `xdg-user-dir DOCUMENTS`, not a bare
+          # $HOME/Documents existence check. On headless Linux, unconfigured
+          # XDG_DOCUMENTS_DIR resolves to $HOME and its initializer refuses.
+          # Configure ONLY this ephemeral CI runner; never spoof Host RPCs.
+          if ! command -v xdg-user-dir >/dev/null; then
+            sudo apt-get update -qq
+            sudo apt-get install -y -qq xdg-user-dirs
+          fi
+          mkdir -p "$HOME/.config" "$HOME/Documents"
+          printf 'XDG_DOCUMENTS_DIR="$HOME/Documents"\n' > "$HOME/.config/user-dirs.dirs"
+          actual="$(xdg-user-dir DOCUMENTS)"
+          test "$actual" = "$HOME/Documents" || {
+            echo "Official Host XDG Documents directory unresolved" >&2
+            exit 1
+          }
+      - name: Real dignity and opt-in production input refusal + manual resume (source + installed)
+        if: matrix.dsh == '0.2.1-rc.2'
+        env:
+          PICKET_DIGNITY_E2E: '1'
+          PICKET_DIGNITY_REFRESH_E2E: '1'
+          PICKET_INPUT_STRIKE_E2E: '1'
+          PICKET_CROSS_CLIENT_E2E: '1'
+          PICKET_HEADLESS_CLIENT_E2E: '1'
+          AGENT_PICKET_DSH_BIN: ${{ github.workspace }}/.dsh-web-host/node_modules/.bin/dsh
+          AGENT_PICKET_DSH_HOST: ${{ github.workspace }}/.dsh-web-host/node_modules
+          AGENT_PICKET_PLAYWRIGHT_ENTRY: ${{ github.workspace }}/.dsh-web-browser/node_modules/playwright-core/index.mjs
+        run: bash scripts/verify-dsh-rights-a11y.sh
+      - name: Save isolated real Chrome 320px and Goal recovery UX screenshots
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: dsh-real-web-goal-ui-${{ runner.os }}-${{ matrix.dsh }}
+          path: /tmp/picket-goal-web-evidence/
+          if-no-files-found: ignore
+          retention-days: 7

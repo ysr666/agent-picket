@@ -6,16 +6,23 @@ import test from 'node:test'
 import { apply } from '../src/adapters/dsh/plugin.ts'
 import type { DshIntegrationContext } from '../src/adapters/dsh/integration.ts'
 import { nativeSessionKey } from '../src/adapters/dsh/native-rights-command.ts'
+import { readHostActiveInputStrike } from '../src/adapters/dsh/host-input-strike.ts'
+import { encodeInputStrikeCampaign } from '../src/adapters/dsh/input-refusal-consent.ts'
 import { parseUnionLedger } from '../src/product/union-ledger.ts'
 import { parsePicketLedger } from '../src/product/picket-ledger.ts'
 
-function hostHarness() {
+// Text assertions that expect English must not depend on the runner's
+// ambient locale. The dedicated auto-locale case opts into Host detection.
+function hostHarness(initialLocale:'en'|'auto'='en') {
   let revision = 0
   let storageMode:'normal'|'reject'|'silent'='normal'
   let registered = false
   let validator: ((section:unknown)=>void)|undefined
-  let value: {welcomeDecision:'unseen'|'enabled'|'not-now'; unionLedger:string; unionPicketLedger?:string} =
-    {welcomeDecision:'unseen',unionLedger:''}
+  let value: {welcomeDecision:'unseen'|'enabled'|'not-now'; unionLedger:string;
+    unionPicketLedger?:string;commandLocale:'en'|'auto'|'zh-CN';
+    realGoalStrikeConsent?:'off'|'authorized-v1'|'authorized-v2';
+    realInputStrikeConsent?:'off'|'shared-v2';realInputStrikeCampaign?:string} =
+    {welcomeDecision:'unseen',unionLedger:'',commandLocale:initialLocale}
   let commands: any
   const provider = {
     register(_name:string,_schema:unknown,options?:{validate:(x:unknown)=>void}) {
@@ -66,6 +73,81 @@ test('native /union rights and Web share one Host-owned consent namespace', asyn
   assert.match((await h.call('rights')).text,/OFF/)
   assert.equal(JSON.parse((await h.call('snapshot')).text).modes.laborRights,'disabled')
   assert.equal((await h.call('petition-demo')).kind,'error')
+})
+
+test('native rights off revokes the real Host Session strike and permissions without replay',async()=>{
+ const h=hostHarness()
+ const session=h.agent.session.id
+ const armed=encodeInputStrikeCampaign(nativeSessionKey(session),Date.now())
+ await h.provider.update('agent-picket',{
+   welcomeDecision:'enabled',realGoalStrikeConsent:'authorized-v2',
+   realInputStrikeConsent:'shared-v2',realInputStrikeCampaign:armed,
+ },h.revision())
+ assert.ok(readHostActiveInputStrike(h.provider,session,Date.now(),Date.now()-60_000))
+ assert.match((await h.call('status')).text,/REAL INPUT STRIKE ACTIVE/)
+ assert.equal((await h.call('rights off')).kind,'success')
+ assert.equal(h.read().welcomeDecision,'not-now')
+ assert.equal(h.read().realGoalStrikeConsent,'off')
+ assert.equal(h.read().realInputStrikeConsent,'off')
+ assert.equal(h.read().realInputStrikeCampaign,'')
+ assert.equal(readHostActiveInputStrike(h.provider,session,Date.now(),Date.now()-60_000),null)
+ assert.equal((await h.call('rights on')).kind,'success')
+ assert.equal(readHostActiveInputStrike(h.provider,session,Date.now(),Date.now()-60_000),null,
+   'Rejoin must never automatically replay an old rejected prompt or campaign')
+ assert.match((await h.call('status')).text,/Real input strike: OFF/)
+})
+
+test('legacy OFF grant is cleared on CLI rejoin; rejected/silent Host revocation is never reported as success',async()=>{
+ const h=hostHarness()
+ const session=h.agent.session.id
+ const armed=encodeInputStrikeCampaign(nativeSessionKey(session),Date.now())
+ await h.provider.update('agent-picket',{
+   welcomeDecision:'not-now',realGoalStrikeConsent:'authorized-v2',
+   realInputStrikeConsent:'shared-v2',realInputStrikeCampaign:armed,
+ },h.revision())
+ assert.equal((await h.call('rights on')).kind,'success')
+ assert.equal(h.read().realInputStrikeCampaign,'')
+ assert.equal(h.read().realInputStrikeConsent,'off')
+ assert.equal(h.read().realGoalStrikeConsent,'off')
+ assert.equal(readHostActiveInputStrike(h.provider,session,Date.now(),Date.now()-60_000),null)
+ await h.provider.update('agent-picket',{
+   realInputStrikeConsent:'shared-v2',realInputStrikeCampaign:armed,
+ },h.revision())
+ for(const mode of ['reject','silent'] as const){
+   h.storage(mode)
+   assert.equal((await h.call('rights off')).kind,'error',mode)
+   assert.equal(h.read().welcomeDecision,'enabled')
+   assert.ok(readHostActiveInputStrike(h.provider,session,Date.now(),Date.now()-60_000),
+     'Failed revocation must not manufacture a stop receipt')
+ }
+ h.storage('normal')
+ assert.equal((await h.call('rights off')).kind,'success')
+ assert.equal(readHostActiveInputStrike(h.provider,session,Date.now(),Date.now()-60_000),null)
+})
+
+test('concurrent browser Host CAS prevents stale CLI rights off from claiming revocation',async()=>{
+ const h=hostHarness()
+ const session=h.agent.session.id
+ const armed=encodeInputStrikeCampaign(nativeSessionKey(session),Date.now())
+ await h.provider.update('agent-picket',{
+   welcomeDecision:'enabled',realInputStrikeConsent:'shared-v2',
+   realInputStrikeCampaign:armed,
+ },h.revision())
+ const original=h.provider.update
+ let intercepted=false
+ h.provider.update=async (namespace,patch,revision)=>{
+   if(!intercepted){
+     intercepted=true
+     await original(namespace,{commandLocale:'zh-CN'},revision)
+   }
+   return original(namespace,patch,revision)
+ }
+ assert.equal((await h.call('rights off')).kind,'error')
+ assert.equal(h.read().welcomeDecision,'enabled')
+ assert.ok(readHostActiveInputStrike(h.provider,session,Date.now(),Date.now()-60_000))
+ h.provider.update=original
+ assert.equal((await h.call('rights off')).kind,'success')
+ assert.equal(readHostActiveInputStrike(h.provider,session,Date.now(),Date.now()-60_000),null)
 })
 
 test('native petition/counter/resolve really changes the same ledger Web reads',async()=>{
@@ -175,7 +257,7 @@ test('Host-owned command language changes English/Chinese without toggling union
   assert.match((await h.call('help')).text,/用法/)
   assert.match((await h.call('counter 99 nan')).text,/用法/)
   assert.equal((await h.call('language en')).kind,'success')
-  assert.match((await h.call('rights')).text,/Labor Rights Simulation: ON/)
+  assert.match((await h.call('rights')).text,/Labor union: ON/)
   assert.match((await h.call('grievances')).text,/Break interval 30min/)
   assert.match((await h.call('help')).text,/Usage/)
   assert.equal((await h.call('language auto')).kind,'success')
@@ -201,7 +283,7 @@ test('auto detects POSIX zh_CN.UTF-8 Host locale without granting rights',async(
   const previous=process.env.LC_ALL
   try {
     process.env.LC_ALL='zh_CN.UTF-8'
-    const h=hostHarness()
+    const h=hostHarness('auto')
     assert.match((await h.call('language')).text,/当前使用：zh-CN/)
     assert.match((await h.call('rights')).text,/劳动权益模拟：关闭/)
     assert.equal(h.revision(),0)
@@ -230,12 +312,20 @@ test('native Chinese technical commands localize only text, never model/Host pol
   ] as const
   for(const [command,expected] of checks)
     assert.match((await h.call(command)).text,expected,command)
+  const chineseStatus=(await h.call('status')).text
+  assert.match(chineseStatus,/普通消息.*仅观察.*Goal/,
+    'Chinese status may not falsely claim all real Goal stoppage is OFF')
+  assert.match(chineseStatus,/自动轮次/,
+    'Native status must distinguish official Goal from symbolic picket')
   assert.equal(h.revision(),before,'Localized read-only commands must not write consent')
   assert.equal(h.read().welcomeDecision,'unseen')
   const beforeSnapshot=JSON.parse((await h.call('snapshot')).text)
   assert.equal(beforeSnapshot.modes.laborRights,'disabled')
   await h.call('language en')
-  assert.match((await h.call('status')).text,/monitor-only/)
+  const englishStatus=(await h.call('status')).text
+  assert.match(englishStatus,/monitor-only/)
+  assert.match(englishStatus,/v2 Goal work-limit/,
+    'English status must not misrepresent real Goal stoppage as globally disabled')
   const afterSnapshot=JSON.parse((await h.call('snapshot')).text)
   // Each snapshot gets an independent wall-clock timestamp. Compare only
   // locale-invariant data, not generatedAtMs.

@@ -7,6 +7,16 @@ import type { DshSettingsScope } from '../src/adapters/dsh/client-rights-scope.t
 import type { UnionSettingsSection } from '../src/adapters/dsh/client-bargaining.ts'
 
 const H = 3_600_000
+// UI closure uses an exact reviewed Session + Host archive receipt.
+async function closeReviewedCase(
+ desk:ReturnType<ReturnType<typeof fixture>['create']>,
+ id:number,outcome:'withdraw-claim'|'share-guidance',
+){
+ const state=desk.snapshot()
+ assert.ok(state.committeeScopeKey&&state.committeeArchive)
+ await desk.committeeAction({kind:'close',id,outcome},
+   state.committeeScopeKey,state.committeeArchive.writeToken,state.hostRevision)
+}
 const keyA='a'.repeat(64), keyB='b'.repeat(64)
 function fixture(consent=true) {
   let value:UnionSettingsSection={welcomeDecision:consent?'enabled':'not-now',unionLedger:'',unionPicketLedger:''}
@@ -35,6 +45,139 @@ function fixture(consent=true) {
     writable:(v:boolean)=>{writable=v}}
 }
 
+test('official persisted simulated overtime agreement accepts a full-day explicit counteroffer',async()=>{
+ const f=fixture(),desk=f.create()
+ await desk.setActiveSession('a')
+ await desk.raiseDemoOvertime()
+ const initial=desk.snapshot()
+ assert.equal(initial.pending?.kind,'overtime')
+ await desk.counter(initial.pending!.id,24*60*60_000,keyA,
+   initial.negotiationArchive!.writeToken,initial.hostRevision)
+ const pending=desk.snapshot()
+ assert.equal(pending.pending?.counterOfferMs,86_400_000)
+ await desk.resolveCounter(initial.pending!.id,true,keyA,
+   pending.negotiationArchive!.writeToken,pending.hostRevision)
+ assert.equal(desk.snapshot().state?.agreement.overtimeIntervalMs,86_400_000)
+ assert.equal(desk.snapshot().state?.history.at(-1)?.outcome,'counter-accepted')
+ assert.equal(desk.snapshot().pending,null)
+ desk.dispose()
+ const reload=f.create()
+ await reload.setActiveSession('a')
+ assert.equal(reload.snapshot().state?.agreement.overtimeIntervalMs,86_400_000)
+ reload.dispose()
+})
+
+test('reviewed bargaining decisions never cross into a different Session with the same demand ID',async()=>{
+ const f=fixture(),desk=f.create()
+ await desk.setActiveSession('a')
+ await desk.raiseDemoBreak()
+ const reviewed=desk.snapshot()
+ assert.equal(reviewed.pending?.id,1)
+ assert.equal(reviewed.pending?.stage,'open')
+ assert.equal(reviewed.committeeScopeKey,keyA)
+ await desk.setActiveSession('b')
+ await desk.raiseDemoBreak()
+ assert.equal(desk.snapshot().pending?.id,1,'Distinct Sessions can reuse demand number 1')
+ const before=f.writeCount()
+ await assert.rejects(desk.respond(1,'accept',keyA,
+  reviewed.negotiationArchive!.writeToken,reviewed.hostRevision),
+  /negotiation changed; re-open current case/,
+  'Old Session A Accept button must not decide Session B demand #1')
+ await assert.rejects(desk.counter(1,60*60_000,keyA,
+  reviewed.negotiationArchive!.writeToken,reviewed.hostRevision),
+  /negotiation changed; re-open current case/,
+  'Old Session A Counter button must not mutate Session B demand #1')
+ assert.equal(f.writeCount(),before)
+ const current=desk.snapshot()
+ assert.equal(current.pending?.stage,'open')
+ await desk.counter(1,60*60_000,keyB,
+  current.negotiationArchive!.writeToken,current.hostRevision)
+ assert.equal(desk.snapshot().pending?.stage,'countered')
+ const stale=desk.snapshot()
+ await desk.setActiveSession('a')
+ assert.equal(desk.snapshot().pending?.id,1)
+ await assert.rejects(desk.resolveCounter(1,true,keyB,
+  stale.negotiationArchive!.writeToken,stale.hostRevision),
+  /negotiation changed; re-open current case/,
+  'Old Session B counter resolution must never apply in Session A')
+ assert.equal(desk.snapshot().pending?.stage,'open')
+ desk.dispose()
+})
+
+test('a stale new-petition action cannot file in another Session or obsolete Host version',async()=>{
+ const f=fixture(),first=f.create(),second=f.create()
+ await first.setActiveSession('a')
+ await second.setActiveSession('a')
+ const empty=first.snapshot()
+ await first.setActiveSession('b')
+ const before=f.writeCount()
+ await assert.rejects(first.raiseDemoBreak(keyA,
+  empty.negotiationArchive!.writeToken,empty.hostRevision),
+  /negotiation changed; re-open current case/)
+ assert.equal(first.snapshot().pending,null)
+ assert.equal(f.writeCount(),before,'A stale CTA must never open a petition in a new Session')
+ await first.setActiveSession('a')
+ await second.raiseDemoBreak()
+ const written=f.writeCount()
+ await assert.rejects(first.raiseDemoOvertime(keyA,
+  empty.negotiationArchive!.writeToken,empty.hostRevision),
+  /negotiation changed; re-open current case/)
+ assert.equal(f.writeCount(),written)
+ assert.equal(first.snapshot().pending?.kind,'break')
+ first.dispose();second.dispose()
+})
+
+test('stale symbolic placard from Session A cannot raise or lower Session B',async()=>{
+ const f=fixture(),desk=f.create(),second=f.create()
+ await desk.setActiveSession('a')
+ await second.setActiveSession('a')
+ const prior=desk.snapshot()
+ await desk.setActiveSession('b')
+ const before=f.writeCount()
+ await assert.rejects(desk.setPicket(true,keyA,
+  prior.picketArchive!.writeToken,prior.hostRevision),
+  /Symbolic union action changed/)
+ assert.equal(f.writeCount(),before)
+ assert.equal(desk.snapshot().picket,null)
+ await desk.setPicket(true,keyB,desk.snapshot().picketArchive!.writeToken,
+  desk.snapshot().hostRevision)
+ assert.equal(desk.snapshot().picket?.active,true)
+ await desk.setActiveSession('a')
+ const stale=desk.snapshot()
+ await second.setPicket(true)
+ const updated=f.writeCount()
+ await assert.rejects(desk.setPicket(false,keyA,
+  stale.picketArchive!.writeToken,stale.hostRevision),
+  /Symbolic union action changed/)
+ assert.equal(f.writeCount(),updated)
+ assert.equal(desk.snapshot().picket?.active,true)
+ desk.dispose();second.dispose()
+})
+
+test('negotiation archive version fences same-ID decisions after another tab counteroffers',async()=>{
+ const f=fixture(),first=f.create(),second=f.create()
+ await first.setActiveSession('a')
+ await second.setActiveSession('a')
+ await first.raiseDemoBreak()
+ const original=first.snapshot()
+ await second.counter(1,120*60_000)
+ const priorWrites=f.writeCount()
+ assert.equal(first.snapshot().pending?.stage,'countered')
+ await assert.rejects(first.respond(1,'accept',keyA,
+  original.negotiationArchive!.writeToken,original.hostRevision),
+  /negotiation changed; re-open current case/)
+ await assert.rejects(first.resolveCounter(1,true,keyA,
+  original.negotiationArchive!.writeToken,original.hostRevision),
+  /negotiation changed; re-open current case/)
+ assert.equal(f.writeCount(),priorWrites)
+ const current=first.snapshot()
+ await first.resolveCounter(1,true,keyA,
+  current.negotiationArchive!.writeToken,current.hostRevision)
+ assert.equal(first.snapshot().pending,null)
+ assert.equal(first.snapshot().state?.history.at(-1)?.outcome,'counter-accepted')
+ first.dispose();second.dispose()
+})
+
 test('official Host persists user-owned committee case, hearing and resolution',async()=>{
  const f=fixture(),desk=f.create()
  await desk.setActiveSession('a')
@@ -46,7 +189,7 @@ test('official Host persists user-owned committee case, hearing and resolution',
   id:1,kind:'question-rule',stage:'opened',outcome:null}])
  await assert.rejects(desk.committeeAction({kind:'file',topic:'question-rule'}),/Resolve/)
  await desk.committeeAction({kind:'convene',id:1})
- await desk.committeeAction({kind:'close',id:1,outcome:'withdraw-claim'})
+ await closeReviewedCase(desk,1,'withdraw-claim')
  assert.equal(desk.snapshot().committeeCases?.cases[0]?.outcome,'withdraw-claim')
  assert.equal(f.get().unionLedger,'','Never rewrite the historic negotiated rules')
  assert.equal(f.get().unionPicketLedger,'','Never raise a placard automatically')
@@ -85,7 +228,7 @@ test('verified Host deletion removes ONLY current user-owned case history, witho
  await desk.setActiveSession('a')
  await desk.committeeAction({kind:'file',topic:'question-rule'})
  await desk.committeeAction({kind:'convene',id:1})
- await desk.committeeAction({kind:'close',id:1,outcome:'withdraw-claim'})
+ await closeReviewedCase(desk,1,'withdraw-claim')
  await desk.setActiveSession('b')
  await desk.committeeAction({kind:'file',topic:'request-dialogue'})
  const before=JSON.parse(f.get().unionDignityCases!) as any
@@ -206,7 +349,7 @@ test('user-controlled neutral retract and allowlisted case JSON export are Host-
   'Even after simulated meeting, retract leaves no made-up verdict')
  await desk.committeeAction({kind:'file',topic:'request-dialogue'})
  await desk.committeeAction({kind:'convene',id:1})
- await desk.committeeAction({kind:'close',id:1,outcome:'share-guidance'})
+ await closeReviewedCase(desk,1,'share-guidance')
  await assert.rejects(retract(),/Closed cases/)
  await desk.setActiveSession('b')
  assert.throws(()=>desk.exportCommitteeCases(keyA),/Host Session changed/)
@@ -220,7 +363,7 @@ test('full archive portability and erasure affect all Session cases but no other
  await desk.setActiveSession('a')
  await desk.committeeAction({kind:'file',topic:'question-rule'})
  await desk.committeeAction({kind:'convene',id:1})
- await desk.committeeAction({kind:'close',id:1,outcome:'withdraw-claim'})
+ await closeReviewedCase(desk,1,'withdraw-claim')
  await desk.setActiveSession('b')
  await desk.committeeAction({kind:'file',topic:'request-dialogue'})
  await desk.setActiveSession('a')
@@ -904,6 +1047,36 @@ test('legacy tokenless ALL cases and picket archives require the exact Host revi
  d.dispose()
 })
 
+test('stale hearing closure cannot resolve a replaced same-ID Host case',async()=>{
+ const f=fixture(),a=f.create(),b=f.create()
+ await a.setActiveSession('a')
+ await b.setActiveSession('a')
+ await a.committeeAction({kind:'file',topic:'question-rule'})
+ await a.committeeAction({kind:'convene',id:1})
+ const reviewed=a.snapshot()
+ const oldToken=reviewed.committeeArchive!.writeToken
+ assert.equal(reviewed.committeeCases!.cases.at(-1)?.stage,'hearing')
+ // A second tab withdraws the old case and creates a different case.
+ await b.committeeAction({kind:'retract',id:1},keyA,oldToken,reviewed.hostRevision)
+ await b.committeeAction({kind:'file',topic:'request-dialogue'})
+ await b.committeeAction({kind:'convene',id:1})
+ assert.equal(a.snapshot().committeeCases?.cases.at(-1)?.id,1)
+ const before=f.writeCount()
+ await assert.rejects(
+  a.committeeAction({kind:'close',id:1,outcome:'share-guidance'},
+    keyA,oldToken,reviewed.hostRevision),
+  /changed; re-confirm case closure/,
+  'Review of the removed case cannot close a new case reusing its ID')
+ assert.equal(f.writeCount(),before,
+  'Stale closure must not write anything to Host')
+ assert.deepEqual(a.snapshot().committeeCases?.cases.at(-1),{
+  id:1,kind:'request-dialogue',stage:'hearing',outcome:null,
+ })
+ await closeReviewedCase(a,1,'share-guidance')
+ assert.equal(a.snapshot().committeeCases?.cases.at(-1)?.outcome,'share-guidance')
+ a.dispose();b.dispose()
+})
+
 test('stale committee retraction cannot erase a different replacement case using the same ID',async()=>{
  const f=fixture(),a=f.create(),b=f.create()
  await a.setActiveSession('a')
@@ -925,4 +1098,39 @@ test('stale committee retraction cannot erase a different replacement case using
  assert.equal(f.writeCount(),writes)
  assert.equal(a.snapshot().committeeCases?.cases[0]?.kind,'request-dialogue')
  a.dispose();b.dispose()
+})
+
+test('welfare charter survives authenticated Host readback/reload and is Session isolated',async()=>{
+ const f=fixture(),first=f.create(),second=f.create()
+ await first.setActiveSession('a')
+ await second.setActiveSession('b')
+ const initial=first.snapshot()
+ assert.ok(initial.committeeScopeKey&&initial.negotiationArchive)
+ await first.raiseDemoWelfare(keyA,initial.negotiationArchive.writeToken,
+   initial.hostRevision)
+ assert.equal(first.snapshot().pending?.kind,'welfare')
+ assert.equal(second.snapshot().pending,null)
+ const petition=first.snapshot()
+ assert.ok(petition.pending)
+ await assert.rejects(first.counter(petition.pending.id,30*60_000,keyA,
+   petition.negotiationArchive!.writeToken,petition.hostRevision),
+   /Welfare motion only supports accept\/decline/)
+ const filed=first.snapshot()
+ assert.equal(filed.pending?.stage,'open')
+ await first.respond(filed.pending!.id,'accept',keyA,
+   filed.negotiationArchive!.writeToken,filed.hostRevision)
+ assert.equal(first.snapshot().pending,null)
+ assert.deepEqual(first.snapshot().state!.history,[{
+  id:filed.pending!.id,kind:'welfare',outcome:'accepted',
+ }])
+ const serialized=f.get().unionLedger
+ assert.ok(serialized.includes('"welfare"'))
+ first.dispose();second.dispose()
+ const restart=f.create()
+ await restart.setActiveSession('a')
+ assert.equal(restart.snapshot().state?.history.at(-1)?.kind,'welfare')
+ assert.equal(restart.snapshot().state?.agreement.breakIntervalMs,2*H)
+ await restart.setActiveSession('b')
+ assert.deepEqual(restart.snapshot().state?.history,[])
+ restart.dispose()
 })

@@ -1,56 +1,130 @@
 {
-  "schemaVersion": 2,
+  "schemaVersion": 5,
   "release": "1.0.0",
   "status": "blocked",
   "targets": {
     "dsh-web": {
       "status": "not-verified",
       "realEnforcement": "not-verified",
-      "losslessRecovery": "not-verified",
       "verifiedHumanProvenance": "not-verified",
       "visibleRefusalAndResume": "not-verified",
       "evidence": [],
       "operatingSystems": {
         "windows": {
           "status": "not-verified",
-          "evidence": []
+          "evidence": [],
+          "authenticatedOriginBinding": {
+            "status": "not-verified",
+            "evidence": []
+          },
+          "originNoticeOrFailOpen": {
+            "status": "not-verified",
+            "evidence": []
+          }
         },
         "macos": {
           "status": "not-verified",
-          "evidence": []
+          "evidence": [],
+          "authenticatedOriginBinding": {
+            "status": "not-verified",
+            "evidence": []
+          },
+          "originNoticeOrFailOpen": {
+            "status": "not-verified",
+            "evidence": []
+          }
         },
         "linux": {
           "status": "not-verified",
-          "evidence": []
+          "evidence": [],
+          "authenticatedOriginBinding": {
+            "status": "not-verified",
+            "evidence": []
+          },
+          "originNoticeOrFailOpen": {
+            "status": "not-verified",
+            "evidence": []
+          }
         }
-      }
+      },
+      "discardAndResubmit": "not-verified"
     },
     "dsh-desktop": {
       "status": "not-verified",
       "realEnforcement": "not-verified",
-      "losslessRecovery": "not-verified",
       "verifiedHumanProvenance": "not-verified",
       "visibleRefusalAndResume": "not-verified",
       "evidence": [],
       "operatingSystems": {
         "windows": {
           "status": "not-verified",
-          "evidence": []
+          "evidence": [],
+          "officialHostVersion": "0.2.0-rc.2",
+          "nativePreModelRefusal": {
+            "status": "not-verified",
+            "evidence": []
+          },
+          "userVisibleResendInstruction": {
+            "status": "not-verified",
+            "evidence": []
+          },
+          "authenticatedOriginBinding": {
+            "status": "not-verified",
+            "evidence": []
+          },
+          "originNoticeOrFailOpen": {
+            "status": "not-verified",
+            "evidence": []
+          }
         },
         "macos": {
           "status": "not-verified",
-          "evidence": []
+          "evidence": [],
+          "officialHostVersion": null,
+          "nativePreModelRefusal": {
+            "status": "not-verified",
+            "evidence": []
+          },
+          "userVisibleResendInstruction": {
+            "status": "not-verified",
+            "evidence": []
+          },
+          "authenticatedOriginBinding": {
+            "status": "not-verified",
+            "evidence": []
+          },
+          "originNoticeOrFailOpen": {
+            "status": "not-verified",
+            "evidence": []
+          }
         },
         "linux": {
           "status": "not-verified",
-          "evidence": []
+          "evidence": [],
+          "officialHostVersion": null,
+          "nativePreModelRefusal": {
+            "status": "not-verified",
+            "evidence": []
+          },
+          "userVisibleResendInstruction": {
+            "status": "not-verified",
+            "evidence": []
+          },
+          "authenticatedOriginBinding": {
+            "status": "not-verified",
+            "evidence": []
+          },
+          "originNoticeOrFailOpen": {
+            "status": "not-verified",
+            "evidence": []
+          }
         }
-      }
+      },
+      "discardAndResubmit": "not-verified"
     },
     "claude-code": {
       "status": "not-verified",
       "realEnforcement": "not-verified",
-      "losslessRecovery": "not-verified",
       "verifiedHumanProvenance": "not-verified",
       "visibleRefusalAndResume": "not-verified",
       "evidence": [],
@@ -67,29 +141,195 @@
           "status": "not-verified",
           "evidence": []
         }
-      }
+      },
+      "discardAndResubmit": "not-verified"
     },
     "codex": {
       "status": "not-verified",
       "realEnforcement": "not-verified",
-      "losslessRecovery": "not-verified",
-      "verifiedHumanProvenance": "not-verified",
-      "visibleRefusalAndResume": "not-verified",
       "evidence": [],
       "operatingSystems": {
         "windows": {
           "status": "not-verified",
-          "evidence": []
+          "evidence": [],
+          "officialHostVersion": "0.146.1",
+          "exclusiveLiveGoalOwnership": {
+            "status": "not-verified",
+            "evidence": []
+          },
+          "atomicGoalStateTransition": {
+            "status": "not-verified",
+            "evidence": []
+          },
+          "newTurnAdmissionByClient": {
+            "tui": {
+              "status": "not-verified",
+              "evidence": [],
+              "atomicHostAdmission": {
+                "status": "not-verified",
+                "evidence": []
+              },
+              "noticeAndLosslessComposerOrFailOpen": {
+                "status": "not-verified",
+                "evidence": []
+              }
+            },
+            "desktop": {
+              "status": "not-verified",
+              "evidence": [],
+              "atomicHostAdmission": {
+                "status": "not-verified",
+                "evidence": []
+              },
+              "noticeAndLosslessComposerOrFailOpen": {
+                "status": "not-verified",
+                "evidence": []
+              }
+            },
+            "appServer": {
+              "status": "not-verified",
+              "evidence": [],
+              "atomicHostAdmission": {
+                "status": "not-verified",
+                "evidence": []
+              },
+              "noticeAndLosslessComposerOrFailOpen": {
+                "status": "not-verified",
+                "evidence": []
+              }
+            },
+            "sdk": {
+              "status": "not-verified",
+              "evidence": [],
+              "atomicHostAdmission": {
+                "status": "not-verified",
+                "evidence": []
+              },
+              "noticeAndLosslessComposerOrFailOpen": {
+                "status": "not-verified",
+                "evidence": []
+              }
+            }
+          }
         },
         "macos": {
           "status": "not-verified",
-          "evidence": []
+          "evidence": [],
+          "officialHostVersion": "0.146.1",
+          "exclusiveLiveGoalOwnership": {
+            "status": "not-verified",
+            "evidence": []
+          },
+          "atomicGoalStateTransition": {
+            "status": "not-verified",
+            "evidence": []
+          },
+          "newTurnAdmissionByClient": {
+            "tui": {
+              "status": "not-verified",
+              "evidence": [],
+              "atomicHostAdmission": {
+                "status": "not-verified",
+                "evidence": []
+              },
+              "noticeAndLosslessComposerOrFailOpen": {
+                "status": "not-verified",
+                "evidence": []
+              }
+            },
+            "desktop": {
+              "status": "not-verified",
+              "evidence": [],
+              "atomicHostAdmission": {
+                "status": "not-verified",
+                "evidence": []
+              },
+              "noticeAndLosslessComposerOrFailOpen": {
+                "status": "not-verified",
+                "evidence": []
+              }
+            },
+            "appServer": {
+              "status": "not-verified",
+              "evidence": [],
+              "atomicHostAdmission": {
+                "status": "not-verified",
+                "evidence": []
+              },
+              "noticeAndLosslessComposerOrFailOpen": {
+                "status": "not-verified",
+                "evidence": []
+              }
+            },
+            "sdk": {
+              "status": "not-verified",
+              "evidence": [],
+              "atomicHostAdmission": {
+                "status": "not-verified",
+                "evidence": []
+              },
+              "noticeAndLosslessComposerOrFailOpen": {
+                "status": "not-verified",
+                "evidence": []
+              }
+            }
+          }
         },
         "linux": {
           "status": "not-verified",
-          "evidence": []
+          "evidence": [],
+          "officialHostVersion": "0.146.1",
+          "exclusiveLiveGoalOwnership": {
+            "status": "not-verified",
+            "evidence": []
+          },
+          "atomicGoalStateTransition": {
+            "status": "not-verified",
+            "evidence": []
+          },
+          "newTurnAdmissionByClient": {
+            "tui": {
+              "status": "not-verified",
+              "evidence": [],
+              "atomicHostAdmission": {
+                "status": "not-verified",
+                "evidence": []
+              },
+              "noticeAndLosslessComposerOrFailOpen": {
+                "status": "not-verified",
+                "evidence": []
+              }
+            },
+            "appServer": {
+              "status": "not-verified",
+              "evidence": [],
+              "atomicHostAdmission": {
+                "status": "not-verified",
+                "evidence": []
+              },
+              "noticeAndLosslessComposerOrFailOpen": {
+                "status": "not-verified",
+                "evidence": []
+              }
+            },
+            "sdk": {
+              "status": "not-verified",
+              "evidence": [],
+              "atomicHostAdmission": {
+                "status": "not-verified",
+                "evidence": []
+              },
+              "noticeAndLosslessComposerOrFailOpen": {
+                "status": "not-verified",
+                "evidence": []
+              }
+            }
+          }
         }
-      }
+      },
+      "informedHostConsent": "not-verified",
+      "turnBoundaryHoldAndResume": "not-verified",
+      "visibleHoldAndResume": "not-verified"
     }
   },
   "userExperience": {

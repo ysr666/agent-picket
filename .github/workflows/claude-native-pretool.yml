@@ -1,0 +1,50 @@
+name: Claude Code Official Native Bash-Only Union Hook
+
+on:
+  pull_request:
+    paths:
+      - 'scripts/probe-claude-pretool.real.py'
+      - 'scripts/claude-union-pre-tool-hook.mjs'
+      - 'src/adapters/claude/tool-work-refusal.ts'
+      - 'tests/claude-tool-work-refusal.test.ts'
+      - '.github/workflows/claude-native-pretool.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  official-claude-tool:
+    name: ${{ matrix.os }} / Claude 2.1.295 / ${{ matrix.mode }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 12
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+        mode: [deny, allow, fail, host-disabled]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - name: Compile candidate (never install Picket into user Host)
+        run: |
+          npm ci --ignore-scripts --no-audit --no-fund
+          npm run check
+      - name: Install actual pinned official Claude Code CLI into disposable prefix
+        run: >
+          npm install --prefix .claude-host --no-save --no-package-lock
+          --no-audit --no-fund @anthropic-ai/claude-code@2.1.295
+      - name: Verify actual Host and Node binaries
+        shell: bash
+        run: |
+          echo "AGENT_PICKET_CLAUDE_NODE_BIN=$(command -v node)" >> "$GITHUB_ENV"
+          node --version
+          .claude-host/node_modules/.bin/claude --version
+      - name: Real CLI invokes official PreToolUse and local-only model/tool
+        env:
+          AGENT_PICKET_CLAUDE_PRETOOL_NATIVE: '1'
+          AP_CLAUDE_MODE: ${{ matrix.mode }}
+          AGENT_PICKET_CLAUDE_BIN: ${{ github.workspace }}/.claude-host/node_modules/.bin/claude
+        run: python3 scripts/probe-claude-pretool.real.py

@@ -19,8 +19,14 @@ test('real Goal consent is separately versioned, Host-owned, default OFF',()=>{
  assert.equal(readHostGoalStrikeConsent(s.provider),null,
    'Old welcomeDecision=enabled grants no right to halt any work')
  s.set({realGoalStrikeConsent:'authorized-v1'})
- assert.deepEqual(readHostGoalStrikeConsent(s.provider),{
+ assert.deepEqual(readHostGoalStrikeConsent(s.provider,true),{
    kind:'agent-picket-real-goal-strike-v1',hostAuthenticated:true,enabled:true})
+ assert.equal(readHostGoalStrikeConsent(s.provider),null,
+   'Old v1 consent cannot start real Goal stoppage in a normal install')
+ s.set({realGoalStrikeConsent:'authorized-v2'})
+ assert.deepEqual(readHostGoalStrikeConsent(s.provider),{
+   kind:'agent-picket-real-goal-strike-v1',hostAuthenticated:true,enabled:true},
+   'Fresh explicit v2 permission enables only the already-verified Goal boundary')
  s.set({welcomeDecision:'not-now'})
  assert.equal(readHostGoalStrikeConsent(s.provider),null)
  s.set({welcomeDecision:'enabled',realGoalStrikeConsent:'off'})
@@ -40,7 +46,7 @@ test('Host revoke between consent reads never grants a Goal strike',()=>{
    },
    update:async()=>{},
  }
- assert.equal(readHostGoalStrikeConsent(provider),null)
+ assert.equal(readHostGoalStrikeConsent(provider,true),null)
  assert.equal(views,2)
 })
 test('Host descriptor ambiguity, stale get and malformed permission fail closed',()=>{
@@ -122,7 +128,7 @@ test('Goal adapter uses official live-agent identity, safe turn boundary and cur
    assert.deepEqual(deps,['goals','agents'])
    register({goals,agents:{get:id=>id===agent.id?agent:undefined},
      on(_type,fn){callback=fn}})
- }},{consent:()=>readHostGoalStrikeConsent(s.provider),todayWork:()=>readWork(),
+ }},{consent:()=>readHostGoalStrikeConsent(s.provider,true),todayWork:()=>readWork(),
   now:()=>now,onResult:result=>results.push(result)})
  assert.ok(callback)
  s.set({realGoalStrikeConsent:'off'})
@@ -187,7 +193,7 @@ test('native /union rights OFF atomically clears a previously granted real Goal 
   },
  }
  const commands=createNativeUnionCommandPort(settings)
- assert.ok(readHostGoalStrikeConsent(settings))
+ assert.ok(readHostGoalStrikeConsent(settings,true))
  await commands.setEnabled(false)
  assert.equal(saved.welcomeDecision,'not-now')
  assert.equal(saved.realGoalStrikeConsent,'off')

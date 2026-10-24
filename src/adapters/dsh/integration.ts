@@ -32,6 +32,11 @@ export interface DshAgent {
 export interface DshPreStep {
   readonly agent: DshAgent
   readonly messages: readonly DshMessage[]
+  /** Official AgentLoop coordinates: only turn's FIRST proposed step can
+   * represent a new ordinary human submission. Unknown legacy coordinates
+   * are observation-only, never physical refusal authority. */
+  readonly turn?: unknown
+  readonly step?: unknown
 }
 export interface DshSession { readonly id?: unknown }
 export interface DshEvent {
@@ -72,6 +77,38 @@ export interface DshIntegrationContext {
   effect?(register: () => () => void): unknown
 }
 
+/** User-approved discard+manual-resend prototype. This receipt must be read
+ * from the OFFICIAL Host once the UI has actually shown its refusal notice;
+ * an ordinary union welcome, symbolic placard or Goal-only v2 grant is NOT
+ * an ordinary-input refusal permission. No production owner supplies it yet.
+ */
+export interface DshDiscardRefusalReceipt {
+  readonly kind:'agent-picket-discard-refusal-v1'
+  readonly sessionId:string
+  readonly hostAuthenticated:true
+  readonly explicitConsent:true
+  readonly active:true
+  readonly visibleResendNotice:true
+  readonly hostRevision:number
+  /** Host-issued, per-submission evidence, not `source.kind` alone. DSH
+   * 0.2.1-rc.2 has no authenticated submitting-browser identity in pre-step,
+   * so native production CANNOT issue this proof today. Test fixtures may
+   * emulate a fully qualified Host only in an isolated offline environment. */
+  readonly submission:{
+    readonly kind:'host-verified-client-submission-v1'
+    readonly turn:number
+    readonly messageIds:readonly string[]
+    readonly noticeRecipientMatchesOrigin:true
+  }|{
+    /** User-armed Host Session-scoped strike on DSH Web; unlike the
+     * research-only receipt above, this does not claim browser identity. */
+    readonly kind:'dsh-session-armed-strike-v1'
+    readonly turn:number
+    readonly messageIds:readonly string[]
+    readonly hostNoticeRouteReady:true
+  }
+}
+
 export interface DshIntegrationOptions {
   readonly engine: UnionEngine
   readonly clock: Clock
@@ -94,6 +131,17 @@ export interface DshIntegrationOptions {
   readonly getLaborRightsEnabled?: () => boolean
   /** One official Host-authorized rights/union state owner, shared with DSH Web. */
   readonly getNativeUnion?: () => NativeUnionCommandPort | undefined
+  /** Strictly optional; production remains OFF until Host notice + CAS proof. */
+  readonly getExplicitDiscardRefusal?:(
+    sessionId:string,turn:number,messageIds:readonly string[],
+  )=>DshDiscardRefusalReceipt|null
+  /** Synchronous acknowledgement from a verified Host notice owner. Must return
+   * true only when the user-visible discard/resend instructions are confirmed.
+   * Missing, throwing or false notice => allow normal execution, never drop.
+   * Callback receives only the Session ID; never prompt text or attachments. */
+  /** Exact official turn coordinate enables later visible notices to match
+   * THIS blocked attempt, not a separate plugin's unrelated Host rejection. */
+  readonly onExplicitRefusal?:(sessionId:string,turn:number,expectedHostRevision?:number)=>boolean
 }
 
 /**
@@ -218,6 +266,62 @@ export function registerDshIntegration(
   }
 
   ctx.on('agent/pre-step', async (payload, next) => {
+    // A refusal may discard the current text and attachments by explicit
+    // user choice, but MUST NOT silently drop work before the Host proves its
+    // separate real-strike consent AND the UI's visible resend notice.
+    // Real permission and a Session-local campaign must both be confirmed.
+    try {
+      const sessionId=payload.agent?.session?.id
+      const humanBatch=typeof payload.agent?.id==='string'&&!!payload.agent.id
+        &&Number.isSafeInteger(payload.turn)
+        &&typeof payload.turn==='number'&&payload.turn>0
+        &&payload.step===1
+        &&typeof sessionId==='string'&&!!sessionId
+        &&Array.isArray(payload.messages)&&payload.messages.length>0
+        &&new Set(payload.messages.map(message=>message.id)).size===payload.messages.length
+        &&payload.messages.every(message=>typeof message.id==='string'
+          &&!!message.id&&message.source?.kind==='user'
+          &&Array.isArray(message.content)&&message.content.length>0)
+      if(humanBatch&&options.getLaborRightsEnabled?.()===true
+        &&options.getExplicitDiscardRefusal&&options.onExplicitRefusal){
+        const turn=payload.turn as number
+        const messageIds=payload.messages.map(message=>message.id as string)
+        // Capture only primitive values. A Host settings provider may reuse
+        // mutable objects, so comparing `a.hostRevision` after a second read
+        // could otherwise compare an updated object to itself.
+        const revision=(row:DshDiscardRefusalReceipt|null|undefined)=>{
+          if(row?.kind!=='agent-picket-discard-refusal-v1'
+            ||row.sessionId!==sessionId||row.hostAuthenticated!==true
+            ||row.explicitConsent!==true||row.active!==true
+            ||row.visibleResendNotice!==true
+            ||!Number.isSafeInteger(row.hostRevision)||row.hostRevision<0
+            ||(row.submission?.kind!=='host-verified-client-submission-v1'
+              &&row.submission?.kind!=='dsh-session-armed-strike-v1')
+            ||row.submission.turn!==turn
+            ||(row.submission.kind==='host-verified-client-submission-v1'
+              ?row.submission.noticeRecipientMatchesOrigin!==true
+              :row.submission.hostNoticeRouteReady!==true)
+            ||!Array.isArray(row.submission.messageIds)
+            ||row.submission.messageIds.length!==messageIds.length
+            ||!messageIds.every((id,i)=>row.submission.messageIds[i]===id))
+            return null
+          return row.hostRevision
+        }
+        // DSH officially authenticates the Session but cannot identify which
+        // browser tab originated it. Only an explicitly armed shared Session
+        // may use this alternate authority; never claim per-tab attribution.
+        const first=revision(options.getExplicitDiscardRefusal(sessionId!,turn,messageIds))
+        if(first!==null){
+          const second=revision(options.getExplicitDiscardRefusal(sessionId!,turn,messageIds))
+          if(second!==null&&second===first
+            &&options.getLaborRightsEnabled?.()===true){
+            // Fail OPEN when native notice acknowledgement is unavailable.
+            if(options.onExplicitRefusal(sessionId!,turn,first)===true)
+              return {kind:'reject' as const}
+          }
+        }
+      }
+    }catch{/* Unavailable Host ownership or notice => NEVER silently reject. */}
     try {
       for (const message of payload.messages) {
         // No default consent. Read the real Host-owned setting at EVERY

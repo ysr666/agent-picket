@@ -6,7 +6,7 @@
  */
 import type { LaborStateV1, LaborDemandKind } from './union-desk.ts'
 export interface UnionCadenceRow {
-  readonly kind: LaborDemandKind
+  readonly kind: Exclude<LaborDemandKind,'welfare'>
   readonly agreedIntervalMs: number
   readonly dueAtWorkMs: number
   readonly remainingWorkMs: number | null

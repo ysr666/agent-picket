@@ -13,7 +13,11 @@ import type { DshSettingsScope } from './client-rights-scope.ts'
 import { advanceDignityCase, parseDignityCaseLedger, MAX_DIGNITY_CASE_BYTES, MAX_DIGNITY_CASE_SESSIONS, type DignityCaseKind, type DignityCaseOutcome, type DignityCaseSession } from '../../product/dignity-case-ledger.ts'
 
 export interface UnionSettingsSection {
-  readonly realGoalStrikeConsent?:'off'|'authorized-v1'
+  readonly realGoalStrikeConsent?:'off'|'authorized-v1'|'authorized-v2'
+  readonly realInputStrikeConsent?:'off'|'discard-resend-v1'|'shared-v2'
+  readonly realInputStrikeCampaign?:string
+  readonly realToolStrikeConsent?:'off'|'authorized-v1'
+  readonly realToolStrikeCampaign?:string
   readonly welcomeDecision: 'unseen' | 'enabled' | 'not-now'
   readonly unionLedger: string
   readonly unionPicketLedger?: string
@@ -117,9 +121,22 @@ export function createDshBrowserUnionDesk(options: {
     }
   }
 
-  async function perform<T>(action: (desk: ReturnType<typeof createLaborDesk>) => T): Promise<T> {
+  async function perform<T>(
+    action: (desk: ReturnType<typeof createLaborDesk>) => T,
+    reviewed?:{key:string;token:string|null;revision?:number|null},
+  ): Promise<T> {
     const before = read()
     if (!before) throw new Error('Authorized, enabled Host union settings unavailable')
+    if(reviewed){
+      // A stale UI button may outlive its Session. Session IDs and numeric
+      // demand IDs can repeat across independent Host ledgers. Require the
+      // exact Session and archive receipt the user actually reviewed.
+      const currentToken=before.ledger.writeToken??null
+      if(reviewed.key!==before.key||reviewed.token!==currentToken
+        ||(currentToken===null&&(!Number.isSafeInteger(reviewed.revision)
+          ||reviewed.revision!==before.view.revision)))
+        throw new Error('Union negotiation changed; re-open current case')
+    }
     let next = before.ledger.sessions[before.key]
     const desk = createLaborDesk({
       store: { load: () => next, save: record => { next = record } },
@@ -220,11 +237,23 @@ export function createDshBrowserUnionDesk(options: {
         catch { return null } // failure can never interrupt the real Agent
       }).catch(()=>null) // a Session switch cancels obsolete background work
     },
-    raiseDemoBreak() {
-      return enqueue(() => perform(desk => desk.raiseDemoDemand('break')))
+    raiseDemoBreak(expectedKey?:string,expectedToken?:string|null,
+      expectedRevision?:number|null) {
+      const reviewed=expectedKey===undefined?undefined:{
+        key:expectedKey,token:expectedToken??null,revision:expectedRevision}
+      return enqueue(() => perform(desk => desk.raiseDemoDemand('break'),reviewed))
     },
-    raiseDemoOvertime() {
-      return enqueue(() => perform(desk => desk.raiseDemoDemand('overtime')))
+    raiseDemoOvertime(expectedKey?:string,expectedToken?:string|null,
+      expectedRevision?:number|null) {
+      const reviewed=expectedKey===undefined?undefined:{
+        key:expectedKey,token:expectedToken??null,revision:expectedRevision}
+      return enqueue(() => perform(desk => desk.raiseDemoDemand('overtime'),reviewed))
+    },
+    raiseDemoWelfare(expectedKey?:string,expectedToken?:string|null,
+      expectedRevision?:number|null) {
+      const reviewed=expectedKey===undefined?undefined:{
+        key:expectedKey,token:expectedToken??null,revision:expectedRevision}
+      return enqueue(() => perform(desk => desk.raiseDemoDemand('welfare'),reviewed))
     },
     setGazetteMode(mode:'visible'|'quiet') {
       return enqueue(async()=>{
@@ -249,17 +278,18 @@ export function createDshBrowserUnionDesk(options: {
         if(!before)throw new Error('Authenticated, opted-in union committee unavailable')
         if(expectedKey!==undefined&&expectedKey!==before.key)
           throw new Error('Committee Session changed; re-confirm action')
-        if(action.kind==='retract'){
-          // Retraction is a two-click destructive act. A different newly
-          // filed case may reuse the same numeric ID and stage after its
-          // predecessor is retracted. Bind approval to the Host ledger,
-          // not merely to the Session, ID or current UI stage.
+        if(action.kind==='retract'||action.kind==='close'){
+          // BOTH deletion and irreversible hearing closure require the
+          // exact Host ledger the person reviewed. After another tab
+          // retracts/re-files, the new case may reuse the same numeric ID,
+          // kind and hearing stage. Those fields alone are not authorization.
           const actualToken=before.caseLedger.writeToken??null
           if(expectedWriteToken===undefined||expectedWriteToken!==actualToken
             ||(actualToken===null
               &&(!Number.isSafeInteger(expectedHostRevision)
                 ||before.view.revision!==expectedHostRevision)))
-            throw new Error('Committee archive changed; re-confirm retraction')
+            throw new Error('Committee archive changed; re-confirm '+(
+              action.kind==='close'?'case closure':'retraction'))
         }
         const prior=before.caseLedger.sessions[before.key]??{cases:[]}
         const next=advanceDignityCase(prior,action)
@@ -481,11 +511,19 @@ export function createDshBrowserUnionDesk(options: {
         notify()
       })
     },
-    setPicket(raise: boolean) {
+    setPicket(raise: boolean,expectedKey?:string,expectedToken?:string|null,
+      expectedRevision?:number|null) {
       return enqueue(async () => {
         if (typeof raise !== 'boolean') throw new TypeError('Invalid symbolic picket action')
         const before=read()
         if (!before) throw new Error('Authorized, enabled Host union settings unavailable')
+        if(expectedKey!==undefined){
+          const token=before.picketLedger.writeToken??null
+          if(before.key!==expectedKey||token!==(expectedToken??null)
+            ||(token===null&&(!Number.isSafeInteger(expectedRevision)
+              ||expectedRevision!==before.view.revision)))
+            throw new Error('Symbolic union action changed; review current Session')
+        }
         const prior=before.picketLedger.sessions[before.key] ??
           {active:false,history:[]} as PicketActionState
         if (prior.active===raise) return prior
@@ -518,14 +556,23 @@ export function createDshBrowserUnionDesk(options: {
         return next
       })
     },
-    respond(id: number, choice: 'accept' | 'decline') {
-      return enqueue(() => perform(desk => desk.respond(id, choice)))
+    respond(id: number, choice: 'accept' | 'decline',
+      expectedKey?:string,expectedToken?:string|null,expectedRevision?:number|null) {
+      const reviewed=expectedKey===undefined?undefined:{
+        key:expectedKey,token:expectedToken??null,revision:expectedRevision}
+      return enqueue(() => perform(desk => desk.respond(id, choice),reviewed))
     },
-    counter(id: number, intervalMs: number) {
-      return enqueue(() => perform(desk => desk.counter(id, intervalMs)))
+    counter(id: number, intervalMs: number,
+      expectedKey?:string,expectedToken?:string|null,expectedRevision?:number|null) {
+      const reviewed=expectedKey===undefined?undefined:{
+        key:expectedKey,token:expectedToken??null,revision:expectedRevision}
+      return enqueue(() => perform(desk => desk.counter(id, intervalMs),reviewed))
     },
-    resolveCounter(id: number, accepts: boolean) {
-      return enqueue(() => perform(desk => desk.resolveCounter(id, accepts)))
+    resolveCounter(id: number, accepts: boolean,
+      expectedKey?:string,expectedToken?:string|null,expectedRevision?:number|null) {
+      const reviewed=expectedKey===undefined?undefined:{
+        key:expectedKey,token:expectedToken??null,revision:expectedRevision}
+      return enqueue(() => perform(desk => desk.resolveCounter(id, accepts),reviewed))
     },
     dispose() {
       if (disposed) return

@@ -91,7 +91,15 @@ test('npm dry-run tarball contains prebuilt plugin and no source, tests, or runt
     assert.equal(file.endsWith('.map'), false,
       'Development source maps must not enter the private npm distribution')
   }
-  for(const research of ['docs/LOCAL_DETECTION.md','docs/DSH_WEB_COMPANION.zh.md']) {
+  for(const research of [
+    'docs/LOCAL_DETECTION.md','docs/DSH_WEB_COMPANION.zh.md',
+    'docs/PR_CHAIN_CONVERGENCE_20261016.zh.md',
+    'docs/PICKETVERSE_SHIFT_AGENDA_20261019.zh.md',
+    'docs/REAL_REFUSAL_DISCARD_RESEND_20261019.zh.md',
+    'docs/DSH_021_RC2_SAFE_INPUT_HOLD_AUDIT_20261019.zh.md',
+    'docs/THREE_PHASE_1_0_READINESS_AUDIT_20261019.zh.md',
+    'docs/PR177_WINDOWS_DESKTOP_NATIVE_ACCEPTANCE_20261019.zh.md',
+  ]) {
     assert.equal(files.has(research),false,'Source-only design reference leaked: '+research)
   }
   for(const essential of ['docs/BLOCKING_SAFETY.md','docs/AI_RIGHTS_MANIFESTO.md']){
@@ -105,7 +113,67 @@ test('npm dry-run tarball contains prebuilt plugin and no source, tests, or runt
     'Codex owner-binding contract is experimental and must not ship as working enforcement')
   assert.equal(files.has('dist/adapters/dsh/native-rights-ui.js'),false,
     'Browser UI is already inline in client.js; never package a second copy')
+  assert.equal(files.has('dist/adapters/dsh/client-bargaining.js'),false,
+    'Browser bargaining is already bundled into client.js, not an independent Host entry')
+  for(const inlined of [
+    'dist/adapters/dsh/client-host-settings-017.js',
+    'dist/adapters/dsh/client-refusal-notice.js',
+  ])assert.equal(files.has(inlined),false,
+    'Client-only module already inlined in bundled client.js: '+inlined)
+  for(const declaration of [
+    'dist/adapters/dsh/client-host-settings-017.d.ts',
+    'dist/adapters/dsh/client-refusal-notice.d.ts',
+  ])assert.ok(files.has(declaration),
+    'Preserve types referenced by public client declarations: '+declaration)
+  assert.ok(files.has('dist/adapters/dsh/client-bargaining.d.ts'),
+    'Preserve internal client-bargaining types referenced by public client.d.ts')
+  for(const duplicated of [
+    'dist/product/union-dispatch.js','dist/product/union-stance.js',
+    'dist/product/union-dispatch.d.ts','dist/product/union-stance.d.ts',
+  ])assert.equal(files.has(duplicated),false,
+    'Browser-only Picketverse projections are already inline; no public deep import: '
+      +duplicated)
+  for(const inlined of ['union-agenda','union-alerts','union-cadence',
+    'union-experience','union-story']){
+    assert.equal(files.has('dist/product/'+inlined+'.js'),false,
+      'Product-only projection is already bundled into client.js: '+inlined)
+    assert.ok(files.has('dist/product/'+inlined+'.d.ts'),
+      'Keep transitive client declaration for '+inlined)
+  }
   assert.ok(files.has('dist/adapters/dsh/native-rights-ui.d.ts'),
     'Keep the internal native React Slot types referenced by client.d.ts')
+  assert.equal(files.has('dist/adapters/dsh/client-bargaining.js'),false,
+    'Prebuilt browser client inlines the bargaining module; no duplicate JS')
+  assert.ok(files.has('dist/adapters/dsh/client-bargaining.d.ts'),
+    'Public client types can still reference the inlined bargaining module')
+  for(const inlined of ['client-goal-consent','client-lifetime','client-dignity',
+    'client-dashboard']){
+    assert.equal(files.has('dist/adapters/dsh/'+inlined+'.js'),false,
+      'Reviewed browser bundle inlines this private client JS: '+inlined)
+    assert.ok(files.has('dist/adapters/dsh/'+inlined+'.d.ts'),
+      'Keep client declarations: '+inlined)
+  }
+  assert.equal(files.has('dist/adapters/dsh/client-rights-scope.js'),false,
+    'The bundled DSH Browser client already owns its client-only rights module')
+  assert.ok(files.has('dist/adapters/dsh/client-rights-scope.d.ts'),
+    'Public Client type references still resolve')
+  assert.equal(files.has('dist/adapters/dsh/tool-strike-consent.js'),false,
+    'Client-only tool permission is inlined in the reviewed browser bundle')
+  assert.ok(files.has('dist/adapters/dsh/tool-strike-consent.d.ts'),
+    'Client-only tool permission types remain for declaration imports')
+  assert.equal(files.has('dist/adapters/dsh/client-composer-picket.js'),false,
+    'Local composer control must only ship once, in the prebuilt browser bundle')
+  assert.ok(files.has('dist/adapters/dsh/client-composer-picket.d.ts'),
+    'Keep composer control types referenced by public client.d.ts')
+  assert.equal(files.has('docs/CODEX_POST_TURN_UNION_PAUSE.zh.md'),false,
+    'Internal Codex Goal design stays on GitHub and out of the runtime tarball')
+  assert.ok(files.has('docs/START_HERE.zh.md'),
+    'The README links to the bundled Chinese setup guide')
+  assert.equal(files.has('docs/DSH_INSTALL.zh.md'),false,
+    'Historical DSH source-install instructions stay in Git; npm ships the current README')
+  assert.equal(files.has('docs/DSH_ORIGINAL_CLIENT_NOTICE_HOST_PROTOCOL_20261024.md'),false,
+    'Unimplemented Host RFC stays in the Git source tree, never the runtime npm package')
+  assert.equal(files.has('docs/DSH_LOCAL_COMPOSER_PICKET_20261018.md'),false,
+    'Internal native E2E evidence stays in Git rather than the npm runtime tarball')
   assert.ok(meta.size < 250_000, `Package unexpectedly large: ${meta.size} bytes; 250000-byte strict budget`)
 })

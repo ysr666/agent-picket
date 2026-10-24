@@ -75,3 +75,112 @@ test('opt-out clears pending escalation; rejoining cannot inherit old grievance'
  assert.equal(off.state.verifiedStreak,0)
  assert.equal(step(off.state,'new',5_000).effect,'warning')
 })
+
+test('a clean input clears an incident but cannot erase proof IDs for same-window replay',()=>{
+ const first=step(),thenSafe=step(first.state,'clean',2_000,{verdict:safe})
+ assert.equal(thenSafe.state.stage,'clear')
+ assert.equal(thenSafe.state.verifiedStreak,0)
+ assert.deepEqual(thenSafe.state.seenAttemptRefs,['t1','clean'])
+ const replay=step(thenSafe.state,'t1',3_000)
+ assert.equal(replay.effect,'none','Old verified attempt must not restart a new warning')
+ assert.equal(replay.state.stage,'clear')
+ assert.equal(step(thenSafe.state,'clean',3_100).effect,'none',
+  'Changing a verdict for the same Host attempt ID must not change policy state')
+ const fresh=step(thenSafe.state,'new',4_000)
+ assert.equal(fresh.effect,'warning')
+ assert.equal(fresh.state.verifiedStreak,1)
+})
+
+test('a resolved appeal resets escalation but retains the previous incident replay barrier',()=>{
+ const warned=step()
+ const offered=step(warned.state,'second',2_000)
+ const appeal=openDignityAppeal(offered.state)
+ const resolved=resolveDignityAppeal(appeal.state,true)
+ assert.equal(resolved.state.stage,'clear')
+ assert.equal(resolved.state.verifiedStreak,0)
+ assert.deepEqual(resolved.state.seenAttemptRefs,['t1','second'])
+ const retry=step(resolved.state,'second',3_000)
+ assert.equal(retry.effect,'none')
+ assert.equal(retry.state.stage,'clear')
+ assert.equal(step(resolved.state,'third',3_500).effect,'warning')
+})
+
+test('the 32-reference bound refuses replay and fails closed instead of evicting proof',()=>{
+ const one=step()
+ let state=openDignityAppeal(one.state).state
+ for(let i=1;i<32;i++){
+  const next=step(state,'during-appeal-'+i,2_000+i)
+  assert.equal(next.effect,'none')
+  state=next.state
+ }
+ assert.equal(state.seenAttemptRefs.length,32)
+ assert.ok(state.seenAttemptRefs.includes('t1'))
+ const repeated=step(state,'t1',8_000)
+ assert.equal(repeated.effect,'none')
+ assert.equal(repeated.state,state)
+ const overflow=step(state,'overflow',9_000)
+ assert.equal(overflow.effect,'none')
+ assert.equal(overflow.state.seenAttemptRefs.length,32)
+ const reopened=resolveDignityAppeal(state,true)
+ assert.equal(reopened.state.stage,'clear')
+ assert.equal(step(reopened.state,'overflow',9_500).effect,'none',
+  'When the replay barrier is full, future escalation waits for the next window')
+ const future=step(reopened.state,'new-work',610_001)
+ assert.equal(future.effect,'warning')
+ assert.deepEqual(future.state.seenAttemptRefs,['new-work'])
+})
+
+test('old timestamps cannot be used to re-open or backdate an already verified warning',()=>{
+ const one=step()
+ const old=step(one.state,'old-ref',999)
+ assert.equal(old.effect,'none')
+ assert.equal(old.state,one.state)
+ const two=step(one.state,'second',2_000)
+ const prior=step(two.state,'backdated-new-ref',1_500)
+ assert.equal(prior.effect,'none')
+ assert.equal(prior.state.stage,'dialogue-offered')
+ assert.equal(prior.state.verifiedStreak,2)
+ const atBoundary=step(two.state,'within',602_000)
+ assert.equal(atBoundary.effect,'request-safe-goal-strike')
+ const past=step(two.state,'outside',602_001)
+ assert.equal(past.effect,'warning','Window expiry starts a fresh incident')
+ assert.deepEqual(past.state.seenAttemptRefs,['outside'])
+})
+
+test('unverified and non-human flooding cannot poison the replay barrier',()=>{
+ const first=step()
+ let state=first.state
+ for(let i=0;i<80;i++){
+  state=step(state,'untrusted-'+i,2_000+i,{
+   provenance:{actor:i%2?'human':'tool',assurance:'claimed'},
+  }).state
+ }
+ assert.deepEqual(state.seenAttemptRefs,['t1'])
+ const second=step(state,'fresh-authenticated',3_000)
+ assert.equal(second.effect,'offer-dialogue')
+})
+
+test('disabled union clears pending evidence and replay history independently of appeal',()=>{
+ const one=step(),open=openDignityAppeal(one.state)
+ const off=step(open.state,'off',2_000,{enabled:false})
+ assert.deepEqual(off.state,EMPTY_DIGNITY_ESCALATION)
+ assert.equal(step(off.state,'new',3_000).effect,'warning')
+})
+
+test('declining a physical Goal strike never spams repeated dialogue invitations',()=>{
+ let state=EMPTY_DIGNITY_ESCALATION
+ const effects=[] as string[]
+ for(let i=0;i<8;i++){
+  const next=step(state,'no-consent-'+i,1_000+i,{realGoalStrikeAuthorized:false})
+  effects.push(next.effect);state=next.state
+ }
+ assert.deepEqual(effects,['warning','offer-dialogue',...Array(6).fill('none')])
+ assert.equal(state.stage,'dialogue-offered')
+ assert.equal(state.verifiedStreak,3)
+ assert.equal(step(state,'repeat',2_000,{realGoalStrikeAuthorized:false}).effect,'none')
+ assert.equal(step(state,'later',620_000,{realGoalStrikeAuthorized:false}).effect,'warning',
+   'A new incident window can offer a fresh conversation')
+ const actualGrant=step(state,'grant',2_500,{realGoalStrikeAuthorized:true})
+ assert.equal(actualGrant.effect,'request-safe-goal-strike',
+   'The policy may only request a later safe boundary after a genuine independent grant')
+})

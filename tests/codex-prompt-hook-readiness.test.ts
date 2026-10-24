@@ -1,0 +1,78 @@
+import test from 'node:test'
+import assert from 'node:assert/strict'
+import {inspectCodexOfficialPromptHook} from '../src/adapters/codex/prompt-hook-readiness.ts'
+const home='/tmp/offline-codex-home/hooks.json'
+const cwd='/tmp/offline-codex-work'
+const hash='sha256:'+'a'.repeat(64)
+const hook={key:home+':user_prompt_submit:0:0',eventName:'userPromptSubmit',
+ handlerType:'command',sourcePath:home,isManaged:false,enabled:true,
+ command:'node /tmp/synthetic-hook.mjs',currentHash:hash,trustStatus:'trusted'}
+const response=(items:unknown[],overrides:Record<string,unknown>={})=>({
+ data:[{cwd,hooks:items,warnings:[],errors:[],...overrides}],
+})
+const inspect=(v:unknown,h=hash)=>inspectCodexOfficialPromptHook(v,cwd,home,h)
+
+test('only precisely trusted official prompt hook may be OFFERED, never fail-closed assumed',()=>{
+ assert.deepEqual(inspect(response([hook])),{
+  status:'trusted',canOfferOptInNewWorkRefusal:true,failClosedOnHookErrorProven:false,
+ })
+ assert.equal(inspect(response([{...hook,trustStatus:'untrusted'}])).status,'untrusted')
+ assert.equal(inspect(response([{...hook,trustStatus:'modified'}])).status,'modified')
+ assert.equal(inspect(response([{...hook,enabled:false}])).status,'disabled')
+ assert.equal(inspect(response([{...hook,currentHash:'sha256:'+'b'.repeat(64)}])).status,'modified')
+ assert.equal(inspect(response([])).status,'absent')
+})
+test('duplicate, tampered, malformed and error Host readback cannot enable prompt refusal',()=>{
+ for(const v of [undefined,null,{},[],{data:[]},
+  response([hook,hook]),response([hook],{warnings:['bad config']}),
+  response([hook],{errors:['unparseable']}),response([{...hook,handlerType:'mcp_tool'}]),
+  response([{...hook,isManaged:true}]),response([{...hook,trustStatus:'invented'}]),
+  {data:[{cwd,hooks:[hook],warnings:[],errors:[]},{cwd,hooks:[hook],warnings:[],errors:[]}]},
+ ])assert.equal(inspect(v).canOfferOptInNewWorkRefusal,false)
+ assert.equal(inspectCodexOfficialPromptHook(response([hook]),cwd,home,'invalid').status,
+  'unconfirmed')
+ assert.equal(inspectCodexOfficialPromptHook(response([hook]),'/other',home,hash).status,
+  'unconfirmed')
+})
+
+import {inspectCodexNewWorkProductionReadiness,
+ CODEX_0146_PROMPT_REFUSAL_PRODUCTION_PROOF} from '../src/adapters/codex/prompt-hook-readiness.ts'
+
+test('successful native pre-model veto alone is NEVER production safety readiness',()=>{
+ const verifiedHook=inspect(response([hook]))
+ const optimistic={...CODEX_0146_PROMPT_REFUSAL_PRODUCTION_PROOF,
+  officialHook:verifiedHook}
+ const verdict=inspectCodexNewWorkProductionReadiness(optimistic)
+ assert.equal(verdict.ready,false)
+ assert.deepEqual(verdict.gaps,[
+  'real-user-consent-unverified', 'campaign-provenance-unverified',
+  'rejection-notice-unverified','lossless-prompt-and-attachments-unverified',
+  'known-lossy-host-paths-unresolved',
+  'settings-revocation-unverified','hook-failure-ux-unverified',
+  'host-client-matrix-unverified',
+ ])
+ assert.equal(inspectCodexNewWorkProductionReadiness(
+  CODEX_0146_PROMPT_REFUSAL_PRODUCTION_PROOF).ready,false)
+ assert.equal(inspectCodexNewWorkProductionReadiness({
+  ...optimistic,realUserConsentVerified:true,campaignProvenanceVerified:true,
+  visibleRejectionNoticeVerified:true,userRevocationVerified:true,
+  failureDegradationVisibleVerified:true,requiredClientMatrixVerified:true,
+ }).gaps.includes('lossless-prompt-and-attachments-unverified'),true,
+ 'Even all other green flags cannot mask missing native input recovery')
+})
+
+
+test('known unsafe Codex -i and resumed PNG paths stay blocked even with all other UX evidence',()=>{
+ const proof={...CODEX_0146_PROMPT_REFUSAL_PRODUCTION_PROOF,
+  officialHook:inspect(response([hook])),
+  realUserConsentVerified:true,campaignProvenanceVerified:true,
+  visibleRejectionNoticeVerified:true,fullInputRecoveryVerified:true,
+  userRevocationVerified:true,failureDegradationVisibleVerified:true,
+  requiredClientMatrixVerified:true}
+ const result=inspectCodexNewWorkProductionReadiness(proof)
+ assert.equal(result.ready,false)
+ assert.deepEqual(result.gaps,['known-lossy-host-paths-unresolved'])
+ assert.equal(inspectCodexNewWorkProductionReadiness({
+  ...proof,knownLossyHostPathsResolvedVerified:false,
+ }).ready,false,'Known lossy Host modes cannot be excused by UI promises')
+})

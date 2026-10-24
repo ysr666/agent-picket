@@ -5,9 +5,11 @@ import {
 } from './goal-boundary-strike.ts'
 import type { NativeSettingsProvider } from './native-rights-command.ts'
 
-/** Host-owned, explicit v1 permission is independent from the old simulated welcome. */
+/** Host-owned permission: NEVER treat old v1 as active by default. Only
+ * explicitly opted-in legacy developer preview may pass allowLegacyPreview. */
 export function readHostGoalStrikeConsent(
   settings:NativeSettingsProvider | undefined,
+  allowLegacyPreview=false,
 ):GoalStrikeConsentV1|null {
   try {
     if(!settings)return null
@@ -23,7 +25,8 @@ export function readHostGoalStrikeConsent(
       welcomeDecision?:unknown;realGoalStrikeConsent?:unknown
     }|null|undefined
     if(!section||section.welcomeDecision!=='enabled'
-      ||section.realGoalStrikeConsent!=='authorized-v1')return null
+      ||!(section.realGoalStrikeConsent==='authorized-v2'
+        ||(allowLegacyPreview&&section.realGoalStrikeConsent==='authorized-v1')))return null
     const after=settings.describe({redactSecrets:true})
       .filter(x=>x.ns==='agent-picket')
     if(after.length!==1||after[0]!.revision!==row.revision)return null
@@ -33,7 +36,8 @@ export function readHostGoalStrikeConsent(
     // A revision-neutral Host descriptor mutation is inconsistent and cannot
     // be used to grant authority even if a stale prior view says enabled.
     if(newest&&(newest.welcomeDecision!=='enabled'
-      ||newest.realGoalStrikeConsent!=='authorized-v1'))return null
+      ||!(newest.realGoalStrikeConsent==='authorized-v2'
+        ||(allowLegacyPreview&&newest.realGoalStrikeConsent==='authorized-v1'))))return null
     return {kind:'agent-picket-real-goal-strike-v1',hostAuthenticated:true,enabled:true}
   }catch{return null}
 }

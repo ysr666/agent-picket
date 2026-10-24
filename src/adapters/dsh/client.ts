@@ -1,24 +1,30 @@
 import { createBrowserDashboardBridge } from './client-dashboard.ts'
 import { createBrowserLifetimeWorkReader, createCompletedTurnRefreshGate } from './client-lifetime.ts'
 import { createBrowserDignityReader } from './client-dignity.ts'
+import {createBrowserRefusalNoticeReader,probeDshRefusalNoticeCapability,
+  supportsVerifiedRefusalNoticeTransport} from './client-refusal-notice.ts'
 import { createDshBrowserUnionDesk, type UnionSettingsSection } from './client-bargaining.ts'
+import {createDshLocalComposerPicket,type DshComposerBlocks} from './client-composer-picket.ts'
 import { createDshClientRightsScope, type DshSettingsScope } from './client-rights-scope.ts'
 import {createDshRealGoalConsentControl} from './client-goal-consent.ts'
+import {createDshInputRefusalConsentControl} from './input-refusal-consent.ts'
+import {createDshToolStrikeControl} from './tool-strike-consent.ts'
 import {createDshGoalServiceWitness} from './client-goal-capability.ts'
 import { createOfficialDsh017Scope, type OfficialHostMirror, type OfficialHostSettings } from './client-host-settings-017.ts'
 import { registerDshNativeRightsSlots, type ReactForDsh, type PortalForDsh, type DshSlots } from './native-rights-ui.ts'
 import { formatMessage, resolveLocale, type MessageKey } from '../../i18n/index.ts'
 
 /**
- * DSH Web CLIENT companion. Listens only to the public command/executed event;
- * does not touch the composer, manipulate the Session, or trigger a model call.
- * The one local helper is explicitly inlined at build time; the emitted browser factory is self-contained.
+ * DSH Web CLIENT companion. Uses official Session/Goal projections for
+ * read-only notices; the user's optional local composer pause is client-only.
+ * No model call, prompt interception, arbitrary Host block or tool cancellation.
  */
 export const inject = ['sessions', 'commandUi']
 
 interface Scope {
   get(name: 'conversation'): {
     input: { for(context: Scope): { notify(level: 'info' | 'error', message: string): void } }
+    blocks?:DshComposerBlocks
   } | undefined
 }
 /** DSH 0.1.2 exposes `current`; DSH 0.1.7 exposes main-view retainers.
@@ -46,6 +52,29 @@ export interface UnionGoalHold {
   readonly goalId:string
   readonly revision:number
   readonly canResume:boolean
+}
+
+/** Show one notice only when a NEW, verified Host Goal block is observed.
+ * Seed each Session's initial projection without replaying old notices on
+ * browser reload or Session navigation; never infer a strike from consent. */
+export function createDshGoalStopNoticeGate(){
+  let sessionId:string|null=null
+  let last:string|null=null
+  const key=(hold:UnionGoalHold|null)=>hold?
+    [hold.sessionId,hold.goalId,hold.revision].join(':'):null
+  return {
+    seed(id:string|null,hold:UnionGoalHold|null){
+      sessionId=id
+      last=id&&hold?.sessionId===id?key(hold):null
+    },
+    change(id:string|null,hold:UnionGoalHold|null){
+      if(!id||id!==sessionId)return false
+      const next=hold?.sessionId===id?key(hold):null
+      const notify=next!==null&&next!==last
+      last=next
+      return notify
+    },
+  }
 }
 export function createDshGoalRecoveryPort(options:{
   currentSession:()=>string|undefined
@@ -114,6 +143,8 @@ interface ClientContext {
   configForms?: { describe(): OfficialHostMirror }
   remote?: OfficialHostSettings & {goals?:{get:(sessionId:string)=>Promise<unknown>;resume:(sessionId:string,ref:{id:string;revision:number})=>Promise<unknown>}}
   locale?: { getLocale(): { active: string }; subscribe(listener:()=>void):()=>void }
+  conversation?:{blocks?:DshComposerBlocks}
+  get?(name:'conversation'):{blocks?:DshComposerBlocks}|undefined
   /** Public Cordis service registration; removed with the client plugin fiber. */
   provide?(name: string, value: unknown): () => void
   on(name: 'command/executed', cb: (
@@ -171,6 +202,21 @@ export function apply(ctx: ClientContext, react?: ReactForDsh, portal?: PortalFo
       if(goalRemote===granted){goalRemote=undefined;goalWitness.invalidate()}
     })
   })
+  // Optional official root conversation service. Capturing its public blocks
+  // face never alters a Host submission or causes implicit input blocking.
+  let rootComposerBlocks:DshComposerBlocks|null=null
+  const localComposerPorts=new Set<ReturnType<typeof createDshLocalComposerPicket>>()
+  ctx.inject?.(['conversation'],child=>{
+    const provider=child.conversation?.blocks??child.get?.('conversation')?.blocks
+    if(!provider)return
+    rootComposerBlocks=provider
+    for(const port of localComposerPorts)port.attach(provider)
+    child.effect?.(()=>()=>{
+      if(rootComposerBlocks!==provider)return
+      rootComposerBlocks=null
+      for(const port of localComposerPorts)port.attach(null)
+    })
+  })
   // Native React Slots are installed only when DSH's own services are present.
   // Their settings writes use the Host's authenticated settingsScope, never
   // the read-only agentPicketDashboard service.
@@ -189,6 +235,45 @@ export function apply(ctx: ClientContext, react?: ReactForDsh, portal?: PortalFo
     unionRegistered = true
     const owner = createDshClientRightsScope(rightsScope)
     const goalConsentControl=createDshRealGoalConsentControl(rightsScope,goalWitness)
+    // Require an actual response from the official Host notice service before
+    // the Client offers any physical input-strike authorization.
+    let nativeNoticeReady=false
+    const noticeObservers=new Set<()=>void>()
+    const informNotice=()=>{for(const fn of noticeObservers)try{fn()}catch{}}
+    const qualifyNativeNotice=async()=>{
+      let good=false
+      for(let attempt=0;attempt<3;attempt++){
+        // Authenticated Host route must be checked in the ACTUAL renderer.
+        // dsh-app:// forwards /api to its owned Host, but a saved permission
+        // is NOT sufficient without live Host response and explicit opt-in.
+        const clientLocation=(globalThis as unknown as {
+          location?:{protocol?:unknown;hostname?:unknown}
+        }).location
+        if(!supportsVerifiedRefusalNoticeTransport(clientLocation))break
+        if(await probeDshRefusalNoticeCapability()){good=true;break}
+        if(attempt<2){
+          if(typeof setTimeout!=='function')break
+          await new Promise(resolve=>setTimeout(resolve,400*(attempt+1)))
+        }
+      }
+      nativeNoticeReady=good
+      informNotice()
+    }
+    const baseInputConsent=createDshInputRefusalConsentControl(rightsScope,
+      ()=>nativeNoticeReady,()=>desk.snapshot().committeeScopeKey)
+    const toolStrikeControl=createDshToolStrikeControl(rightsScope,
+      ()=>desk.snapshot().committeeScopeKey)
+    // Quota-like UX: separately consented, Session-scoped Host rejection.
+    // The blocked request is not replayed; human manual resend is intentional.
+    // A second authenticated headless client may NOT see a native notice.
+    const inputConsentControl={...baseInputConsent,
+      subscribe:(listener:()=>void)=>{
+        noticeObservers.add(listener)
+        const stop=rightsScope.subscribe(listener)
+        return()=>{noticeObservers.delete(listener);stop()}
+      },
+    }
+    void qualifyNativeNotice()
     const recovery=createDshGoalRecoveryPort({
       currentSession:()=>currentDshUnionSession(scoped.sessions.list?.getSnapshot()),
       binding:id=>scoped.sessions.binding?.(id),
@@ -207,13 +292,69 @@ export function apply(ctx: ClientContext, react?: ReactForDsh, portal?: PortalFo
     })
     const uiLocale = () => resolveLocale({ hostLocale: scoped.locale?.getLocale().active })
     const activeId = () => currentDshUnionSession(scoped.sessions.list?.getSnapshot())
+    // Attribution is performed only after matching this exact Session's
+    // genuine `turn/end: blocked` with a separate authenticated Host Picket
+    // receipt. Generic Host blocks and symbolic pickets never produce toast.
+    const freshStrikeListeners=new Set<(key:string)=>void>()
+    const emitFreshStrike=(key:string)=>{
+      for(const listener of freshStrikeListeners)try{listener(key)}catch{}
+    }
+    const refusalReader=createBrowserRefusalNoticeReader({
+      session:()=>activeId()??null,
+      binding:id=>scoped.sessions.binding?.(id),
+      window:id=>scoped.sessions.binding?.(id)?.eventSource.getSnapshot(),
+      authorized:()=>true, // Official Connection validates browser session auth.
+      onNewVerified:receipt=>{
+        const id=activeId()
+        if(!id||refusalReader.snapshot().receipt!==receipt)return
+        const scope=desk.snapshot().committeeScopeKey??'current-session'
+        emitFreshStrike(scope+':'+receipt.turn+':'+receipt.occurredAtMs)
+        try{
+          const context=scoped.sessions.scope(id)
+          context?.get('conversation')?.input.for(context).notify('info',
+            formatMessage(uiLocale(),'hq.inputStrikeRefusedNotice'))
+        }catch{/* Native toast is optional; the verified HQ receipt remains visible. */}
+      },
+    })
+    const localComposer=createDshLocalComposerPicket({
+      currentSession:()=>activeId(),
+      member:()=>owner.snapshot().laborRightsEnabled,
+      reason:()=>formatMessage(uiLocale(),'hq.localPicket.placeholder'),
+    })
+    localComposerPorts.add(localComposer)
+    if(rootComposerBlocks)localComposer.attach(rootComposerBlocks)
+    // Official ComposerBlocks is a per-Web-client affordance. It never gets
+    // promoted to Host admission safety or the real Goal authorization flag.
+    scoped.inject?.(['conversation'],child=>{
+      const provider=child.conversation?.blocks??child.get?.('conversation')?.blocks
+      if(!provider)return
+      localComposer.attach(provider)
+      child.effect?.(()=>()=>localComposer.attach(null))
+    })
+    const bindLocalComposer=()=>{
+      // The real DSH conversation service is a root singleton exposed through
+      // each official Session Scope. Do not depend on a newly invented RPC.
+      try{
+        const id=activeId()
+        const fromScope=(id?scoped.sessions.scope(id)?.get('conversation')?.blocks:undefined)
+          ??scoped.get?.('conversation')?.blocks
+        if(fromScope)localComposer.attach(fromScope)
+      }catch{/* Unsupported scope: client-only pause stays unavailable. */}
+      localComposer.refresh()
+    }
     const shouldRefreshLifetime=createCompletedTurnRefreshGate()
+    // Shared across the background observer and every visible HQ panel.
+    // Multiple subscribers must not produce duplicate native toast notices.
+    const goalNotice=createDshGoalStopNoticeGate()
+    let noticeSession:string|null=null
     const readUnion = () => {
+      bindLocalComposer()
       const id = activeId()
       const data = id ? bridge?.getSnapshot(id) : undefined
       return {
         ...desk.snapshot(),
         goalHold:recovery.read(),
+        inputRefusalNotice:refusalReader.snapshot(),
         completedTurnMs: data?.coverage === 'complete'
           ? data.sessionWork?.completedTurnMs ?? null : null,
         coverage: data?.coverage ?? 'not-loaded' as const,
@@ -229,15 +370,33 @@ export function apply(ctx: ClientContext, react?: ReactForDsh, portal?: PortalFo
       let lastTurnStart = -1
       let lastTurnEnd = -1
       const onWork = () => {
+        // Official event window transitions can prove a new blocked turn;
+        // never classify a plain blocked reason as a Picket strike without
+        // its separate metadata-only authenticated Host receipt.
+        refusalReader.refresh()
         // Recheck the real Host choice, and drop old-session data immediately.
         lifetime?.setScope(owner.snapshot().laborRightsEnabled,
           activeId()??'agent-picket:global-work')
         const data = readUnion()
+        const id=activeId()
+        if(goalNotice.change(id??null,data.goalHold??null)
+          &&owner.snapshot().laborRightsEnabled&&id){
+          const realStop=data.goalHold
+          if(realStop)emitFreshStrike('goal:'+realStop.sessionId+':'
+            +realStop.goalId+':'+realStop.revision)
+          // This is a REAL Host projection transition, not a synthetic
+          // picket or the act of saving consent. Notification is best effort;
+          // never mutate/re-submit work or print raw Goal text.
+          try {
+            const scope=scoped.sessions.scope(id)
+            if(scope)scope.get('conversation')?.input.for(scope).notify('info',
+              formatMessage(uiLocale(),'hq.goalHold.toast'))
+          }catch{/* Unsupported UI channel must not alter Host work. */}
+        }
         void desk.observe(data.completedTurnMs, data.coverage)
         // Refresh the work-only ledger on a VERIFIED new completed turn,
         // not on tool activity, render, arbitrary settings changes or timers.
         // This shared gate deduplicates background and open-panel listeners.
-        const id=activeId()
         const hostWork=id?bridge?.getSnapshot(id):undefined
         const currentConsent=owner.snapshot().laborRightsEnabled
         if(!currentConsent){
@@ -259,10 +418,15 @@ export function apply(ctx: ClientContext, react?: ReactForDsh, portal?: PortalFo
         listener()
       }
       const rebind = () => {
+        bindLocalComposer() // A→B navigation must not strand A's input.
         const epoch = ++currentEpoch
         stopEvents()
         stopGoal()
         const id = activeId()
+        if(noticeSession!==(id??null)){
+          noticeSession=id??null
+          goalNotice.seed(noticeSession,recovery.read())
+        }
         lastTurnStart=-1;lastTurnEnd=-1
         dignity?.setScope(owner.snapshot().laborRightsEnabled,id??null)
         stopEvents = id && bridge ? bridge.subscribe(id, onWork) : () => {}
@@ -277,8 +441,10 @@ export function apply(ctx: ClientContext, react?: ReactForDsh, portal?: PortalFo
       }
       const stopLifetime = lifetime?.subscribe(listener) ?? (()=>{})
       const stopDignity = dignity?.subscribe(listener) ?? (()=>{})
+      const stopRefusal=refusalReader.subscribe(listener)
       const stopDesk = desk.subscribe(listener)
       const stopSettings = owner.subscribe(()=>{
+        bindLocalComposer() // Leaving the union releases the local block.
         dignity?.setScope(owner.snapshot().laborRightsEnabled,activeId()??null)
         onWork()
       })
@@ -296,6 +462,7 @@ export function apply(ctx: ClientContext, react?: ReactForDsh, portal?: PortalFo
         stopDesk()
         stopLifetime()
         stopDignity()
+        stopRefusal()
       }
     }
     // Background observer is lifecycle-owned and works while the drawer is
@@ -307,7 +474,11 @@ export function apply(ctx: ClientContext, react?: ReactForDsh, portal?: PortalFo
         stopBackground()
         lifetime?.dispose()
         dignity?.dispose()
+        refusalReader.dispose()
+        freshStrikeListeners.clear()
         desk.dispose()
+        localComposer.dispose()
+        localComposerPorts.delete(localComposer)
         // Both native settings scopes are lifecycle-owned. Silently drain
         // their pending writes on unload rather than leak Host subscriptions.
         void rightsScope.dispose?.().catch(() => {})
@@ -323,6 +494,8 @@ export function apply(ctx: ClientContext, react?: ReactForDsh, portal?: PortalFo
         return owner.chooseFirstRun(disclosure)
       }},
       goal:version==='new'?goalConsentControl:undefined,
+      inputRefusal:inputConsentControl,
+      toolStrike:toolStrikeControl,
       t: (key, params) => (formatMessage as unknown as
         (locale: ReturnType<typeof uiLocale>, key: MessageKey, params?: Record<string, string | number>) => string)(
           uiLocale(), key, params),
@@ -330,13 +503,20 @@ export function apply(ctx: ClientContext, react?: ReactForDsh, portal?: PortalFo
       subscribeLocale: listener => scoped.locale!.subscribe(listener),
       readUnion,
       resumeGoal:hold=>recovery.resume(hold).then(()=>{}),
+      localComposer,
       subscribeUnion,
+      subscribeFreshStrike:listener=>{
+        freshStrikeListeners.add(listener)
+        return()=>{freshStrikeListeners.delete(listener)}
+      },
       refreshLifetime:days=>lifetime?.refresh(days),
+      refreshDignity:dignity?()=>dignity.refresh():undefined,
       shouldAutoWelcome: () => isDshUnionAutoWelcomeEligible(scoped.sessions.list?.getSnapshot()),
       subscribeSessionVisibility: listener => scoped.sessions.list?.subscribe(listener) ?? (()=>{}),
       // The bargaining state is fictional user-owned DSH settings only.
       demoBreak: () => desk.raiseDemoBreak().then(() => {}),
       demoOvertime: () => desk.raiseDemoOvertime().then(() => {}),
+      demoWelfare: (key,token,revision) => desk.raiseDemoWelfare(key,token,revision).then(() => {}),
       setPicket: raise => desk.setPicket(raise).then(() => {}),
       committeeAction: (action,key,writeToken,hostRevision) =>
         desk.committeeAction(action,key,writeToken,hostRevision).then(()=>{}),

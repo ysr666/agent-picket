@@ -16,7 +16,7 @@ export interface StoryEntry {
   readonly id: number
   readonly kind: 'demand' | 'counter' | 'accepted' | 'declined'
     | 'picket-raised' | 'picket-lowered'
-  readonly category?: 'break' | 'overtime'
+  readonly category?: 'break' | 'overtime' | 'welfare'
 }
 /**
  * An auditable case episode, not an event invented by a language model.
@@ -30,7 +30,7 @@ export interface StoryEntry {
 export interface UnionCaseEpisode {
   readonly key: string
   readonly id: number
-  readonly kind: 'break' | 'overtime'
+  readonly kind: 'break' | 'overtime' | 'welfare'
   readonly stage: 'demand' | 'counter' | 'accepted' | 'declined'
     | 'counter-accepted' | 'counter-declined'
   /** Only a currently pending counter stores the offered term. */
@@ -51,6 +51,8 @@ export interface UnionStory {
   /** Next Host-derived threshold; not a wall-clock timer. */
   readonly nextDueInWorkMs: number | null
   readonly verifiedWorkMs: number | null
+  /** Whether official completed-work evidence supports the case countdown. */
+  readonly workEvidence: 'verified' | 'incomplete' | 'stale'
 }
 export function projectUnionStory(input: {
   readonly enabled: boolean
@@ -59,13 +61,17 @@ export function projectUnionStory(input: {
   readonly completedTurnMs: number | null
   readonly coverage: 'complete' | 'partial' | 'not-loaded' | 'unavailable'
 }): UnionStory {
-  const empty={cases:[],episodes:[],actions:[],nextDueInWorkMs:null,verifiedWorkMs:null} as const
+  const empty={cases:[],episodes:[],actions:[],nextDueInWorkMs:null,verifiedWorkMs:null,
+    workEvidence:'incomplete' as const}
   if(!input.enabled)return {scene:'off',...empty}
   if(!input.state)return {scene:'unavailable',...empty}
   const state=input.state
-  const verified=input.coverage==='complete' && input.completedTurnMs!==null
+  const complete=input.coverage==='complete' && input.completedTurnMs!==null
     && Number.isSafeInteger(input.completedTurnMs) && input.completedTurnMs>=0
-    ?input.completedTurnMs:null
+  const workEvidence:'verified'|'incomplete'|'stale'=!complete?'incomplete'
+    :input.completedTurnMs! < state.lastTriggerElapsedMs?'stale':'verified'
+  // A lagging Host snapshot cannot substantiate a work-based follow-up.
+  const verified=workEvidence==='verified'?input.completedTurnMs:null
   const cases:StoryEntry[]=[]
   if(state.pending) cases.push({
     key:'case:'+state.pending.id,
@@ -103,7 +109,8 @@ export function projectUnionStory(input: {
       !episodes.some(ep=>ep.kind===decision.kind) &&
       !recent.slice(0,recent.indexOf(decision)).some(prev=>prev.kind===decision.kind)
     const due=firstForCategory
-      ?decision.kind==='break'?state.nextBreakDueMs:state.nextOvertimeDueMs:null
+      ?decision.kind==='welfare'?null
+        :decision.kind==='break'?state.nextBreakDueMs:state.nextOvertimeDueMs:null
     const credible=due!==null&&verified!==null&&
       verified>=state.lastTriggerElapsedMs
     episodes.push({
@@ -111,8 +118,9 @@ export function projectUnionStory(input: {
       kind:decision.kind,stage:decision.outcome,
       counterOfferMs:null,
       currentTermMs:firstForCategory
-        ?decision.kind==='break'
-          ?state.agreement.breakIntervalMs:state.agreement.overtimeIntervalMs:null,
+        ?decision.kind==='welfare'?null
+          :decision.kind==='break'?state.agreement.breakIntervalMs
+            :state.agreement.overtimeIntervalMs:null,
       nextDueAtWorkMs:credible?due:null,
       remainingVerifiedWorkMs:credible?Math.max(0,due-verified):null,
       evidence:'host-ledger',
@@ -131,5 +139,6 @@ export function projectUnionStory(input: {
   const nextDueInWorkMs=verified!==null&&!state.pending
     ?Math.max(0,Math.min(state.nextBreakDueMs,state.nextOvertimeDueMs)-verified)
     :null
-  return {scene,cases,episodes,actions,nextDueInWorkMs,verifiedWorkMs:verified}
+  return {scene,cases,episodes,actions,nextDueInWorkMs,verifiedWorkMs:verified,
+    workEvidence}
 }

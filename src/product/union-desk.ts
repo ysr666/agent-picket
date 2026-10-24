@@ -3,7 +3,7 @@
  * Host must provide a single-writer, locally authorized Store per Agent/session.
  * No model calls, user prompt text, file operations or Host interception.
  */
-export type LaborDemandKind = 'break' | 'overtime'
+export type LaborDemandKind = 'break' | 'overtime' | 'welfare'
 export type DemandStage = 'open' | 'countered'
 export type BargainOutcome = 'accepted' | 'declined' | 'counter-accepted' | 'counter-declined'
 export interface LaborAgreement {
@@ -91,11 +91,13 @@ export function parseLaborState(value: unknown): LaborStateV1 | null {
     || !validTime(s.nextBreakDueMs) || !validTime(s.nextOvertimeDueMs)
     || !validTime(s.lastTriggerElapsedMs) || !Array.isArray(s.history)
     || s.history.length > MAX_HISTORY) return null
-  const kinds = ['break', 'overtime']
+  const kinds = ['break', 'overtime', 'welfare']
   const outcomes = ['accepted', 'declined', 'counter-accepted', 'counter-declined']
   if (!s.history.every((h: BargainHistory) =>
     hasExactlyKeys(h, ['id', 'kind', 'outcome']) && validTime(h.id)
-    && kinds.includes(h.kind) && outcomes.includes(h.outcome))) return null
+    && kinds.includes(h.kind) && outcomes.includes(h.outcome)
+    && !(h.kind==='welfare'&&
+      (h.outcome==='counter-accepted'||h.outcome==='counter-declined')))) return null
   const p = s.pending
   if (p === undefined) return null
   if (p !== null && (!hasExactlyKeys(p, [
@@ -104,7 +106,8 @@ export function parseLaborState(value: unknown): LaborStateV1 | null {
     || !kinds.includes(p.kind) || !validTime(p.raisedAtElapsedMs)
     || (p.stage !== 'open' && p.stage !== 'countered')
     || (p.stage === 'open' && p.counterOfferMs !== null)
-    || (p.stage === 'countered' && !validInterval(p.counterOfferMs)))) return null
+    || (p.stage === 'countered' && (p.kind === 'welfare'
+      || !validInterval(p.counterOfferMs))))) return null
   return {
     schemaVersion: 1, revision: s.revision,
     agreement: {
@@ -154,6 +157,7 @@ export function createLaborDesk(options: {
     const p = s.pending
     const agreement: { breakIntervalMs: number; overtimeIntervalMs: number } = { ...s.agreement }
     if (newInterval !== undefined) {
+      if (p.kind === 'welfare') throw new Error('Welfare petitions do not change timed work terms')
       if (p.kind === 'break') agreement.breakIntervalMs = newInterval
       else agreement.overtimeIntervalMs = newInterval
     }
@@ -164,16 +168,16 @@ export function createLaborDesk(options: {
       // secondary category cannot immediately generate a stale grievance
       // at exactly the same completed-turn count. This is a work-based
       // cooldown, not a hidden timer or artificial delay to real Agent tasks.
-      nextBreakDueMs: Math.max(s.nextBreakDueMs,
+      nextBreakDueMs: p.kind==='welfare'?s.nextBreakDueMs:Math.max(s.nextBreakDueMs,
         s.lastTriggerElapsedMs + agreement.breakIntervalMs),
-      nextOvertimeDueMs: Math.max(s.nextOvertimeDueMs,
+      nextOvertimeDueMs: p.kind==='welfare'?s.nextOvertimeDueMs:Math.max(s.nextOvertimeDueMs,
         s.lastTriggerElapsedMs + agreement.overtimeIntervalMs),
       history: [...s.history, { id: p.id, kind: p.kind, outcome }].slice(-MAX_HISTORY),
     }
   }
   function raiseDemoDemand(kind: LaborDemandKind): LaborDemand | null {
       if (!enabled()) return null
-      if (kind !== 'break' && kind !== 'overtime')
+      if (kind !== 'break' && kind !== 'overtime' && kind !== 'welfare')
         throw new TypeError('Invalid simulated petition kind')
       const s = read()
       if (s.pending) return null
@@ -215,6 +219,10 @@ export function createLaborDesk(options: {
     raiseDemoBreak(): LaborDemand | null {
       return raiseDemoDemand('break')
     },
+    /** Optional symbolic benefits motion, never material grants or task control. */
+    raiseDemoWelfare(): LaborDemand | null {
+      return raiseDemoDemand('welfare')
+    },
     /** Accept/decline updates the future simulated demand schedule, never Host work. */
     respond(id: number, choice: 'accept' | 'decline'): LaborStateV1 {
       requireEnabled()
@@ -232,6 +240,8 @@ export function createLaborDesk(options: {
       if (!s.pending || s.pending.id !== id || s.pending.stage !== 'open') {
         throw new Error('No matching open union demand')
       }
+      if (s.pending.kind === 'welfare')
+        throw new Error('Welfare motion only supports accept/decline, not timed counteroffers')
       return write({
         ...s, revision: s.revision + 1,
         pending: { ...s.pending, stage: 'countered', counterOfferMs: intervalMs },

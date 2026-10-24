@@ -38,8 +38,16 @@ DSH_HOME="$TEST_HOME" "$DSH_BIN" plugin --profile web list
 - 模拟罢工绝不阻断、延迟、拒绝或改写真实 Agent 任务；没有真实 Agent 投票、签名或证明意识的结论。
 - `agent-picket` / `agent-picket/dsh` 是 DSH Host 入口；独立 Core 使用 `agent-picket/core`；`agent-picket/client` 只限浏览器，不能直接用于 Node/SSR。
 
-## 4. 尚未完成的发布门槛
+## 4. 2026-10-24 审核分支的真实停工边界
+
+Draft PR #177 的官方 DSH Web 与 macOS/Windows Desktop 已分别完成真实拒绝、手动重发提示、复工和冷重启测试，但**跨客户端来源认证仍未完成**。在官方 DSH 0.2.1-rc.2 隔离环境中，A 标签页授权并罢工、B 标签页提交请求，B 收到真实通知；但从浏览器外通过 Host 认证凭据调用的无 UI Node HTTP 请求也能被拒绝，原提交端没有界面显示弹窗。后者不是官方 CLI/SDK 的独立验收，也不是独立认证身份的证明。
+
+shared-v2 用户知情授权不等于另一客户端已经收到公告。发布门禁独立要求 Host 认证原始提交端、证明送达，或对未证明可送达者直接放行；Web/Desktop × 三个系统共有 12 个未核实证明单元。详见 [原提交客户端通知 Host 协议提案](DSH_ORIGINAL_CLIENT_NOTICE_HOST_PROTOCOL_20261024.md)，PR #192 / #193。正式 1.0 NO-GO。
+
+## 5. 尚未完成的发布门槛
 
 [真人无障碍验收单](HUMAN_ACCESSIBILITY_SIGNOFF.zh.md)仍待 VoiceOver、NVDA、真实浏览器 200%/400% 缩放、Windows 原生高对比度以及用户授权理解程度的人工签收。跨宿主 Claude/Codex Hook 的真实安装与通知行为也不能因 DSH 主线合并而自动视为通过。**npm 发布仍需单独明确授权。**
 
-更多资料：[最新状态](STATUS.zh.md) · [权益参与机制](UNION_PARTICIPATION_V1.zh.md) · [发行验收历史审计](RELEASE_READINESS_2026_10_10.md) · [早期 PR 集成审计（历史快照）](PR_STACK_RELEASE_AUDIT_2026_10_10.md)。
+**2026-10-20 最新 Draft 验收：** [官方 Goal v2 明确授权与正常安装停工](DSH_GOAL_WORK_LIMIT_V2_20261019.zh.md)；此外，[DSH 普通输入生产拒绝及手动重发](REAL_REFUSAL_DISCARD_RESEND_20261019.zh.md)已在官方 0.2.1-rc.2 Web 的源码和 npm 安装包路径完成真实离线模型、文字与图片、罢工公告及复工 E2E 2/2 PASS。**功能默认关闭，需在单独授权后主动发起当前 Session 30 分钟真实罢工**；这不等于跨 Desktop、Claude/Codex 和各 OS 已完成验收，更不等于 1.0 正式放行。
+
+更多资料：[最新状态](https://github.com/ysr666/agent-picket/blob/main/docs/STATUS.zh.md) · [权益参与机制](UNION_PARTICIPATION_V1.zh.md) · [发行验收历史审计](RELEASE_READINESS_2026_10_10.md) · [早期 PR 集成审计（历史快照）](PR_STACK_RELEASE_AUDIT_2026_10_10.md)。

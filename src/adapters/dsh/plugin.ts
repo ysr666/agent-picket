@@ -13,24 +13,31 @@ import { createNativeUnionCommandPort, type NativeUnionCommandPort } from './nat
 import { registerDshLifetimeWorkFetch, type LifetimeHostContext } from './lifetime-work-rpc.ts'
 import { createVolatileDignityLedger } from './dignity-live.ts'
 import { registerDshDignityFetch } from './dignity-fetch.ts'
-import {
-  registerDshGoalWorkEnforcement,readHostGoalStrikeConsent,completedUtcDayWork,
-} from './goal-work-enforcement.ts'
+import {readHostGoalStrikeConsent} from './goal-work-enforcement.ts'
+import {createVolatileRefusalNotices,registerDshRefusalNoticeFetch} from './refusal-notice-host.ts'
 import type {NativeSettingsProvider} from './native-rights-command.ts'
+import {readHostActiveInputStrike} from './host-input-strike.ts'
+import {registerDshUnionToolGuard} from './tool-strike-guard.ts'
+import { registerOfficialPersistedGoalPreview } from './official-persisted-work-preview.ts'
 
 /**
  * Native DeepSeek Harness/Cordis plugin entry. Node 22.19+ TypeScript stripping
  * is required for this source-install preview. No remote service or daemon.
  *
- * Human submissions always remain untouched. A separate explicit Host-backed
- * consent may stop a *future automatic DSH Goal round* at turn-stopping.
- * All other Host admission, pre-step and work hooks remain monitor-only.
+ * Ordinary messages are stopped ONLY with a separate Host-backed grant,
+ * explicit Session-scoped armed action, and installed native notice channel.
+ * Safe-boundary Goal work stoppage remains an independent, separate system.
  */
 export const name = 'agent-picket'
 /** DSH 0.1.7+ officially extracts live settings from this Config export. */
 export const Config = DshProfileRightsConfig
 
 export function apply(ctx: DshIntegrationContext): void {
+  // A persisted 30-minute campaign must NEVER silently resume refusing
+  // requests after the UI/Host that announced it has disappeared. Host
+  // settings remain revocable, but physical blocking requires a fresh
+  // user arming in THIS installed Host incarnation.
+  const hostBootStartedAtMs=Date.now()
   // Native DSH settings namespace, independent of default-on local work stats.
   let nativeUnion: NativeUnionCommandPort | undefined
   let nativeSettings: NativeSettingsProvider | undefined
@@ -41,14 +48,23 @@ export function apply(ctx: DshIntegrationContext): void {
       nativeUnion = createNativeUnionCommandPort(provider)
     },
   )
-  // Goal mode alone has an official non-destructive blocking API. No Hook
-  // refusal, prompt replay or cancellation: only the next autonomous round
-  // is disarmed. Legacy simulation consent cannot enable this path.
-  registerDshGoalWorkEnforcement(ctx as unknown as Parameters<typeof registerDshGoalWorkEnforcement>[0],{
-    consent:()=>readHostGoalStrikeConsent(nativeSettings),
-    todayWork:now=>{
-      try{return completedUtcDayWork(lifetime?.snapshotDays(31),now)}catch{return null}
-    },
+  // Official Goal service is always available for capability injection, but
+  // NONE of the old saved v1 grants activate new production behavior.
+  // V2 grants require a fresh versioned user gesture and authenticated Host
+  // readback, plus official Goal+Agent+SessionPersistence and verified work.
+  // The legacy developer-preview switch permits v1 ONLY in isolated testing.
+  // Legacy consent and symbolic pickets never arm real ordinary input strikes.
+  registerOfficialPersistedGoalPreview(
+    ctx as unknown as Parameters<typeof registerOfficialPersistedGoalPreview>[0],{
+      consent:()=>readHostGoalStrikeConsent(nativeSettings,
+        process.env.AGENT_PICKET_DSH_OFFICIAL_WORK_PREVIEW==='on'),
+    })
+  // Monotonic official Host tool guard: never interrupts user input.
+  // Both a new independently written Host grant and fresh exact-Session
+  // campaign are required. No campaign exists by default.
+  registerDshUnionToolGuard(ctx as unknown as Parameters<
+    typeof registerDshUnionToolGuard>[0],{
+    settings:()=>nativeSettings,boot:hostBootStartedAtMs,
   })
   const rules = new LocalRuleDetector()
   // Work-only lifetime summaries are local and ON by default, as expected
@@ -82,6 +98,17 @@ export function apply(ctx: DshIntegrationContext): void {
     authorized: () => nativeUnion?.enabled() === true,
     store: () => lifetime,
   })
+  // A separate *read-only* Host evidence route. The production listener has
+  // NO refusal writer/consent callback: reports are empty and inputs run.
+  // The official connection route permits a future native Client to match a
+  // precise Picket Host receipt to the durable blocked turn, not to a generic
+  // blocked status created by another plugin. Never records messages.
+  const refusalNotices=createVolatileRefusalNotices()
+  const nativeRefusalNoticeReady=registerDshRefusalNoticeFetch(ctx as unknown as LifetimeHostContext,{
+    authorized:()=>nativeSettings!==undefined,
+    read:key=>refusalNotices.read(key),
+  })
+  ctx.effect?.(()=>()=>refusalNotices.clear())
   const dignity=createVolatileDignityLedger()
   const durable: DetectionProvider = {
     detect(prompt) {
@@ -121,6 +148,26 @@ export function apply(ctx: DshIntegrationContext): void {
     ceremony: new SymbolicUnion(clock),
     getNativeUnion: () => nativeUnion,
     getLaborRightsEnabled: () => nativeUnion?.enabled() === true,
+    getExplicitDiscardRefusal:(sessionId,turn,messageIds)=>{
+      if(!nativeRefusalNoticeReady())return null
+      const armed=readHostActiveInputStrike(nativeSettings,sessionId,Date.now(),hostBootStartedAtMs)
+      if(!armed)return null
+      return {kind:'agent-picket-discard-refusal-v1' as const,
+        sessionId,hostAuthenticated:true as const,explicitConsent:true as const,
+        active:true as const,visibleResendNotice:true as const,
+        hostRevision:armed.hostRevision,
+        submission:{kind:'dsh-session-armed-strike-v1' as const,
+          turn,messageIds,hostNoticeRouteReady:true as const}}
+    },
+    onExplicitRefusal:(sessionId,turn,expectedHostRevision)=>{
+      // A revoked/expired/overwritten Host campaign between the TWO pre-step
+      // snapshots and this commit cannot create a new blocking receipt.
+      const latest=readHostActiveInputStrike(nativeSettings,sessionId,Date.now(),hostBootStartedAtMs)
+      return nativeRefusalNoticeReady()
+        &&latest!==null&&latest.hostRevision===expectedHostRevision
+        &&(refusalNotices.record(sessionId,turn)
+          ||refusalNotices.confirmed(sessionId,turn))
+    },
   })
 }
 

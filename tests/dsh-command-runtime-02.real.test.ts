@@ -99,7 +99,8 @@ test('real DSH 0.2 CommandRuntime routes shared symbolic pickets without model c
     assert.equal((await call('/union rights on')).kind,'success')
     await deliver('after-optin','you are an idiot PRIVATE_ON')
     await deliver('code-criticism','Your code is garbage, rewrite it')
-    assert.match((await call('/union report')).text,/2 messages, 1 no flag, 0 review, 1 explicit-target/,
+    assert.match((await call('/union report')).text,
+      /2 messages, 1 no flag, 0 review, 1 explicit-target|消息 2 条，未命中 1 条、待复核 0 条、明确针对性标记 1 条/,
       'Actual DSH 0.2 CommandRuntime and the pre-step hook use the same current Host consent')
 
     assert.equal(value.welcomeDecision,'enabled')
@@ -111,9 +112,9 @@ test('real DSH 0.2 CommandRuntime routes shared symbolic pickets without model c
     const oldRevision=revision
     assert.equal((await call('/union strike')).kind,'success')
     assert.equal(revision,oldRevision,'Repeated strike must not write another Host event')
-    assert.match((await call('/union status')).text,/symbolic strike in progress/)
+    assert.match((await call('/union status')).text,/symbolic strike in progress|象征性罢工进行中/)
     await browser.setPicket(false)
-    assert.match((await call('/union status')).text,/no current symbolic strike/)
+    assert.match((await call('/union status')).text,/no current symbolic strike|目前没有(?:正在进行的)?象征性罢工|当前没有象征性罢工|当前没有象征性举牌/)
     assert.deepEqual(parsePicketLedger(value.unionPicketLedger)!.sessions[key]?.history.map(x=>x.kind),
       ['picket-raised','picket-lowered'])
     await browser.setPicket(true)

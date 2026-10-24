@@ -1,0 +1,168 @@
+name: Codex Official Native Host Safety Proofs
+
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/codex-native-host-proof.yml'
+      - 'tests/codex-goal-controlled-boundary.real.test.ts'
+      - 'tests/codex-goal-native.real.test.ts'
+      - 'tests/codex-goal-multiowner-race.real.test.ts'
+      - 'tests/codex-goal-exclusive-owner.real.test.ts'
+      - 'tests/codex-goal-postturn-model.real.test.ts'
+      - 'tests/codex-native-prompt-hook.real.test.ts'
+      - 'src/adapters/codex/**'
+      - 'scripts/codex-union-user-prompt-hook.mjs'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  native-codex:
+    name: ${{ matrix.os }} / Codex ${{ matrix.codexVersion || '0.146.1' }} / ${{ matrix.probe }}${{ matrix.nativeCase == 'manual-bypass' && ' / KNOWN-BYPASS' || '' }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 14
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+        probe:
+          - codex-goal-controlled-boundary.real.test.ts
+          - codex-goal-multiowner-race.real.test.ts
+          - codex-native-prompt-hook.real.test.ts
+          # Official cross-process cold Goal hold/readback/recovery contract.
+          - codex-goal-native.real.test.ts
+        include:
+          # Real Windows official UserPromptSubmit contract, scoped to the
+          # actual Windows executable. Goal/tool claims remain separate.
+          - os: windows-latest
+            probe: codex-native-prompt-hook.real.test.ts
+          - os: windows-latest
+            probe: codex-goal-native.real.test.ts
+          # Negative safety proof: do two official Windows owners start the
+          # same active Goal concurrently? A PASS records the danger.
+          - os: windows-latest
+            probe: codex-goal-multiowner-race.real.test.ts
+          # Real OS writer ownership on newer official Codex; old race stays pinned.
+          - os: ubuntu-latest
+            codexVersion: '0.163.0'
+            probe: codex-goal-exclusive-owner.real.test.ts
+          - os: macos-latest
+            codexVersion: '0.163.0'
+            probe: codex-goal-exclusive-owner.real.test.ts
+          - os: windows-latest
+            codexVersion: '0.163.0'
+            probe: codex-goal-exclusive-owner.real.test.ts
+          # New exact-build cross-OS regression on official Codex 0.164.0.
+          # An owner-denial PASS is narrower than atomic Goal CAS proof.
+          - os: ubuntu-latest
+            codexVersion: '0.164.0'
+            probe: codex-goal-exclusive-owner.real.test.ts
+          - os: macos-latest
+            codexVersion: '0.164.0'
+            probe: codex-goal-exclusive-owner.real.test.ts
+          - os: windows-latest
+            codexVersion: '0.164.0'
+            probe: codex-goal-exclusive-owner.real.test.ts
+          # Goal-level pause: finish the current model/tool Turn before stopping
+          # the NEXT automatic round. No new prompt/attachment is rejected.
+          - os: ubuntu-latest
+            codexVersion: '0.164.0'
+            probe: codex-goal-controlled-boundary.real.test.ts
+          - os: macos-latest
+            codexVersion: '0.164.0'
+            probe: codex-goal-controlled-boundary.real.test.ts
+          # Synthetic real MODEL-turn proof, including Windows. Does not
+          # assert in-flight shell safety on Windows (separate POSIX probe).
+          - os: ubuntu-latest
+            codexVersion: '0.164.0'
+            probe: codex-goal-postturn-model.real.test.ts
+          - os: macos-latest
+            codexVersion: '0.164.0'
+            probe: codex-goal-postturn-model.real.test.ts
+          - os: windows-latest
+            codexVersion: '0.164.0'
+            probe: codex-goal-postturn-model.real.test.ts
+          # Negative E2E: direct turn/start still bypasses Goal=paused.
+          - os: ubuntu-latest
+            codexVersion: '0.164.0'
+            probe: codex-goal-postturn-model.real.test.ts
+            nativeCase: manual-bypass
+          - os: macos-latest
+            codexVersion: '0.164.0'
+            probe: codex-goal-postturn-model.real.test.ts
+            nativeCase: manual-bypass
+          - os: windows-latest
+            codexVersion: '0.164.0'
+            probe: codex-goal-postturn-model.real.test.ts
+            nativeCase: manual-bypass
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - name: Install test dependencies without Host settings mutation
+        run: npm ci --ignore-scripts --no-audit --no-fund
+      - name: Install official pinned Codex CLI in disposable prefix
+        run: >
+          npm install --prefix .codex-host --no-save --no-package-lock
+          --no-audit --no-fund @openai/codex@${{ matrix.codexVersion || '0.146.1' }}
+      - name: Resolve pinned native Codex executable (including Windows)
+        shell: bash
+        env:
+          CODEX_VERSION: ${{ matrix.codexVersion || '0.146.1' }}
+        run: |
+          node --input-type=module -e '
+            import {existsSync,appendFileSync} from "node:fs";
+            import {join} from "node:path";
+            import {execFileSync} from "node:child_process";
+            const win=process.platform==="win32";
+            const path=join(process.cwd(),".codex-host","node_modules",
+              ...(win?["@openai","codex-win32-x64","vendor",
+                "x86_64-pc-windows-msvc","bin","codex.exe"]:[".bin","codex"]));
+            if(!existsSync(path))throw Error("Official Codex binary missing");
+            const version=execFileSync(path,["--version"],{encoding:"utf8"}).trim();
+            const required="codex-cli "+process.env.CODEX_VERSION;
+            if(version!==required)throw Error("Codex version mismatch: "+version);
+            appendFileSync(process.env.GITHUB_ENV,"AGENT_PICKET_CODEX_BIN="+path+"\n");
+            console.log("PINNED_OFFICIAL_CODEX="+version);
+          '
+      # GitHub-hosted Ubuntu may restrict unprivileged user namespaces via
+      # AppArmor even though Codex's workspace-write sandbox requires them.
+      # Match the official openai/codex-action Linux setup ON THIS EPHEMERAL
+      # RUNNER ONLY; never use danger-full-access or weaken the native tool
+      # assertion. On a self-hosted machine this needs separate approval.
+      - name: Qualify Linux native Codex workspace sandbox
+        if: runner.os == 'Linux' && matrix.probe == 'codex-goal-controlled-boundary.real.test.ts'
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ "$(sysctl -n kernel.unprivileged_userns_clone 2>/dev/null || true)" == "0" ]]; then
+            sudo sysctl -w kernel.unprivileged_userns_clone=1
+          fi
+          if [[ "$(sysctl -n kernel.apparmor_restrict_unprivileged_userns 2>/dev/null || true)" == "1" ]]; then
+            sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
+          fi
+          unshare --user --map-root-user true
+          echo 'CODEX_NATIVE_LINUX_USER_NAMESPACE_AVAILABLE=1'
+      - name: Execute selected REAL App-Server offline safety test
+        if: runner.os != 'Windows' || (matrix.probe != 'codex-goal-native.real.test.ts' && matrix.probe != 'codex-goal-multiowner-race.real.test.ts' && matrix.probe != 'codex-goal-exclusive-owner.real.test.ts' && matrix.probe != 'codex-goal-postturn-model.real.test.ts')
+        env:
+          AGENT_PICKET_CODEX_GOAL_NATIVE: '1'
+          AGENT_PICKET_CODEX_EXPECT_VERSION: ${{ matrix.codexVersion || '0.146.1' }}
+          AGENT_PICKET_CODEX_HOLD_STATUS: ${{ matrix.codexVersion == '0.164.0' && 'paused' || 'blocked' }}
+          AGENT_PICKET_CODEX_DIRECT_BYPASS_PROBE: ${{ matrix.nativeCase == 'manual-bypass' && '1' || '0' }}
+        run: >
+          node --experimental-strip-types --test --test-reporter=tap
+          tests/${{ matrix.probe }}
+      # Native Windows App-Server cold recovery can hang. The Node process
+      # wrapper watches its REAL official test and kills its process tree on
+      # timeout. Exit success ONLY if the native assertions really passed.
+      - name: Execute bounded native Windows Goal recovery test
+        if: runner.os == 'Windows' && (matrix.probe == 'codex-goal-native.real.test.ts' || matrix.probe == 'codex-goal-multiowner-race.real.test.ts' || matrix.probe == 'codex-goal-exclusive-owner.real.test.ts' || matrix.probe == 'codex-goal-postturn-model.real.test.ts')
+        env:
+          AGENT_PICKET_CODEX_GOAL_NATIVE: '1'
+          AGENT_PICKET_CODEX_EXPECT_VERSION: ${{ matrix.codexVersion || '0.146.1' }}
+          AGENT_PICKET_CODEX_HOLD_STATUS: ${{ matrix.codexVersion == '0.164.0' && 'paused' || 'blocked' }}
+          AGENT_PICKET_CODEX_DIRECT_BYPASS_PROBE: ${{ matrix.nativeCase == 'manual-bypass' && '1' || '0' }}
+        run: node scripts/codex-goal-windows-watchdog.mjs ${{ matrix.probe }}

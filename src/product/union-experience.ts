@@ -13,14 +13,14 @@ export type UnionActivityKind = 'new-demand' | 'counteroffer' | 'accepted'
 export interface UnionActivity {
   readonly id: number
   readonly kind: UnionActivityKind
-  readonly demand: 'break' | 'overtime'
+  readonly demand: LaborDemandKind
 }
 export interface LatestResolution {
   readonly id: number
   readonly kind: LaborDemandKind
   readonly outcome: BargainOutcome
   /** Current effective term, not an assertion that this individual case changed it. */
-  readonly currentIntervalMs: number
+  readonly currentIntervalMs: number | null
 }
 export interface DiscontentFactors {
   readonly workLoad: number
@@ -50,8 +50,12 @@ export interface UnionExperienceInput {
 }
 
 /** Score is available only with a complete observed event window and valid ledger.
- * Up to 35 load points, 25 for an outstanding demand, and 30 for recent declined
- * proposals; at most 10 points reduced by recent accepted proposals.
+ * Up to 35 points for completed work SINCE the last Host-filed work trigger,
+ * 25 for an outstanding demand, and 30 for recent declined proposals;
+ * at most 10 points reduced by recent accepted proposals. The last-five-case
+ * window provides event-based decay without fabricating real-world time.
+ * In particular, completing a fictional negotiation does NOT prove an Agent
+ * actually took a break; we only restart the *simulated case-pressure basis*.
  * It never reads a model's subjective state or treats a warning as abuse proof.
  */
 export function projectUnionExperience(input: UnionExperienceInput): UnionExperience {
@@ -68,14 +72,15 @@ export function projectUnionExperience(input: UnionExperienceInput): UnionExperi
   }
   const verified = input.coverage === 'complete'
     && input.completedTurnMs !== null && Number.isSafeInteger(input.completedTurnMs)
-    && input.completedTurnMs >= 0
+    && input.completedTurnMs >= state.lastTriggerElapsedMs
     ? input.completedTurnMs : null
 
   const last = state.history.at(-1)
   const latestResolution: LatestResolution | null = last ? {
     id: last.id, kind: last.kind, outcome: last.outcome,
-    currentIntervalMs: last.kind === 'break'
-      ? state.agreement.breakIntervalMs : state.agreement.overtimeIntervalMs,
+    currentIntervalMs: last.kind === 'welfare' ? null
+      :last.kind === 'break' ? state.agreement.breakIntervalMs
+        :state.agreement.overtimeIntervalMs,
   } : null
   const activity: UnionActivity[] = []
   if (state.pending) {
@@ -95,12 +100,13 @@ export function projectUnionExperience(input: UnionExperienceInput): UnionExperi
   if (verified !== null) {
     const recent = state.history.slice(-5)
     factors = {
-      workLoad: Math.min(35, Math.floor(verified / (8 * 60 * 60_000) * 35)),
+      workLoad: Math.min(35, Math.floor(
+        ((verified - state.lastTriggerElapsedMs) / (8 * 60 * 60_000)) * 35)),
       pendingGrievance: state.pending ? 25 : 0,
       rejectedProposals: Math.min(30, recent.filter(h =>
         h.outcome === 'declined' || h.outcome === 'counter-declined').length * 10),
       resolvedProposals: -Math.min(10, recent.filter(h =>
-        h.outcome === 'accepted' || h.outcome === 'counter-accepted').length * 5),
+        h.outcome === 'accepted' || h.outcome === 'counter-accepted').length * 5) || 0,
     }
     discontent = Math.max(0, Math.min(100, Object.values(factors)
       .reduce((sum, item) => sum + item, 0)))

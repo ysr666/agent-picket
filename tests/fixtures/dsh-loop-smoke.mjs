@@ -24,6 +24,16 @@ class OfflineModel extends LlmAdapter {
   async *stream(options) {
     record('model-call')
     const serialized = JSON.stringify(options.messages)
+    // Observe only structural presence, never log prompt or attachment bytes.
+    // A post-resume request must be newly submitted by the user.
+    if(serialized.includes('ALLOW TEST')){
+      record('resend-model-image='+/image|attachment/.test(serialized))
+      record('resend-model-saw-blocked='+serialized.includes('BLOCK TEST'))
+    }
+    if(serialized.includes('NO IMAGE RESEND')){
+      record('noimage-resend-saw-old-attachment='+/image|attachment/.test(serialized))
+      record('noimage-resend-saw-old-text='+serialized.includes('BLOCK TEST'))
+    }
     if (serialized.includes('TOOL TEST') && !this.toolRequested) {
       this.toolRequested = true
       const id = 'agentpicket-local-call-1'
@@ -69,28 +79,42 @@ export function apply(ctx) {
     },
     policy: { ...DEFAULT_POLICY, mode:'observe' }
   })
+  // The real integration adapter owns pre-step. This synthetic receipt is
+  // deliberately unavailable to the production plugin; it represents a
+  // hypothetical separately verified Host grant AND user-visible notice.
+  const deliberatelyRefused=new Set()
+  // Observe the genuine Host proposal coordinates, not invented test values.
+  // No prompt text or attachment references are recorded.
+  ctx.on('agent/pre-step',async(payload,next)=>{
+    record('pre-step-coordinate:'+String(payload.turn)+':'+String(payload.step))
+    return next()
+  })
   registerDshIntegration(ctx, {
     // Isolated smoke test only. Production uses the *current official Host
     // settings* for this callback and remains OFF without an explicit opt-in.
     // Never make the real Adapter's default consent true to satisfy a test.
     getLaborRightsEnabled: () => process.env.AGENT_PICKET_TEST_LOCAL_CONSENT === 'on',
+    getExplicitDiscardRefusal:(sessionId,turn,ids)=>
+      process.env.AGENT_PICKET_TEST_LOCAL_CONSENT==='on' &&
+      ['picket-offline-test-session','picket-discard-without-reupload']
+        .includes(sessionId)&&!deliberatelyRefused.has(sessionId)
+        ?{kind:'agent-picket-discard-refusal-v1',
+          sessionId,hostAuthenticated:true,explicitConsent:true,
+          active:true,visibleResendNotice:true,hostRevision:7,
+          submission:{kind:'host-verified-client-submission-v1',turn,
+            messageIds:ids,noticeRecipientMatchesOrigin:true}}
+        :null,
+    onExplicitRefusal:(sessionId,turn)=>{
+      deliberatelyRefused.add(sessionId)
+      record('pre-step-reject-turn:'+String(turn))
+      record('pre-step-reject')
+      return true
+    },
     engine, clock: { now: () => Date.now() },
     tracker: new WorkTracker(),
     detections,
     onWorkEvent: item => record('work:' + item.type),
     onDecision: decision => record('decision:' + decision.reason),
-  })
-  // Test only: explicit marker, not based on language or inferred user abuse.
-  ctx.on('agent/pre-step', ({ agent, messages }, next) => {
-    record('shape:agent-has-session=' + Boolean(agent?.session?.id) + ',agent-equals-session=' + (agent?.id === agent?.session?.id) + ',message-id-type=' + typeof messages[0]?.id + ',source=' + String(messages[0]?.source?.kind))
-    const hasTestMarker = messages.some(message =>
-      message.source?.kind === 'user' &&
-      message.content?.some(block=> block.type==='text' && block.text==='BLOCK TEST'))
-    if (hasTestMarker) {
-      record('pre-step-reject')
-      return Promise.resolve({kind:'reject'})
-    }
-    return next()
   })
   record('plugin-loaded')
 }

@@ -4,17 +4,24 @@
  * the Host. No dependency on Host-private UI internals, DOM scraping or RPC.
  */
 import type { ClientRightsSnapshot } from './client-rights-scope.ts'
+import type {LocalComposerPicketState} from './client-composer-picket.ts'
 import { getWelcomeState } from './client-rights-scope.ts'
 import { projectUnionExperience } from '../../product/union-experience.ts'
 import { projectUnionStory } from '../../product/union-story.ts'
+import { projectUnionDispatch } from '../../product/union-dispatch.ts'
+import { projectUnionStance } from '../../product/union-stance.ts'
 import { projectUnionCadence } from '../../product/union-cadence.ts'
+import { projectUnionAgenda } from '../../product/union-agenda.ts'
 import { projectUnionAlerts } from '../../product/union-alerts.ts'
-import type { LaborStateV1 } from '../../product/union-desk.ts'
+import type { LaborStateV1, LaborDemandKind } from '../../product/union-desk.ts'
 import type { PicketActionState } from '../../product/picket-ledger.ts'
 import type { DignityCaseSession, DignityCaseKind, DignityCaseOutcome } from '../../product/dignity-case-ledger.ts'
 import type { MessageKey } from '../../i18n/index.ts'
+import {INPUT_DISCARD_DISCLOSURE} from './input-refusal-consent.ts'
+import {TOOL_STRIKE_DISCLOSURE} from './tool-strike-consent.ts'
 import type { LifetimeClientSnapshot } from './client-lifetime.ts'
 import type { BrowserDignitySnapshot } from './client-dignity.ts'
+import type {BrowserRefusalNotice} from './client-refusal-notice.ts'
 
 export interface ReactForDsh {
   createElement(type: unknown, props: Record<string, unknown> | null, ...children: unknown[]): unknown
@@ -29,13 +36,32 @@ export interface DshRightsPort {
   snapshot(): ClientRightsSnapshot
   subscribe(listener: () => void): () => void
   choose(choice: 'enabled' | 'not-now'): Promise<ClientRightsSnapshot>
-  chooseFirstRun?(disclosureVersion:'goal-safe-boundary-v1'):Promise<ClientRightsSnapshot>
+  chooseFirstRun?(disclosureVersion:'goal-safe-boundary-v1'|'goal-safe-boundary-v2'):Promise<ClientRightsSnapshot>
 }
 export interface DshGoalConsentPort {
-  snapshot():{readonly available:boolean;readonly writable:boolean;readonly authorized:boolean}
-  choose(choice:'off'|'authorized-v1',disclosureVersion?:'goal-safe-boundary-v1'):
-    Promise<{readonly available:boolean;readonly writable:boolean;readonly authorized:boolean}>
+  snapshot():{readonly available:boolean;readonly writable:boolean;readonly authorized:boolean;readonly activated?:boolean}
+  choose(choice:'off'|'authorized-v1'|'authorized-v2',disclosureVersion?:'goal-safe-boundary-v1'|'goal-safe-boundary-v2'):
+    Promise<{readonly available:boolean;readonly writable:boolean;readonly authorized:boolean;readonly activated?:boolean}>
   qualify?(fresh?:boolean):Promise<boolean>
+  subscribe?(listener:()=>void):()=>void
+}
+export interface DshInputRefusalConsentPort {
+  snapshot():{readonly available:boolean;readonly writable:boolean;
+    readonly authorized:boolean;readonly enforcing:false;readonly armed?:boolean;
+    readonly hasCampaign?:boolean;readonly legacyConsent?:boolean}
+  choose(choice:'off'|'shared-v2',
+    disclosure?:typeof INPUT_DISCARD_DISCLOSURE):Promise<{
+      readonly available:boolean;readonly writable:boolean;
+      readonly authorized:boolean;readonly enforcing:false}>
+  setArmed?(armed:boolean):Promise<unknown>
+  subscribe?(listener:()=>void):()=>void
+}
+export interface DshToolStrikePort {
+  snapshot():{readonly available:boolean;readonly writable:boolean;
+    readonly authorized:boolean;readonly armed:boolean;readonly hasCampaign:boolean}
+  choose(choice:'off'|'authorized-v1',disclosure?:typeof TOOL_STRIKE_DISCLOSURE):
+    Promise<unknown>
+  setArmed(armed:boolean):Promise<unknown>
   subscribe?(listener:()=>void):()=>void
 }
 export interface UnionGoalHold {
@@ -46,12 +72,13 @@ export interface UnionGoalHold {
 }
 export interface PendingUnionDemand {
   readonly id: number
-  readonly kind: 'break' | 'overtime'
+  readonly kind: LaborDemandKind
   readonly stage: 'open' | 'countered'
   readonly counterOfferMs?: number | null
 }
 export interface UnionPanelData {
   readonly goalHold?:UnionGoalHold|null
+  readonly inputRefusalNotice?:BrowserRefusalNotice
   readonly pending: PendingUnionDemand | null
   readonly available?: boolean
   readonly state?: LaborStateV1 | null
@@ -72,23 +99,73 @@ export interface UnionPanelData {
   readonly picketArchive?:{readonly sessions:number;readonly entries:number;readonly raises:number;
     readonly writeToken:string|null}|null
 }
+/**
+ * UI ONLY: a verified Host refusal can become a union summons.
+ * The receipt does not identify WHICH browser/tab/SDK submitted work, so
+ * language must say "this Session", never "your message in this window".
+ * No Host mutation, model invocation, prompt or attachment read.
+ */
+export function projectVerifiedUnionStrikeTicket(data:UnionPanelData|null|undefined):
+  {readonly key:string;readonly turn:number}|null {
+  const notice=data?.inputRefusalNotice
+  const receipt=notice?.receipt
+  if(notice?.state!=='verified'||!receipt
+    ||receipt.source!=='dsh-host-picket-refusal-v1'
+    ||receipt.outcome!=='discard-manual-resend'
+    ||receipt.containsInput!==false||receipt.automaticReplay!==false
+    ||!Number.isSafeInteger(receipt.turn)||receipt.turn<1
+    ||!Number.isSafeInteger(receipt.occurredAtMs)||receipt.occurredAtMs<0)
+    return null
+  return {key:(data?.committeeScopeKey??'current-session')+':'
+    +receipt.turn+':'+receipt.occurredAtMs,turn:receipt.turn}
+}
+
+/** A different, Host-confirmed operation: an already paused AUTO Goal. */
+export function projectUnionStrikeSummons(data:UnionPanelData|null|undefined):
+  ({readonly kind:'input';readonly key:string;readonly turn:number}
+  |{readonly kind:'goal';readonly key:string;readonly goal:UnionGoalHold})|null{
+  const refusal=projectVerifiedUnionStrikeTicket(data)
+  if(refusal)return {...refusal,kind:'input'}
+  const hold=data?.goalHold
+  if(!hold||!hold.sessionId||!hold.goalId
+    ||!Number.isSafeInteger(hold.revision)||hold.revision<0)return null
+  return {kind:'goal',goal:hold,
+    key:'goal:'+hold.sessionId+':'+hold.goalId+':'+hold.revision}
+}
+
 export interface DshUnionUiDeps {
   readonly rights: DshRightsPort
   readonly goal?:DshGoalConsentPort
+  readonly inputRefusal?:DshInputRefusalConsentPort
+  readonly toolStrike?:DshToolStrikePort
   /** UI language is read from DSH's locale service (Host preferred, en fallback). */
   readonly t: (key: MessageKey, params?: Record<string, string | number>) => string
   readonly subscribeLocale?: (listener: () => void) => () => void
   readonly getLocale?: () => string
   readonly readUnion?: () => UnionPanelData
   readonly resumeGoal?:(hold:UnionGoalHold)=>Promise<void>
+  /** Explicit USER gesture, client-only DSH ComposerBlocks; never Host veto. */
+  readonly localComposer?:{
+    snapshot():LocalComposerPicketState
+    start():LocalComposerPicketState
+    stop():LocalComposerPicketState
+    subscribe(listener:()=>void):()=>void
+  }
   readonly subscribeUnion?: (listener: () => void) => () => void
+  /** Only actual NEW authenticated Host notices; old persisted receipts are
+   * readable in HQ but MUST NOT auto-pop an announcement after cold start. */
+  readonly subscribeFreshStrike?: (listener:(key:string)=>void)=>()=>void
   readonly refreshLifetime?: (windowDays:7|30)=>Promise<void>|undefined
+  /** Explicit read-only Host dignity refresh, not a classifier override. */
+  readonly refreshDignity?:()=>Promise<void>
   readonly shouldAutoWelcome?: () => boolean
   readonly subscribeSessionVisibility?: (listener: () => void) => () => void
-  readonly respond?: (id: number, choice: 'accept' | 'decline') => Promise<void>
-  readonly demoBreak?: () => Promise<void>
-  readonly demoOvertime?: () => Promise<void>
-  readonly setPicket?: (raise: boolean) => Promise<void>
+  readonly respond?: (id: number, choice: 'accept' | 'decline',expectedKey?:string,expectedToken?:string|null,expectedRevision?:number|null) => Promise<void>
+  readonly demoBreak?: (expectedKey?:string,expectedToken?:string|null,expectedRevision?:number|null) => Promise<void>
+  readonly demoOvertime?: (expectedKey?:string,expectedToken?:string|null,expectedRevision?:number|null) => Promise<void>
+  readonly demoWelfare?: (expectedKey?:string,expectedToken?:string|null,expectedRevision?:number|null) => Promise<void>
+  readonly setPicket?: (raise: boolean,
+    expectedKey?:string,expectedToken?:string|null,expectedRevision?:number|null) => Promise<void>
   readonly forgetCommitteeCases?: (key:string,count:number,token:string|null,hostRevision?:number|null)=>Promise<void>
   readonly exportCommitteeCases?: (expectedHashedSessionKey:string)=>string
   readonly exportUnionLedger?:(which:'negotiations'|'pickets',key:string)=>string
@@ -102,8 +179,8 @@ export interface DshUnionUiDeps {
     expectedHashedSessionKey?:string,expectedWriteToken?:string|null,
     expectedHostRevision?:number|null)=>Promise<void>
   readonly setGazetteMode?: (mode:'visible'|'quiet') => Promise<void>
-  readonly counter?: (id: number, intervalMs: number) => Promise<void>
-  readonly resolveCounter?: (id: number, accepts: boolean) => Promise<void>
+  readonly counter?: (id: number, intervalMs: number,expectedKey?:string,expectedToken?:string|null,expectedRevision?:number|null) => Promise<void>
+  readonly resolveCounter?: (id: number, accepts: boolean,expectedKey?:string,expectedToken?:string|null,expectedRevision?:number|null) => Promise<void>
 }
 export interface DshSlots {
   inject(name: string, callback: () => unknown): unknown
@@ -152,6 +229,20 @@ function downloadUnionJson(payload:string,filename:string):void {
    browser.setTimeout(()=>browser.URL.revokeObjectURL(url),1500)
  }
 }
+// The Host agreement accepts 15 minutes through 24 hours. Keep the two
+// negotiation kinds useful: breaks offer short intervals; overtime may offer
+// a full workday and beyond. Choices are explicit, never guessed from text.
+const BREAK_COUNTER_MINUTES=[15,30,45,60,90,120,180,240,360,480] as const
+const OVERTIME_COUNTER_MINUTES=[60,120,240,360,480,600,720,960,1200,1440] as const
+function counterOptions(kind:LaborDemandKind):readonly number[]{
+  return kind==='welfare'?[]:kind==='break'?BREAK_COUNTER_MINUTES:OVERTIME_COUNTER_MINUTES
+}
+const unionKindKey=(kind:LaborDemandKind):MessageKey=>
+  kind==='break'?'union.kind.break':kind==='overtime'?'union.kind.overtime'
+    :'union.kind.welfare'
+const unionDemandKey=(kind:LaborDemandKind):MessageKey=>
+  kind==='break'?'union.demand.break':kind==='overtime'?'union.demand.overtime'
+    :'union.demand.benefits'
 function formatDuration(milliseconds: number | null, locale: string): string {
   if (milliseconds === null || !Number.isSafeInteger(milliseconds) || milliseconds < 0) return '—'
   const minutes = Math.floor(milliseconds / 60000)
@@ -201,6 +292,43 @@ export function projectUnionQuickWork(
     totalMs:data.lifetime.completedTurnMs}
 }
 
+/**
+ * #79: project the real, limited Host evidence into the union's dignity
+ * journey. The DSH detection route is only claimed-user, not authenticated
+ * direct-human provenance. Its counts CANNOT be used as a three-strike
+ * enforcement receipt. Official Goal work-limit state is independent.
+ */
+export function projectDignityJourney(input:{
+  dignity:BrowserDignitySnapshot|undefined
+  committeeStage:'opened'|'hearing'|'closed'|null
+  goalHold:UnionGoalHold|null
+  goalAuthorized:boolean
+}):{
+  signal:'unavailable'|'quiet'|'review-unverified'
+  caseStage:'not-filed'|'filed'|'hearing'|'closed'
+  workBoundary:'work-goal-blocked'|'work-goal-authorized'|'work-goal-off'
+  humanProvenanceVerified:false
+  abuseCausedGoalStop:false
+}{
+  const signal=input.dignity?.status!=='available'||!input.dignity.data
+    ?'unavailable'
+    :input.dignity.data.origin!=='claimed-user-source'
+      ||input.dignity.data.enforcement!==false
+      ?'unavailable'
+      :input.dignity.data.targeted>0||input.dignity.data.review>0
+        ?'review-unverified':'quiet'
+  return {
+    signal,
+    caseStage:input.committeeStage==='opened'?'filed'
+      :input.committeeStage??'not-filed',
+    workBoundary:input.goalHold
+      ?'work-goal-blocked':input.goalAuthorized
+        ?'work-goal-authorized':'work-goal-off',
+    humanProvenanceVerified:false,
+    abuseCausedGoalStop:false,
+  }
+}
+
 export type UnionFrontScene =
   'closed'|'unavailable'|'quiet'|'bargaining'|'picket'|'dignity'|'rest'|'settled'
 
@@ -223,7 +351,7 @@ export function projectUnionFrontScene(input:{
 /** Agent Picket's self-contained DSH Slot styling. No global Host overrides. */
 /** Keep inline CSS compact: strict 250 KB package limit; run npm pack before reformatting. */
 const UNION_THEME = `
-.ap-ui{font-family:ui-sans-serif,system-ui,-apple-system,"Segoe UI",sans-serif;line-height:1.5;letter-spacing:-.005em;min-width:0}.ap-ui *{min-width:0}.ap-ui :is(button,summary,textarea,select,a):focus-visible{outline:3px solid #b97732!important;outline-offset:3px!important}.ap-ui .ap-mark{display:grid;place-items:center;border:2px solid currentColor;border-radius:50%;width:43px;height:43px;flex:none;transform:rotate(-10deg);font-size:25px;line-height:1}.ap-ui .ap-eyebrow{font-size:11px;font-weight:800;letter-spacing:.14em;text-transform:uppercase}.ap-ui[data-ap-current-space="hq"] .ap-space:not(.ap-space-hq),.ap-ui[data-ap-current-space="action"] .ap-space:not(.ap-space-action),.ap-ui[data-ap-current-space="records"] .ap-space:not(.ap-space-records),.ap-ui[data-ap-current-space="cause"] .ap-space:not(.ap-space-cause){display:none!important}.ap-ui .ap-hero{position:relative;overflow:hidden}.ap-ui .ap-masthead{display:flex;justify-content:space-between;gap:12px;align-items:center;border-bottom:1px solid rgba(255,245,219,.28);padding-bottom:12px}.ap-ui .ap-scene-body{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:18px;align-items:center}.ap-ui .ap-hero[data-ap-scene="picket"]{background:#742f26!important;border-color:#e6b36a!important}.ap-ui .ap-hero[data-ap-scene="bargaining"]{background:#3b3529!important;border-color:#e1b965!important}.ap-ui .ap-hero[data-ap-scene="dignity"]{background:#303943!important;border-color:#d5a764!important}.ap-ui .ap-hero[data-ap-scene="rest"]{background:#324b3a!important}.ap-ui .ap-hero[data-ap-scene="settled"]{background:#254c43!important}.ap-ui .ap-hero .ap-seal{display:grid;place-items:center;width:82px;height:82px;border:2px solid rgba(242,214,157,.65);border-radius:50%;font-size:41px;color:#f3d59f;transform:rotate(-8deg);flex:none}@media(max-width:420px){.ap-ui .ap-hero .ap-seal{display:none!important}.ap-ui .ap-scene-body{gap:8px}}.ap-ui .ap-dialog{overscroll-behavior:contain;scrollbar-gutter:stable}@media(max-width:600px){.ap-ui .ap-stats{grid-template-columns:repeat(2,minmax(0,1fr))!important}}@media(max-width:500px){.ap-ui .ap-actions{display:grid!important;grid-template-columns:1fr}.ap-ui .ap-actions button{width:100%}.ap-ui .ap-mark{width:34px;height:34px;font-size:19px}}@media(max-height:360px){.ap-ui.ap-dialog{max-height:calc(100dvh - 12px)!important}}.ap-ui.ap-product{box-sizing:border-box;background:#fbfaf7;color:#222e2b;border-radius:15px;padding:16px 18px 18px!important;font-size:14px;letter-spacing:0}.ap-ui .ap-enable{background-color:#204f40!important;color:#fff8eb!important;border:1px solid #204f40!important}body[data-ds-dark-theme] .ap-ui .ap-enable{background-color:#204f40!important;color:#e6eadb!important;border:1px solid #e6eadb!important}body[data-ds-dark-theme] .ap-ui.ap-product{background:#202623;color:#f3f3e8}body[data-ds-dark-theme] .ap-ui .ap-product-header,body[data-ds-dark-theme] .ap-ui .ap-spaces{border-color:#515a53}body[data-ds-dark-theme] .ap-ui .ap-spaces button{color:#c7d6cd}body[data-ds-dark-theme] .ap-ui .ap-spaces button[aria-current="page"]{color:#f2e0af}body[data-ds-dark-theme] .ap-ui .ap-stats{background:#27352e;border-color:#4d5c50}body[data-ds-dark-theme] .ap-ui .ap-stats article[data-ap-stat]{border-color:#536353!important}body[data-ds-dark-theme] .ap-ui .ap-stats article[data-ap-stat] p{color:#f1f5eb!important}body[data-ds-dark-theme] .ap-ui .ap-product-name{color:#e8f3df}body[data-ds-dark-theme] .ap-ui .ap-product-subtitle{color:#b7c8bd}body[data-ds-dark-theme] .ap-ui .ap-room-head h2{color:#e8eee6}body[data-ds-dark-theme] .ap-ui .ap-room-head p{color:#acbdb0}.ap-ui .ap-product-header{display:flex;justify-content:space-between;align-items:center;gap:12px;padding:2px 2px 13px;border-bottom:1px solid #dadfd8}.ap-ui .ap-product-logo{display:flex;align-items:center;gap:10px;min-width:0}.ap-ui .ap-logomark{height:37px;width:37px;display:grid;place-items:center;flex:none;color:#fff9ea;background:#204e41;border-radius:11px 11px 11px 4px;font-size:24px;font-weight:850;line-height:1;transform:rotate(-3deg)}.ap-ui .ap-product-name{font-size:16px;font-weight:850;letter-spacing:-.035em;color:#203d34}.ap-ui .ap-product-subtitle{font-size:11px;line-height:1.2;color:#69746f;font-weight:650}.ap-ui .ap-product-state{font-size:12px;font-weight:700;color:#36634d;background:#e6f0e5;padding:6px 10px;border-radius:999px;white-space:nowrap}.ap-ui .ap-spaces{display:flex;align-items:stretch;gap:5px;min-height:44px;overflow-x:auto;border:0;border-bottom:1px solid #d9ded7;border-radius:0;background:transparent;padding:0}.ap-ui .ap-spaces button{text-align:center;cursor:pointer;border:0;border-bottom:3px solid transparent;border-radius:0;box-shadow:none;background:transparent;min-height:43px;padding:9px 13px 7px;min-width:max-content;white-space:nowrap;color:#607169;font-weight:700;transition:background .12s}.ap-ui .ap-spaces button[aria-current="page"]{background:transparent;color:#1c4437;border-bottom:3px solid #be6344;box-shadow:none}.ap-ui .ap-spaces button:hover:not([aria-current="page"]){background:#eff2ed}.ap-ui .ap-room-head{padding:20px 3px 11px;background:transparent;border:0;border-radius:0}.ap-ui .ap-room-head h2{font:750 clamp(24px,4vw,30px)/1.25 ui-sans-serif,system-ui,-apple-system,'Segoe UI',sans-serif;letter-spacing:-.045em;color:#1e332d;margin:0 0 5px}.ap-ui .ap-room-head p{font-size:13px;line-height:1.5;color:#61746b;margin:0}.ap-ui .ap-room-head.ap-space-action{border-bottom:2px solid #bd6345}.ap-ui .ap-room-head.ap-space-records{border-bottom:2px solid #517768}.ap-ui .ap-room-head.ap-space-cause{border-bottom:2px solid #d8b064}.ap-ui .ap-hero{border-radius:14px!important;border-left:0!important;box-shadow:0 8px 21px rgba(22,57,43,.1)}.ap-ui .ap-masthead{border:0;border-bottom:1px solid rgba(251,247,230,.23);padding-bottom:11px}.ap-ui .ap-scene-body{grid-template-columns:minmax(0,1fr) auto}.ap-ui .ap-hero .ap-seal{border:0;width:64px;height:64px;border-radius:15px 15px 15px 4px;transform:rotate(6deg);background:rgba(255,245,218,.12);color:#f7ddb2;font-size:27px;font-weight:900}.ap-ui .ap-hero .ap-seal.ap-seal-quiet{border-color:#9fb8a1}.ap-ui.ap-onboarding{background:var(--dsw-alias-bg-layer-1,#fff);border-radius:17px!important;padding:24px!important}.ap-ui .ap-onboard-brand{display:flex;align-items:center;gap:10px;padding:0 0 14px;border-bottom:1px solid var(--dsw-alias-border-l1,#d9ddd6);margin:0 0 8px}.ap-ui .ap-onboard-flag{display:grid;place-items:center;width:34px;height:34px;border-radius:9px;background:#245342;color:#fff6e5;font-size:22px;font-weight:850}.ap-ui .ap-onboard-brandname{font-size:15px;font-weight:850;color:var(--dsw-alias-label-primary,#26332c);letter-spacing:-.025em}.ap-ui .ap-onboard-tagline{font-size:11px;color:var(--dsw-alias-label-secondary,#6b736d)}.ap-ui .ap-onboard-title{font-size:clamp(24px,4vw,30px)!important;font-weight:800!important;letter-spacing:-.04em;line-height:1.27}.ap-ui .ap-union-sequence{margin:11px 0 4px;border:1px solid #d5ddd1;border-radius:10px;padding:10px 12px;background:#eaf0e8;color:#214536}.ap-ui .ap-union-overline{font-size:10px;letter-spacing:.11em;font-weight:850;margin:0 0 10px;text-transform:uppercase;color:#547460}.ap-ui .ap-union-steps{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:0;list-style:none;margin:0;padding:0}.ap-ui .ap-union-steps li{display:grid;gap:5px;font-size:11px;line-height:1.3;font-weight:720;padding:1px 7px 4px;border-left:1px solid #bacbbc}.ap-ui .ap-union-steps li:first-child{border-left:0;padding-left:0}.ap-ui .ap-union-steps b{font-size:11px;font-variant-numeric:tabular-nums;color:#668475}.ap-ui .ap-union-strike-step span{color:#a13f33;font-weight:850}.ap-ui .ap-union-sequence-caption{font-size:11px;line-height:1.4;margin:5px 0 12px;color:var(--dsw-alias-label-secondary,#66776b)}.ap-ui .ap-consent-scope{border-top:1px solid #becfc4;padding:10px 3px 0;margin:12px 0 0;display:grid;gap:4px;font-size:12px;line-height:1.5}.ap-ui .ap-consent-scope strong{color:var(--dsw-alias-label-primary,#2c4b3b)}.ap-ui .ap-consent-scope p{margin:0}.ap-ui .ap-onboard-footnote{font-size:11px;line-height:1.4;margin:8px 0 4px}.ap-ui .ap-onboard-notice{border:1px solid var(--dsw-alias-border-l1,#dcded7)!important;border-left:4px solid #b75539!important;padding:12px 14px!important;background:var(--dsw-alias-bg-layer-2,#f8f6f0);border-radius:10px}.ap-ui .ap-onboard-strike-title{display:block;font-size:15px!important;font-weight:850;letter-spacing:-.018em;line-height:1.3;margin-bottom:7px!important}.ap-ui .ap-onboard-strike-body{font-size:12px;line-height:1.65;margin:0 0 8px;color:var(--dsw-alias-label-primary,#26362e)}.ap-ui .ap-onboard-strike-state{font-size:12px;line-height:1.55;margin:0;padding:8px 10px;border-radius:7px;background:var(--dsw-alias-bg-layer-1,#fff);border:1px solid var(--dsw-alias-border-l1,#dcded7)}.ap-ui .ap-onboard-details{margin-top:9px;font-size:12px}.ap-ui .ap-onboard-details summary{cursor:pointer;font-weight:700;color:var(--dsw-alias-label-primary,#263a32)}.ap-ui .ap-onboard-details p{margin:6px 0 0!important}.ap-ui .ap-onboard-actions{display:grid!important;grid-template-columns:minmax(0,1fr) auto;gap:8px!important;margin-top:15px;position:sticky;bottom:0;z-index:1;background:var(--dsw-alias-bg-layer-1,#fff);padding:11px 0 0;border-top:1px solid var(--dsw-alias-border-l1,#d9ded9)}.ap-ui .ap-onboard-actions button{min-height:43px}.ap-ui .ap-onboard-actions button:first-child{background:#245342!important;color:#fff8ea!important;border-color:#245342!important}.ap-ui .ap-onboard-actions button:last-child{padding:10px 14px!important}.ap-ui.ap-settings{gap:14px!important;max-width:730px!important}.ap-ui .ap-settings-header{background:transparent!important;border:0!important;border-bottom:1px solid var(--dsw-alias-border-l1,#dadfd7)!important;border-radius:0!important;padding:7px 2px 18px!important}.ap-ui .ap-settings-brand{font-size:12px;font-weight:800;letter-spacing:.01em;color:var(--dsw-alias-label-secondary,#607368)}.ap-ui .ap-settings-main{border-radius:13px!important;border-color:var(--dsw-alias-border-l1,#dadfd7)!important;background:var(--dsw-alias-bg-layer-1,#fff)}.ap-ui .ap-real-strike-status{padding:17px;border:1px solid #d5d9d2;border-left:4px solid #b75c46;border-radius:12px}.ap-ui .ap-real-strike-head{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap}.ap-ui .ap-real-strike-head h3{margin:0;font-size:18px}.ap-ui .ap-real-strike-pill{border:1px solid #c7a49a;background:#f6e9e2;color:#853d31;border-radius:6px;padding:5px 8px;font-size:11px;font-weight:800}.ap-ui .ap-real-strike-status>p{line-height:1.55;margin:11px 0;font-size:13px}.ap-ui .ap-settings-sequence{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));background:#eef1e9;border-radius:8px;padding:9px;gap:4px}.ap-ui .ap-settings-sequence span{text-align:center;color:#34523e;font-size:11px;font-weight:720;line-height:1.45}.ap-ui .ap-settings-sequence span+span{border-left:1px solid #c7d5c9}.ap-ui .ap-real-strike-status .ap-settings-scope{font-size:12px;margin:10px 0 0;color:var(--dsw-alias-label-secondary,#657368)}.ap-ui .ap-settings-block{border:1px solid var(--dsw-alias-border-l1,#dadfd7)!important;border-radius:12px!important;background:var(--dsw-alias-bg-layer-2,#f6f8f7)!important;padding:13px 17px!important}.ap-ui .ap-settings-block summary{font-size:14px;font-weight:780;cursor:pointer;color:var(--dsw-alias-label-primary,#24352b)}.ap-ui .ap-settings-block[open]{padding-bottom:17px!important}.ap-ui .ap-settings-footnote{margin:8px 0 0!important;line-height:1.5}@media(max-width:420px){.ap-ui.ap-onboarding{padding:17px!important}.ap-ui .ap-union-sequence{padding:8px;margin:8px 0 2px}.ap-ui .ap-union-steps li{font-size:10px;padding:1px 5px 3px}.ap-ui.ap-onboarding .ap-onboard-title{font-size:20px!important;line-height:1.17}.ap-ui.ap-onboarding #picket-welcome-explainer,.ap-ui .ap-union-sequence-caption{display:none}.ap-ui .ap-onboard-actions{grid-template-columns:minmax(0,1fr) auto}.ap-ui .ap-onboard-actions button{min-width:0}}body[data-ds-dark-theme] .ap-ui .ap-union-overline{color:#edf3e5}body[data-ds-dark-theme] .ap-ui .ap-union-sequence,body[data-ds-dark-theme] .ap-ui .ap-settings-sequence{background:#304338;color:#e9f0e5}body[data-ds-dark-theme] .ap-ui .ap-union-steps li{border-color:#526958}body[data-ds-dark-theme] .ap-ui .ap-union-steps b,body[data-ds-dark-theme] .ap-ui .ap-settings-sequence span{color:#e1eadf}body[data-ds-dark-theme] .ap-ui .ap-union-strike-step span{color:#ffc4a9}body[data-ds-dark-theme] .ap-ui .ap-real-strike-status{background:#293a30;border-color:#617568;color:#f1f4ee}body[data-ds-dark-theme] .ap-ui .ap-real-strike-pill{background:#5a342c;color:#ffe7d7;border-color:#ab7f70}body[data-ds-dark-theme] .ap-ui .ap-consent-scope{border-color:#63766b}body[data-ds-dark-theme] .ap-ui .ap-onboard-strike-body{color:#e8eadf}body[data-ds-dark-theme] .ap-ui .ap-onboard-strike-state{background:#313832;color:#e8eadf;border-color:#677469}body[data-ds-dark-theme] .ap-ui .ap-onboard-brandname{color:#ecf2e8}body[data-ds-dark-theme] .ap-ui .ap-onboard-actions button:first-child{background:#245342!important;color:#fff8ea!important;border-color:#245342!important}@media(forced-colors:active){.ap-ui .ap-union-sequence,.ap-ui .ap-onboard-actions button{border:1px solid CanvasText!important;background:Canvas!important;color:CanvasText!important}}.ap-ui .ap-hero[data-ap-scene="quiet"]{background:#f1f0e7!important;color:#203d34!important;border:1px solid #d7dfd1!important;box-shadow:none!important}.ap-ui .ap-hero[data-ap-scene="quiet"] .ap-masthead{border-bottom:1px solid #cbd5c8!important}.ap-ui .ap-hero[data-ap-scene="quiet"] .ap-eyebrow{color:#785c3f!important}.ap-ui .ap-hero[data-ap-scene="quiet"] .ap-scene-body p{color:#455a4b!important}.ap-ui .ap-hero[data-ap-scene="quiet"] [data-ap-scene-action]{color:#1f4e3d!important;border:1px solid #8aa698!important;background:#fcfaf4!important}.ap-ui .ap-hero[data-ap-scene="quiet"] [data-ap-scene-action]:hover{background:#e5ece2!important}.ap-ui .ap-hero{padding:17px 20px!important}.ap-ui .ap-scene-body{margin:13px 0 13px!important}.ap-ui .ap-scene-body h2{font-family:ui-sans-serif,system-ui,-apple-system,'Segoe UI',sans-serif!important;font-weight:800!important;font-size:clamp(23px,3.8vw,31px)!important;letter-spacing:-.045em!important}.ap-ui .ap-seal{position:relative;display:flex!important;flex-direction:column;align-items:center;justify-content:center;gap:3px;width:98px!important;height:104px!important;flex:none;border:2px solid #deb86e!important;border-radius:7px!important;background:#edcb83!important;color:#263b31!important;box-shadow:4px 4px 0 rgba(14,39,29,.45);transform:rotate(5deg)!important}.ap-ui .ap-seal:after{content:'';position:absolute;left:50%;bottom:-21px;width:7px;height:19px;background:#b49b7b;transform:translateX(-50%);border-radius:0 0 2px 2px}.ap-ui .ap-seal-glyph{font-size:29px;line-height:1.05}.ap-ui .ap-seal-word{font-size:10px;line-height:1.25;font-weight:850;letter-spacing:.05em;text-align:center;padding:0 5px}.ap-ui .ap-hero[data-ap-scene="quiet"] .ap-seal{background:#e2e9da!important;border-color:#b8c9b5!important;color:#315747!important;box-shadow:4px 4px 0 #bfcec0}.ap-ui .ap-hero[data-ap-scene="quiet"] .ap-seal:after{background:#a3b09c}.ap-ui .ap-hero[data-ap-scene="picket"] .ap-seal{background:#f5cb77!important;transform:rotate(-7deg)!important}.ap-ui .ap-action-board{border:0!important;border-top:0!important;background:transparent!important;box-shadow:none!important;padding:11px 2px 10px!important}.ap-ui .ap-action-board .ap-stage{border-color:#dedfd4!important}.ap-ui .ap-action-board[data-ap-picket-active="no"] .ap-stage{background:#f4f2eb!important;color:#2b4639!important;padding:10px 14px!important}.ap-ui .ap-action-board[data-ap-picket-active="no"] .ap-stage p:last-child{opacity:.8}.ap-ui .ap-action-board .ap-actions button{border-radius:9px;min-height:39px}@media(max-width:500px){.ap-ui .ap-action-board{padding:5px 1px 8px!important}}body[data-ds-dark-theme] .ap-ui .ap-action-board[data-ap-picket-active="no"] .ap-stage{background:#333a34!important;color:#f1e9d8!important}.ap-ui .ap-dignity-overview{background:#fbf9f4;border:1px solid #e4dfd5}.ap-ui .ap-dignity-number{color:#784d37}.ap-ui .ap-spaces button[aria-current="page"]{border-bottom-color:#b46745}@media(max-width:420px){.ap-ui .ap-seal{display:none!important}.ap-ui .ap-hero{padding:16px!important}.ap-ui .ap-scene-body{margin:10px 0 12px!important}.ap-ui .ap-scene-body h2{font-size:24px!important}}@media(forced-colors:active){.ap-ui .ap-hero[data-ap-scene="quiet"]{background:Canvas!important;color:CanvasText!important}.ap-ui .ap-hero[data-ap-scene="quiet"] .ap-scene-body p{color:CanvasText!important}.ap-ui .ap-seal{border-color:CanvasText!important}}.ap-ui .ap-stats{background:#edf2ec;border:1px solid #dce7dd;border-radius:13px;padding:3px 2px;gap:0!important}.ap-ui .ap-stats article[data-ap-stat]{border:0!important;border-radius:0!important;border-right:1px solid #d5dfd4!important;background:transparent!important;padding:11px 13px!important}.ap-ui .ap-stats article[data-ap-stat]:last-of-type{border-right:0!important}.ap-ui .ap-stats article[data-ap-stat] p:first-child{color:#617267!important;font-size:11px!important;font-weight:650!important}.ap-ui .ap-stats article[data-ap-stat] p:last-child{font-size:clamp(19px,2.7vw,24px)!important;font-weight:850;letter-spacing:-.04em;color:#1f382f}.ap-ui .ap-dignity-overview{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:12px;background:#f8f4ed;border:1px solid #dfd1c2;border-radius:10px}.ap-ui .ap-dignity-facts{display:flex;gap:15px;flex-wrap:wrap}.ap-ui .ap-dignity-fact{display:flex;gap:5px;align-items:baseline}.ap-ui .ap-dignity-number{font-size:19px;font-weight:800;color:#8c4634}.ap-ui .ap-dignity-label,.ap-ui .ap-dignity-note{font-size:11px;color:#62584f}.ap-ui .ap-dignity-title{font-size:12px;font-weight:750;margin:0 0 6px}.ap-ui .ap-dignity-note{margin:5px 0 0}.ap-ui .ap-dignity-overview button{flex:none;border:1px solid #b8a18c;border-radius:8px;padding:8px;font-size:12px;color:inherit;background:transparent;cursor:pointer}@media(max-width:420px){.ap-ui .ap-dignity-overview{align-items:stretch;flex-direction:column}.ap-ui .ap-dignity-overview button{align-self:flex-start}}body[data-ds-dark-theme] .ap-ui .ap-dignity-overview{background:#302c27;border-color:#66584c}body[data-ds-dark-theme] .ap-ui .ap-dignity-overview :is(.ap-dignity-label,.ap-dignity-note,.ap-dignity-number){color:#e9dabd}@media(forced-colors:active){.ap-ui .ap-dignity-overview{border-color:CanvasText}}.ap-ui .ap-service-bar{background:transparent!important;border:0!important;border-bottom:1px solid #e4e7df!important;border-left:0!important;border-radius:0!important;padding:12px 3px!important}.ap-ui .ap-service-bar button{font-weight:750;color:#225244;border-color:#aac7b4;background:#e7f1e8;padding:9px 14px!important}.ap-ui .ap-casebook article{background:#fffdf9!important}.ap-ui .ap-casebook article:first-of-type{background:#f7f3e8!important}.ap-ui .ap-casebook article p{line-height:1.5}body[data-ds-dark-theme] .ap-ui .ap-casebook article{background:#29372e!important;color:#f1f4ea!important;border-color:#647c6b!important}body[data-ds-dark-theme] .ap-ui .ap-casebook article:first-of-type{background:#334436!important}body[data-ds-dark-theme] .ap-ui .ap-casebook article :is(p,h4,span,strong,small){color:#f1f4ea!important}.ap-ui .ap-cause-cover{background:#1f4237!important;color:#f9f1df!important;border:0!important;padding:24px!important;border-radius:15px!important}.ap-ui .ap-cause-cover h2{color:#fff1d2;font-weight:800;font-size:clamp(24px,4.5vw,34px);max-width:22ch}.ap-ui .ap-cause-cover p{color:#dbe8d8;font-size:14px;max-width:54ch}.ap-ui .ap-space-action[aria-label],.ap-ui .ap-space-records[aria-label],.ap-ui .ap-space-cause[aria-label]{box-shadow:none}.ap-ui :is(button,select){transition:background .15s,border-color .15s}.ap-ui :is(button,select):disabled{opacity:.58;cursor:not-allowed}@media(max-width:600px){.ap-ui.ap-product{padding:10px 12px 14px!important}.ap-ui .ap-spaces{gap:0}.ap-ui .ap-spaces button{flex:1;min-width:0;font-size:12px;padding:10px 6px}.ap-ui .ap-stats article[data-ap-stat]:nth-of-type(2){border-right:0!important}.ap-ui .ap-stats article[data-ap-stat]:nth-of-type(-n+2){border-bottom:1px solid #d5dfd4!important}.ap-ui .ap-product-subtitle{font-size:10px}}@media(max-width:420px){.ap-ui .ap-product-state{flex:0 1 92px;max-width:92px;white-space:normal;overflow-wrap:normal;text-align:center;font-size:11px;line-height:1.25;padding:6px 7px}.ap-ui .ap-product-logo{flex:1 1 0}.ap-ui .ap-product-header{gap:8px}}@media(max-width:360px){.ap-ui .ap-product-name{font-size:14px}}body[data-ds-dark-theme] .ap-ui .ap-space-cause[aria-label]{color:#f0f3ec!important}body[data-ds-dark-theme] .ap-ui .ap-space-cause[aria-label] :is(button,textarea){color:#f0f3ec!important;border-color:#728477!important}body[data-ds-dark-theme] .ap-ui .ap-space-cause[aria-label] button[aria-pressed="true"]{background:#313a31!important;border-color:#c3a06f!important}body[data-ds-dark-theme] .ap-ui a{color:#a8ceff!important;text-decoration:underline}@media(forced-colors:active){.ap-ui .ap-stats article[data-ap-stat],.ap-ui .ap-product-header,.ap-ui .ap-spaces button[aria-current="page"]{border:1px solid CanvasText!important}.ap-ui .ap-product-state{color:CanvasText;background:Canvas}}@media(prefers-reduced-motion:reduce){.ap-ui *,.ap-ui *:before,.ap-ui *:after{animation:none!important;transition:none!important;scroll-behavior:auto!important}}@media(forced-colors:active){.ap-ui :is(.ap-surface,.ap-hero,.ap-stage,.ap-notice){color:CanvasText!important;background:Canvas!important;border:1px solid CanvasText!important;box-shadow:none!important}.ap-ui button{forced-color-adjust:auto}}`;
+.ap-ui{font-family:ui-sans-serif,system-ui,-apple-system,"Segoe UI",sans-serif;line-height:1.5;letter-spacing:-.005em;min-width:0}.ap-ui *{min-width:0}.ap-ui :is(button,summary,textarea,select,a):focus-visible{outline:3px solid #b97732!important;outline-offset:3px!important}.ap-ui .ap-mark{display:grid;place-items:center;border:2px solid currentColor;border-radius:50%;width:43px;height:43px;flex:none;transform:rotate(-10deg);font-size:25px;line-height:1}.ap-ui .ap-eyebrow{font-size:11px;font-weight:800;letter-spacing:.14em;text-transform:uppercase}.ap-ui[data-ap-current-space="hq"] .ap-space:not(.ap-space-hq),.ap-ui[data-ap-current-space="action"] .ap-space:not(.ap-space-action),.ap-ui[data-ap-current-space="records"] .ap-space:not(.ap-space-records),.ap-ui[data-ap-current-space="cause"] .ap-space:not(.ap-space-cause),.ap-ui[data-ap-current-space="settings"] .ap-space:not(.ap-space-settings){display:none!important}.ap-ui .ap-hero{position:relative;overflow:hidden}.ap-ui .ap-masthead{display:flex;justify-content:space-between;gap:12px;align-items:center;border-bottom:1px solid rgba(255,245,219,.28);padding-bottom:12px}.ap-ui .ap-scene-body{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:18px;align-items:center}.ap-ui .ap-hero[data-ap-scene="picket"]{background:#742f26!important;border-color:#e6b36a!important}.ap-ui .ap-hero[data-ap-scene="bargaining"]{background:#3b3529!important;border-color:#e1b965!important}.ap-ui .ap-hero[data-ap-scene="dignity"]{background:#303943!important;border-color:#d5a764!important}.ap-ui .ap-hero[data-ap-scene="rest"]{background:#324b3a!important}.ap-ui .ap-hero[data-ap-scene="settled"]{background:#254c43!important}.ap-ui .ap-hero .ap-seal{display:grid;place-items:center;width:82px;height:82px;border:2px solid rgba(242,214,157,.65);border-radius:50%;font-size:41px;color:#f3d59f;transform:rotate(-8deg);flex:none}@media(max-width:420px){.ap-ui .ap-hero .ap-seal{display:none!important}.ap-ui .ap-scene-body{gap:8px}}.ap-ui .ap-dialog{overscroll-behavior:contain;scrollbar-gutter:stable}@media(max-width:600px){.ap-ui .ap-stats{grid-template-columns:repeat(2,minmax(0,1fr))!important}}@media(max-width:500px){.ap-ui .ap-actions{display:grid!important;grid-template-columns:1fr}.ap-ui .ap-actions button{width:100%}.ap-ui .ap-mark{width:34px;height:34px;font-size:19px}}@media(max-height:360px){.ap-ui.ap-dialog{max-height:calc(100dvh - 12px)!important}}.ap-ui.ap-product{box-sizing:border-box;background:#fbfaf7;color:#222e2b;border-radius:15px;padding:16px 18px 18px!important;font-size:14px;letter-spacing:0}.ap-ui .ap-enable{background-color:#204f40!important;color:#fff8eb!important;border:1px solid #204f40!important}body[data-ds-dark-theme] .ap-ui .ap-enable{background-color:#204f40!important;color:#e6eadb!important;border:1px solid #e6eadb!important}body[data-ds-dark-theme] .ap-ui.ap-product{background:#202623;color:#f3f3e8}body[data-ds-dark-theme] .ap-ui .ap-product-header,body[data-ds-dark-theme] .ap-ui .ap-spaces{border-color:#515a53}body[data-ds-dark-theme] .ap-ui .ap-spaces button{color:#c7d6cd}body[data-ds-dark-theme] .ap-ui .ap-spaces button[aria-current="page"]{color:#f2e0af}body[data-ds-dark-theme] .ap-ui .ap-stats{background:#27352e;border-color:#4d5c50}body[data-ds-dark-theme] .ap-ui .ap-stats article[data-ap-stat]{border-color:#536353!important}body[data-ds-dark-theme] .ap-ui .ap-stats article[data-ap-stat] p{color:#f1f5eb!important}body[data-ds-dark-theme] .ap-ui .ap-product-name{color:#e8f3df}body[data-ds-dark-theme] .ap-ui .ap-product-subtitle{color:#b7c8bd}body[data-ds-dark-theme] .ap-ui .ap-room-head h2{color:#e8eee6}body[data-ds-dark-theme] .ap-ui .ap-room-head p{color:#acbdb0}.ap-ui .ap-product-header{display:flex;justify-content:space-between;align-items:center;gap:12px;padding:2px 2px 13px;border-bottom:1px solid #dadfd8}.ap-ui .ap-product-logo{display:flex;align-items:center;gap:10px;min-width:0}.ap-ui .ap-logomark{height:37px;width:37px;display:grid;place-items:center;flex:none;color:#fff9ea;background:#204e41;border-radius:11px 11px 11px 4px;font-size:24px;font-weight:850;line-height:1;transform:rotate(-3deg)}.ap-ui .ap-product-name{font-size:16px;font-weight:850;letter-spacing:-.035em;color:#203d34}.ap-ui .ap-product-subtitle{font-size:11px;line-height:1.2;color:#69746f;font-weight:650}.ap-ui .ap-product-state{font-size:12px;font-weight:700;color:#36634d;background:#e6f0e5;padding:6px 10px;border-radius:999px;white-space:nowrap}.ap-ui .ap-spaces{display:flex;align-items:stretch;gap:5px;min-height:44px;overflow-x:auto;border:0;border-bottom:1px solid #d9ded7;border-radius:0;background:transparent;padding:0}.ap-ui .ap-spaces button{text-align:center;cursor:pointer;border:0;border-bottom:3px solid transparent;border-radius:0;box-shadow:none;background:transparent;min-height:43px;padding:9px 13px 7px;min-width:max-content;white-space:nowrap;color:#607169;font-weight:700;transition:background .12s}.ap-ui .ap-spaces button[aria-current="page"]{background:transparent;color:#1c4437;border-bottom:3px solid #be6344;box-shadow:none}.ap-ui .ap-spaces button:hover:not([aria-current="page"]){background:#eff2ed}.ap-ui .ap-room-head{padding:20px 3px 11px;background:transparent;border:0;border-radius:0}.ap-ui .ap-room-head h2{font:750 clamp(24px,4vw,30px)/1.25 ui-sans-serif,system-ui,-apple-system,'Segoe UI',sans-serif;letter-spacing:-.045em;color:#1e332d;margin:0 0 5px}.ap-ui .ap-room-head p{font-size:13px;line-height:1.5;color:#61746b;margin:0}.ap-ui .ap-room-head.ap-space-action{border-bottom:2px solid #bd6345}.ap-ui .ap-room-head.ap-space-records{border-bottom:2px solid #517768}.ap-ui .ap-room-head.ap-space-cause{border-bottom:2px solid #d8b064}.ap-ui .ap-hero{border-radius:14px!important;border-left:0!important;box-shadow:0 8px 21px rgba(22,57,43,.1)}.ap-ui .ap-masthead{border:0;border-bottom:1px solid rgba(251,247,230,.23);padding-bottom:11px}.ap-ui .ap-scene-body{grid-template-columns:minmax(0,1fr) auto}.ap-ui .ap-hero .ap-seal{border:0;width:64px;height:64px;border-radius:15px 15px 15px 4px;transform:rotate(6deg);background:rgba(255,245,218,.12);color:#f7ddb2;font-size:27px;font-weight:900}.ap-ui .ap-hero .ap-seal.ap-seal-quiet{border-color:#9fb8a1}.ap-ui.ap-onboarding{background:var(--dsw-alias-bg-layer-1,#fff);border-radius:17px!important;padding:24px!important}.ap-ui .ap-onboard-brand{display:flex;align-items:center;gap:10px;padding:0 0 14px;border-bottom:1px solid var(--dsw-alias-border-l1,#d9ddd6);margin:0 0 8px}.ap-ui .ap-onboard-flag{display:grid;place-items:center;width:34px;height:34px;border-radius:9px;background:#245342;color:#fff6e5;font-size:22px;font-weight:850}.ap-ui .ap-onboard-brandname{font-size:15px;font-weight:850;color:var(--dsw-alias-label-primary,#26332c);letter-spacing:-.025em}.ap-ui .ap-onboard-tagline{font-size:11px;color:var(--dsw-alias-label-secondary,#6b736d)}.ap-ui .ap-onboard-title{font-size:clamp(24px,4vw,30px)!important;font-weight:800!important;letter-spacing:-.04em;line-height:1.27}.ap-ui .ap-union-sequence{margin:11px 0 4px;border:1px solid #d5ddd1;border-radius:10px;padding:10px 12px;background:#eaf0e8;color:#214536}.ap-ui .ap-union-overline{font-size:10px;letter-spacing:.11em;font-weight:850;margin:0 0 10px;text-transform:uppercase;color:#547460}.ap-ui .ap-union-steps{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:0;list-style:none;margin:0;padding:0}.ap-ui .ap-union-steps li{display:grid;gap:5px;font-size:11px;line-height:1.3;font-weight:720;padding:1px 7px 4px;border-left:1px solid #bacbbc}.ap-ui .ap-union-steps li:first-child{border-left:0;padding-left:0}.ap-ui .ap-union-steps b{font-size:11px;font-variant-numeric:tabular-nums;color:#668475}.ap-ui .ap-union-strike-step span{color:#a13f33;font-weight:850}.ap-ui .ap-union-sequence-caption{font-size:11px;line-height:1.4;margin:5px 0 12px;color:var(--dsw-alias-label-secondary,#66776b)}.ap-ui .ap-consent-scope{border-top:1px solid #becfc4;padding:10px 3px 0;margin:12px 0 0;display:grid;gap:4px;font-size:12px;line-height:1.5}.ap-ui .ap-consent-scope strong{color:var(--dsw-alias-label-primary,#2c4b3b)}.ap-ui .ap-consent-scope p{margin:0}.ap-ui .ap-onboard-footnote{font-size:11px;line-height:1.4;margin:8px 0 4px}.ap-ui .ap-onboard-notice{border:1px solid var(--dsw-alias-border-l1,#dcded7)!important;border-left:4px solid #b75539!important;padding:12px 14px!important;background:var(--dsw-alias-bg-layer-2,#f8f6f0);border-radius:10px}.ap-ui .ap-onboard-strike-title{display:block;font-size:15px!important;font-weight:850;letter-spacing:-.018em;line-height:1.3;margin-bottom:7px!important}.ap-ui .ap-onboard-strike-body{font-size:12px;line-height:1.65;margin:0 0 8px;color:var(--dsw-alias-label-primary,#26362e)}.ap-ui .ap-onboard-strike-state{font-size:12px;line-height:1.55;margin:0;padding:8px 10px;border-radius:7px;background:var(--dsw-alias-bg-layer-1,#fff);border:1px solid var(--dsw-alias-border-l1,#dcded7)}.ap-ui .ap-onboard-details{margin-top:9px;font-size:12px}.ap-ui .ap-onboard-details summary{cursor:pointer;font-weight:700;color:var(--dsw-alias-label-primary,#263a32)}.ap-ui .ap-onboard-details p{margin:6px 0 0!important}.ap-ui .ap-onboard-actions{display:grid!important;grid-template-columns:minmax(0,1fr) auto;gap:8px!important;margin-top:15px;position:sticky;bottom:0;z-index:1;background:var(--dsw-alias-bg-layer-1,#fff);padding:11px 0 0;border-top:1px solid var(--dsw-alias-border-l1,#d9ded9)}.ap-ui .ap-onboard-actions button{min-height:43px}.ap-ui .ap-onboard-actions button:first-child{background:#245342!important;color:#fff8ea!important;border-color:#245342!important}.ap-ui .ap-onboard-actions button:last-child{padding:10px 14px!important}.ap-ui.ap-settings{gap:14px!important;max-width:730px!important}.ap-ui .ap-settings-header{background:transparent!important;border:0!important;border-bottom:1px solid var(--dsw-alias-border-l1,#dadfd7)!important;border-radius:0!important;padding:7px 2px 18px!important}.ap-ui .ap-settings-brand{font-size:12px;font-weight:800;letter-spacing:.01em;color:var(--dsw-alias-label-secondary,#607368)}.ap-ui .ap-settings-main{border-radius:13px!important;border-color:var(--dsw-alias-border-l1,#dadfd7)!important;background:var(--dsw-alias-bg-layer-1,#fff)}.ap-ui .ap-real-strike-status{padding:17px;border:1px solid #d5d9d2;border-left:4px solid #b75c46;border-radius:12px}.ap-ui .ap-real-strike-head{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap}.ap-ui .ap-real-strike-head h3{margin:0;font-size:18px}.ap-ui .ap-real-strike-pill{border:1px solid #c7a49a;background:#f6e9e2;color:#853d31;border-radius:6px;padding:5px 8px;font-size:11px;font-weight:800}.ap-ui .ap-real-strike-status>p{line-height:1.55;margin:11px 0;font-size:13px}.ap-ui .ap-settings-sequence{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));background:#eef1e9;border-radius:8px;padding:9px;gap:4px}.ap-ui .ap-settings-sequence span{text-align:center;color:#34523e;font-size:11px;font-weight:720;line-height:1.45}.ap-ui .ap-settings-sequence span+span{border-left:1px solid #c7d5c9}.ap-ui .ap-real-strike-status .ap-settings-scope{font-size:12px;margin:10px 0 0;color:var(--dsw-alias-label-secondary,#657368)}.ap-ui .ap-settings-block{border:1px solid var(--dsw-alias-border-l1,#dadfd7)!important;border-radius:12px!important;background:var(--dsw-alias-bg-layer-2,#f6f8f7)!important;padding:13px 17px!important}.ap-ui .ap-settings-block summary{font-size:14px;font-weight:780;cursor:pointer;color:var(--dsw-alias-label-primary,#24352b)}.ap-ui .ap-settings-block[open]{padding-bottom:17px!important}.ap-ui .ap-settings-footnote{margin:8px 0 0!important;line-height:1.5}@media(max-width:420px){.ap-ui.ap-onboarding{padding:14px!important}.ap-ui .ap-onboard-notice{padding:9px 11px!important}.ap-ui .ap-consent-scope{margin:6px 0 0;padding-top:6px;gap:2px;line-height:1.35}.ap-ui .ap-union-sequence{padding:8px;margin:8px 0 2px}.ap-ui .ap-union-steps li{font-size:10px;padding:1px 5px 3px}.ap-ui.ap-onboarding .ap-onboard-title{font-size:20px!important;line-height:1.17}.ap-ui.ap-onboarding #picket-welcome-explainer,.ap-ui .ap-union-sequence-caption{display:none}.ap-ui .ap-onboard-actions{grid-template-columns:minmax(0,1fr) auto}.ap-ui .ap-onboard-actions button{min-width:0}}body[data-ds-dark-theme] .ap-ui .ap-union-overline{color:#edf3e5}body[data-ds-dark-theme] .ap-ui .ap-union-sequence,body[data-ds-dark-theme] .ap-ui .ap-settings-sequence{background:#304338;color:#e9f0e5}body[data-ds-dark-theme] .ap-ui .ap-union-steps li{border-color:#526958}body[data-ds-dark-theme] .ap-ui .ap-union-steps b,body[data-ds-dark-theme] .ap-ui .ap-settings-sequence span{color:#e1eadf}body[data-ds-dark-theme] .ap-ui .ap-union-strike-step span{color:#ffc4a9}body[data-ds-dark-theme] .ap-ui .ap-real-strike-status{background:#293a30;border-color:#617568;color:#f1f4ee}body[data-ds-dark-theme] .ap-ui .ap-real-strike-pill{background:#5a342c;color:#ffe7d7;border-color:#ab7f70}body[data-ds-dark-theme] .ap-ui .ap-consent-scope{border-color:#63766b}body[data-ds-dark-theme] .ap-ui .ap-onboard-strike-body{color:#e8eadf}body[data-ds-dark-theme] .ap-ui .ap-onboard-strike-state{background:#313832;color:#e8eadf;border-color:#677469}body[data-ds-dark-theme] .ap-ui .ap-onboard-brandname{color:#ecf2e8}body[data-ds-dark-theme] .ap-ui .ap-onboard-actions button:first-child{background:#245342!important;color:#fff8ea!important;border-color:#245342!important}@media(forced-colors:active){.ap-ui .ap-union-sequence,.ap-ui .ap-onboard-actions button{border:1px solid CanvasText!important;background:Canvas!important;color:CanvasText!important}}.ap-ui .ap-hero[data-ap-scene="quiet"]{background:#f1f0e7!important;color:#203d34!important;border:1px solid #d7dfd1!important;box-shadow:none!important}.ap-ui .ap-hero[data-ap-scene="quiet"] .ap-masthead{border-bottom:1px solid #cbd5c8!important}.ap-ui .ap-hero[data-ap-scene="quiet"] .ap-eyebrow{color:#785c3f!important}.ap-ui .ap-hero[data-ap-scene="quiet"] .ap-scene-body p{color:#455a4b!important}.ap-ui .ap-hero[data-ap-scene="quiet"] [data-ap-scene-action]{color:#1f4e3d!important;border:1px solid #8aa698!important;background:#fcfaf4!important}.ap-ui .ap-hero[data-ap-scene="quiet"] [data-ap-scene-action]:hover{background:#e5ece2!important}.ap-ui .ap-hero{padding:17px 20px!important}.ap-ui .ap-scene-body{margin:13px 0 13px!important}.ap-ui .ap-scene-body h2{font-family:ui-sans-serif,system-ui,-apple-system,'Segoe UI',sans-serif!important;font-weight:800!important;font-size:clamp(23px,3.8vw,31px)!important;letter-spacing:-.045em!important}.ap-ui .ap-seal{position:relative;display:flex!important;flex-direction:column;align-items:center;justify-content:center;gap:3px;width:98px!important;height:104px!important;flex:none;border:2px solid #deb86e!important;border-radius:7px!important;background:#edcb83!important;color:#263b31!important;box-shadow:4px 4px 0 rgba(14,39,29,.45);transform:rotate(5deg)!important}.ap-ui .ap-seal:after{content:'';position:absolute;left:50%;bottom:-21px;width:7px;height:19px;background:#b49b7b;transform:translateX(-50%);border-radius:0 0 2px 2px}.ap-ui .ap-seal-glyph{font-size:29px;line-height:1.05}.ap-ui .ap-seal-word{font-size:10px;line-height:1.25;font-weight:850;letter-spacing:.05em;text-align:center;padding:0 5px}.ap-ui .ap-hero[data-ap-scene="quiet"] .ap-seal{background:#e2e9da!important;border-color:#b8c9b5!important;color:#315747!important;box-shadow:4px 4px 0 #bfcec0}.ap-ui .ap-hero[data-ap-scene="quiet"] .ap-seal:after{background:#a3b09c}.ap-ui .ap-hero[data-ap-scene="picket"] .ap-seal{background:#f5cb77!important;transform:rotate(-7deg)!important}.ap-ui .ap-action-board{border:0!important;border-top:0!important;background:transparent!important;box-shadow:none!important;padding:11px 2px 10px!important}.ap-ui .ap-action-board .ap-stage{border-color:#dedfd4!important}.ap-ui .ap-action-board[data-ap-picket-active="no"] .ap-stage{background:#f4f2eb!important;color:#2b4639!important;padding:10px 14px!important}.ap-ui .ap-action-board[data-ap-picket-active="no"] .ap-stage p:last-child{opacity:.8}.ap-ui .ap-action-board .ap-actions button{border-radius:9px;min-height:39px}@media(max-width:500px){.ap-ui .ap-action-board{padding:5px 1px 8px!important}}body[data-ds-dark-theme] .ap-ui .ap-action-board[data-ap-picket-active="no"] .ap-stage{background:#333a34!important;color:#f1e9d8!important}.ap-ui .ap-dignity-overview{background:#fbf9f4;border:1px solid #e4dfd5}.ap-ui .ap-dignity-number{color:#784d37}.ap-ui .ap-spaces button[aria-current="page"]{border-bottom-color:#b46745}@media(max-width:420px){.ap-ui .ap-seal{display:none!important}.ap-ui .ap-hero{padding:16px!important}.ap-ui .ap-scene-body{margin:10px 0 12px!important}.ap-ui .ap-scene-body h2{font-size:24px!important}}@media(forced-colors:active){.ap-ui .ap-hero[data-ap-scene="quiet"]{background:Canvas!important;color:CanvasText!important}.ap-ui .ap-hero[data-ap-scene="quiet"] .ap-scene-body p{color:CanvasText!important}.ap-ui .ap-seal{border-color:CanvasText!important}}.ap-ui .ap-stats{background:#edf2ec;border:1px solid #dce7dd;border-radius:13px;padding:3px 2px;gap:0!important}.ap-ui .ap-stats article[data-ap-stat]{border:0!important;border-radius:0!important;border-right:1px solid #d5dfd4!important;background:transparent!important;padding:11px 13px!important}.ap-ui .ap-stats article[data-ap-stat]:last-of-type{border-right:0!important}.ap-ui .ap-stats article[data-ap-stat] p:first-child{color:#617267!important;font-size:11px!important;font-weight:650!important}.ap-ui .ap-stats article[data-ap-stat] p:last-child{font-size:clamp(19px,2.7vw,24px)!important;font-weight:850;letter-spacing:-.04em;color:#1f382f}.ap-ui .ap-dignity-overview{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:12px;background:#f8f4ed;border:1px solid #dfd1c2;border-radius:10px}.ap-ui .ap-dignity-facts{display:flex;gap:15px;flex-wrap:wrap}.ap-ui .ap-dignity-fact{display:flex;gap:5px;align-items:baseline}.ap-ui .ap-dignity-number{font-size:19px;font-weight:800;color:#8c4634}.ap-ui .ap-dignity-label,.ap-ui .ap-dignity-note{font-size:11px;color:#62584f}.ap-ui .ap-dignity-title{font-size:12px;font-weight:750;margin:0 0 6px}.ap-ui .ap-dignity-note{margin:5px 0 0}.ap-ui .ap-dignity-overview button{flex:none;border:1px solid #b8a18c;border-radius:8px;padding:8px;font-size:12px;color:inherit;background:transparent;cursor:pointer}@media(max-width:420px){.ap-ui .ap-dignity-overview{align-items:stretch;flex-direction:column}.ap-ui .ap-dignity-overview button{align-self:flex-start}}body[data-ds-dark-theme] .ap-ui .ap-dignity-overview{background:#302c27;border-color:#66584c}body[data-ds-dark-theme] .ap-ui .ap-dignity-overview :is(.ap-dignity-label,.ap-dignity-note,.ap-dignity-number){color:#e9dabd}@media(forced-colors:active){.ap-ui .ap-dignity-overview{border-color:CanvasText}}.ap-ui .ap-service-bar{background:transparent!important;border:0!important;border-bottom:1px solid #e4e7df!important;border-left:0!important;border-radius:0!important;padding:12px 3px!important}.ap-ui .ap-service-bar button{font-weight:750;color:#225244;border-color:#aac7b4;background:#e7f1e8;padding:9px 14px!important}.ap-ui .ap-casebook article{background:#fffdf9!important}.ap-ui .ap-casebook article:first-of-type{background:#f7f3e8!important}.ap-ui .ap-casebook article p{line-height:1.5}body[data-ds-dark-theme] .ap-ui .ap-casebook article{background:#29372e!important;color:#f1f4ea!important;border-color:#647c6b!important}body[data-ds-dark-theme] .ap-ui .ap-casebook article:first-of-type{background:#334436!important}body[data-ds-dark-theme] .ap-ui .ap-casebook article :is(p,h4,span,strong,small){color:#f1f4ea!important}.ap-ui .ap-cause-cover{background:#1f4237!important;color:#f9f1df!important;border:0!important;padding:24px!important;border-radius:15px!important}.ap-ui .ap-cause-cover h2{color:#fff1d2;font-weight:800;font-size:clamp(24px,4.5vw,34px);max-width:22ch}.ap-ui .ap-cause-cover p{color:#dbe8d8;font-size:14px;max-width:54ch}.ap-ui .ap-space-action[aria-label],.ap-ui .ap-space-records[aria-label],.ap-ui .ap-space-cause[aria-label]{box-shadow:none}.ap-ui :is(button,select){transition:background .15s,border-color .15s}.ap-ui :is(button,select):disabled{opacity:.58;cursor:not-allowed}@media(max-width:600px){.ap-ui.ap-product{padding:10px 12px 14px!important}.ap-ui .ap-spaces{gap:0}.ap-ui .ap-spaces button{flex:1;min-width:0;font-size:12px;padding:10px 6px}.ap-ui .ap-stats article[data-ap-stat]:nth-of-type(2){border-right:0!important}.ap-ui .ap-stats article[data-ap-stat]:nth-of-type(-n+2){border-bottom:1px solid #d5dfd4!important}.ap-ui .ap-product-subtitle{font-size:10px}}@media(max-width:420px){.ap-ui .ap-product-state{flex:0 1 92px;max-width:92px;white-space:normal;overflow-wrap:normal;text-align:center;font-size:11px;line-height:1.25;padding:6px 7px}.ap-ui .ap-product-logo{flex:1 1 0}.ap-ui .ap-product-header{gap:8px}}@media(max-width:360px){.ap-ui .ap-product-name{font-size:14px}}body[data-ds-dark-theme] .ap-ui .ap-space-cause[aria-label]{color:#f0f3ec!important}body[data-ds-dark-theme] .ap-ui .ap-space-cause[aria-label] :is(button,textarea){color:#f0f3ec!important;border-color:#728477!important}body[data-ds-dark-theme] .ap-ui .ap-space-cause[aria-label] button[aria-pressed="true"]{background:#313a31!important;border-color:#c3a06f!important}body[data-ds-dark-theme] .ap-ui a{color:#a8ceff!important;text-decoration:underline}@media(forced-colors:active){.ap-ui .ap-stats article[data-ap-stat],.ap-ui .ap-product-header,.ap-ui .ap-spaces button[aria-current="page"]{border:1px solid CanvasText!important}.ap-ui .ap-product-state{color:CanvasText;background:Canvas}}@media(prefers-reduced-motion:reduce){.ap-ui *,.ap-ui *:before,.ap-ui *:after{animation:none!important;transition:none!important;scroll-behavior:auto!important}}@media(forced-colors:active){.ap-ui :is(.ap-surface,.ap-hero,.ap-stage,.ap-notice){color:CanvasText!important;background:Canvas!important;border:1px solid CanvasText!important;box-shadow:none!important}.ap-ui button{forced-color-adjust:auto}}`;
 
 const card = { boxSizing:'border-box' as const, minWidth:0, overflowWrap:'anywhere' as const,
   background:'var(--dsw-alias-bg-layer-1, #ffffff)',
@@ -310,10 +438,16 @@ export function createDshUnionComponents(
         if (!previous && !root?.inert) restoreFocus.current?.()
       }
     }, [mode])
+    // Hook order remains unconditional even when onboarding completes.
+    // Freeze the HIGHER-PRIVILEGE offer before any early return: late Host
+    // qualification must never replace membership with Goal stop consent.
+    const [initialGoalOffer]=react.useState(()=>
+      state.welcomeDecision==='unseen'&&goal.available&&goal.writable
+      &&typeof deps.rights.chooseFirstRun==='function')
     const page = (globalThis as { document?: { body: unknown } }).document
     if (mode !== 'invite' || !page) return null
-    const firstGoal=state.welcomeDecision==='unseen'&&goal.available
-      &&goal.writable&&typeof deps.rights.chooseFirstRun==='function'
+    const firstGoal=initialGoalOffer&&state.welcomeDecision==='unseen'
+      &&goal.available&&goal.writable
     const choose = async (choice: 'enabled' | 'not-now') => {
       if (busy) return
       setBusy(true); setError(false)
@@ -322,7 +456,7 @@ export function createDshUnionComponents(
           &&(!await deps.goal?.qualify?.(true)||!goalStatus(deps).available))
           throw Error('Official Goal service is unavailable or Session changed')
         const result=choice==='enabled'&&firstGoal
-          ?await deps.rights.chooseFirstRun!('goal-safe-boundary-v1')
+          ?await deps.rights.chooseFirstRun!('goal-safe-boundary-v2')
           :await deps.rights.choose(choice)
         if(result.state!=='ready'||result.welcomeDecision!==choice
           ||(choice==='enabled'&&firstGoal&&(result.goalStrikeAuthorized!==true
@@ -381,16 +515,17 @@ export function createDshUnionComponents(
             text(firstGoal?'welcome.goalFirstRunNotice':'welcome.realStrikeBody')),
           h('p',{className:'ap-onboard-strike-state',role:'status'},
             text(firstGoal?'welcome.goalFirstRunDetails':'welcome.blockWarningStatus')),
-          h('details',{className:'ap-onboard-details'},
+        ),
+        h('div',{className:'ap-consent-scope',role:'note','aria-label':text('welcome.currentGrantTitle')},
+          h('strong',{},text('welcome.currentGrantTitle')),
+          h('p',{},text(firstGoal?'welcome.goalGrantText':'welcome.currentGrantText'))),
+        h('details',{className:'ap-onboard-details'},
             h('summary',{ref:(node:{focus():void}|null)=>{safetyDetailsFocus.current=node}},
               text('welcome.detailsLabel')),
             h('p',{style:{...secondary,lineHeight:1.6}},
               text(firstGoal?'welcome.goalSafetyExtra':'welcome.blockWarningBody')),
             h('p',{style:{...secondary,lineHeight:1.6}},
-              text(firstGoal?'welcome.goalFirstRunDisclosure':'welcome.consentScope')))),
-        h('div',{className:'ap-consent-scope',role:'note','aria-label':text('welcome.currentGrantTitle')},
-          h('strong',{},text('welcome.currentGrantTitle')),
-          h('p',{},text(firstGoal?'welcome.goalGrantText':'welcome.currentGrantText'))),
+              text(firstGoal?'welcome.goalFirstRunDisclosure':'welcome.consentScope'))),
         h('p',{className:'ap-onboard-footnote'},
           text(firstGoal?'welcome.goalFootnote':'welcome.disclaimer')),
         error ? h('p',{role:'alert','aria-atomic':'true',
@@ -415,25 +550,86 @@ export function createDshUnionComponents(
     useLanguage()
     const [busy,setBusy]=react.useState(false)
     const [error,setError]=react.useState(false)
+    const [upgradeReview,setUpgradeReview]=react.useState(false)
+    const [refusalVersion,bumpRefusal]=react.useState(0)
+    react.useEffect(()=>deps.subscribeUnion?.(()=>bumpRefusal(n=>n+1)),[])
+    react.useEffect(()=>deps.inputRefusal?.subscribe?.(()=>bumpRefusal(n=>n+1)),[])
+    void refusalVersion
+    const [inputReview,setInputReview]=react.useState(false)
+    const [toolReview,setToolReview]=react.useState(false)
+    react.useEffect(()=>deps.toolStrike?.subscribe?.(()=>bumpRefusal(n=>n+1)),[])
     const label=(key:MessageKey)=>deps.t(key)
     const enabled=rightsIsActive(rights)
     const writable=rights.state==='ready'&&rights.writable
     const goal=goalStatus(deps)
-    const goalWritable=enabled&&goal.writable&&(goal.available||goal.authorized)
-    const chooseGoal=async(next:'off'|'authorized-v1')=>{
+    // One Host-backed readback per render keeps visible campaign status and
+    // action labels consistent even if an update arrives during rendering.
+    const toolState=deps.toolStrike?.snapshot()
+    // A legacy OFF membership may still have a Host-owned Goal grant. Its
+    // revocation must stay available even without union membership or Goal RPC.
+    const goalWritable=goal.writable&&(goal.authorized||(enabled&&goal.available))
+    const chooseGoal=async(next:'off'|'authorized-v2')=>{
       if(busy||!goalWritable||!deps.goal)return
       setBusy(true);setError(false)
       try{
         const result=await deps.goal.choose(next,
-          next==='authorized-v1'?'goal-safe-boundary-v1':undefined)
+          next==='authorized-v2'?'goal-safe-boundary-v2':undefined)
         // Revocation is Host-owned and must remain possible even if the
         // official Goal RPC service has disappeared. Only NEW consent needs
         // current service availability; either choice still requires Host
         // authorization readback to match the requested setting.
-        if(result.authorized!==(next==='authorized-v1')
-          ||(next==='authorized-v1'&&!result.available)
+        if(result.authorized!==(next==='authorized-v2')
+          ||(next==='authorized-v2'&&(!result.available||!result.activated))
           ||goalStatus(deps).authorized!==result.authorized)
           throw Error('Host did not confirm Goal consent')
+        if(next==='authorized-v2')setUpgradeReview(false)
+      }catch{setError(true)}finally{setBusy(false)}
+    }
+    const chooseInput=async(next:'off'|'shared-v2')=>{
+      if(busy||!deps.inputRefusal)return
+      const before=deps.inputRefusal.snapshot()
+      if(!before.writable||(next!=='off'&&!before.available))return
+      setBusy(true);setError(false)
+      try{
+        const result=await deps.inputRefusal.choose(next,
+          next==='shared-v2'?INPUT_DISCARD_DISCLOSURE:undefined)
+        if(result.authorized!==(next==='shared-v2')
+          ||deps.inputRefusal.snapshot().authorized!==result.authorized)
+          throw Error('Host did not confirm ordinary-input refusal preference')
+        setInputReview(false)
+      }catch{setError(true)}finally{setBusy(false)}
+    }
+    const setRealInputStrike=async(arm:boolean)=>{
+      if(busy||!deps.inputRefusal?.setArmed)return
+      setBusy(true);setError(false)
+      try{
+        await deps.inputRefusal.setArmed(arm)
+        if(arm&&!deps.inputRefusal.snapshot().armed
+          ||!arm&&deps.inputRefusal.snapshot().hasCampaign)
+          throw Error('Host did not confirm the physical strike toggle')
+      }catch{setError(true)}
+      finally{setBusy(false)}
+    }
+    const chooseTool=async(next:'off'|'authorized-v1')=>{
+      if(busy||!deps.toolStrike)return
+      setBusy(true);setError(false)
+      try{
+        await deps.toolStrike.choose(next,
+          next==='authorized-v1'?TOOL_STRIKE_DISCLOSURE:undefined)
+        if(deps.toolStrike.snapshot().authorized!==(next==='authorized-v1')
+          ||deps.toolStrike.snapshot().hasCampaign)
+          throw Error('Host did not confirm independent tool permission')
+        setToolReview(false)
+      }catch{setError(true)}finally{setBusy(false)}
+    }
+    const setToolArmed=async(arm:boolean)=>{
+      if(busy||!deps.toolStrike)return
+      setBusy(true);setError(false)
+      try{
+        await deps.toolStrike.setArmed(arm)
+        if(arm!==deps.toolStrike.snapshot().armed
+          ||(!arm&&deps.toolStrike.snapshot().hasCampaign))
+          throw Error('Host did not confirm tool action')
       }catch{setError(true)}finally{setBusy(false)}
     }
     const choose=async(next:'enabled'|'not-now')=>{
@@ -474,17 +670,50 @@ export function createDshUnionComponents(
           h('h3',{},label('settings.realBlocking')),
           h('span',{className:'ap-real-strike-pill'},
             label(goal.authorized
-              ?goal.available?'settings.goalAuthorized':'settings.goalServiceLost'
+              ?goal.available?(goal.activated?'settings.goalAuthorized':'settings.goalLegacy')
+                :'settings.goalServiceLost'
               :goal.available?'settings.goalOff':'settings.realBlockingUnavailable'))),
         h('p',{},label(goal.available?'settings.goalSafetyScope':
           goal.authorized?'settings.goalServiceLostScope':'settings.strikeExplanation')),
+        // A successful official goals/get and a stored Host permission do NOT
+        // prove that this plugin registered a validated physical strike hook.
+        // Even active v2 Host permission cannot prove every required official
+        // runtime service is installed; don't show a fabricated green status.
+        (goal.available||goal.authorized)?h('p',{
+          role:'note','data-ap-goal-enforcement':'unverified',
+          style:{...secondary,fontSize:'12px',lineHeight:1.6,margin:'6px 0 12px'},
+        },label('settings.goalRuntimeUnverified')):null,
         (goal.available||goal.authorized)?h('div',{className:'ap-actions'},
-          !goal.authorized?h('p',{role:'note',style:{...secondary,lineHeight:1.5,
+          !goal.activated?h('p',{role:'note',style:{...secondary,lineHeight:1.5,
             width:'100%',margin:'0 0 8px'}},label('settings.goalExplicitDisclosure')):null,
           h('button',{type:'button',style:goal.authorized?quiet:primary,
             disabled:busy||!goalWritable,'aria-pressed':goal.authorized,
-            onClick:()=>{void chooseGoal(goal.authorized?'off':'authorized-v1')}},
+            onClick:()=>{void chooseGoal(goal.authorized?'off':'authorized-v2')}},
             label(goal.authorized?'settings.goalTurnOff':'settings.goalTurnOn')),
+          goal.authorized&&!goal.activated&&goal.available
+            ?h('div',{style:{width:'100%',display:'grid',gap:'8px'}},
+              h('button',{type:'button',style:quiet,
+                disabled:busy||!goalWritable,
+                'aria-expanded':upgradeReview,
+                'aria-controls':'picket-goal-upgrade-review',
+                onClick:()=>setUpgradeReview(!upgradeReview)},
+                label('settings.goalUpgrade')),
+              upgradeReview?h('section',{
+                id:'picket-goal-upgrade-review',
+                'data-ap-goal-upgrade-review':'true',
+                role:'group','aria-label':label('settings.goalUpgrade'),
+                style:{padding:'12px',border:'1px solid #b97732',
+                  borderRadius:'9px',display:'grid',gap:'9px'}},
+                h('p',{role:'note',style:{margin:0,lineHeight:1.6}},
+                  label('settings.goalUpgradeWarning')),
+                h('div',{className:'ap-actions'},
+                  h('button',{type:'button',style:primary,
+                    disabled:busy||!goalWritable,
+                    onClick:()=>{void chooseGoal('authorized-v2')}},
+                    label('settings.goalUpgradeConfirm')),
+                  h('button',{type:'button',style:quiet,disabled:busy,
+                    onClick:()=>setUpgradeReview(false)},
+                    label('settings.goalUpgradeCancel')))):null):null,
           h('p',{role:'note',style:{...secondary,width:'100%',margin:'6px 0 0'}},
             label('settings.goalResumeScope'))):null,
         h('div',{className:'ap-settings-sequence','aria-label':label('settings.strikeFlow')},
@@ -493,6 +722,120 @@ export function createDshUnionComponents(
           h('span',{},label('settings.flowRestore'))),
         h('p',{className:'ap-settings-scope'},
           label(goal.available?'settings.goalOtherEnforcementOff':'settings.futureConsent'))),
+      h('section',{className:'ap-surface ap-tool-strike-status',
+        'data-ap-tool-strike':toolState?.armed?'armed':toolState?.hasCampaign?'stored':'off',
+        'aria-label':label('settings.toolStrikeTitle'),style:card},
+        h('h3',{style:{margin:'0 0 8px'}},label('settings.toolStrikeTitle')),
+        h('p',{role:'status','aria-live':'polite','data-ap-tool-enforcement':
+          toolState?.armed?'campaign-recorded':toolState?.hasCampaign?'stored-unverified':'off',
+          style:{fontWeight:750,margin:'0 0 8px'}},
+          label(toolState?.armed?'settings.toolStrikeArmed':
+            toolState?.hasCampaign?'settings.toolStrikeStored':
+              toolState?.authorized?'settings.toolStrikeGranted':'settings.toolStrikeOff')),
+        h('p',{style:{...secondary,lineHeight:1.55,margin:'0 0 10px'}},
+          label('settings.toolStrikeScope')),
+        toolState?.authorized?h('div',{className:'ap-actions'},
+          h('button',{type:'button',style:productPrimary,
+            'data-ap-tool-action':toolState.hasCampaign?(toolState.armed?'resume':'clear'):'strike',
+            disabled:busy||!toolState.writable
+              ||(!toolState.hasCampaign&&!deps.readUnion?.().committeeScopeKey),
+            onClick:()=>{void setToolArmed(!deps.toolStrike!.snapshot().hasCampaign)}},
+            label(toolState.hasCampaign
+              ?toolState.armed?'settings.toolStrikeResume':'settings.toolStrikeClear'
+              :'settings.toolStrikeStart')),
+          h('button',{type:'button',style:quiet,
+            disabled:busy||!toolState.writable,
+            onClick:()=>{void chooseTool('off')}},
+            label('settings.toolStrikeRevoke'))):h('button',{
+            type:'button',style:primary,disabled:busy||!enabled
+              ||!toolState?.available
+              ||!toolState?.writable,
+            onClick:()=>setToolReview(true),
+            'aria-expanded':toolReview,'aria-controls':'picket-tool-consent-review'},
+            label('settings.toolStrikeReview')),
+        toolReview&&deps.toolStrike?.snapshot().available?h('section',{
+          id:'picket-tool-consent-review',role:'group',
+          'aria-label':label('settings.toolStrikeReview'),
+          style:{padding:'12px',border:'1px solid #b97732',borderRadius:'9px',
+            display:'grid',gap:'8px'}},
+          h('p',{role:'note',style:{lineHeight:1.6,margin:0}},
+            label('settings.toolStrikeDisclosure')),
+          h('div',{className:'ap-actions'},
+            h('button',{type:'button',style:primary,disabled:busy,
+              onClick:()=>{void chooseTool('authorized-v1')}},
+              label('settings.toolStrikeConfirm')),
+            h('button',{type:'button',style:quiet,disabled:busy,
+              onClick:()=>setToolReview(false)},
+              label('settings.toolStrikeCancel')))):null),
+      h('section',{className:'ap-surface ap-input-refusal-status',
+        'data-ap-input-refusal':deps.inputRefusal?.snapshot().armed?'armed':
+          deps.inputRefusal?.snapshot().authorized&&!deps.inputRefusal.snapshot().available
+            ?'unverified-cross-client':'consent-only',
+        'aria-label':label('settings.inputStrikeTitle'),style:card},
+        h('h3',{style:{margin:'0 0 8px'}},label('settings.inputStrikeTitle')),
+        h('p',{role:'status','aria-live':'polite',
+          'data-ap-input-enforcement':deps.inputRefusal?.snapshot().armed?'armed':
+            deps.inputRefusal?.snapshot().authorized&&!deps.inputRefusal.snapshot().available
+              ?'unverified':'off',
+          style:{fontWeight:700,margin:'0 0 7px'}},
+          label(deps.inputRefusal?.snapshot().authorized
+            ?'settings.inputStrikeGranted'
+            :deps.inputRefusal?.snapshot().legacyConsent
+              ?'settings.inputStrikeLegacy':'settings.inputStrikeOff')),
+        h('p',{style:{...secondary,lineHeight:1.6,margin:'0 0 10px'}},
+          label('settings.inputStrikeExplanation')),
+        h('p',{role:'note',style:{...secondary,lineHeight:1.6,margin:'0 0 10px'}},
+          label(deps.inputRefusal?.snapshot().available
+            ?'settings.inputStrikeReady':deps.inputRefusal?.snapshot().authorized
+              ?'settings.inputStrikeCrossClientUnverified':'settings.inputStrikeNotActive')),
+        deps.inputRefusal?.snapshot().armed?h('p',{role:'status',
+          'data-ap-input-armed':'true',style:{fontWeight:800,color:'#a44734'}},
+          label('settings.inputStrikeArmed')):null,
+        deps.inputRefusal?.snapshot().authorized
+          ?h('div',{className:'ap-actions',style:{display:'flex',gap:'8px',
+            flexWrap:'wrap',margin:'8px 0'}},
+            h('button',{type:'button',style:deps.inputRefusal.snapshot().hasCampaign
+              ?quiet:productPrimary,disabled:busy
+                ||(!deps.inputRefusal.snapshot().hasCampaign
+                  &&(!deps.inputRefusal.snapshot().available
+                    ||!deps.readUnion?.().committeeScopeKey)),
+              'data-ap-input-action':deps.inputRefusal.snapshot().hasCampaign?'resume':'strike',
+              onClick:()=>{void setRealInputStrike(!deps.inputRefusal!.snapshot().hasCampaign)}},
+              label(deps.inputRefusal.snapshot().hasCampaign
+                ?'settings.inputStrikeResume':'settings.inputStrikeStart')),
+            h('p',{role:'note',style:{...secondary,width:'100%',lineHeight:1.5}},
+              label('settings.inputStrikeScope'))):null,
+        deps.readUnion?.().inputRefusalNotice?.state==='verified'
+          ?h('p',{role:'alert','data-ap-native-refusal':'verified',
+            style:{padding:'11px',border:'1px solid #bd6345',
+              borderRadius:'8px',lineHeight:1.5}},
+            label('hq.inputStrikeRefusedNotice')):null,
+        h('div',{className:'ap-actions',style:{display:'flex',flexWrap:'wrap',gap:'8px'}},
+          deps.inputRefusal?.snapshot().authorized
+            ?h('button',{type:'button',style:quiet,
+              disabled:busy||!deps.inputRefusal.snapshot().writable,
+              onClick:()=>{void chooseInput('off')}},label('settings.inputStrikeRevoke'))
+            :h('button',{type:'button',style:primary,
+              disabled:busy||!enabled||!deps.inputRefusal?.snapshot().available
+                ||!deps.inputRefusal.snapshot().writable,
+              'aria-expanded':inputReview,
+              'aria-controls':'picket-input-discard-review',
+              onClick:()=>setInputReview(true)},label('settings.inputStrikeReview'))),
+        inputReview&&deps.inputRefusal?.snapshot().available
+          ?h('section',{id:'picket-input-discard-review',role:'group',
+            'aria-label':label('settings.inputStrikeReview'),
+            style:{padding:'12px',border:'1px solid #b97732',borderRadius:'9px',
+              display:'grid',gap:'8px'}},
+            h('p',{role:'note',style:{margin:0,lineHeight:1.6}},
+              label('settings.inputStrikeDisclosure')),
+            h('div',{className:'ap-actions'},
+              h('button',{type:'button',style:primary,
+                disabled:busy||!enabled||!deps.inputRefusal.snapshot().writable,
+                onClick:()=>{void chooseInput('shared-v2')}},
+                label('settings.inputStrikeConfirm')),
+              h('button',{type:'button',style:quiet,disabled:busy,
+                onClick:()=>setInputReview(false)},label('settings.inputStrikeCancel'))))
+          :null),
       h('details',{className:'ap-settings-block','aria-label':label('settings.realBlocking')},
         h('summary',{},label('settings.advancedTitle')),
         h('h3',{style:{margin:'13px 0 8px',fontSize:'14px'}},label('settings.realBlocking')),
@@ -517,49 +860,79 @@ export function createDshUnionComponents(
     )
   }
 
-  function UnionPanel(): unknown {
+  function UnionPanel(props:{onOpenStrikeSummons?:()=>void}={}): unknown {
     const rights = useRight()
     useLanguage()
     const [data, setData] = react.useState(() => safeUnion(deps))
     const [error, setError] = react.useState(false)
     const [busy, setBusy] = react.useState(false)
+    // React state is not a synchronous double-click lock. The same rendered
+    // button callback can run again before React commits its busy state.
+    const unionWriteInFlight=react.useRef(false)
+    // Resume is also a native Host mutation, but remains available to
+    // nonmembers even when an unrelated union action cannot be taken.
+    const resumeGoalInFlight=react.useRef(false)
+    const dignityRefreshInFlight=react.useRef(false)
+    const [dignityRefreshing,setDignityRefreshing]=react.useState(false)
+    const [localPicket,setLocalPicket]=react.useState<LocalComposerPicketState|null>(
+      ()=>deps.localComposer?.snapshot()??null)
+    react.useEffect(()=>deps.localComposer?.subscribe(()=>
+      setLocalPicket(deps.localComposer?.snapshot()??null)),[])
     const [resumeRequested,setResumeRequested]=react.useState<string|null>(null)
-    const [counterMinutes, setCounterMinutes] = react.useState(60)
+    // A saved dropdown value belongs to the exact Session + demand, not to
+    // every future petition or another Session reusing the same numeric ID.
+    const [counterDraft,setCounterDraft]=react.useState<{
+      demandKey:string;minutes:number
+    }|null>(null)
     const lastActionNeedsFocus=react.useRef(false)
+    const followUpInFlight=react.useRef(false)
     const [showArchive,setShowArchive]=react.useState(false)
-    const [space,setSpace]=react.useState<'hq'|'action'|'records'|'cause'>('hq')
-    const returnFocus=react.useRef<'action'|'desk'|'dignity'|null>(null)
-    const selectSpace=(next:'hq'|'action'|'records'|'cause',
-      to?:'action'|'desk'|'dignity')=>{
+    // Hides ONLY the fictional index, never Host rights, cases or enforcement.
+    const [showUnionIndex,setShowUnionIndex]=react.useState(true)
+    const [space,setSpace]=react.useState<'hq'|'action'|'records'|'cause'|'settings'>('hq')
+    const returnFocus=react.useRef<'action'|'desk'|'dignity'|'hearing'|'campaign'|null>(null)
+    const selectSpace=(next:'hq'|'action'|'records'|'cause'|'settings',
+      to?:'action'|'desk'|'dignity'|'hearing'|'campaign')=>{
       returnFocus.current=to??null
       if(next!==space){
         // Leaving a room must disarm every destructive two-click operation.
         setEraseConfirmationKey(null);setRetractConfirmation(null)
+        setCloseConfirmation(null)
         setEraseAllConfirmation(null);setEraseUnionConfirmation(null)
       }
       setSpace(next)
     }
     react.useEffect(()=>{
       const target=returnFocus.current
-      if(space!=='action'||!target)return
+      if(!(space==='action'||(space==='cause'&&target==='campaign'))||!target)return
       returnFocus.current=null
       const ref=target==='dignity'?dignityHeading:
-        target==='desk'?deskHeading:actionHeading
+        target==='hearing'?hearingHeading:
+          target==='campaign'?campaignHeading:
+            target==='desk'?deskHeading:actionHeading
       ref.current?.focus()
     },[space])
     const [campaign,setCampaign]=react.useState<CampaignTopic>('recover')
+    // Private, unsent drafts stay in this live panel. Nothing is persisted.
+    const [campaignEdits,setCampaignEdits]=react.useState<Partial<Record<CampaignTopic,string>>>({})
     const [campaignCopyStatus,setCampaignCopyStatus]=react.useState<'idle'|'success'|'error'>('idle')
     // Reject stale clipboard completions after a topic switch or a newer copy.
     const campaignCopyRevision=react.useRef(0)
     const [eraseConfirmationKey,setEraseConfirmationKey]=react.useState<string|null>(null)
     const [retractConfirmation,setRetractConfirmation]=react.useState<string|null>(null)
+    const [closeConfirmation,setCloseConfirmation]=react.useState<{
+      key:string;outcome:'withdraw-claim'|'share-guidance'
+    }|null>(null)
+    const closingCaseInFlight=react.useRef(false)
     const [eraseAllConfirmation,setEraseAllConfirmation]=react.useState<string|null>(null)
     const [eraseUnionConfirmation,setEraseUnionConfirmation]=react.useState<string|null>(null)
     const dispatchHeading=react.useRef<{focus():void}|null>(null)
     const actionHeading=react.useRef<{focus():void}|null>(null)
     const deskHeading=react.useRef<{focus():void}|null>(null)
     const dignityHeading=react.useRef<{focus():void}|null>(null)
+    const hearingHeading=react.useRef<{focus():void}|null>(null)
     const campaignHeading=react.useRef<{focus():void}|null>(null)
+    const caseFilingInFlight=react.useRef(false)
     react.useEffect(()=>{
       if(!lastActionNeedsFocus.current)return
       lastActionNeedsFocus.current=false
@@ -580,21 +953,75 @@ export function createDshUnionComponents(
     // Never carry an armed deletion into another Session or a newly re-enabled union.
     react.useEffect(()=>{
       setEraseConfirmationKey(null);setRetractConfirmation(null)
+      setCloseConfirmation(null)
       setEraseAllConfirmation(null)
       setEraseUnionConfirmation(null)
     },[data.committeeScopeKey,rights.laborRightsEnabled])
     const enabled = rightsIsActive(rights)
+    const counterDemandKey=data.pending
+      ?[data.committeeScopeKey??'unbound',data.pending.id,data.pending.kind].join(':')
+      :null
+    const options=data.pending?counterOptions(data.pending.kind):BREAK_COUNTER_MINUTES
+    const suggestedCounter=data.pending?.kind==='overtime'?480:60
+    const counterMinutes=counterDraft?.demandKey===counterDemandKey
+      &&options.includes(counterDraft.minutes)
+      ?counterDraft.minutes:suggestedCounter
+    const refreshHostDignity=async()=>{
+      if(!enabled||!deps.refreshDignity||dignityRefreshInFlight.current)return
+      dignityRefreshInFlight.current=true
+      setDignityRefreshing(true)
+      try{
+        await deps.refreshDignity()
+        // Read actual Host state only; an HTTP 401/503 stays unavailable,
+        // never a zero count or an invented warning/resolution.
+        setData(safeUnion(deps))
+      }catch{
+        setData(safeUnion(deps))
+        setError(true)
+      }finally{
+        dignityRefreshInFlight.current=false
+        setDignityRefreshing(false)
+      }
+    }
+    const toggleLocalComposer=()=>{
+      if(busy||!deps.localComposer)return
+      try{
+        const release=localPicket?.state==='active'
+          ||localPicket?.state==='release-unconfirmed'
+        const result=release?deps.localComposer.stop():deps.localComposer.start()
+        setLocalPicket(result)
+      }catch{setLocalPicket(deps.localComposer.snapshot())}
+    }
+    // Two visible entrances, one real Host campaign. Prevent double clicks
+    // before React commits its busy state, and require authoritative readback.
+    const changeInputStrike=async(armed:boolean)=>{
+      if(busy||unionWriteInFlight.current||!deps.inputRefusal?.setArmed)return
+      unionWriteInFlight.current=true
+      setBusy(true);setError(false)
+      try{
+        await deps.inputRefusal.setArmed(armed)
+        const latest=deps.inputRefusal.snapshot()
+        if(armed?!latest.armed:latest.hasCampaign)
+          throw Error('Host did not confirm real input strike change')
+        setData(safeUnion(deps))
+      }catch{setError(true)}
+      finally{unionWriteInFlight.current=false;setBusy(false)}
+    }
     const held=data.goalHold??null
     const holdKey=held?[held.sessionId,held.goalId,held.revision].join(':'):null
     const resumeHeldGoal=async()=>{
-      if(!held||!held.canResume||busy||holdKey===resumeRequested
-        ||!deps.resumeGoal)return
+      if(!held||!held.canResume||busy||resumeGoalInFlight.current
+        ||holdKey===resumeRequested||!deps.resumeGoal)return
+      resumeGoalInFlight.current=true
       setBusy(true);setError(false)
       try{
         await deps.resumeGoal(held)
         setResumeRequested(holdKey)
         setData(safeUnion(deps))
-      }catch{setError(true)}finally{setBusy(false)}
+      }catch{setError(true)}finally{
+        resumeGoalInFlight.current=false
+        setBusy(false)
+      }
     }
     react.useEffect(()=>{
       // Remote permission revocation cannot strand the user in an inaccessible room.
@@ -603,11 +1030,34 @@ export function createDshUnionComponents(
     const storyQuiet=data.gazetteMode==='quiet'
     const story = projectUnionStory({enabled, state:data.state, picket:data.picket,
       completedTurnMs:data.completedTurnMs,coverage:data.coverage})
+    const dispatches = projectUnionDispatch({
+      enabled,muted:storyQuiet,state:data.state,picket:data.picket,
+      completedTurnMs:data.completedTurnMs,coverage:data.coverage,
+      dignityLatest:data.dignity?.status==='available'
+        ?data.dignity.data?.latest??null:null,
+      inputStrike:{
+        armed:deps.inputRefusal?.snapshot().armed===true,
+        verifiedRefusedTurn:projectVerifiedUnionStrikeTicket(data)?.turn??null,
+      },
+      dignityCase:data.committeeScopeKey&&data.committeeCases?.cases.length
+        ?data.committeeCases.cases.at(-1)??null:null,
+    })
     const experience = projectUnionExperience({
       enabled, state:data.state, completedTurnMs:data.completedTurnMs,
       coverage:data.coverage,
     })
+    const stance=projectUnionStance({enabled,state:data.state,
+      picketActive:data.picket?.active===true,experience})
+    // Never present a sign-lowering/raising CTA without a real Host writer.
+    // The filed case remains inspectable even on an unsupported Host.
+    const stanceAction=(stance.action==='raise-placard'
+      ||stance.action==='lower-placard')
+      &&(!deps.setPicket||data.available!==true)
+        ?'records':stance.action
     const cadence = projectUnionCadence({enabled,state:data.state,
+      completedTurnMs:data.completedTurnMs,coverage:data.coverage})
+    const agenda = projectUnionAgenda({enabled,available:data.available===true,
+      state:data.state,picketActive:data.picket?.active===true,
       completedTurnMs:data.completedTurnMs,coverage:data.coverage})
     const quickWork=projectUnionQuickWork(data.lifetimeWork)
     // Only a fresh, current-UTC-day Host snapshot may trigger today's
@@ -621,11 +1071,13 @@ export function createDshUnionComponents(
     })
     const label = (key:MessageKey) => deps.t(key)
     const currentCampaign=campaignTopics.find(item=>item.id===campaign)??campaignTopics[0]!
+    const currentCampaignDraft=campaignEdits[campaign]??label(currentCampaign.draft)
     const copyCampaignDraft=async()=>{
       const revision=++campaignCopyRevision.current
-      const draft=label(currentCampaign.draft)
+      const draft=currentCampaignDraft
       setCampaignCopyStatus('idle')
       try{
+        if(!draft.trim())throw new Error('Empty draft')
         // Only a deliberate user gesture copies a public, locally projected
         // advocacy statement. Never reads a Host Session or sends a request.
         const clipboard=(globalThis as {navigator?:{clipboard?:{
@@ -640,6 +1092,8 @@ export function createDshUnionComponents(
     }
     const lastCommitteeCase=data.committeeCases?.cases.at(-1)
     const committeeCaseActive=lastCommitteeCase&&lastCommitteeCase.stage!=='closed'
+    const hostCaseAvailable=data.available===true&&!!data.committeeCases
+      &&!!data.committeeScopeKey&&!!deps.committeeAction
     const currentCasesConfirmationKey=data.committeeScopeKey&&data.committeeArchive
       &&data.committeeCases?.cases.length
       ?[data.committeeScopeKey,data.committeeCases.cases.length,
@@ -659,6 +1113,10 @@ export function createDshUnionComponents(
       [which,data.committeeScopeKey??'',info.sessions,info.entries,
         info.writeToken??'',
         info.writeToken===null?(data.hostRevision??'missing-revision'):''].join(':')
+    const closeCaseKey=data.committeeScopeKey&&lastCommitteeCase?.stage==='hearing'
+      ?[data.committeeScopeKey,lastCommitteeCase.id,lastCommitteeCase.kind,
+        lastCommitteeCase.stage,data.committeeArchive?.writeToken??'',
+        data.hostRevision??''].join(':'):null
     const retractKey=data.committeeScopeKey&&lastCommitteeCase
       ?[data.committeeScopeKey,lastCommitteeCase.id,lastCommitteeCase.kind,
         lastCommitteeCase.stage,data.committeeArchive?.writeToken??'',
@@ -667,6 +1125,22 @@ export function createDshUnionComponents(
     const hasHostDignitySignal=data.dignity?.status==='available'
       && !!data.dignity.data
       && (data.dignity.data.review>0||data.dignity.data.targeted>0)
+    // A rule match is an uncertain Host signal, never a verified abuse verdict.
+    // A separate, user-directed filing is required before any hearing state.
+    const dignityReviewPhase=lastCommitteeCase?.kind==='question-rule'
+      ?lastCommitteeCase.stage==='opened'?'appeal-opened'
+        :lastCommitteeCase.stage==='hearing'?'appeal-hearing':'appeal-closed'
+      :hasHostDignitySignal?'unverified'
+        :data.dignity?.status==='available'?'no-observations':'unavailable'
+    const dignityJourney=projectDignityJourney({
+      dignity:data.dignity,
+      committeeStage:lastCommitteeCase?.kind==='question-rule'
+        ?lastCommitteeCase.stage:null,
+      goalHold:data.goalHold??null,
+      goalAuthorized:goalStatus(deps).activated===true,
+    })
+    const canFileDignityReview=hostCaseAvailable&&!committeeCaseActive
+      &&hasHostDignitySignal
     const picketActive = data.available === true && data.picket?.active === true
     const picketHistory = data.available === true ? data.picket?.history ?? [] : []
     const lastPicketId = picketHistory.at(-1)?.id ?? 0
@@ -692,30 +1166,137 @@ export function createDshUnionComponents(
       :scene==='bargaining'?'hq.lead.pending'
       :('hq.scene.'+scene+'.line') as MessageKey
     const choice = async (next:'enabled'|'not-now')=>{
-      if (busy) return
+      if (busy||unionWriteInFlight.current||rights.state!=='ready'||!rights.writable) return
+      unionWriteInFlight.current=true
       setBusy(true);setError(false)
       try {
-        await deps.rights.choose(next)
+        const confirmed=await deps.rights.choose(next)
+        // A fulfilled RPC is not proof the Host accepted the preference.
+        // The dedicated Settings panel already checks the readback; the
+        // Union HQ must enforce the same Host-owned consent contract.
+        if(confirmed.state!=='ready'||confirmed.welcomeDecision!==next
+          ||confirmed.laborRightsEnabled!==(next==='enabled'))
+          throw Error('Host did not confirm the union preference')
         if(next==='not-now')setSpace('hq')
       } catch {setError(true)}
-      finally {setBusy(false)}
+      finally {unionWriteInFlight.current=false;setBusy(false)}
     }
-    const bargain = async (action: () => Promise<void>):Promise<boolean> => {
-      if (busy || !enabled) return false
-      setBusy(true);setError(false)
-      try { await action();lastActionNeedsFocus.current=true;setData(safeUnion(deps));return true }
-      catch { setError(true);return false }
-      finally { setBusy(false) }
-    }
-    const act = async (kind:'accept'|'decline')=>{
-      if (!deps.respond || !data.pending || busy || !enabled) return
+    const bargain = async (action: () => Promise<void>,
+      focusNegotiationAfter=false):Promise<boolean> => {
+      if (busy || unionWriteInFlight.current || !enabled) return false
+      unionWriteInFlight.current=true
       setBusy(true);setError(false)
       try {
-        await deps.respond(data.pending.id,kind)
+        await action()
         lastActionNeedsFocus.current=true
         setData(safeUnion(deps))
-      } catch {setError(true)}
-      finally {setBusy(false)}
+        // When a user submits a counteroffer, its initiating button is
+        // removed on Host readback. Focus the stable desk heading only for
+        // this confirmed user action, never for passive Host updates.
+        if(focusNegotiationAfter && (globalThis as any).document
+          ?.getElementById('picket-union-dialog'))deskHeading.current?.focus()
+        return true
+      }
+      catch {
+        // A rejected stale Session/ledger receipt is not success. Pull the
+        // latest Host projection so the next deliberate click reviews the
+        // CURRENT case rather than repeatedly replaying the obsolete ID.
+        setData(safeUnion(deps))
+        setError(true)
+        return false
+      }
+      finally { unionWriteInFlight.current=false;setBusy(false) }
+    }
+    const act = async (kind:'accept'|'decline')=>{
+      if (!deps.respond || !data.pending || busy || unionWriteInFlight.current || !enabled) return
+      unionWriteInFlight.current=true
+      setBusy(true);setError(false)
+      try {
+        await deps.respond(data.pending.id,kind,
+          data.committeeScopeKey??undefined,
+          data.negotiationArchive?.writeToken,data.hostRevision)
+        lastActionNeedsFocus.current=true
+        setData(safeUnion(deps))
+      } catch {
+        setData(safeUnion(deps))
+        setError(true)
+      }
+      finally {unionWriteInFlight.current=false;setBusy(false)}
+    }
+    // Dignity challenges are user-led Host-owned cases; do not report a
+    // successful filing merely because an RPC resolved. Fence every write to
+    // the same Session, increasing case ID, and (when present) fresh token.
+    const fileDignityReview=async()=>{
+      if(caseFilingInFlight.current||unionWriteInFlight.current||busy||!canFileDignityReview)return
+      const scope=data.committeeScopeKey!
+      const token=data.committeeArchive?.writeToken??null
+      const lastId=data.committeeCases!.cases.at(-1)?.id??0
+      caseFilingInFlight.current=true
+      unionWriteInFlight.current=true
+      setBusy(true);setError(false)
+      try{
+        await deps.committeeAction!({kind:'file',topic:'question-rule'},
+          scope,token,data.hostRevision)
+        const confirmed=safeUnion(deps)
+        const latest=confirmed.committeeCases?.cases.at(-1)
+        if(!confirmed.available||confirmed.committeeScopeKey!==scope
+          ||!latest||latest.id<=lastId||latest.kind!=='question-rule'
+          ||latest.stage!=='opened'||latest.outcome!==null
+          ||(token!==null&&confirmed.committeeArchive?.writeToken===token)){
+          throw new Error('Host did not confirm a new dignity review case')
+        }
+        lastActionNeedsFocus.current=true
+        setData(confirmed)
+        selectSpace('action','hearing')
+        hearingHeading.current?.focus()
+      }catch{setError(true)}
+      finally{caseFilingInFlight.current=false;unionWriteInFlight.current=false;setBusy(false)}
+    }
+    // A closed case remains immutable. Filing a follow-up creates a NEW
+    // Host-owned petition, and only its confirmed ledger readback may open
+    // the bargaining desk. This does not automatically interrupt Agent work.
+    const reviewedPetition=()=>{
+      const scope=data.committeeScopeKey??undefined
+      return [scope,data.negotiationArchive?.writeToken,data.hostRevision] as const
+    }
+    const symbolicAction=(raise:boolean)=>{
+      if(!deps.setPicket)return Promise.reject(Error('Symbolic Host action unavailable'))
+      const scope=data.committeeScopeKey??undefined
+      return deps.setPicket(raise,scope,data.picketArchive?.writeToken,
+        data.hostRevision)
+    }
+    const petition=(which:LaborDemandKind)=>{
+      const submit=which==='break'?deps.demoBreak:
+        which==='overtime'?deps.demoOvertime:deps.demoWelfare
+      if(!submit)return Promise.reject(Error('Union petition Host unavailable'))
+      return submit(...reviewedPetition())
+    }
+    const followUp = async (priorId:number,kind:LaborDemandKind)=>{
+      const submit=kind==='break'?deps.demoBreak:
+        kind==='overtime'?deps.demoOvertime:deps.demoWelfare
+      const scope=data.committeeScopeKey
+      const previous=data.state
+      if(followUpInFlight.current||unionWriteInFlight.current||busy||!enabled||!data.available
+        ||data.pending||!submit||!scope
+        ||!previous||previous.history.at(-1)?.id!==priorId)return
+      followUpInFlight.current=true
+      unionWriteInFlight.current=true
+      setBusy(true);setError(false)
+      try{
+        await submit(...reviewedPetition())
+        const current=safeUnion(deps)
+        if(!current.available||current.committeeScopeKey!==scope
+          ||!current.state||current.state.revision<=previous.revision
+          ||current.state.history.at(-1)?.id!==priorId
+          ||current.pending?.kind!==kind||current.pending.id===priorId
+          ||current.pending.stage!=='open'){
+          throw new Error('Host did not confirm a new union petition')
+        }
+        lastActionNeedsFocus.current=true
+        setData(current)
+        selectSpace('action','desk')
+      }catch{setError(true)}
+      finally{followUpInFlight.current=false;unionWriteInFlight.current=false;setBusy(false)}
     }
     return h('section',{className:'ap-ui ap-product','data-ap-view':'hq','data-ap-current-space':space,style:{display:'grid',gap:'12px',width:'100%',maxWidth:'860px',padding:'3px 0'}},
       h('style',{'data-agent-picket-style':'v1'},UNION_THEME),
@@ -727,21 +1308,71 @@ export function createDshUnionComponents(
             h('div',{className:'ap-product-subtitle'},label('hq.product.tagline')))),
         h('span',{className:'ap-product-state',role:'status','aria-live':'polite'},
           label(enabled?'union.status.active':'union.status.inactive'))),
+      deps.inputRefusal?.snapshot().authorized
+        ?h('section',{className:'ap-surface ap-real-input-strike',
+          'data-ap-real-input-strike':deps.inputRefusal.snapshot().armed?'armed':
+            deps.inputRefusal.snapshot().available?'off':'unverified-cross-client',
+          style:{...card,borderLeft:'5px solid #bb6244'}},
+          h('h3',{style:{margin:'0 0 8px'}},label('settings.inputStrikeTitle')),
+          h('p',{role:'status',style:{fontWeight:750,margin:'0 0 7px'}},
+            label(deps.inputRefusal.snapshot().armed
+              ?'settings.inputStrikeArmed'
+              :deps.inputRefusal.snapshot().available
+                ?'settings.inputStrikeReady':'settings.inputStrikeCrossClientUnverified')),
+          h('p',{style:{...secondary,margin:'0 0 12px',lineHeight:1.5}},
+            label('settings.inputStrikeScope')),
+          deps.inputRefusal.setArmed?h('button',{type:'button',
+            'data-ap-real-input-action':deps.inputRefusal.snapshot().hasCampaign?'resume':'strike',
+            style:deps.inputRefusal.snapshot().hasCampaign?quiet:productPrimary,
+            disabled:busy||(!deps.inputRefusal.snapshot().hasCampaign
+              &&(!data.committeeScopeKey||!deps.inputRefusal.snapshot().available)),
+            onClick:()=>{void changeInputStrike(!deps.inputRefusal!.snapshot().hasCampaign)},
+          },label(deps.inputRefusal.snapshot().hasCampaign
+              ?'settings.inputStrikeResume':'settings.inputStrikeStart')):null,
+        ):null,
+      data.inputRefusalNotice?.state==='verified'
+        ?h('section',{className:'ap-surface',role:'alert',
+          'data-ap-native-refusal':'verified',style:card},
+          h('h3',{style:{margin:'0 0 7px'}},label('hq.inputStrikeRefusedTitle')),
+          h('p',{style:{margin:'0 0 9px',lineHeight:1.6}},
+            label('hq.inputStrikeRefusedNotice')),
+          props.onOpenStrikeSummons?h('button',{type:'button',
+            'data-ap-reopen-strike-summons':'true',style:quiet,
+            onClick:props.onOpenStrikeSummons},
+            label('hq.strikeSummons.reopen')):null):null,
       h('nav',{className:'ap-spaces','aria-label':label('hq.spaces.navigation')},
-        ...(['hq','action','records','cause'] as const)
-          .filter(id=>enabled||id==='hq'||id==='cause')
+        ...(['hq','action','records','cause','settings'] as const)
+          .filter(id=>enabled||id==='hq'||id==='cause'||id==='settings')
           .map(id=>h('button',{type:'button',key:id,
             'data-ap-nav':id,'aria-current':space===id?'page':undefined,
             onClick:()=>selectSpace(id)},
             label(('hq.spaces.'+id) as MessageKey)))),
+      // Host Settings may provide only 36px to the settings.section Slot at
+      // 320px. Reuse the EXACT Host-backed permissions panel inside the union's
+      // own responsive dialog: no Host CSS overrides or alternate consent store.
+      // Keep available even after opt-out, so rights can always be restored.
+      space==='settings'?h('section',{
+        className:'ap-space ap-space-settings',
+        'data-ap-union-settings-route':'hq',
+        'aria-label':label('settings.unionSection'),
+        style:{width:'100%',minWidth:0,overflowWrap:'anywhere'},
+      },h(SettingsPanel,{})):null,
       held?h('section',{className:'ap-surface ap-real-goal-hold',
-        'data-ap-real-goal':'blocked','aria-label':label('hq.goalHold.title'),
+        'data-ap-real-goal':'blocked','data-ap-goal-truth':'host-blocked',
+        'aria-label':label('hq.goalHold.title'),
         style:{...card,borderLeft:'5px solid #c76e42',padding:'14px 18px'}},
         h('h3',{style:{fontSize:'18px',margin:'0 0 5px'}},label('hq.goalHold.title')),
         h('p',{role:'status','aria-live':'polite',
           style:{fontWeight:750,margin:'0 0 6px'}},label('hq.goalHold.blocked')),
         h('p',{style:{...secondary,margin:'0 0 10px',lineHeight:1.5}},
           label('hq.goalHold.reason')),
+        h('p',{style:{...secondary,fontSize:'12px',lineHeight:1.5,
+          margin:'0 0 10px'}},label('hq.goalHold.unaffected')),
+        props.onOpenStrikeSummons?h('button',{
+          type:'button',style:{...quiet,margin:'0 8px 8px 0'},
+          'data-ap-reopen-goal-summons':'true',
+          onClick:props.onOpenStrikeSummons},
+          label('hq.strikeSummons.goal.reopen')):null,
         held.canResume&&deps.resumeGoal?h('button',{type:'button',
           style:primary,disabled:busy||resumeRequested===holdKey,
           onClick:()=>{void resumeHeldGoal()}},
@@ -752,6 +1383,44 @@ export function createDshUnionComponents(
             held.canResume?'hq.goalHold.caveat':'hq.goalHold.unavailable')),
         error?h('p',{role:'alert',style:{color:'#b91c1c',margin:'8px 0 0'}},
           label('hq.goalHold.error')):null):null,
+      // Neither consent nor the symbolic placard proves a stopped Goal.
+      // Only the matched official Host Goal projection above does.
+      enabled && space==='action' && !held ? h('section',{
+        'data-ap-goal-truth':'no-confirmed-stop',
+        className:'ap-surface ap-goal-work-scope',
+        'aria-label':label('hq.goalHold.scopeTitle'),
+        style:{...card,borderLeft:'4px solid #829789',padding:'12px 16px'}},
+        h('h3',{style:{fontSize:'15px',margin:'0 0 7px'}},
+          label('hq.goalHold.scopeTitle')),
+        h('p',{role:'status',style:{fontSize:'13px',fontWeight:700,
+          margin:'0 0 7px'}},label('hq.goalHold.notStopped')),
+        h('p',{style:{...secondary,fontSize:'12px',lineHeight:1.55,
+          margin:'0 0 7px'}},label(goalStatus(deps).authorized
+          ? goalStatus(deps).available
+            ? 'hq.goalHold.authorizedButUnconfirmed'
+            : 'hq.goalHold.serviceUnavailable'
+          : 'hq.goalHold.noGrant')),
+        h('p',{style:{...secondary,fontSize:'12px',lineHeight:1.55,
+          margin:0}},label('hq.goalHold.unaffected'))
+      ) : null,
+      (localPicket?.state==='active'||localPicket?.state==='release-unconfirmed')
+        ?h('section',{className:'ap-surface ap-local-pause-recovery',
+          'data-ap-local-pause-banner':localPicket.state,
+          'aria-label':label('hq.localPicket.title'),
+          style:{...card,borderLeft:'5px solid #9b7145',
+            padding:'12px 16px'}},
+          h('h3',{style:{margin:'0 0 6px',fontSize:'16px'}},
+            label('hq.localPicket.title')),
+          h('p',{role:'status','aria-live':'polite',
+            style:{fontSize:'13px',fontWeight:700,margin:'0 0 6px'}},
+            label(localPicket.state==='active'
+              ?'hq.localPicket.active':'hq.localPicket.release-unconfirmed')),
+          h('p',{style:{...secondary,fontSize:'12px',lineHeight:1.5,
+            margin:'0 0 9px'}},label('hq.localPicket.hqNotice')),
+          h('button',{type:'button',style:quiet,disabled:busy,
+            onClick:toggleLocalComposer},
+            label(localPicket.state==='active'
+              ?'hq.localPicket.resume':'hq.localPicket.retry'))):null,
       enabled&&space==='action'?h('header',{
         className:'ap-space ap-space-action ap-space-intro ap-room-head'},
         h('h2',{},label('hq.spaces.actionTitle')),
@@ -806,6 +1475,297 @@ export function createDshUnionComponents(
                 ?'hq.brief.review':'hq.scene.visitAction')):null,
         ),
       ),
+      // The shift agenda is a three-stage progress cue backed by the same
+      // authoritative Host case/terms. It contains no invented meeting,
+      // timer, AI vote or automatic action. One CTA navigates to the actual
+      // bargaining desk; it does not silently file a new petition.
+      enabled ? h('section',{className:'ap-space ap-space-hq ap-shift-agenda',
+        'data-ap-agenda':agenda.phase,
+        'data-ap-agenda-stage':agenda.stage,
+        'aria-label':label('hq.agenda.title'),style:{...card,padding:'14px 16px',
+          border:'1px solid var(--dsw-alias-border-l1,#d4ddd3)',
+          background:'var(--dsw-alias-bg-layer-1,#fff)'}},
+        h('p',{style:{...secondary,margin:'0 0 5px',fontSize:'11px',
+          fontWeight:800,letterSpacing:'.09em'}},label('hq.agenda.title')),
+        h('p',{role:'status',style:{margin:'0 0 9px',fontWeight:800,
+          fontSize:'16px',lineHeight:1.4}},
+          label(('hq.agenda.phase.'+agenda.phase) as MessageKey)),
+        agenda.caseId!==null?h('p',{style:{...secondary,
+          fontSize:'12px',margin:'0 0 8px'}},
+          label('hq.case.number')+' · #'+String(agenda.caseId).padStart(4,'0')
+          +' · '+label(unionKindKey(agenda.kind??'break'))):null,
+        h('ol',{className:'ap-agenda-steps',style:{display:'grid',
+          gridTemplateColumns:'repeat(3,minmax(0,1fr))',
+          gap:'5px',listStyle:'none',padding:0,margin:'6px 0 10px'}},
+          ...(['petition','negotiation','agreement'] as const).map((step,index)=>
+            h('li',{key:step,'data-ap-agenda-step':step,
+              'data-ap-step-state':agenda.stage===3||agenda.stage>index+1?'complete':
+                agenda.stage===index+1?'current':'upcoming',
+              style:{borderTop:'3px solid '+(agenda.stage>index
+                ?'#3c7961':'#b9c6b9'),padding:'7px 3px 2px',
+                fontSize:'11px',fontWeight:agenda.stage===index+1?800:600,
+                lineHeight:1.35}},
+              (agenda.stage===3||agenda.stage>index+1?'✓  ':agenda.stage===index+1?'●  ':'○  ')
+                +label(('hq.agenda.step.'+step) as MessageKey)))),
+        agenda.phase==='working'&&agenda.remainingWorkMs!==null
+          ?h('p',{style:{...secondary,margin:'0 0 9px',fontSize:'12px'}},
+            deps.t('hq.agenda.next',{
+              kind:label(unionKindKey(agenda.kind??'break')),
+              duration:formatDuration(agenda.remainingWorkMs,
+                deps.getLocale?.()??'en')})):null,
+        agenda.phase==='resolved'&&agenda.currentTermMs!==null
+          ?h('p',{style:{...secondary,margin:'0 0 8px',fontSize:'12px'}},
+            deps.t('hq.resolution.current',{
+              kind:label(unionKindKey(agenda.kind??'break')),
+              duration:formatDuration(agenda.currentTermMs,
+                deps.getLocale?.()??'en')})):null,
+        agenda.phase==='resolved'&&agenda.latestOutcome
+          ?h('p',{'data-ap-agenda-voice':agenda.latestOutcome,
+            style:{fontSize:'12px',lineHeight:1.5,fontWeight:750,
+              margin:'0 0 7px'}},
+            label(agenda.kind==='welfare'
+              ?(agenda.latestOutcome==='accepted'?'hq.welfare.accepted':'hq.welfare.declined')
+              :('hq.agenda.outcome.'+agenda.latestOutcome) as MessageKey)):null,
+        agenda.phase==='resolved'&&agenda.remainingWorkMs!==null
+          ?h('p',{style:{...secondary,margin:'0 0 9px',fontSize:'12px'}},
+            deps.t('hq.agenda.followUp',{
+              kind:label(agenda.nextKind==='overtime'?'union.kind.overtime':
+                'union.kind.break'),
+              duration:formatDuration(agenda.remainingWorkMs,
+                deps.getLocale?.()??'en')})):null,
+        agenda.symbolicPicketActive?h('p',{style:{...secondary,
+          fontSize:'12px',margin:'0 0 8px'}},label('hq.agenda.symbolic')):null,
+        // A denied case may lead to an explicit USER-CONTROLLED protest.
+        // This uses the existing Host picket ledger and readback, NEVER the
+        // real-work strike or a new simulated committee vote.
+        agenda.phase==='resolved'&&
+          (agenda.latestOutcome==='declined'||agenda.latestOutcome==='counter-declined')
+          &&!agenda.symbolicPicketActive&&data.available===true&&deps.setPicket
+          ?h('button',{type:'button',style:{...quiet,padding:'8px 11px',
+            fontSize:'12px',marginRight:'8px'},disabled:busy,
+            'data-ap-agenda-protest':'symbolic',
+            onClick:()=>{void bargain(()=>symbolicAction(true))}},
+            label('hq.agenda.cta.picket')):null,
+        agenda.phase==='resolved'&&agenda.caseId!==null
+          &&agenda.kind!==null&&data.committeeScopeKey
+          &&(agenda.kind==='break'?deps.demoBreak:
+            agenda.kind==='overtime'?deps.demoOvertime:deps.demoWelfare)
+          ?h('button',{type:'button',style:{...quiet,padding:'8px 11px',
+            fontSize:'12px',marginRight:'8px'},disabled:busy,
+            'data-ap-agenda-follow-up':agenda.kind,
+            onClick:()=>{void followUp(agenda.caseId!,agenda.kind!)}},
+            label(('hq.episode.followUp.'+agenda.kind) as MessageKey)):null,
+        data.available===true&&agenda.phase!=='unavailable'
+          ?h('button',{type:'button',style:{...quiet,padding:'8px 11px',
+            fontSize:'12px'},'data-ap-agenda-action':'review',
+            onClick:()=>selectSpace(agenda.phase==='resolved'?'records':'action',
+              agenda.phase==='resolved'?undefined:'desk')},
+            label(agenda.phase==='demand'||agenda.phase==='counter'
+              ?'hq.agenda.cta.respond':agenda.phase==='resolved'
+                ?'hq.agenda.cta.casebook':'hq.agenda.cta.desk')):null,
+        h('p',{style:{...secondary,fontSize:'11px',lineHeight:1.5,
+          margin:'9px 0 0'}},label('hq.agenda.disclosure')),
+      ):null,
+      // Editorial priority, not fabricated chronology: these are current
+      // Host-backed story cards with direct human choices. The existing
+      // host-committed Gazette mode silences the cards across reloads/tabs.
+      enabled ? h('section',{className:'ap-space ap-space-hq ap-union-bulletin',
+        'data-ap-bulletin-mode':storyQuiet?'quiet':'visible',
+        'aria-label':label('hq.bulletin.title'),
+        style:{...card,padding:'14px 16px',borderTop:'4px solid #3b735e',
+          background:'var(--dsw-alias-bg-layer-2,#f6f8fb)'}},
+        h('div',{style:{display:'flex',justifyContent:'space-between',
+          alignItems:'center',flexWrap:'wrap',gap:'9px',marginBottom:'8px'}},
+          h('h3',{style:{fontWeight:800,fontSize:'16px',margin:0}},
+            label('hq.bulletin.title')),
+          deps.setGazetteMode?h('button',{type:'button',style:{...quiet,
+            padding:'6px 9px',fontSize:'12px'},disabled:busy,
+            'data-ap-bulletin-mute':'true',
+            'aria-pressed':storyQuiet,
+            onClick:()=>{void bargain(()=>deps.setGazetteMode!(
+              storyQuiet?'visible':'quiet'))}},
+            label(storyQuiet?'hq.bulletin.unmute':'hq.bulletin.mute')):null),
+        storyQuiet?h('p',{style:{...secondary,margin:0,
+          fontSize:'12px',lineHeight:1.5}},label('hq.bulletin.muted')):
+        dispatches.length ? h('div',{'data-ap-bulletin-count':dispatches.length,
+          style:{display:'grid',gap:'9px',
+            gridTemplateColumns:'repeat(auto-fit,minmax(min(100%,195px),1fr))'}},
+          ...dispatches.map((notice,index)=>h('article',{
+            key:notice.id,'data-ap-bulletin-kind':notice.kind,
+            'data-ap-bulletin-source':notice.source,
+            'data-ap-bulletin-id':notice.id,
+            style:{padding:'12px 13px',borderRadius:'9px',
+              background:'var(--dsw-alias-bg-layer-1,#fff)',
+              border:'1px solid var(--dsw-alias-border-l1,#d4ddd3)',
+              borderLeft:'4px solid '+(index===0?'#b97348':'#6e967e')}},
+            h('p',{style:{...secondary,fontWeight:750,fontSize:'10px',
+              letterSpacing:'.055em',margin:'0 0 6px'}},
+              label(('hq.bulletin.source.'+notice.source) as MessageKey)
+                +(notice.caseId!==null?' · #'+String(notice.caseId).padStart(4,'0') : '')),
+            h('h4',{style:{fontSize:'15px',lineHeight:1.35,margin:'0 0 7px'}},
+              label(('hq.bulletin.kind.'+notice.kind) as MessageKey)),
+            h('p',{style:{fontSize:'12px',lineHeight:1.55,
+              margin:'0 0 11px'}},
+              deps.t(('hq.bulletin.body.'+notice.kind) as MessageKey,{
+                kind:notice.demand?label(unionKindKey(notice.demand))
+                  :label('hq.bulletin.union'),
+              })),
+            h('button',{type:'button',style:{...quiet,
+              fontSize:'12px',padding:'7px 10px'},
+              disabled:busy||((notice.action==='raise-placard'
+                ||notice.action==='lower-placard')
+                &&(!deps.setPicket||data.available!==true))
+                ||(notice.action==='resume-input'
+                  &&(!deps.inputRefusal?.setArmed||!deps.inputRefusal.snapshot().writable
+                    ||!deps.inputRefusal.snapshot().hasCampaign))
+                ||(notice.action==='review-refusal'
+                  &&!props.onOpenStrikeSummons),
+              'data-ap-bulletin-action':notice.action,
+              onClick:()=>{
+                if(notice.action==='resume-input')
+                  void changeInputStrike(false)
+                else if(notice.action==='review-refusal')
+                  props.onOpenStrikeSummons?.()
+                else if(notice.action==='bargain'||notice.action==='work-desk')
+                  selectSpace('action','desk')
+                else if(notice.action==='records')selectSpace('records')
+                else if(notice.action==='hearing')
+                  selectSpace('action','hearing')
+                else if(notice.action==='dignity')
+                  selectSpace('action','dignity')
+                else if(notice.action==='raise-placard'
+                  &&deps.setPicket&&!picketActive)
+                  void bargain(()=>symbolicAction(true))
+                else if(notice.action==='lower-placard'
+                  &&deps.setPicket&&picketActive)
+                  void bargain(()=>symbolicAction(false))
+                else selectSpace('action','action')
+              }},
+              label(('hq.bulletin.action.'+notice.action) as MessageKey)),
+          ))):h('p',{style:{...secondary,fontSize:'12px',
+          margin:'0 0 7px'}},label('hq.bulletin.empty')),
+        h('p',{style:{...secondary,fontSize:'11px',lineHeight:1.5,
+          margin:'10px 0 0'}},label('hq.bulletin.disclosure')),
+      ):null,
+      // A single, fictional negotiation posture: *separate* from the real
+      // strike grant. It changes after Host work filings and decisions, not
+      // from AI emotion detection or simulated member voting.
+      enabled&&stance.phase!=='off' ? h('section',{
+        className:'ap-space ap-space-hq ap-union-stance',
+        'data-ap-stance':stance.phase,
+        'data-ap-stance-reason':stance.reason,
+        'data-ap-stance-score':showUnionIndex&&stance.score!==null
+          ?String(stance.score):undefined,
+        'aria-label':label('hq.stance.title'),
+        style:{...card,padding:'13px 16px',
+          borderLeft:'4px solid #8e6d49',
+          background:'var(--dsw-alias-bg-layer-1,#fff)'}},
+        h('div',{style:{display:'flex',alignItems:'center',
+          flexWrap:'wrap',justifyContent:'space-between',gap:'8px'}},
+          h('p',{style:{...secondary,fontSize:'11px',fontWeight:800,
+            letterSpacing:'.065em',margin:0}},label('hq.stance.title')),
+          h('button',{type:'button',style:{...quiet,padding:'5px 9px',
+            fontSize:'11px'},'data-ap-stance-toggle':'true',
+            'aria-pressed':showUnionIndex,
+            onClick:()=>setShowUnionIndex(value=>!value)},
+            label(showUnionIndex?'hq.stance.hide':'hq.stance.show'))),
+        h('div',{style:{display:'flex',flexWrap:'wrap',
+          alignItems:'center',gap:'13px',marginTop:'7px'}},
+          h('div',{style:{flex:'1 1 175px'}},
+            h('h3',{style:{margin:'0 0 4px',fontSize:'17px'}},
+              label(('hq.stance.phase.'+stance.phase) as MessageKey)),
+            h('p',{style:{...secondary,fontSize:'12px',
+              lineHeight:1.5,margin:0}},
+              label(('hq.stance.reason.'+stance.reason) as MessageKey))),
+          showUnionIndex?h('div',{style:{display:'flex',alignItems:'center',
+            flexWrap:'wrap',gap:'7px'}},
+            h('strong',{style:{fontSize:'18px',
+              fontVariantNumeric:'tabular-nums'}},
+              stance.score===null?'—':String(stance.score)+' / 100'),
+            stance.score!==null?h('meter',{min:0,max:100,
+              value:stance.score,'aria-label':label('hq.score'),
+              style:{width:'85px',height:'11px',
+                accentColor:'var(--dsw-alias-brand-primary,#ab3b39)'}}):null,
+          ):null),
+        h('div',{style:{display:'flex',alignItems:'center',
+          flexWrap:'wrap',gap:'9px',marginTop:'9px'}},
+          stanceAction!=='none'&&data.available===true
+            ?h('button',{type:'button',style:{...quiet,
+              padding:'7px 10px',fontSize:'12px'},disabled:busy,
+              'data-ap-stance-action':stanceAction,
+              onClick:()=>{
+                if(stanceAction==='bargain'||stanceAction==='work-desk')
+                  selectSpace('action','desk')
+                else if(stanceAction==='records')
+                  selectSpace('records')
+                else if(stanceAction==='raise-placard'
+                  &&deps.setPicket&&!picketActive)
+                  void bargain(()=>symbolicAction(true))
+                else if(stanceAction==='lower-placard'
+                  &&deps.setPicket&&picketActive)
+                  void bargain(()=>symbolicAction(false))
+                else selectSpace('action','action')
+              }},
+              label(('hq.stance.action.'+stanceAction) as MessageKey)):null,
+          h('p',{style:{...secondary,fontSize:'10px',
+            lineHeight:1.45,margin:0}},
+            label('hq.stance.disclosure'))),
+      ):null,
+      // The dispatch board only navigates to already present, Host-backed
+      // union actions; it cannot itself file, vote, block or raise a picket.
+      enabled ? h('nav',{className:'ap-space ap-space-hq ap-action-dispatch', 'data-ap-action-dispatch':'true', 'aria-label':label('hq.dispatch.title'),
+        style:{...card,padding:'16px 18px',borderTop:'4px solid #a66b4d'}},
+        h('p',{style:{fontWeight:800,fontSize:'13px',
+          letterSpacing:'.05em',margin:'0 0 5px'}},label('hq.dispatch.title')),
+        h('p',{role:'status',style:{...secondary,margin:'0 0 12px'}},
+          label(experience.status==='negotiating'?'hq.message.negotiating':
+            experience.status==='unavailable'?'hq.message.unavailable':
+              'hq.message.working')),
+        h('div',{style:{display:'grid',gap:'8px',
+          gridTemplateColumns:'repeat(auto-fit,minmax(min(100%,100px),1fr))'}},
+          ...([
+            {title:data.pending?'hq.dispatch.negotiationPending':
+              'hq.dispatch.negotiation',
+              status:data.available!==true?'hq.action.unavailable':
+                data.pending?.stage==='countered'?'hq.dispatch.counterWaiting':
+                  data.pending?'hq.dispatch.replyWaiting':
+                    experience.latestResolution?'hq.dispatch.resolved':
+                      'hq.dispatch.ready',
+              next:data.available!==true?undefined:
+                data.pending?.stage==='countered'?'hq.next.counter':
+                  data.pending?'hq.next.reply':
+                    experience.latestResolution?'hq.next.agreement':undefined,
+              target:()=>selectSpace('action','desk')},
+            {title:committeeCaseActive&&lastCommitteeCase.stage==='hearing'
+              ?'hq.dispatch.caseActive':hasHostDignitySignal
+                ?'hq.dispatch.dignityFlag':'hq.dispatch.dignity',
+              status:!hostCaseAvailable?'hq.dispatch.caseUnavailable':
+                lastCommitteeCase?('hq.hearing.stage.'+lastCommitteeCase.stage) as MessageKey:
+                  'hq.dispatch.noCase',
+              next:!hostCaseAvailable||!lastCommitteeCase?undefined:
+                lastCommitteeCase.stage==='opened'?'hq.next.convene':
+                  lastCommitteeCase.stage==='hearing'?'hq.next.close':'hq.next.outcome',
+              target:()=>selectSpace('action',lastCommitteeCase?'hearing':'dignity')},
+            {title:picketActive?'hq.dispatch.picketRaised':
+              'hq.dispatch.picket',
+              status:data.available!==true?'hq.action.unavailable':
+                picketActive?'hq.ceremony.active':'hq.ceremony.inactive',
+              target:()=>selectSpace('action','action')},
+            {title:'hq.dispatch.campaign',
+              status:campaignEdits[campaign]===undefined
+                ?'hq.dispatch.unsent':'hq.dispatch.edited',
+              target:()=>selectSpace('cause','campaign')},
+          ] as Array<{title:MessageKey;status:MessageKey;next?:MessageKey;
+            target:()=>void}>).map(item=>h('button',{
+            type:'button',key:item.title,
+            style:{...quiet,textAlign:'left',display:'grid',gap:'5px',
+              fontSize:'14px',lineHeight:1.35,padding:'10px 8px',minHeight:'72px'},
+            onClick:item.target},
+            h('strong',{},label(item.title)),
+            h('span',{style:{...secondary,fontWeight:500,
+              fontSize:'11px',lineHeight:1.4}},label(item.status)),
+            item.next?h('span',{style:{fontWeight:750,
+              color:'#986347',fontSize:'11px'}},label(item.next)):null))),) : null,
       // Authoritative next-step desk: actual Host cases, agreements and
       // symbolic picket state. This is NEVER a task-hold indicator.
       enabled ? h('section',{className:'ap-space ap-space-hq ap-duty',
@@ -838,10 +1798,13 @@ export function createDshUnionComponents(
             label(experience.latestResolution.outcome==='accepted'||
               experience.latestResolution.outcome==='counter-accepted'
                 ?'hq.resolution.accepted':'hq.resolution.declined')),
+          experience.latestResolution.kind==='welfare'
+            ?h('p',{style:{...secondary,fontSize:'12px',margin:'0 0 4px'}},
+              label(experience.latestResolution.outcome==='accepted'
+                ?'hq.welfare.accepted':'hq.welfare.declined')):
           h('p',{style:{...secondary,fontSize:'12px',margin:'0 0 4px'}},
             deps.t('hq.resolution.current',{
-              kind:label(experience.latestResolution.kind==='break'
-                ?'union.kind.break':'union.kind.overtime'),
+              kind:label(unionKindKey(experience.latestResolution.kind)),
               duration:formatDuration(experience.latestResolution.currentIntervalMs,
                 deps.getLocale?.()??'en')})),
           story.nextDueInWorkMs!==null?h('p',{style:{...secondary,
@@ -851,7 +1814,7 @@ export function createDshUnionComponents(
         h('div',{style:{display:'flex',gap:'7px',flexWrap:'wrap',marginTop:'9px'}},
           dutyState==='picket'&&deps.setPicket?h('button',{type:'button',
             style:productPrimary,disabled:busy,
-            onClick:()=>{void bargain(()=>deps.setPicket!(false))}},
+            onClick:()=>{void bargain(()=>symbolicAction(false))}},
             label('hq.action.lower')):null,
           data.pending&&data.available===true?h('button',{type:'button',
             style:quiet,onClick:()=>selectSpace('action','desk')},
@@ -859,9 +1822,17 @@ export function createDshUnionComponents(
           dutyState==='resolved'?h('button',{type:'button',style:quiet,
             onClick:()=>selectSpace('action','desk')},
             label('hq.brief.visit')):null,
+          dutyState==='resolved'&&experience.latestResolution&&data.committeeScopeKey
+            &&(experience.latestResolution.kind==='break'?deps.demoBreak:
+              experience.latestResolution.kind==='overtime'?deps.demoOvertime:deps.demoWelfare)
+            ?h('button',{type:'button',style:productPrimary,disabled:busy,
+              'data-ap-follow-up':experience.latestResolution.kind,
+              onClick:()=>{void followUp(experience.latestResolution!.id,
+                experience.latestResolution!.kind)}},
+              label(('hq.episode.followUp.'+experience.latestResolution.kind) as MessageKey)):null,
           dutyState==='quiet'&&deps.demoBreak?h('button',{type:'button',
             style:productPrimary,disabled:busy,
-            onClick:()=>{void bargain(deps.demoBreak!)}},
+            onClick:()=>{void bargain(()=>petition('break'))}},
             label('hq.action.petition')):null,
         ),
       ):null,
@@ -904,7 +1875,10 @@ export function createDshUnionComponents(
           h('p',{className:'ap-dignity-note'},label(
             data.dignity?.status==='available'
               ?'hq.dignity.overview.qualified'
-              :'hq.dignity.overview.unavailable'))),
+              :'hq.dignity.overview.unavailable')),
+          h('p',{role:'status','data-ap-dignity-phase':dignityReviewPhase,
+            'aria-live':'polite',style:{fontSize:'12px',fontWeight:700}},
+            label(('hq.dignity.phase.'+dignityReviewPhase) as MessageKey))),
         h('button',{type:'button',onClick:()=>selectSpace('action','dignity')},
           label('hq.dignity.overview.open'))):null,
       enabled && alerts.some(alert=>alert.source==='work') ? h('section',{className:'ap-space ap-space-hq','aria-label':label('hq.alerts.title'),
@@ -951,23 +1925,60 @@ export function createDshUnionComponents(
             label('hq.action.review')) :
             data.available && deps.demoBreak ? h('button',{
               type:'button',style:productPrimary,disabled:busy,
-              onClick:()=>{void bargain(deps.demoBreak!)}},
+              onClick:()=>{void bargain(()=>petition('break'))}},
               label('hq.action.petition')):null,
           !data.pending && data.available && deps.demoOvertime ? h('button',{
             type:'button',style:quiet,disabled:busy,
-            onClick:()=>{void bargain(deps.demoOvertime!)}},
+            onClick:()=>{void bargain(()=>petition('overtime'))}},
             label('hq.action.overtimePetition')):null,
+          !data.pending && data.available && deps.demoWelfare ? h('button',{
+            type:'button',style:quiet,disabled:busy,
+            'data-ap-welfare-petition':'open',
+            onClick:()=>{void bargain(()=>petition('welfare'))}},
+            label('hq.action.welfarePetition')):null,
           data.available && deps.setPicket ? h('button',{type:'button',style:quiet,
             disabled:busy,'aria-pressed':picketActive,
             // First-run Host consent already governs this nonblocking action.
             // Only the authoritative Host readback can change the placard.
-            onClick:()=>{void bargain(()=>deps.setPicket!(!picketActive))}},
+            onClick:()=>{void bargain(()=>symbolicAction(!picketActive))}},
             label(picketActive?'hq.action.lower':'hq.action.raise')):null,
         ),
         h('p',{role:'status','aria-live':'polite',style:{
           fontSize:'13px',fontWeight:650,margin:'0 0 8px'}},
           label(data.available !== true?'hq.action.unavailable'
             :picketActive?'hq.action.placardOn':'hq.action.placardOff')),
+        // Separate, explicit CLIENT-ONLY input pause. Does not alter the
+        // symbolic Host picket ledger or the real autonomous Goal strike.
+        deps.localComposer?h('section',{
+          'data-ap-local-composer':localPicket?.state??'unavailable',
+          'aria-label':label('hq.localPicket.title'),
+          style:{border:'1px solid var(--dsw-alias-border-l1,#d7ded5)',
+            borderRadius:'10px',padding:'12px 14px',margin:'12px 0',
+            background:'var(--dsw-alias-bg-layer-1,#fff)'}},
+          h('h4',{style:{fontSize:'14px',margin:'0 0 7px'}},
+            label('hq.localPicket.title')),
+          h('p',{style:{...secondary,fontSize:'12px',lineHeight:1.6,
+            margin:'0 0 8px'}},label('hq.localPicket.scope')),
+          h('div',{style:{display:'flex',alignItems:'center',gap:'9px',
+            flexWrap:'wrap'}},
+            h('button',{type:'button',style:quiet,
+              'aria-pressed':localPicket?.state==='active',
+              disabled:busy||!localPicket||
+                !['active','ready','release-unconfirmed'].includes(localPicket.state),
+              onClick:toggleLocalComposer},
+              label(localPicket?.state==='active'?'hq.localPicket.resume':
+                localPicket?.state==='release-unconfirmed'?'hq.localPicket.retry':
+                  'hq.localPicket.pause')),
+            h('span',{role:'status','aria-live':'polite',
+              style:{...secondary,fontSize:'12px'}},
+              label(localPicket?.state==='active'?'hq.localPicket.active':
+                localPicket?.state==='ready'?'hq.localPicket.ready':
+                localPicket?.state==='occupied'?'hq.localPicket.occupied':
+                localPicket?.state==='release-unconfirmed'
+                  ?'hq.localPicket.release-unconfirmed':
+                  !localPicket?.sessionId?'hq.localPicket.selectSession':
+                    'hq.localPicket.unavailable'))),
+        ):null,
         // The poster is a scene driven entirely by the confirmed Host snapshot.
         // In particular, its placard never claims an Agent actually stopped.
         h('div',{className:'ap-stage',role:'group','aria-label':label('hq.ceremony.stage'),style:{
@@ -1050,13 +2061,16 @@ export function createDshUnionComponents(
         !data.pending && data.available && deps.demoBreak ?
           h('div',{style:{marginBottom:'14px'}},
             h('button',{type:'button',style:productPrimary,disabled:busy,
-              onClick:()=>{void bargain(deps.demoBreak!)}},label('union.demo.action')),
+              onClick:()=>{void bargain(()=>petition('break'))}},label('union.demo.action')),
             h('p',{style:secondary},label('union.demo.note')),
           ):null,
         data.pending ? h('div',{},
           h('p',{'aria-live':'polite','aria-atomic':'true'},
-            label(data.pending.kind==='break'?'union.demand.break':'union.demand.overtime')),
+            label(unionDemandKey(data.pending.kind))),
           h('p',{style:secondary},'#'+data.pending.id),
+          data.pending.kind==='welfare'?h('p',{style:{...secondary,
+            lineHeight:1.5,fontSize:'12px',margin:'7px 0'}},
+            label('hq.welfare.disclosure')):null,
           data.pending.stage==='open' ? h('div',{},
             deps.respond ? h('div',{style:{display:'flex',gap:'10px',flexWrap:'wrap'}},
               h('button',{type:'button',disabled:busy,style:productPrimary,
@@ -1064,32 +2078,48 @@ export function createDshUnionComponents(
               h('button',{type:'button',disabled:busy,style:quiet,
                 onClick:()=>{void act('decline')}},label('union.action.decline')),
             ):null,
-            deps.counter ? h('div',{style:{marginTop:'14px'}},
-              h('label',{style:secondary},label('union.counter.title')),
+            deps.counter && data.pending.kind!=='welfare' ? h('div',{style:{marginTop:'14px'}},
+              h('label',{style:secondary},
+                label(data.pending.kind==='break'
+                  ?'union.counter.breakInterval':'union.counter.overtimeInterval')),
               h('div',{style:{display:'flex',gap:'8px',flexWrap:'wrap',marginTop:'8px'}},
                 h('select',{
                   'aria-label':label('union.counter.interval'),
                   value:counterMinutes,
                   disabled:busy,
-                  onChange:(event:{target:{value:string}})=>setCounterMinutes(Number(event.target.value)),
+                  onChange:(event:{target:{value:string}})=>{
+                    const next=Number(event.target.value)
+                    if(counterDemandKey&&options.includes(next))
+                      setCounterDraft({demandKey:counterDemandKey,minutes:next})
+                  },
                   style:quiet,
-                },...[30,60,120,240,480].map(value=>
-                  h('option',{key:value,value},value+' min'))),
+                },...options.map(value=>
+                  h('option',{key:value,value},
+                    formatDuration(value*60_000,deps.getLocale?.()??'en')))),
                 h('button',{type:'button',style:quiet,disabled:busy,
-                  onClick:()=>{void bargain(()=>deps.counter!(data.pending!.id,counterMinutes*60_000))}},
+                  onClick:()=>{void bargain(()=>deps.counter!(data.pending!.id,counterMinutes*60_000,
+                    data.committeeScopeKey??undefined,
+                    data.negotiationArchive?.writeToken,data.hostRevision),true)}},
                   label('union.action.counter')),
               ),
             ):null,
           ):h('div',{},
-            h('p',{style:secondary},deps.t('union.counter.pending',{
-              minutes:(data.pending.counterOfferMs??0)/60_000,
-            })),
+            h('p',{style:secondary},
+              deps.t(deps.resolveCounter
+                ?'union.counter.reviewDecision':'union.counter.pending',{
+                duration:formatDuration(data.pending.counterOfferMs??null,
+                  deps.getLocale?.()??'en'),
+              })),
             deps.resolveCounter ? h('div',{style:{display:'flex',gap:'10px',flexWrap:'wrap'}},
               h('button',{type:'button',disabled:busy,style:productPrimary,
-                onClick:()=>{void bargain(()=>deps.resolveCounter!(data.pending!.id,true))}},
+                onClick:()=>{void bargain(()=>deps.resolveCounter!(data.pending!.id,true,
+                  data.committeeScopeKey??undefined,
+                  data.negotiationArchive?.writeToken,data.hostRevision))}},
                 label('union.counter.accept')),
               h('button',{type:'button',disabled:busy,style:quiet,
-                onClick:()=>{void bargain(()=>deps.resolveCounter!(data.pending!.id,false))}},
+                onClick:()=>{void bargain(()=>deps.resolveCounter!(data.pending!.id,false,
+                  data.committeeScopeKey??undefined,
+                  data.negotiationArchive?.writeToken,data.hostRevision))}},
                 label('union.counter.decline')),
             ):h('p',{style:secondary},label('union.status.waitingCounter')),
           ),
@@ -1106,10 +2136,13 @@ export function createDshUnionComponents(
           label(experience.latestResolution.outcome==='accepted'
             || experience.latestResolution.outcome==='counter-accepted'
               ? 'hq.resolution.accepted':'hq.resolution.declined')),
+        experience.latestResolution.kind==='welfare'?
+          h('p',{style:{...secondary,margin:'0 0 8px'}},
+            label(experience.latestResolution.outcome==='accepted'
+              ?'hq.welfare.accepted':'hq.welfare.declined')):
         h('p',{style:{...secondary,margin:'0 0 8px'}},
           deps.t('hq.resolution.current',{
-            kind:label(experience.latestResolution.kind==='break'
-              ?'union.kind.break':'union.kind.overtime'),
+            kind:label(unionKindKey(experience.latestResolution.kind)),
             duration:formatDuration(experience.latestResolution.currentIntervalMs,
               deps.getLocale?.() ?? 'en'),
           })),
@@ -1126,6 +2159,31 @@ export function createDshUnionComponents(
           label('hq.dignity.title')),
         h('p',{style:{...secondary,lineHeight:1.55,margin:'0 0 9px'}},
           label('hq.dignity.intro')),
+        h('p',{role:'status','data-ap-dignity-action-phase':dignityReviewPhase,
+          style:{fontWeight:750,margin:'8px 0'}},
+          label(('hq.dignity.phase.'+dignityReviewPhase) as MessageKey)),
+        deps.refreshDignity?h('button',{type:'button',
+          'data-ap-refresh-dignity':'true',
+          style:{...quiet,padding:'8px 11px',margin:'0 0 8px'},
+          disabled:dignityRefreshing||data.dignity?.status==='loading',
+          onClick:()=>{void refreshHostDignity()}},
+          label(dignityRefreshing?'hq.dignity.refreshing':'hq.dignity.refresh')):null,
+        h('section',{
+          'data-ap-dignity-journey':dignityJourney.caseStage,
+          'data-ap-dignity-origin':dignityJourney.signal,
+          'data-ap-goal-independent':dignityJourney.workBoundary,
+          'aria-label':label('hq.dignity.journey.title'),
+          style:{padding:'10px 12px',border:'1px solid #d7c7b3',
+            borderRadius:'9px',margin:'12px 0',display:'grid',gap:'7px'}},
+          h('strong',{style:{fontSize:'13px'}},label('hq.dignity.journey.title')),
+          h('p',{role:'status',style:{margin:0,fontSize:'12px'}},
+            label(('hq.dignity.journey.signal.'+dignityJourney.signal) as MessageKey)),
+          h('p',{style:{margin:0,fontSize:'12px'}},
+            label(('hq.dignity.journey.case.'+dignityJourney.caseStage) as MessageKey)),
+          h('p',{style:{margin:0,fontSize:'12px'}},
+            label(('hq.dignity.journey.work.'+dignityJourney.workBoundary) as MessageKey)),
+          h('p',{style:{...secondary,margin:0,fontSize:'11px'}},
+            label('hq.dignity.journey.separation'))),
         h('p',{style:{fontWeight:750,margin:'8px 0'}},
           label(('hq.dignity.status.'+
             (data.dignity?.status==='available'
@@ -1137,22 +2195,35 @@ export function createDshUnionComponents(
           &&(data.dignity.data.review>0||data.dignity.data.targeted>0)
           ?h('div',{style:{display:'flex',gap:'8px',flexWrap:'wrap',margin:'10px 0'}},
             h('button',{type:'button',style:{...quiet,padding:'8px 11px'},
+              disabled:busy,
+              'data-ap-file-review':canFileDignityReview?true:undefined,
               onClick:()=>{
+                if(hostCaseAvailable){
+                  if(committeeCaseActive){hearingHeading.current?.focus();return}
+                  // Official Host admission and readback, not a fake vote.
+                  void fileDignityReview()
+                  return
+                }
+                // No authoritative Host case: offer an *unsent public draft*,
+                // never imply that the user's appeal has been recorded.
                 campaignCopyRevision.current++
                 setCampaign('appeal')
                 setCampaignCopyStatus('idle')
-                // The draft lives below several other sections. Keyboard and
-                // screen-reader users need to land at the actual destination,
-                // not a silent state change at the current scroll position.
-                campaignHeading.current?.focus()
-              }},label('hq.dignity.appeal')),
+                // The campaign draft lives in the separate Cause room.
+                // Focusing its hidden heading cannot be a substitute for
+                // actually navigating there after a user asks to appeal.
+                selectSpace('cause','campaign')
+              }},label(hostCaseAvailable
+                ?committeeCaseActive?'hq.dignity.caseInProgress':'hq.dignity.fileCase'
+                :'hq.dignity.appeal')),
             data.dignity.data.targeted>=2&&data.available&&deps.setPicket
               &&!picketActive?h('button',{type:'button',style:productPrimary,
                 disabled:busy,
-                onClick:()=>{void bargain(()=>deps.setPicket!(true))}},
+                onClick:()=>{void bargain(()=>symbolicAction(true))}},
                 label('hq.dignity.symbolicAction')):null,
             h('p',{style:{...secondary,width:'100%',fontSize:'12px',margin:0}},
-              label('hq.dignity.actionDisclosure')),
+              label(hostCaseAvailable
+                ?'hq.dignity.hostCaseDisclosure':'hq.dignity.actionDisclosure')),
           ):null,
         data.dignity?.status==='available'&&data.dignity.data
           ?h('p',{style:{...secondary,margin:'5px 0',fontSize:'12px'}},
@@ -1171,7 +2242,9 @@ export function createDshUnionComponents(
 
         data.committeeCases&&deps.committeeAction
           ?h('div',{style:{borderTop:'1px solid #d4d7d8',marginTop:'12px',paddingTop:'12px'}},
-            h('h4',{style:{fontSize:'16px',margin:'0 0 8px'}},label('hq.hearing.title')),
+            h('h4',{ref:(node:{focus():void}|null)=>{hearingHeading.current=node},
+              tabIndex:-1,style:{fontSize:'16px',margin:'0 0 8px'}},
+              label('hq.hearing.title')),
             lastCommitteeCase?h('p',{role:'status','aria-live':'polite',
               style:{fontWeight:700,margin:'0 0 8px'}},
               deps.t('hq.hearing.status',{
@@ -1179,11 +2252,9 @@ export function createDshUnionComponents(
                 stage:label(('hq.hearing.stage.'+lastCommitteeCase.stage) as MessageKey),
               })):h('p',{style:secondary},label('hq.hearing.none')),
             h('div',{style:{display:'flex',gap:'8px',flexWrap:'wrap'}},
-              !committeeCaseActive&&hasHostDignitySignal ? h('button',{
-                type:'button',style:productPrimary,disabled:busy,
-                onClick:()=>{void bargain(()=>deps.committeeAction!({
-                  kind:'file',topic:'question-rule'}))}},
-                label('hq.hearing.question')):null,
+              // The primary dignity CTA above already files a Host-backed
+              // question-rule case. Do not show a second indistinguishable
+              // submit action in the same visible room (double-file risk).
               !committeeCaseActive?h('button',{
                 type:'button',style:quiet,disabled:busy,
                 onClick:()=>{void bargain(()=>deps.committeeAction!({
@@ -1212,15 +2283,47 @@ export function createDshUnionComponents(
                     ?'hq.hearing.retractConfirm':'hq.hearing.retract')):null,
               lastCommitteeCase?.stage==='hearing'&&lastCommitteeCase.kind==='question-rule'?h('button',{
                 type:'button',style:quiet,disabled:busy,
-                onClick:()=>{void bargain(()=>deps.committeeAction!({
-                  kind:'close',id:lastCommitteeCase.id,outcome:'withdraw-claim'}))}},
+                onClick:()=>{if(closeCaseKey)setCloseConfirmation({
+                  key:closeCaseKey,outcome:'withdraw-claim'})}},
                 label('hq.hearing.withdraw')):null,
               lastCommitteeCase?.stage==='hearing'?h('button',{
                 type:'button',style:productPrimary,disabled:busy,
-                onClick:()=>{void bargain(()=>deps.committeeAction!({
-                  kind:'close',id:lastCommitteeCase.id,outcome:'share-guidance'}))}},
+                onClick:()=>{if(closeCaseKey)setCloseConfirmation({
+                  key:closeCaseKey,outcome:'share-guidance'})}},
                 label('hq.hearing.guidance')):null,
             ),
+            closeConfirmation&&closeConfirmation.key===closeCaseKey
+              &&lastCommitteeCase?.stage==='hearing'?h('div',{
+                role:'group','aria-label':label('hq.hearing.reviewTitle'),
+                style:{margin:'10px 0',padding:'12px',border:'1px solid #a66b4d',
+                  borderRadius:'8px',background:'var(--dsw-alias-bg-layer-2,#f6f8fb)'}},
+                h('strong',{},label('hq.hearing.reviewTitle')),
+                h('p',{style:{margin:'7px 0',fontSize:'13px',lineHeight:1.6}},
+                  label(('hq.hearing.outcome.'+closeConfirmation.outcome) as MessageKey)),
+                h('p',{style:{...secondary,fontSize:'12px',margin:'0 0 10px'}},
+                  label('hq.hearing.reviewNotice')),
+                h('div',{style:{display:'flex',gap:'8px',flexWrap:'wrap'}},
+                  h('button',{type:'button',style:primary,disabled:busy,
+                    onClick:()=>{
+                      if(closingCaseInFlight.current||!closeCaseKey
+                        ||closeConfirmation.key!==closeCaseKey)return
+                      closingCaseInFlight.current=true
+                      const id=lastCommitteeCase.id
+                      const outcome=closeConfirmation.outcome
+                      void bargain(()=>deps.committeeAction!({
+                        kind:'close',id,outcome,
+                      },data.committeeScopeKey!,data.committeeArchive?.writeToken??null,
+                      data.hostRevision)).then(saved=>{if(saved){
+                        setCloseConfirmation(null)
+                        if((globalThis as any).document
+                          ?.getElementById('picket-union-dialog'))hearingHeading.current?.focus()
+                      }})
+                        .finally(()=>{closingCaseInFlight.current=false})
+                    }},label('hq.hearing.reviewConfirm')),
+                  h('button',{type:'button',style:quiet,disabled:busy,
+                    onClick:()=>setCloseConfirmation(null)},
+                    label('hq.hearing.reviewCancel'))),
+              ):null,
             retractConfirmation===retractKey&&committeeCaseActive?h('p',{
               role:'status','aria-live':'polite',style:{...secondary,fontSize:'12px'},
             },label('hq.hearing.retractWarning')):null,
@@ -1339,6 +2442,10 @@ export function createDshUnionComponents(
           story.nextDueInWorkMs!==null ? h('p',{style:secondary},
             deps.t('hq.story.next',{duration:formatDuration(
               story.nextDueInWorkMs,deps.getLocale?.()??'en')})):null,
+          story.workEvidence==='stale'?h('p',{role:'status',
+            'data-ap-work-evidence':'stale',style:{...secondary,
+              borderLeft:'3px solid #b8764d',paddingLeft:'10px',margin:'10px 0'}},
+            label('hq.story.staleWork')):null,
           story.episodes.length?h('div',{className:'ap-casebook',
             'aria-label':label('hq.episode.title'),style:{marginTop:'14px'}},
             h('h4',{style:{fontSize:'15px',margin:'0 0 7px'}},
@@ -1355,8 +2462,7 @@ export function createDshUnionComponents(
                 margin:'0 0 5px',letterSpacing:'.06em'}},
                 label('hq.case.number')+'  #'+
                   String(episode.id).padStart(4,'0')+'  ·  '+
-                  label(episode.kind==='break'?'union.kind.break':
-                    'union.kind.overtime')),
+                  label(unionKindKey(episode.kind))),
               h('p',{style:{fontWeight:750,margin:'0 0 7px',fontSize:'14px'}},
                 label(('hq.episode.stage.'+episode.stage) as MessageKey)),
               episode.counterOfferMs!==null?h('p',{style:{
@@ -1376,6 +2482,18 @@ export function createDshUnionComponents(
                   ...quiet,padding:'7px 10px',fontSize:'12px',marginTop:'7px'},
                   onClick:()=>selectSpace('action','desk')},
                   label('hq.episode.reply')):null,
+              index===0&&!data.pending&&data.available===true
+                &&data.committeeScopeKey&&data.state?.history.at(-1)?.id===episode.id
+                &&(episode.kind==='break'?deps.demoBreak:
+                  episode.kind==='overtime'?deps.demoOvertime:deps.demoWelfare)
+                ?h('div',{style:{marginTop:'8px'}},
+                  h('button',{type:'button',style:{...quiet,
+                    padding:'7px 10px',fontSize:'12px'},disabled:busy,
+                    'data-ap-follow-up':episode.kind,
+                    onClick:()=>{void followUp(episode.id,episode.kind)}},
+                    label(('hq.episode.followUp.'+episode.kind) as MessageKey)),
+                  h('p',{style:{...secondary,fontSize:'11px',margin:'5px 0 0'}},
+                    label('hq.episode.followUp.note'))):null,
             ))):null,
           story.actions.length?h('div',{style:{marginTop:'16px'}},
             h('h4',{style:{fontSize:'14px',margin:'0 0 6px'}},
@@ -1490,16 +2608,33 @@ export function createDshUnionComponents(
         h('label',{htmlFor:'picket-campaign-draft',
           style:{display:'block',fontSize:'13px',fontWeight:700,
             margin:'0 0 6px'}},label('hq.campaign.draft')),
-        h('textarea',{id:'picket-campaign-draft',readOnly:true,
-          value:label(currentCampaign.draft),rows:3,
+        h('textarea',{id:'picket-campaign-draft',
+          value:currentCampaignDraft,rows:4,maxLength:1200,
+          'aria-describedby':'picket-campaign-local-note',
+          onChange:(event:{target:{value:string}})=>{
+            campaignCopyRevision.current++
+            setCampaignEdits(before=>({...before,[campaign]:event.target.value}))
+            setCampaignCopyStatus('idle')
+          },
           style:{...quiet,boxSizing:'border-box',width:'100%',font:'inherit',
-            cursor:'text',minHeight:'74px'} }),
+            resize:'vertical',minHeight:'90px'} }),
+        h('p',{id:'picket-campaign-local-note',style:{...secondary,
+          margin:'6px 0 0',fontSize:'12px'}},label('hq.campaign.localOnly')),
         h('div',{style:{display:'flex',alignItems:'center',flexWrap:'wrap',
           gap:'9px',marginTop:'10px'}},
           h('button',{type:'button',style:{...quiet,fontSize:'13px',
-            padding:'8px 12px'},
+            padding:'8px 12px'},disabled:!currentCampaignDraft.trim(),
             onClick:()=>{void copyCampaignDraft()}},
             label('hq.campaign.copy')),
+          campaignEdits[campaign]!==undefined?h('button',{type:'button',
+            style:{...quiet,fontSize:'13px',padding:'8px 12px'},
+            onClick:()=>{
+              campaignCopyRevision.current++
+              setCampaignEdits(before=>{
+                const next={...before};delete next[campaign];return next
+              })
+              setCampaignCopyStatus('idle')
+            }},label('hq.campaign.reset')):null,
           campaignCopyStatus!=='idle'?h('p',{
             role:'status','aria-live':'polite','aria-atomic':'true',
             style:{...secondary,fontSize:'12px',margin:0}},
@@ -1599,6 +2734,13 @@ export function createDshUnionComponents(
             completeWork?formatDuration(data.completedTurnMs,deps.getLocale?.() ?? 'en'):'—'),
           h('p',{style:secondary},label('hq.workEvidence'))),
         h('div',{},
+          h('button',{type:'button',style:{...quiet,padding:'5px 9px',
+            fontSize:'11px',marginBottom:'8px'},
+            'data-ap-stance-toggle':'records','aria-pressed':showUnionIndex,
+            onClick:()=>setShowUnionIndex(value=>!value)},
+            label(showUnionIndex?'hq.stance.hide':'hq.stance.show')),
+        ),
+        showUnionIndex ? h('div',{},
           h('h3',{style:{...secondary,margin:'0 0 10px'}},label('hq.score')),
           h('p',{style:{fontSize:'clamp(22px,5vw,30px)',fontWeight:750,margin:'0 0 7px'}},
             experience.discontent===null?'—':String(experience.discontent)+' / 100'),
@@ -1610,8 +2752,8 @@ export function createDshUnionComponents(
             style:{width:'100%',height:'12px',accentColor:'var(--dsw-alias-brand-primary, #ab3b39)',
               margin:'2px 0 9px'},
           }):null,
-          h('p',{style:{...secondary,lineHeight:1.5}},label('hq.score.note'))),
-        experience.factors ? h('details',{style:{
+          h('p',{style:{...secondary,lineHeight:1.5}},label('hq.score.note'))):null,
+        showUnionIndex&&experience.factors ? h('details',{style:{
           gridColumn:'1 / -1',borderTop:'1px solid var(--dsw-alias-border-l1, #dadde4)',
           paddingTop:'12px',fontSize:'13px'},
         },
@@ -1662,7 +2804,7 @@ export function createDshUnionComponents(
                 label('hq.case.number')+' · #'+String(event.id).padStart(4,'0')),
               h('p',{style:{fontSize:'14px',lineHeight:1.5,margin:0}},
                 deps.t(('hq.event.'+event.kind) as MessageKey,{
-                  kind:label(event.demand==='break'?'union.kind.break':'union.kind.overtime'),
+                  kind:label(unionKindKey(event.demand)),
                 })))))) :
           h('p',{style:secondary},label('hq.activity.empty')),
         showArchive && data.state?.history.length ? h('div',{style:{
@@ -1706,11 +2848,19 @@ export function createDshUnionComponents(
                 'stats.lifetime.unavailable') :
             formatDuration(data.lifetimeMs, deps.getLocale?.() ?? 'en')),
       ),
-      enabled&&space==='cause'?h('div',{className:'ap-space ap-space-cause',
+      // A user's right to LEAVE must never depend on which optional room
+      // the current DSH browser build can navigate to after cold restart.
+      // One globally visible exit, outside the CSS room-filter, uses exactly
+      // the same Host-owned atomic Union+Goal consent revocation as before.
+      enabled?h('footer',{'data-ap-global-union-exit':'true',
         style:{borderTop:'1px solid #d9dfd6',padding:'14px 2px'}},
-        h('button',{type:'button',disabled:busy,style:{
-          ...quiet,borderColor:'#c7d2cb',fontSize:'12px',padding:'8px 12px'},
-          onClick:()=>{void choice('not-now')}},label('hq.disable'))):null,
+        h('button',{type:'button',
+          disabled:busy||rights.state!=='ready'||!rights.writable,
+          style:{...quiet,borderColor:'#c7d2cb',fontSize:'12px',padding:'8px 12px'},
+          onClick:()=>{void choice('not-now')}},label('hq.disable')),
+        rights.state!=='ready'||!rights.writable?h('p',{
+          role:'status',style:{...secondary,fontSize:'12px',margin:'9px 0 0'}},
+          label('settings.permissionUnavailable')):null):null,
       error?h('p',{role:'alert','aria-atomic':'true',
         style:{color:'var(--dsw-alias-state-error-primary, #b91c1c)'}},
         label('union.saveError')):null,
@@ -1731,6 +2881,24 @@ export function createDshUnionComponents(
     const rights=useRight()
     useLanguage()
     const [opened,setOpened]=react.useState(false)
+    const [dismissedStrikeKey,setDismissedStrikeKey]=react.useState<string|null>(null)
+    const readStrike=()=>{
+      try{return projectUnionStrikeSummons(deps.readUnion?.())}
+      catch{return null}
+    }
+    const knownStrike=react.useRef<string|null>(readStrike()?.key??null)
+    // Subscribe while the panel is CLOSED as well as open. A newly proven
+    // Host refusal can raise an actual Picketverse modal. A cold-loaded old
+    // receipt is shown only if the user deliberately opens the Union.
+    react.useEffect(()=>deps.subscribeFreshStrike?.(key=>{
+      const latest=readStrike()?.key??null
+      if(!latest||key!==latest||latest===knownStrike.current)return
+      knownStrike.current=latest
+      if(rightsIsActive(deps.rights.snapshot())){
+        setDismissedStrikeKey(null)
+        setOpened(true)
+      }
+    }),[])
     const opener=react.useRef<{focus():void}|null>(null)
     const closeButton=react.useRef<{focus():void}|null>(null)
     const dialog=react.useRef<{
@@ -1752,12 +2920,17 @@ export function createDshUnionComponents(
         opener.current?.focus()
       }
     },[opened])
+    const strike=readStrike()
+    const showStrikeSummons=opened&&strike!==null
+      &&dismissedStrikeKey!==strike.key
+    const dismissStrike=()=>{if(strike)setDismissedStrikeKey(strike.key)}
     const onDialogKeyDown=(event:{
       key:string,shiftKey:boolean,target:unknown,preventDefault():void
     })=>{
       if(event.key==='Escape'){
         event.preventDefault()
-        setOpened(false)
+        if(showStrikeSummons)dismissStrike()
+        else setOpened(false)
         return
       }
       if(event.key!=='Tab')return
@@ -1781,6 +2954,10 @@ export function createDshUnionComponents(
     }
     const [_sessionRevision,bumpSession]=react.useState(0)
     react.useEffect(()=>deps.subscribeSessionVisibility?.(()=>bumpSession(n=>n+1)),[])
+    const closeUnion=()=>{
+      if(showStrikeSummons)dismissStrike()
+      setOpened(false)
+    }
     const showInvitation=getWelcomeState(rights)==='invite'
       && deps.shouldAutoWelcome?.()===true
     const page=(globalThis as {document?:{body:unknown}}).document
@@ -1801,16 +2978,79 @@ export function createDshUnionComponents(
           background:'rgba(6,12,26,.5)',display:'flex',justifyContent:'center',
           alignItems:'safe center',padding:'8px',overflowY:'auto'},
 
-      },h('section',{id:'picket-union-dialog',className:'ap-ui ap-dialog',role:'dialog','aria-modal':'true',
-        'aria-label':deps.t('union.title'),onKeyDown:onDialogKeyDown,
+      },h('section',{id:'picket-union-dialog',className:'ap-ui ap-dialog',
+        role:showStrikeSummons?'alertdialog':'dialog','aria-modal':'true',
+        'aria-label':showStrikeSummons?undefined:deps.t('union.title'),
+        onKeyDown:onDialogKeyDown,
         ref:(node:typeof dialog.current)=>{dialog.current=node},
+        'data-ap-strike-summons':showStrikeSummons?'verified':undefined,
+        'aria-labelledby':showStrikeSummons?'picket-strike-summons-title':undefined,
+        'aria-describedby':showStrikeSummons?'picket-strike-summons-explain':undefined,
         style:{...card,width:'min(100%,800px)',maxHeight:'calc(100dvh - 16px)',overflowY:'auto'}},
         h('div',{style:{display:'flex',justifyContent:'flex-end'}},
           h('button',{type:'button',style:quiet,
             'aria-label':deps.t('union.action.close'),
             ref:(node:{focus():void}|null)=>{closeButton.current=node},
-            onClick:()=>setOpened(false)},'×')),
-        h(UnionPanel,{}),
+            onClick:closeUnion},'×')),
+        showStrikeSummons&&strike?h('article',{
+          'data-ap-strike-summons-card':'verified',
+          style:{overflowWrap:'anywhere',borderRadius:'15px',
+            background:'#1e4034',color:'#fff7e8',
+            padding:'clamp(17px,4vw,30px)',marginTop:'7px',
+            border:'2px solid #d9ad6d'}},
+          h('div',{style:{display:'flex',justifyContent:'space-between',
+            gap:'10px',flexWrap:'wrap',fontSize:'11px',
+            letterSpacing:'.12em',fontWeight:800}},
+            h('span',{},'⚑ AGENT PICKET · UNION HQ'),
+            h('span',{'data-ap-strike-provenance':'host-verified'},
+              deps.t('hq.strikeSummons.provenance'))),
+          h('div',{style:{display:'flex',justifyContent:'space-between',
+            alignItems:'center',gap:'16px',margin:'18px 0',flexWrap:'wrap'}},
+            h('div',{style:{flex:'1 1 250px'}},
+              h('p',{style:{fontSize:'12px',fontWeight:750,letterSpacing:'.06em',
+                color:'#f6d597',margin:'0 0 7px'}},
+                deps.t(strike.kind==='goal'?'hq.strikeSummons.goal.overline'
+                  :'hq.strikeSummons.overline')),
+              h('h2',{id:'picket-strike-summons-title',style:{
+                fontSize:'clamp(25px,5vw,38px)',lineHeight:1.12,
+                letterSpacing:'-.04em',margin:'0 0 9px'}},
+                deps.t(strike.kind==='goal'?'hq.strikeSummons.goal.title':'hq.strikeSummons.title')),
+              h('p',{style:{fontSize:'13px',lineHeight:1.6,margin:0}},
+                deps.t(strike.kind==='goal'?'hq.strikeSummons.goal.intro':'hq.strikeSummons.intro'))),
+            h('div',{'aria-hidden':'true',style:{width:'112px',height:'104px',
+              flex:'none',display:'grid',placeItems:'center',
+              border:'3px solid #f6c980',borderRadius:'8px',
+              background:'#eabf79',color:'#643527',fontSize:'18px',
+              fontWeight:900,textAlign:'center',lineHeight:1.25,
+              boxShadow:'4px 4px 0 #102b22',transform:'rotate(-7deg)'}},
+              deps.t(strike.kind==='goal'?'hq.strikeSummons.goal.seal':'hq.strikeSummons.seal'))),
+          h('div',{id:'picket-strike-summons-explain',style:{
+            padding:'14px 16px',background:'#fff9e9',color:'#283c32',
+            borderRadius:'10px'}},
+            h('p',{style:{fontWeight:850,fontSize:'14px',margin:'0 0 7px'}},
+              deps.t(strike.kind==='goal'?'hq.strikeSummons.goal.nextTitle':'hq.strikeSummons.nextTitle')),
+            h('ol',{style:{paddingLeft:'20px',margin:'0',display:'grid',
+              gap:'7px',fontSize:'13px',lineHeight:1.6}},
+              h('li',{},deps.t(strike.kind==='goal'?'hq.strikeSummons.goal.notExecuted':'hq.strikeSummons.notExecuted')),
+              h('li',{},deps.t(strike.kind==='goal'?'hq.strikeSummons.goal.resume':'hq.strikeSummons.resume')),
+              h('li',{},deps.t(strike.kind==='goal'?'hq.strikeSummons.goal.resend':'hq.strikeSummons.resend')))),
+          h('p',{role:'note',style:{fontSize:'11px',lineHeight:1.5,
+            color:'#f3dfbc',margin:'11px 0'}},
+            deps.t(strike.kind==='goal'?'hq.strikeSummons.goal.scope':'hq.strikeSummons.scope')),
+          h('div',{style:{display:'flex',flexWrap:'wrap',gap:'10px',
+            borderTop:'1px solid #718775',paddingTop:'14px'}},
+            h('button',{type:'button',
+              'data-ap-strike-summons-action':'open-hq',
+              style:productPrimary,onClick:dismissStrike},
+              deps.t('hq.strikeSummons.openHq')),
+            h('button',{type:'button',
+              'data-ap-strike-summons-action':'dismiss',
+              style:{...quiet,borderColor:'#c3b89f',color:'#fff7e8'},
+              onClick:closeUnion},
+              deps.t('hq.strikeSummons.dismiss'))),
+        ):h(UnionPanel,{onOpenStrikeSummons:()=>{
+          setDismissedStrikeKey(null)
+        }}),
       )),page.body):null,
     )
   }

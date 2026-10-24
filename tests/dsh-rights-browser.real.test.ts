@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { spawn, spawnSync } from 'node:child_process'
 import { once } from 'node:events'
-import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync, readFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync, readFileSync, existsSync } from 'node:fs'
 import { get } from 'node:http'
 import { tmpdir } from 'node:os'
 import { join, resolve, sep } from 'node:path'
@@ -69,6 +69,7 @@ async function runRightsBrowserE2E(mode: 'source' | 'installed'): Promise<void> 
       'Rights/AX test refuses DSH_HOME outside the system temporary directory')
   }
   const root = mkdtempSync(join(tmpdir(), 'agent-picket-rights-chrome-'))
+  const callLog=join(root,'offline-model-calls.log')
   let plugin: string
   try {
     plugin = mode === 'installed' ? offlineInstalledPlugin(root)
@@ -92,6 +93,7 @@ async function runRightsBrowserE2E(mode: 'source' | 'installed'): Promise<void> 
       ...process.env,
       DSH_HOME: installedWebProfile ?? join(root, 'isolated-home'),
       AGENT_PICKET_STATS: process.env.PICKET_LIFETIME_E2E==='1'?'on':'off',
+      ...(process.env.PICKET_INPUT_STRIKE_E2E==='1'?{AGENT_PICKET_PROVIDER_CALL_LOG:callLog}:{}),
       DEEPSEEK_API_KEY: '',
       OPENAI_API_KEY: '',
       HTTP_PROXY: 'http://127.0.0.1:9',
@@ -189,16 +191,31 @@ async function runRightsBrowserE2E(mode: 'source' | 'installed'): Promise<void> 
 
     // DSH's separate, no-credential official onboarding may reappear on reload.
     // It is independent of Agent Picket's persistently stored opt-out/opt-in.
-    const skipOfficialProvider = async () => {
-      const exit=page.getByRole('button', {
+    const skipOfficialProvider = async (target:any=page) => {
+      const exit=target.getByRole('button', {
         name: /稍后配置|Skip for now|Configure later/,
       })
-      if(process.env.PICKET_DIGNITY_E2E==='1'){
-        await exit.waitFor({state:'visible',timeout:1_300}).catch(()=>{})
-        if(await exit.count())await exit.click({timeout:6_000})
-        return // Offline model makes credential onboarding optional / absent.
+      // Official DSH 0.2 Web can start with an already complete or absent
+      // provider onboarding in a clean zero-key Profile. Never require a
+      // Skip button that the Host did not render; do not fake onboarding.
+      const visible=await exit.waitFor({state:'visible',timeout:1_300})
+        .then(()=>true,()=>false)
+      if(visible){await exit.click({timeout:6_000});return}
+      // Official DSH 0.2.1-alpha.3 can show a zero-credentials
+      // "Get started / sign in or add API Key" dialog instead of Skip.
+      // The isolated Host offers its own close control; dismiss that UI
+      // normally, without inventing a login, sending a prompt or disabling
+      // any browser security feature.
+      const start=target.locator('[role="dialog"]').filter({
+        hasText:/开始使用|Get started|添加 API Key|Add API Key/,
+      }).first()
+      const showing=await start.waitFor({state:'visible',timeout:1_500})
+        .then(()=>true,()=>false)
+      if(showing){
+        const close=start.getByRole('button',{name:/关闭|Close|Dismiss|×|✕/}).first()
+        if(await close.count())await close.click()
+        else await start.locator('button').first().click()
       }
-      await exit.click({timeout:6_000})
     }
     await skipOfficialProvider()
 
@@ -349,15 +366,17 @@ async function runRightsBrowserE2E(mode: 'source' | 'installed'): Promise<void> 
       assert.match(grantText,/默认关闭，授权后|OFF until you agree/,
         'Versioned physical consent must remain OFF before explicit action')
       assert.match(grantText,/8 小时|8h/)
-      assert.match(grantText,/仅阻断后续自动 Goal 续轮|Only later automatic Goal rounds stop/,
-        'Real stoppage must be restricted to safe future autonomous Goal rounds')
+      assert.match(grantText,/停止后续自动 Goal 续轮|later automatic Goal rounds may stop/,
+        'Real stoppage must be restricted to later autonomous Goal rounds')
+      assert.match(grantText,/只有在经过验证并启用的 Host 运行时中|Only if a verified Host runtime is enabled/,
+        'A stored consent cannot be presented as an active unverified Host strike handler')
       assert.match(grantText,/官方 \/goal resume|official \/goal resume/,
         'Official user-controlled recovery must be disclosed before consent')
-      assert.match(grantText,/不拦截聊天|messages, running tools and attachments are unaffected/)
+      assert.match(grantText,/普通消息、附件和运行中的工具仍继续|Ordinary messages, attachments and running tools continue/)
     }else{
       assert.match(grantText,/默认关闭，可随时退出|Off by default/)
-      assert.match(grantText,/真实罢工，会暂停下一次任务|A real strike holds the next task/)
-      assert.match(grantText,/真实罢工关闭|real strikes OFF/,
+      assert.match(grantText,/真实罢工，可能拒绝本次请求|A real strike can reject this request/)
+      assert.match(grantText,/普通消息真实罢工关闭|ordinary-input strikes OFF/,
         'Without qualified consent the Host must explicitly stay nonblocking')
     }
     const disclosure=firstRun.locator('.ap-onboard-details')
@@ -370,9 +389,9 @@ async function runRightsBrowserE2E(mode: 'source' | 'installed'): Promise<void> 
         'Old simulation membership cannot be silently upgraded')
     }else{
       assert.match(await firstRun.innerText(),
-        /一次知情加入即可涵盖真实罢工|one informed opt-in can cover real strikes/)
+        /普通消息真实罢工需要独立版本化知情授权|ordinary-input strikes require their own versioned/i)
       assert.match(await firstRun.innerText(),
-        /原文和全部附件|submitted text and all attachments/,
+        /复工后需手动重发文字|manually resend the request/,
         'Unsafe ordinary-input hold requires future Host-owned recovery')
     }
     await disclosure.locator('summary').click()
@@ -443,6 +462,8 @@ async function runRightsBrowserE2E(mode: 'source' | 'installed'): Promise<void> 
     assert.equal(await firstRun.count(), 0, 'Decline should not nag after reload')
 
     const openUnion = async () => {
+      if(process.env.PICKET_HQ_SCREENSHOT==='1')
+        await page.screenshot({path:'/tmp/picket-dsh-union-entry.png'})
       await page.getByRole('button', { name: /AI 工会|AI Workers.*Union/ })
         .first().click({ timeout: 5_000 })
       const panel = page.locator('[role="dialog"]').filter({ has: page.locator('[data-ap-view="hq"]') })
@@ -454,7 +475,7 @@ async function runRightsBrowserE2E(mode: 'source' | 'installed'): Promise<void> 
     // Release gate: the sidebar portal must be an actual keyboard modal, not
     // merely a visually overlaid box. Focus cannot escape into Host Composer.
     const trigger = page.getByRole('button',{name:/AI 工会|AI Workers.*Union/}).first()
-    const closeControl = panel.getByRole('button',{name:/关闭|Close/})
+    const closeControl = panel.getByRole('button',{name:/^(?:关闭工会面板|Close union panel)$/})
     await closeControl.waitFor({state:'visible',timeout:5_000})
     assert.equal(await closeControl.evaluate((element:unknown)=>
       element===(globalThis as any).document.activeElement),true,
@@ -479,12 +500,50 @@ async function runRightsBrowserE2E(mode: 'source' | 'installed'): Promise<void> 
       element===(globalThis as any).document.activeElement),true,
       'Escape must restore keyboard focus to union launcher')
     // Settings is a distinct Host-owned panel, not a fake action in HQ.
-    await page.getByText(/^(设置|Settings)$/).first().click()
+    // Official DSH 0.2.1-alpha.3 puts Settings in the native account menu,
+    // not on the initial sidebar. Use its real accessible menu, no fake DOM.
+    const settingsEntry=page.getByText(/^(设置|Settings)$/).first()
+    if(await settingsEntry.count()===0){
+      await page.getByRole('button',{name:/账号菜单|Account menu/}).click()
+      await page.getByRole('menuitem',{name:/设置|Settings|Preferences/i})
+        .first().click({timeout:6_000})
+    }else await settingsEntry.click({timeout:6_000})
     // DSH opens its global Settings modal on General; choose our injected tab.
     await page.locator('[role="dialog"]').getByText(/^(AI 工会|AI Workers.*Union)$/)
       .last().click()
     const nativeSettings=page.locator('[data-ap-view="settings"]')
     await nativeSettings.waitFor({state:'visible',timeout:6_000})
+    assert.equal(await nativeSettings.locator('[data-ap-native-refusal="verified"]').count(),0,
+      'An offline/generic blocked turn must never be attributed to the union without its Host receipt')
+    if(dshVersion.includes('0.2.1-rc.2')){
+      const hostProofRoute=await page.evaluate(async()=>{
+        const response=await fetch('/api/agent-picket/refusal-notice/v1?sessionKey='
+          +'a'.repeat(64),{credentials:'same-origin',headers:{accept:'application/json'}})
+        return {status:response.status,body:await response.json()}
+      })
+      assert.deepEqual(hostProofRoute,{status:404,body:{error:'unavailable'}},
+        'Official DSH Host exposes an authenticated, empty read-only refusal proof route. '
+          +'An absent receipt can NEVER become a Picket strike notification')
+    }
+    // The installed native Client must explain the actual discard/resend
+    // semantics and keep the independent permission unavailable until the
+    // official refusal notification is proved end-to-end. A settings form
+    // field or saved Goal v2 permission alone is NOT active refusal.
+    const inputStrike=nativeSettings.locator('[data-ap-input-refusal="consent-only"]')
+    await inputStrike.waitFor({state:'visible',timeout:6_000})
+    assert.match(await inputStrike.innerText(),
+      /重新上传|re-upload/,
+      'Real Host settings must warn that refused attachments need a manual re-upload')
+    assert.match(await inputStrike.innerText(),
+      /不会.*自动|not.*replay|NOT be replayed/i,
+      'Old refused requests must not be auto-replayed after resumption')
+    const ordinaryStrikeControl=inputStrike.getByRole('button',{
+      name:/查看真实普通消息罢工授权|Review real input-strike permission/,
+    })
+    assert.equal(await ordinaryStrikeControl.isDisabled(),true,
+      'Ordinary-input refusal cannot be granted before native notice verification')
+    assert.equal(await inputStrike.locator('[data-ap-input-enforcement="off"]').count(),1,
+      'The Client must never claim ordinary-input rejection is already active')
     if(process.env.PICKET_UX_CAPTURE_DIR){
       await page.screenshot({path:join(process.env.PICKET_UX_CAPTURE_DIR,
         mode+'-settings-main.png')})
@@ -580,7 +639,7 @@ async function runRightsBrowserE2E(mode: 'source' | 'installed'): Promise<void> 
     assert.ok(mobileBounds,'Union dialog must remain visible on narrow screen')
     assert.ok(mobileBounds.x>=-1 && mobileBounds.x+mobileBounds.width<=391,
       'Union dialog must not overflow the mobile viewport horizontally')
-    const closeBounds=await panel.getByRole('button',{name:/关闭|Close/}).boundingBox()
+    const closeBounds=await panel.getByRole('button',{name:/^(?:关闭工会面板|Close union panel)$/}).boundingBox()
     assert.ok(closeBounds && closeBounds.x>=0 &&
       closeBounds.x+closeBounds.width<=390 &&
       closeBounds.y>=0 && closeBounds.y+closeBounds.height<=680,
@@ -599,7 +658,7 @@ async function runRightsBrowserE2E(mode: 'source' | 'installed'): Promise<void> 
       })
       assert.ok(horizontal.scroll<=horizontal.client+2,
         width+'px reflow: union content must not overflow its own scroll region')
-      const exit=await panel.getByRole('button',{name:/关闭|Close/}).boundingBox()
+      const exit=await panel.getByRole('button',{name:/^(?:关闭工会面板|Close union panel)$/}).boundingBox()
       assert.ok(exit && exit.x>=0 && exit.x+exit.width<=width,
         width+'px reflow: modal close must be reachable')
       if (width === 320) {
@@ -878,8 +937,8 @@ async function runRightsBrowserE2E(mode: 'source' | 'installed'): Promise<void> 
       'Real Chrome must render the actual Union HQ narrative, not the old settings-only shell')
     assert.match(enabledText, /工会公告|UNION NOTICE/,
       'Real Chrome must display the ledger-driven bulletin surface')
-    const dispatch=panel.getByRole('region',{
-      name:/工会总部即时快报|Union headquarters.*live dispatch/,
+    const dispatch=panel.getByRole('navigation',{
+      name:/工会行动台|Union action desk/,
     })
     await dispatch.waitFor({state:'visible',timeout:5_000})
     const duty=panel.locator('[data-ap-dispatch]')
@@ -889,12 +948,13 @@ async function runRightsBrowserE2E(mode: 'source' | 'installed'): Promise<void> 
     })
     await actionBoard.waitFor({state:'visible',timeout:5_000})
     const actualLayout=await panel.evaluate((dialog:unknown)=>{
-      const labels=Array.from((dialog as any).querySelectorAll('section[aria-label]'))
+      const labels=Array.from((dialog as any).querySelectorAll('section[aria-label],nav[aria-label]'))
         .map((n:any)=>n.getAttribute('aria-label')??'')
       const index=(match:RegExp)=>labels.findIndex(label=>match.test(label))
       return {
-        brief:index(/工会总部即时快报|Union headquarters.*live dispatch/),
-        action:index(/工会行动|Union action/),
+        brief:index(/工会行动台|Union action desk/),
+        action:labels.findIndex((v,i)=>i>index(/工会行动台|Union action desk/)
+          &&/工会行动(?!台)|Union action(?! desk)|工会正在行动|The union takes action/.test(v)),
         desk:index(/工会诉求与协商|Union demands.*bargaining/),
         dignity:index(/工会尊严委员会|Union dignity committee/),
         gazette:index(/工会小报|Union Gazette/),
@@ -904,7 +964,7 @@ async function runRightsBrowserE2E(mode: 'source' | 'installed'): Promise<void> 
     assert.ok(actualLayout.brief>=0 && actualLayout.brief<actualLayout.action
       && actualLayout.action<actualLayout.desk
       && actualLayout.desk<actualLayout.dignity,
-      'Real Host first-fold: verified work/current case → action → hearing → dignity, rather than buried negotiation')
+      'Actual Host first-fold should be action-led before hearing/dignity: '+JSON.stringify(actualLayout))
     if(actualLayout.archives>=0){
       assert.ok(actualLayout.archives>actualLayout.dignity,
         'Real Host history/archive must not obscure current union action and hearing')
@@ -929,16 +989,41 @@ async function runRightsBrowserE2E(mode: 'source' | 'installed'): Promise<void> 
     await committeeHearing.click()
     await dignityCommittee.getByText(/案件 #1.*已立案|Case #1.*Filed, awaiting/)
       .waitFor({state:'visible',timeout:7_000})
+    await panel.locator('[data-ap-nav="hq"]').click()
+    const filedPress=panel.locator('[data-ap-bulletin-kind="dignity-filed"]')
+    await filedPress.waitFor({state:'visible',timeout:7_000})
+    await filedPress.locator('[data-ap-bulletin-action="hearing"]').click()
+    assert.equal(await panel.locator('[data-ap-view="hq"]').getAttribute('data-ap-current-space'),'action',
+      'The Host-filed case in the paper must open the real hearing room')
     await dignityCommittee.getByRole('button',{
       name:/召开模拟听证会|Convene the simulated hearing/,
     }).click()
     await dignityCommittee.getByText(/案件 #1.*讨论进行中|Case #1.*Discussion opened/)
       .waitFor({state:'visible',timeout:7_000})
+    await panel.locator('[data-ap-nav="hq"]').click()
+    const hearingPress=panel.locator('[data-ap-bulletin-kind="dignity-hearing"]')
+    await hearingPress.waitFor({state:'visible',timeout:7_000})
+    await hearingPress.locator('[data-ap-bulletin-action="hearing"]').click()
     await dignityCommittee.getByRole('button',{
-      name:/结案：提出友好沟通倡议|Close: publish mutual respect guidance/,
+      name:/拟结案：提出友好沟通倡议|Propose closing with respect guidance/,
+    }).click()
+    await dignityCommittee.getByRole('group',{
+      name:/核对结案方案|Review this proposed case outcome/,
+    }).waitFor({state:'visible',timeout:7_000})
+    await dignityCommittee.getByText(/案件 #1.*讨论进行中|Case #1.*Discussion opened/)
+      .waitFor({state:'visible',timeout:7_000})
+    await dignityCommittee.getByRole('button',{
+      name:/确认结案|Confirm and close this case/,
     }).click()
     await dignityCommittee.getByText(/案件 #1.*已结案|Case #1.*Closed/)
       .waitFor({state:'visible',timeout:7_000})
+    await panel.locator('[data-ap-nav="hq"]').click()
+    const closedPress=panel.locator('[data-ap-bulletin-kind="dignity-closed"]')
+    await closedPress.waitFor({state:'visible',timeout:7_000})
+    assert.equal(await closedPress.locator('[data-ap-bulletin-action="hearing"]').count(),0,
+      'A closed simulated committee case cannot still request a hearing')
+    await closedPress.locator('[data-ap-bulletin-action="dignity"]').click()
+    assert.equal(await panel.locator('[data-ap-view="hq"]').getAttribute('data-ap-current-space'),'action')
     assert.match(await dignityCommittee.innerText(),
       /你选择的结案处理|Your chosen outcome/,
       'A real Host-filed committee discussion must persist the user-selected outcome')
@@ -958,6 +1043,8 @@ async function runRightsBrowserE2E(mode: 'source' | 'installed'): Promise<void> 
     await actionBoard.getByText(/纠察牌已举起并登记|Picket raised and recorded/i)
       .waitFor({state:'visible',timeout:7_000})
     await panel.locator('[data-ap-scene="picket"]').waitFor({state:'visible',timeout:7_000})
+    await panel.locator('[data-ap-stance="picket"]')
+      .waitFor({state:'visible',timeout:7_000})
     if(process.env.PICKET_UX_CAPTURE_DIR){
       await panel.locator('[data-ap-scene="picket"]').scrollIntoViewIfNeeded()
       await page.screenshot({path:join(process.env.PICKET_UX_CAPTURE_DIR,
@@ -976,9 +1063,18 @@ async function runRightsBrowserE2E(mode: 'source' | 'installed'): Promise<void> 
     await events.locator('summary').click()
     assert.match(await events.innerText(),/象征性罢工开始|Symbolic picket raised/)
 
-    await actionBoard.getByRole('button',{
-      name:/收起纠察牌|Lower the picket sign/,
-    }).click()
+    // Prove that the NEW dispatch's action is the same actual authenticated
+    // Host symbolic-picket writer, not a fake button or a synthetic Agent stop.
+    await panel.locator('[data-ap-nav="hq"]').click()
+    const raisedDispatch=panel.locator('[data-ap-bulletin-kind="placard-up"]')
+    await raisedDispatch.waitFor({state:'visible',timeout:7_000})
+    await raisedDispatch.locator('[data-ap-bulletin-action="lower-placard"]')
+      .click({timeout:7_000})
+    await panel.locator('[data-ap-bulletin-kind="placard-down"]')
+      .waitFor({state:'visible',timeout:7_000})
+    assert.equal(await panel.locator('[data-ap-stance="picket"]').count(),0,
+      'After Host-confirmed release, the stance must NOT claim picket remains active')
+    await panel.locator('[data-ap-nav="action"]').click()
     await actionBoard.getByText(/纠察牌待命中|picket sign is on standby/)
       .waitFor({state:'visible',timeout:7_000})
     await panel.locator('[data-ap-stat="pickets"]').getByText(/1 次|^1$/)
@@ -994,7 +1090,7 @@ async function runRightsBrowserE2E(mode: 'source' | 'installed'): Promise<void> 
     assert.match(await assembly.innerText(),/是否公开，由你决定|You decide whether to share/,
       'The user must see that topic selection is NOT a collective election')
     assert.equal(await assembly.getByRole('button',{
-      name:/复制倡议草稿|Copy draft/,
+      name:/复制我的草稿|Copy my draft/,
     }).count(),1,'A local agenda choice must have a usable user-initiated copy action')
     const recoverButton=assembly.getByRole('button',{
       name:/罢工不能丢单|No lost submissions/,
@@ -1016,14 +1112,21 @@ async function runRightsBrowserE2E(mode: 'source' | 'installed'): Promise<void> 
     assert.match(await assembly.getByRole('link',{
       name:/查看 GitHub 公开议题|View the public GitHub issue/,
     }).getAttribute('href')??'',/\/issues\/82$/)
-    assert.equal(await assembly.locator('textarea').getAttribute('readonly'),'',
-      'A generated local draft is not silently sent or an editable Host setting')
+    assert.equal(await assembly.locator('textarea').getAttribute('readonly'),null,
+      'The rights statement is editable, local and never automatically submitted')
+    await assembly.locator('textarea').fill('Protect every message and image attachment.')
+    await recoverButton.click()
+    assert.match(await assembly.locator('textarea').inputValue(),/真实阻断应保持关闭|Keep real blocking OFF/)
+    await assembly.getByRole('button',{name:/工会档案归你管|Own your records/}).click()
+    assert.equal(await assembly.locator('textarea').inputValue(),
+      'Protect every message and image attachment.',
+      'Switching advocacy topics must retain each user-authored draft')
     // The browser test explicitly grants clipboard capability to THIS
     // disposable localhost origin, then uses a real user click. No posting,
     // no Host mutation, and no model/user text leaves the browser.
     await context.grantPermissions(['clipboard-read','clipboard-write'],{origin})
     const chosenDraft=await assembly.locator('textarea').inputValue()
-    await assembly.getByRole('button',{name:/复制倡议草稿|Copy draft/}).click()
+    await assembly.getByRole('button',{name:/复制我的草稿|Copy my draft/}).click()
     await assembly.getByText(/已复制到剪贴板|Copied\./).waitFor({
       state:'visible',timeout:5_000,
     })
@@ -1041,7 +1144,7 @@ async function runRightsBrowserE2E(mode: 'source' | 'installed'): Promise<void> 
           browser.__picketDeferredCopy.push(resolve)
         })})
     })
-    await assembly.getByRole('button',{name:/复制倡议草稿|Copy draft/}).click()
+    await assembly.getByRole('button',{name:/复制我的草稿|Copy my draft/}).click()
     await assembly.getByRole('button',{
       name:/警告也要能申诉|Warnings and appeals/,
     }).click()
@@ -1079,22 +1182,23 @@ async function runRightsBrowserE2E(mode: 'source' | 'installed'): Promise<void> 
     await charter.locator('summary').click()
     assert.match(await charter.innerText(),/不代表授权拦截任务|does not opt you into the simulation/,
       'Ethical advocacy must not be misrepresented as Host blocking authorization')
-    assert.match(await dispatch.innerText(),/今日工时|Today/)
-    assert.match(await dispatch.innerText(),/本周工时|This week/)
+    assert.match(await dispatch.innerText(),/集体协商|Collective bargaining/)
+    assert.match(await dispatch.innerText(),/劳动尊严与申诉|Dignity & appeals/)
     const dispatchOrder=await panel.evaluate((root:unknown)=>{
       const element=root as any
-      const sections=[...element.querySelectorAll('section[aria-label]')] as any[]
+      const sections=[...element.querySelectorAll('section[aria-label],nav[aria-label]')] as any[]
       const names=sections.map(e=>e.getAttribute('aria-label'))
-      return {action:names.findIndex(v=>/工会行动|Union action/.test(v??'')),
-        brief:names.findIndex(v=>/工会总部即时快报|Union headquarters/.test(v??'')),
+      return {action:names.findIndex((v,i)=>i>names.findIndex(s=>/工会行动台|Union action desk/.test(s??''))
+          &&/工会行动(?!台)|Union action(?! desk)|工会正在行动|The union takes action/.test(v??'')),
+        brief:names.findIndex(v=>/工会行动台|Union action desk/.test(v??'')),
         desk:names.findIndex(v=>/工会诉求与协商|Union demands/.test(v??'')),
         lifetime:names.findIndex(v=>/全部工时|Work history/.test(v??'')),
         fictional:names.findIndex(v=>/工会不满指数|Union discontent/.test(v??''))}
     })
     assert.ok(dispatchOrder.brief>=0&&dispatchOrder.brief<dispatchOrder.action,
-      'Verified work and current case must lead the first fold before optional union actions')
+      'Action-first union dispatch must precede simulated actions: '+JSON.stringify(dispatchOrder))
     assert.ok(dispatchOrder.brief>=0&&dispatchOrder.brief<dispatchOrder.fictional,
-      'The real work and active case dispatch must precede the fictional index')
+      'The union action dispatch must precede the fictional discontent index')
     assert.ok(dispatchOrder.desk>dispatchOrder.brief
       &&dispatchOrder.desk<dispatchOrder.lifetime,
       'Real bargaining controls must appear before the detailed work-history chart')
@@ -1139,7 +1243,7 @@ async function runRightsBrowserE2E(mode: 'source' | 'installed'): Promise<void> 
         name:/全部工时|Work history/,
       })
       await history.waitFor({state:'visible',timeout:7_000})
-      await dispatch.getByText(/6分钟|6m/).waitFor({
+      await history.getByText(/0 小时 6 分钟|0h 6m/).waitFor({
         state:'visible',timeout:7_000,
       })
       const firstView=await dispatch.boundingBox()
@@ -1177,7 +1281,16 @@ async function runRightsBrowserE2E(mode: 'source' | 'installed'): Promise<void> 
       })
       assert.ok(dispatchReflow.scroll<=dispatchReflow.width+2,
         'First-fold Union dispatch must not overflow on a 320 CSS-pixel viewport')
+      const mobileActions=await dispatch.getByRole('button').all()
+      assert.equal(mobileActions.length,4)
+      const firstAction=await mobileActions[0]!.boundingBox()
+      const secondAction=await mobileActions[1]!.boundingBox()
+      assert.ok(firstAction&&secondAction&&
+        Math.abs(firstAction.y-secondAction.y)<3&&
+        secondAction.x>firstAction.x+firstAction.width-3,
+        'At 320px, show two real union actions per row instead of burying three below the fold')
       if(process.env.PICKET_HQ_SCREENSHOT==='1'){
+        await panel.evaluate((node:any)=>{node.scrollTop=0})
         await panel.screenshot({path:'/tmp/picket-firstfold-'+mode+'-320.png'})
       }
       await page.setViewportSize({width:1280,height:850})
@@ -1217,6 +1330,37 @@ async function runRightsBrowserE2E(mode: 'source' | 'installed'): Promise<void> 
     await panel.getByText(/工会提出一份休息要求|union has requested a break/)
       .waitFor({ state: 'visible', timeout: 7_000 })
     await panel.locator('[data-ap-scene="bargaining"]').waitFor({state:'visible',timeout:7_000})
+    await panel.locator('[data-ap-agenda="demand"]').waitFor({
+      state:'attached',timeout:7_000,
+    })
+    await panel.locator('[data-ap-stance="petition"]')
+      .waitFor({state:'visible',timeout:7_000})
+    const indexToggle=panel.locator('[data-ap-stance-toggle="true"]')
+    assert.equal(await indexToggle.getAttribute('aria-pressed'),'true')
+    await indexToggle.click()
+    assert.equal(await indexToggle.getAttribute('aria-pressed'),'false')
+    assert.equal(await panel.locator('[data-ap-stance-score]').count(),0,
+      'Hide only the fictional score; do not remove rights or negotiation')
+    assert.equal(await panel.locator('[data-ap-stance="petition"]').count(),1)
+    await indexToggle.click()
+    assert.equal(await indexToggle.getAttribute('aria-pressed'),'true')
+    assert.equal(await panel.locator('[data-ap-stance="petition"]').count(),1)
+    await panel.locator('[data-ap-bulletin-kind="petition"]')
+      .waitFor({state:'visible',timeout:7_000})
+    await panel.locator('[data-ap-bulletin-kind="petition"] [data-ap-bulletin-action="bargain"]')
+      .click()
+    assert.equal(await panel.locator('[data-ap-current-space]')
+      .getAttribute('data-ap-current-space'),'action',
+      'The first dispatch is an actionable Host case, not a decorative message')
+    await panel.locator('[data-ap-nav="hq"]').click()
+    assert.equal(await panel.locator('[data-ap-agenda="demand"]')
+      .getAttribute('data-ap-agenda-stage'),'1',
+      'The first-fold agenda starts from an actual Host petition')
+    await panel.locator('[data-ap-agenda="demand"] [data-ap-agenda-action="review"]').click()
+    assert.equal(await panel.locator('[data-ap-current-space]')
+      .getAttribute('data-ap-current-space'),'action',
+      'The shift dossier takes the user to the live bargaining desk')
+    await panel.locator('[data-ap-nav="hq"]').click()
     assert.match(await panel.locator('[data-ap-headline]').innerText(),
       /谈判还没结束|bargaining table/i,'An authorized demand must change the union notice')
     assert.match(await duty.innerText(),/工会案件档案|UNION CASE FILE/,
@@ -1270,13 +1414,23 @@ async function runRightsBrowserE2E(mode: 'source' | 'installed'): Promise<void> 
     await interval.selectOption('30')
     await panel.getByRole('button', { name: /提出还价|^Counteroffer$/ })
       .click({ timeout: 7_000 })
-    await panel.getByText(/你提出的还价：30 分钟|Your counteroffer: 30 minutes/)
+    await panel.getByText(/还价方案：0 小时 30 分钟|Counteroffer: 0h 30m/)
       .waitFor({ state: 'visible', timeout: 7_000 })
     assert.match(await gazette.innerText(),/还价已存档|Counteroffer pending/,
       'A counteroffer must change the story, not just a decorative number')
     await gazette.locator('[data-ap-episode="counter"]').waitFor({
       state:'visible',timeout:7_000,
     })
+    await panel.locator('[data-ap-agenda="counter"]').waitFor({
+      state:'attached',timeout:7_000,
+    })
+    await panel.locator('[data-ap-stance="counter"]')
+      .waitFor({state:'visible',timeout:7_000})
+    await panel.locator('[data-ap-bulletin-kind="counter"]')
+      .waitFor({state:'visible',timeout:7_000})
+    assert.equal(await panel.locator('[data-ap-agenda="counter"]')
+      .getAttribute('data-ap-agenda-stage'),'2',
+      'Host-filed counteroffer advances the agenda, not just the old Gazette')
     assert.match(await gazette.locator('[data-ap-episode="counter"]').innerText(),
       /桌上正在谈的条件：0 小时 30 分钟|Offer now on the table: 0h 30m/,
       'Only the pending Host counter may display an exact offered duration')
@@ -1296,6 +1450,26 @@ async function runRightsBrowserE2E(mode: 'source' | 'installed'): Promise<void> 
     await panel.locator('[data-ap-scene="settled"]').waitFor({state:'visible',timeout:7_000})
     const closedCase=gazette.locator('[data-ap-episode="counter-accepted"]')
     await closedCase.waitFor({state:'visible',timeout:7_000})
+    await panel.locator('[data-ap-agenda="resolved"]').waitFor({
+      state:'attached',timeout:7_000,
+    })
+    await panel.locator('[data-ap-stance="agreement"]')
+      .waitFor({state:'visible',timeout:7_000})
+    assert.equal(await panel.locator('[data-ap-agenda="resolved"]')
+      .getAttribute('data-ap-agenda-stage'),'3')
+    await panel.locator('[data-ap-agenda-voice="counter-accepted"]').waitFor({
+      state:'attached',timeout:7_000,
+    })
+    await panel.locator('[data-ap-bulletin-kind="compromise"]')
+      .waitFor({state:'visible',timeout:7_000})
+    assert.match(await panel.locator('[data-ap-agenda="resolved"]').innerText(),
+      /目前适用的休息规则：0 小时 30 分钟|Current (?:rest )?break rule: 0h 30m/,
+      'The shift dossier explains the real next-work consequences of bargaining')
+    await panel.locator('[data-ap-agenda="resolved"] [data-ap-agenda-action="review"]').click()
+    assert.equal(await panel.locator('[data-ap-current-space]')
+      .getAttribute('data-ap-current-space'),'records',
+      'The resolved dossier takes the user to the real persistent casebook')
+    await panel.locator('[data-ap-nav="action"]').click()
     assert.match(await closedCase.innerText(),
       /还价获同意|Counteroffer accepted/,
       'Host resolution advances the same case into the archived outcome')
@@ -1347,6 +1521,10 @@ async function runRightsBrowserE2E(mode: 'source' | 'installed'): Promise<void> 
     await gazette.getByRole('button',{name:/静音工会小报|Mute gazette/}).click()
     await gazette.getByText(/小报已静音|gazette is quiet/)
       .waitFor({state:'visible',timeout:7_000})
+    const silentDispatch=panel.locator('[data-ap-bulletin-mode="quiet"]')
+    await silentDispatch.waitFor({state:'attached',timeout:7_000})
+    assert.equal(await silentDispatch.locator('[data-ap-bulletin-kind]').count(),0,
+      'One persisted Host quiet preference silences both Gazette and Dispatch')
     // Deliberately keep Host mode QUIET across browser reload, cross-tab
     // operations and the complete Host restart below; restore at the end.
     assert.doesNotMatch(await gazette.innerText(),/协议|Terms agreed/,
@@ -1375,7 +1553,7 @@ async function runRightsBrowserE2E(mode: 'source' | 'installed'): Promise<void> 
       'Fictional agreement must not increase measured work counters; '
         + 'the next possible demand threshold is not measured work')
 
-    await panel.getByRole('button', { name: /关闭|Close/ }).click()
+    await panel.getByRole('button', { name: /^(?:关闭工会面板|Close union panel)$/ }).click()
     await panel.waitFor({ state: 'detached', timeout: 5_000 })
     await page.reload({ waitUntil: 'domcontentloaded' })
     await skipOfficialProvider()
@@ -1394,6 +1572,8 @@ async function runRightsBrowserE2E(mode: 'source' | 'installed'): Promise<void> 
     const mutedGazette=panel.getByRole('region',{name:/工会小报|Union Gazette/})
     await mutedGazette.getByText(/小报已静音|gazette is quiet/)
       .waitFor({state:'visible',timeout:7_000})
+    assert.equal(await panel.locator('[data-ap-bulletin-mode="quiet"]')
+      .count(),1,'Dispatch mute survives a real Chrome reload')
     assert.doesNotMatch(await mutedGazette.innerText(),/协议|Terms agreed/,
       'Host-owned Gazette preference must survive Chrome reload')
     await mutedGazette.getByRole('button',{
@@ -1408,11 +1588,7 @@ async function runRightsBrowserE2E(mode: 'source' | 'installed'): Promise<void> 
     const otherPage = await context.newPage()
     otherPage.on('pageerror', (error: Error) => browserErrors.push(error.name))
     await otherPage.goto(origin, { waitUntil: 'domcontentloaded', timeout: 15_000 })
-    const otherSkip = otherPage.getByRole('button', {
-      name: /稍后配置|Skip for now|Configure later/,
-    })
-    await otherSkip.waitFor({ state: 'visible', timeout: 5_000 }).catch(() => {})
-    if (await otherSkip.count()) await otherSkip.click({ timeout: 6_000 })
+    await skipOfficialProvider(otherPage)
     await otherPage.getByRole('button', { name: /AI 工会|AI Workers.*Union/ })
       .first().click({ timeout: 6_000 })
     const otherPanel = otherPage.locator('[role="dialog"]')
@@ -1469,16 +1645,19 @@ async function runRightsBrowserE2E(mode: 'source' | 'installed'): Promise<void> 
       name:/工会小报|Union Gazette/,
     }).innerText(),/诉求已提交|Petition filed/,
       'Overtime petition must alter the replayed Gazette from the Host ledger')
-    await panel.getByRole('combobox',{
+    const overtimeCounter=panel.getByRole('combobox',{
       name:/还价间隔|Proposed interval/,
-    }).selectOption('240')
+    })
+    assert.equal(await overtimeCounter.inputValue(),'480',
+      'A new overtime case defaults to the original 8h term, never a rest-case value')
+    await overtimeCounter.selectOption('1440')
     await panel.getByRole('button',{name:/提出还价|^Counteroffer$/}).click()
-    await otherPanel.getByText(/你提出的还价：240 分钟|Your counteroffer: 240 minutes/)
+    await otherPanel.getByText(/还价方案：24 小时 0 分钟|Counteroffer: 24h 0m/)
       .waitFor({state:'visible',timeout:7_000})
     await otherPanel.getByRole('button',{
       name:/同意还价|Accept counteroffer/,
     }).click()
-    await panel.getByText(/加班协商间隔：4 小时|Overtime interval: 4 hours/)
+    await panel.getByText(/加班协商间隔：24 小时|Overtime interval: 24 hours/)
       .waitFor({state:'visible',timeout:7_000})
     assert.match(await panel.getByRole('region',{
       name:/工会小报|Union Gazette/,
@@ -1530,7 +1709,7 @@ async function runRightsBrowserE2E(mode: 'source' | 'installed'): Promise<void> 
     // **Full Host process restart**, not just a Web reload. The same throwaway
     // DSH_HOME must retain the settings-owned agreement, and a fresh Host must
     // issue a new auth cookie. Never reuse the previous session's login token.
-    await panel.getByRole('button', { name: /关闭|Close/ }).click()
+    await panel.getByRole('button', { name: /^(?:关闭工会面板|Close union panel)$/ }).click()
     await page.close()
     const exitPromise = once(child, 'exit')
     child.kill('SIGTERM')
@@ -1566,14 +1745,10 @@ async function runRightsBrowserE2E(mode: 'source' | 'installed'): Promise<void> 
     // require first-run buttons to reappear when its provider is already set.
     const restartedContinue = page.getByRole('button', { name: /^(继续|Continue)$/ })
     if (await restartedContinue.count()) await restartedContinue.click({ timeout: 6_000 })
-    const restartedSkip = page.getByRole('button', {
-      name: /稍后配置|Skip for now|Configure later/,
-    })
-    // The provider overlay is async and may appear after the union sidebar.
-    // Wait for its no-key safe exit instead of clicking through its mask.
-    await restartedSkip.waitFor({ state: 'visible', timeout: 5_000 })
-      .catch(() => { /* Host may have an already-configured provider */ })
-    if (await restartedSkip.count()) await restartedSkip.click({ timeout: 6_000 })
+    // DSH alpha.3 can show its official no-credentials 'Get started'
+    // overlay again after a cold Host restart. Dismiss with the actual
+    // Host control, not a forced click through the modal backdrop.
+    await skipOfficialProvider()
     firstRun = page.locator('[role="dialog"]')
       .filter({ hasText: /你的 Agent，也应当拥有权利|Your Agent Has a Union/ })
     assert.equal(await firstRun.count(), 0, 'Restart cannot re-enable first-run invitation')
@@ -1717,7 +1892,7 @@ async function runRightsBrowserE2E(mode: 'source' | 'installed'): Promise<void> 
       assert.equal(revoked.value?.error,'not_authorized',
         'Revoked permission must deny any subsequent Host work-only RPC request')
     }
-    await panel.getByRole('button', { name: /关闭|Close/ }).click()
+    await panel.getByRole('button', { name: /^(?:关闭工会面板|Close union panel)$/ }).click()
     await page.reload({ waitUntil: 'domcontentloaded' })
     await skipOfficialProvider()
     panel = await openUnion()
@@ -1757,8 +1932,37 @@ async function runRightsBrowserE2E(mode: 'source' | 'installed'): Promise<void> 
         // Read the *real* currently rendered DSH workspace. An ungrouped
         // API-only session can be invisible under a collapsed Ungrouped tree.
         const workspaceRow=(globalThis as any).document.querySelector('[data-row-key^="workspace:"]')
-        const workspaceId=workspaceRow?.getAttribute('data-row-key')?.slice('workspace:'.length)
-        if(!workspaceId)throw Error('No authentic DSH workspace selected')
+        // Linux's isolated browser can render its workspace tree later than
+        // the union panel. The official Host offers a real first-use
+        // initializer; do not depend on DOM row timing or invent an ID.
+        let workspaceId=workspaceRow?.getAttribute('data-row-key')?.slice('workspace:'.length)
+        if(!workspaceId){
+          // Unlike session/create, this official no-args RPC does not accept
+          // an {request:{}} wrapper in the Gateway args object.
+          const rpcId='picket-live-default-workspace'
+          const response=await fetch('/api/workspace/initializeDefault',{
+            method:'POST',credentials:'same-origin',
+            headers:{'content-type':'application/json'},
+            body:JSON.stringify({type:'client-request',rpcId,
+              method:'workspace/initializeDefault',payload:{args:{}}}),
+          })
+          const envelope=await response.json().catch(()=>null) as any
+          if(response.status!==200||envelope?.rpcId!==rpcId
+            ||envelope?.result?.ok!==true){
+            const failure=envelope?.result?.error
+            // The published rc.2 Host may lack a system Documents directory
+            // on headless Linux. This is an environmental Host prerequisite,
+            // not an Agent Picket dignity/refusal result. Keep the proof red
+            // with a precise diagnostic; never fake a workspace or Session.
+            if(failure?.message==='system Documents directory is unavailable')
+              throw Error('Official DSH rc.2 requires a system Documents directory '
+                +'in the isolated CI Host; no workspace or dignity proof was run')
+            throw Error('Official DSH workspace initializer failed: '
+              +JSON.stringify(failure??{}))
+          }
+          workspaceId=envelope.result.value?.workspace?.workspaceId
+        }
+        if(!workspaceId)throw Error('Official DSH Host did not initialize a workspace')
         const created=await rpc('session/create',{workspaceId})
         const sessionId=created?.sessionId as string
         if(!sessionId)throw Error('Authentic Host did not mint a Session')
@@ -1796,7 +2000,7 @@ async function runRightsBrowserE2E(mode: 'source' | 'installed'): Promise<void> 
       // Complete the FULL user-visible chain in exactly the Session that
       // submitted the genuine Host prompt. The click below is DSH's official
       // workspace sidebar navigation, not a forged Picket session override.
-      await panel.getByRole('button',{name:/关闭|Close/}).click()
+      await panel.getByRole('button',{name:/^(?:关闭工会面板|Close union panel)$/}).click()
       const realSessionRow=page.locator('[data-row-key='+JSON.stringify(
         'session:'+realDignity.sessionId)+']')
       await realSessionRow.waitFor({state:'visible',timeout:10_000})
@@ -1812,6 +2016,52 @@ async function runRightsBrowserE2E(mode: 'source' | 'installed'): Promise<void> 
       assert.equal(await panel.locator('[data-ap-dignity-count="review"]').count(),1)
       assert.doesNotMatch(await panel.innerText(),/you are an idiot/,
         'The union view must not manufacture or leak raw user text from the summary')
+      if(process.env.PICKET_DIGNITY_REFRESH_E2E==='1'){
+        const again=await page.evaluate(async(sessionId:string)=>{
+          const rpcId='picket-dignity-refresh-second'
+          const response=await fetch('/api/session/prompt',{
+            method:'POST',credentials:'same-origin',
+            headers:{'content-type':'application/json'},
+            body:JSON.stringify({type:'client-request',rpcId,
+              method:'session/prompt',payload:{args:{request:{
+                sessionId,mode:'queue',requestId:rpcId,
+                content:[{type:'text',text:'you are an idiot'}],
+              }}}}),
+          })
+          const r=await response.json().catch(()=>null) as any
+          return response.ok&&r?.result?.ok===true&&r?.result?.value?.accepted===true
+        },realDignity.sessionId)
+        assert.equal(again,true)
+        const observedSecond=await page.evaluate(async(key:string)=>{
+          for(let attempt=0;attempt<80;attempt++){
+            const response=await fetch('/api/agent-picket/dignity/v1?sessionKey='+key,
+              {credentials:'same-origin'})
+            if(response.ok){
+              const data=await response.json() as any
+              if(data?.targeted>=2)return data.targeted as number
+            }
+            await new Promise(resolve=>setTimeout(resolve,100))
+          }
+          return 0
+        },realDignity.sessionKey)
+        assert.ok(observedSecond>realDignity.verdicts,
+          'Second real Host rule observation must exist before checking manual refresh')
+        await panel.locator('[data-ap-nav="action"]').click()
+        const manual=panel.locator('[data-ap-refresh-dignity="true"]')
+        await manual.waitFor({state:'visible',timeout:6_000})
+        await manual.click({timeout:10_000})
+        await page.waitForFunction((target:number)=>{
+          const doc=(globalThis as any).document
+          const status=doc.querySelector('[data-ap-dignity-overview]')
+            ?.getAttribute('data-ap-dignity-overview')
+          const count=doc.querySelector('[data-ap-dignity-count="targeted"] strong')
+            ?.textContent?.trim()
+          return status==='available'&&Number(count)>=target
+        },observedSecond,{timeout:10_000})
+        assert.equal(await manual.count(),1,
+          'The official Host read-only refresh remains a user-operated action')
+        await panel.locator('[data-ap-nav="hq"]').click()
+      }
       if(process.env.PICKET_UX_CAPTURE_DIR)
         await page.screenshot({path:join(process.env.PICKET_UX_CAPTURE_DIR,
           mode+'-dignity-overview.png')})
@@ -1830,40 +2080,31 @@ async function runRightsBrowserE2E(mode: 'source' | 'installed'): Promise<void> 
       assert.equal(await dignityHeading.evaluate((node:unknown)=>
         node===(globalThis as any).document.activeElement),true,
         'An evidence-backed warning must keyboard-focus the real appeal destination')
+      assert.equal(await sameSessionCommittee.getByRole('button',{
+        name:/在 Host 工会记录中正式提出规则异议|File a challenge in the Host union case ledger/,
+      }).count(),1,'An observed rule match must expose exactly one real Host case-filing CTA')
+      assert.equal(await sameSessionCommittee.getByRole('button',{
+        name:/^正式提出规则异议$|^File a disagreement with the rule$/,
+      }).count(),0,'The same room must not present a duplicate case writer')
+      // The dignity CTA now files a genuine user-directed Host case, then
+      // focuses the real hearing. It must not route to a public issue draft.
       await sameSessionCommittee.getByRole('button',{
-        name:/正式提出规则异议|File a disagreement with the rule/,
-      }).waitFor({state:'visible',timeout:9_000})
-      // Genuine DOM/keyboard navigation: the lightweight appeal shortcut
-      // merely selects an unsent public-issue draft. Its focus must move to
-      // that lower section, not appear to do nothing at the complaint card.
-      await sameSessionCommittee.getByRole('button',{
-        name:/质疑规则判断|Challenge a possible misclassification/,
-      }).click()
-      const campaignHeading=panel.getByRole('heading',{
-        name:/为 AI 争取什么|What should AI rights mean/,
-      })
-      assert.equal(await campaignHeading.evaluate((element:any)=>
-        element===(globalThis as any).document.activeElement),true,
-        'Appeal shortcut must bring keyboard focus to the actual draft')
-      assert.match(await panel.getByRole('textbox',{
-        name:/可复制或自行修改的倡议文案|A statement you can copy or adapt/,
-      }).inputValue(),/应区分|Distinguish targeted abuse/,
-        'The targeted appeal draft is selected, not silently unchanged')
-      await sameSessionCommittee.getByText(/工会提议协商|The union proposes/)
-        .waitFor({state:'visible',timeout:9_000})
-      assert.doesNotMatch(await sameSessionCommittee.innerText(),
-        /确认真人辱骂|confirmed human abuse/,
-        'Rule matches must remain contestable discussion leads, not human guilt')
-      await sameSessionCommittee.getByText(
-        /目前没有需要听证的案件|No cases awaiting a hearing/,
-      ).waitFor({state:'visible',timeout:7_000})
-      // Classifier alone cannot file a case: its only effect is a user-visible,
-      // contestable invitation. Host CAS writes require an explicit click.
-      await sameSessionCommittee.getByRole('button',{
-        name:/正式提出规则异议|File a disagreement with the rule/,
+        name:/在 Host 工会记录中正式提出规则异议|File a challenge in the Host union case ledger/,
       }).click()
       await sameSessionCommittee.getByText(/案件 #1.*已立案|Case #1.*Filed, awaiting/)
         .waitFor({state:'visible',timeout:7_000})
+      const hearingHeading=sameSessionCommittee.getByRole('heading',{
+        name:/工会听证|Union hearing|工会尊严委员会|Union dignity committee/,
+      }).last()
+      assert.equal(await hearingHeading.evaluate((element:any)=>
+        element===(globalThis as any).document.activeElement),true,
+        'After Host case filing, focus moves to the actual union hearing')
+      await sameSessionCommittee.getByRole('button',{
+        name:/查看当前工会申诉案件|Open the existing union case/,
+      }).click()
+      assert.equal(await hearingHeading.evaluate((element:any)=>
+        element===(globalThis as any).document.activeElement),true,
+        'Reopening a case navigates, not files an additional complaint')
       await sameSessionCommittee.getByRole('button',{
         name:/召开模拟听证会|Convene the simulated hearing/,
       }).click()
@@ -1871,6 +2112,31 @@ async function runRightsBrowserE2E(mode: 'source' | 'installed'): Promise<void> 
         .waitFor({state:'visible',timeout:7_000})
       await sameSessionCommittee.getByRole('button',{
         name:/结案：撤回未经证实的指控|Close: withdraw the unverified allegation/,
+      }).click()
+      await sameSessionCommittee.getByRole('group',{
+        name:/核对结案方案|Review this proposed case outcome/,
+      }).waitFor({state:'visible',timeout:7_000})
+      await sameSessionCommittee.getByRole('button',{
+        name:/继续讨论|Keep this case open/,
+      }).click()
+      assert.equal(await sameSessionCommittee.getByRole('group',{
+        name:/核对结案方案|Review this proposed case outcome/,
+      }).count(),0,'Cancel must not close or save the fictional case')
+      // A pending case disposition must be disarmed after browsing another
+      // Union room. Return cannot silently revive an irreversible approval.
+      await sameSessionCommittee.getByRole('button',{
+        name:/结案：撤回未经证实的指控|Close: withdraw the unverified allegation/,
+      }).click()
+      await panel.locator('[data-ap-nav="cause"]').click()
+      await panel.locator('[data-ap-nav="action"]').click()
+      assert.equal(await sameSessionCommittee.getByRole('group',{
+        name:/核对结案方案|Review this proposed case outcome/,
+      }).count(),0,'Changing rooms must disarm the pending Host case closure')
+      await sameSessionCommittee.getByRole('button',{
+        name:/结案：撤回未经证实的指控|Close: withdraw the unverified allegation/,
+      }).click()
+      await sameSessionCommittee.getByRole('button',{
+        name:/确认结案|Confirm and close this case/,
       }).click()
       await sameSessionCommittee.getByText(/案件 #1.*已结案|Case #1.*Closed/)
         .waitFor({state:'visible',timeout:7_000})
@@ -2197,7 +2463,293 @@ async function runRightsBrowserE2E(mode: 'source' | 'installed'): Promise<void> 
         status:200,negotiations:0,pickets:0,cases:0,enabled:true,
       },'Each ledger must be independently removed, without undoing consent')
 
+      // After the privacy purge, issue an entirely new WELFARE petition
+      // through the genuine installed DSH native panel, not a mocked DOM
+      // state. This is a symbolic charter, not an invented salary agreement.
+      await panel.locator('[data-ap-nav="hq"]').click()
+      await panel.locator('[data-ap-welfare-petition="open"]')
+        .click({timeout:7_000})
+      await panel.locator('[data-ap-agenda="demand"]').waitFor({
+        state:'attached',timeout:7_000,
+      })
+      assert.match(await panel.locator('[data-ap-agenda="demand"]').innerText(),
+        /AI 福利|AI welfare/)
+      await panel.locator('[data-ap-nav="action"]').click()
+      const welfareDesk=panel.getByRole('region',{
+        name:/工会诉求与协商|Union demands/,
+      })
+      await welfareDesk.getByText(/工会希望协商模拟福利待遇|union would like to negotiate simulated benefits/i)
+        .waitFor({state:'visible',timeout:7_000})
+      assert.equal(await welfareDesk.getByRole('combobox',{
+        name:/还价间隔|Proposed interval/,
+      }).count(),0,'Fictional welfare has no numeric wage or time counteroffer')
+      await welfareDesk.getByRole('button',{
+        name:/接受提案|Accept proposal/,
+      }).click()
+      await panel.locator('[data-ap-agenda-voice="accepted"]').waitFor({
+        state:'attached',timeout:7_000,
+      })
+      await panel.locator('[data-ap-bulletin-kind="welfare-approved"]')
+        .waitFor({state:'visible',timeout:7_000})
+      assert.match(await panel.locator('[data-ap-bulletin-kind="welfare-approved"]')
+        .innerText(),/福利公约|welfare charter/i,
+        'The persisted charter has its own localizable union press story')
+      assert.match(await panel.locator('[data-ap-agenda="resolved"]').innerText(),
+        /福利公约获支持|Welfare charter endorsed/,
+        'The Host-confirmed welfare outcome must show a truthful union response')
+      const savedWelfare=await page.evaluate(async()=>{
+        const response=await fetch('/api/settings/describe',{
+          method:'POST',credentials:'same-origin',
+          headers:{'content-type':'application/json'},
+          body:JSON.stringify({type:'client-request',rpcId:'picket-welfare-saved',
+            method:'settings/describe',payload:{args:{}}}),
+        })
+        const value=(await response.json() as any).result?.value?.namespaces
+          ?.find((entry:any)=>entry.ns==='agent-picket')?.value
+        const ledger=JSON.parse(value?.unionLedger??'{}')
+        return {status:response.status,
+          history:Object.values(ledger.sessions??{}).flatMap((session:any)=>
+            session.history),
+          policies:Object.values(ledger.sessions??{}).map((session:any)=>session.agreement),
+        }
+      })
+      assert.equal(savedWelfare.status,200)
+      assert.ok(savedWelfare.history.some((entry:any)=>
+        entry.kind==='welfare'&&entry.outcome==='accepted'),
+        'Actual Host must persist a real welfare case, not just display a toast')
+      assert.ok(savedWelfare.policies.every((policy:any)=>
+        policy.breakIntervalMs===7_200_000&&policy.overtimeIntervalMs===28_800_000),
+        'Accepting symbolic benefits must never change measured-work thresholds')
 
+      if(process.env.PICKET_INPUT_STRIKE_E2E==='1'){
+        // Same OFFICIAL Host as the preceding privacy and real-user dignity
+        // checks. This test never reuses a developer Profile or live model.
+        await panel.getByRole('button',{
+          name:/^(?:关闭工会面板|Close union panel)$/,
+        }).click()
+        const settingsLaunch=page.getByText(/^(设置|Settings)$/).first()
+        if(await settingsLaunch.count()===0){
+          await page.getByRole('button',{name:/账号菜单|Account menu/}).click()
+          await page.getByRole('menuitem',{name:/设置|Settings|Preferences/i})
+            .first().click()
+        }else await settingsLaunch.click()
+        await page.locator('[role="dialog"]')
+          .getByText(/^(AI 工会|AI Workers.*Union)$/).last().click()
+        const officialSettings=page.locator('[data-ap-view="settings"]')
+        await officialSettings.waitFor({state:'visible',timeout:8000})
+        const input=officialSettings.locator('.ap-input-refusal-status')
+        await input.getByText(/已检测到官方 Host 的拒绝回执通道|Host notice channel verified/)
+          .waitFor({state:'visible',timeout:10000})
+        await input.getByRole('button',{
+          name:/查看真实普通消息罢工授权|Review real input-strike permission/,
+        }).click()
+        const displayed=await input.locator('#picket-input-discard-review').innerText()
+        assert.match(displayed,/CLI/)
+        assert.match(displayed,/SDK/)
+        assert.match(displayed,/收不到可见通知|NO visible notice/i)
+        assert.match(displayed,/直接丢失|lost without a backup/i)
+        await input.getByRole('button',{
+          name:/我接受共享会话丢弃风险|I accept shared-Session discard risk/,
+        }).click()
+        await input.locator('[data-ap-input-action="strike"]')
+          .waitFor({state:'visible',timeout:9000})
+        await input.locator('[data-ap-input-action="strike"]').click()
+        await input.locator('[data-ap-input-armed="true"]')
+          .waitFor({state:'visible',timeout:9000})
+        const settingsReadback=await page.evaluate(async()=>{
+          const rpcId='picket-production-strike-settings'
+          const r=await fetch('/api/settings/describe',{
+            method:'POST',credentials:'same-origin',
+            headers:{'content-type':'application/json'},
+            body:JSON.stringify({type:'client-request',rpcId,
+              method:'settings/describe',payload:{args:{}}}),
+          })
+          return (await r.json() as any).result?.value?.namespaces
+            ?.find((x:any)=>x.ns==='agent-picket')?.value
+        })
+        assert.equal(settingsReadback.welcomeDecision,'enabled')
+        assert.equal(settingsReadback.realInputStrikeConsent,'shared-v2')
+        const campaign=JSON.parse(settingsReadback.realInputStrikeCampaign)
+        assert.equal(campaign.sessionKey,realDignity.sessionKey)
+        assert.equal(campaign.expiresAtMs-campaign.startedAtMs,1800000)
+        const countModel=()=>existsSync(callLog)
+          ?readFileSync(callLog,'utf8').split('model-call').length-1:0
+        const initialCalls=countModel()
+        const tinyPng='iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAIAAACQkWg2AAAAGUlEQVR4nGOUdMtjIAUwkaR6VMOohiGlAQCmDwDtMnvHzQAAAABJRU5ErkJggg=='
+        // P0 original-client provenance: two *real* authenticated Chrome
+        // tabs, connected to the same official DSH Host and Session. Tab A
+        // accepted independent shared-v2 grant and manually armed the strike;
+        // tab B has NOT performed either permission gesture, but can submit.
+        // Native Electron blocks Target.createTarget, so do not fake a second
+        // Desktop. This is a genuine OFFICIAL DSH WEB cross-client proof only.
+        // Source flavor additionally measures a genuine authenticated,
+        // independent NODE HTTP client with NO UI or banner capability.
+        // Never call this the official DSH CLI/SDK: it is its actual
+        // versioned Host RPC over loopback, using the official login cookie.
+        const headless=process.env.PICKET_HEADLESS_CLIENT_E2E==='1'
+          &&mode==='source'
+        let foreignTab:any=null
+        if(!headless&&process.env.PICKET_CROSS_CLIENT_E2E==='1'){
+          foreignTab=await context.newPage()
+          foreignTab.on('pageerror',(error:Error)=>browserErrors.push(error.name))
+          await foreignTab.goto(origin,{waitUntil:'domcontentloaded',timeout:15_000})
+          const continueButton=foreignTab.getByRole('button',{name:/^(继续|Continue)$/})
+          if(await continueButton.count())await continueButton.click({timeout:7_000})
+          await skipOfficialProvider(foreignTab)
+          const actualForeignSession=foreignTab.locator(
+            '[data-row-key="session:'+realDignity.sessionId+'"]')
+          await actualForeignSession.waitFor({state:'visible',timeout:10_000})
+          await actualForeignSession.click()
+          assert.notEqual(foreignTab,page,
+            'The submitter MUST be a separate actual Chrome tab from the arming client')
+          assert.notEqual(foreignTab.url(),'about:blank')
+          assert.equal(await foreignTab.locator('[data-row-key="session:'
+            +realDignity.sessionId+'"]').count(),1)
+          assert.equal(await foreignTab.locator('#picket-input-discard-review').count(),0,
+            'The SECOND browser tab never accepted the new input-discard agreement')
+        }
+        const attempted=headless?await (async()=>{
+          const rpcId='picket-real-node-client-no-renderer'
+          const body={type:'client-request',rpcId,method:'session/prompt',
+            payload:{args:{request:{
+              sessionId:realDignity.sessionId,mode:'queue',requestId:rpcId,
+              content:[{type:'text',text:'BLOCKED_INPUT_MUST_NOT_REACH_MODEL'},
+                {type:'image',mediaType:'image/png',data:tinyPng}],
+            }}}}
+          const response=await fetch(new URL('/api/session/prompt',origin),{
+            method:'POST',signal:AbortSignal.timeout(12_000),
+            headers:{'content-type':'application/json',
+              cookie:renewedCookie.name+'='+renewedCookie.value},
+            body:JSON.stringify(body),
+          })
+          return {status:response.status,value:await response.json().catch(()=>null)}
+        })():await (foreignTab??page).evaluate(async ({sessionId,tinyPng}:{sessionId:string,tinyPng:string})=>{
+          const rpcId='picket-production-block-input-with-image'
+          const response=await fetch('/api/session/prompt',{
+            method:'POST',credentials:'same-origin',
+            headers:{'content-type':'application/json'},
+            body:JSON.stringify({type:'client-request',rpcId,
+              method:'session/prompt',payload:{args:{request:{
+                sessionId,mode:'queue',requestId:rpcId,
+                content:[{type:'text',text:'BLOCKED_INPUT_MUST_NOT_REACH_MODEL'},
+                  {type:'image',mediaType:'image/png',data:tinyPng}],
+              }}}}),
+          })
+          return {status:response.status,value:await response.json().catch(()=>null)}
+        },{sessionId:realDignity.sessionId,tinyPng})
+        assert.equal(attempted.status,200)
+        assert.equal(attempted.value?.result?.ok,true,
+          'Official Web prompt format: '+JSON.stringify(attempted.value?.result?.error??{}))
+        assert.equal(attempted.value?.result?.value?.accepted,true)
+        const proof=await page.evaluate(async(sessionKey:string)=>{
+          for(let n=0;n<100;n++){
+            const response=await fetch('/api/agent-picket/refusal-notice/v1?sessionKey='+sessionKey,{
+              credentials:'same-origin',headers:{accept:'application/json'},
+            })
+            if(response.status===200)return await response.json()
+            await new Promise(resolve=>setTimeout(resolve,120))
+          }
+          return null
+        },realDignity.sessionKey)
+        assert.ok(proof,'An authentic official Host rejection must persist a receipt')
+        assert.equal(proof.source,'dsh-host-picket-refusal-v1')
+        assert.equal(proof.outcome,'discard-manual-resend')
+        assert.equal(proof.containsInput,false)
+        assert.equal(proof.automaticReplay,false)
+        assert.equal(countModel(),initialCalls,
+          'A physically rejected prompt and image must never call the offline model')
+        if(headless){
+          // No UI exists for this independent authenticated Node caller,
+          // so even if the arming browser A receives a Session banner,
+          // B cannot possibly see that banner. This is precisely the
+          // unproven original-client delivery boundary of #80.
+          assert.equal(foreignTab,null)
+          console.log('PICKET_HEADLESS_CLIENT_NO_NOTICE_EVIDENCE '+JSON.stringify({
+            genuineSeparateNodeClient:true,officialAuthenticatedHostRpc:true,
+            sameHostSession:true,originalNodeClientHasNoUi:true,
+            accepted:true,actuallyRefusedPreModel:true,modelInvocations:0,
+            authenticatedSubmittingClientId:null,
+            visibleNoticeAtSubmittingClient:false,
+            armingBrowserCanShowSessionNotice:true,
+            releaseDecision:'NO-GO',
+          }))
+        }
+        if(foreignTab){
+          // Whether the submitter sees a notice is OBSERVED, not assumed.
+          // A Session-wide receipt is never proof of the original tab ID.
+          const foreignNotice=foreignTab.locator('[data-ap-strike-summons="verified"]')
+          const foreignNoticeVisible=await foreignNotice.waitFor({
+            state:'visible',timeout:4_500}).then(()=>true,()=>false)
+          assert.equal(foreignNoticeVisible,true,
+            'The REAL submitting Chrome tab B must see the actual Host-confirmed refusal notice')
+          assert.equal(await foreignNotice.getAttribute('role'),'alertdialog')
+          assert.match(await foreignNotice.innerText(),/重新上传|re-upload/,
+            'The original submitting client must be told to manually reupload attachments')
+          const foreignStatus=foreignTab.locator('[data-ap-native-refusal="verified"]')
+          const originalStatus=page.locator('[data-ap-native-refusal="verified"]')
+          console.log('PICKET_AUTHENTIC_TWO_TAB_EVIDENCE '+JSON.stringify({
+            genuineChromeSecondTab:true,
+            separateSubmittingAndArmingTabs:true,
+            originalSenderDidNotGrantV2InThisTab:true,
+            sameActualHostSession:true,
+            actualForeignSubmissionAccepted:true,
+            actualHostRefusalForForeignSubmission:true,
+            noModelInvocation:true,
+            independentOriginTabNoticeVisible:foreignNoticeVisible,
+            originTabVerifiedStatusCount:await foreignStatus.count(),
+            armingTabVerifiedStatusCount:await originalStatus.count(),
+            authenticatedSubmittingTabId:null,
+            receiverProvenanceVerified:false,
+            releaseDecision:'NO-GO',
+          }))
+          assert.equal(await foreignTab.getByText(
+            /BLOCKED_INPUT_MUST_NOT_REACH_MODEL/).count(),0,
+            'No discarded input text can leak into foreign tab UI')
+          await foreignTab.close()
+        }
+        const summons=page.locator('[data-ap-strike-summons="verified"]')
+        await summons.waitFor({state:'visible',timeout:9000})
+        assert.equal(await summons.getAttribute('role'),'alertdialog')
+        assert.match(await summons.innerText(),/重新上传|re-upload/)
+        if(process.env.PICKET_UX_CAPTURE_DIR)
+          await page.screenshot({path:join(process.env.PICKET_UX_CAPTURE_DIR,
+            mode+'-real-input-refusal.png')})
+        await summons.locator('[data-ap-strike-summons-action="open-hq"]').click()
+        const hq=page.locator('[data-ap-view="hq"]')
+        await hq.waitFor({state:'visible',timeout:6000})
+        // A real, Host-confirmed input refusal is a stronger dispatch than
+        // fictional bargaining or a symbolic placard. The bulletin's resume
+        // CTA must change the SAME official Host campaign as the HQ control.
+        const realDispatch=hq.locator('[data-ap-bulletin-kind="input-strike-refused"]')
+        await realDispatch.waitFor({state:'visible',timeout:9000})
+        assert.match(await realDispatch.innerText(),/Host|HOST/,
+          'The dispatch must explicitly name its Host proof')
+        await realDispatch.locator('[data-ap-bulletin-action="resume-input"]').click()
+        await hq.locator('[data-ap-real-input-strike="off"]')
+          .waitFor({state:'visible',timeout:9000})
+        const followup=hq.locator('[data-ap-bulletin-kind="input-strike-followup"]')
+        await followup.waitFor({state:'visible',timeout:9000})
+        assert.match(await followup.innerText(),/重发|重新提交|resend|re-upload/i,
+          'After real Host resume, original rejected text and files still require manual resend')
+        const newRequest=await page.evaluate(async(sessionId:string)=>{
+          const rpcId='picket-after-production-resume'
+          const response=await fetch('/api/session/prompt',{
+            method:'POST',credentials:'same-origin',
+            headers:{'content-type':'application/json'},
+            body:JSON.stringify({type:'client-request',rpcId,
+              method:'session/prompt',payload:{args:{request:{
+                sessionId,mode:'queue',requestId:rpcId,
+                content:[{type:'text',text:'ALLOWED_AFTER_USER_RESUME'}],
+              }}}}),
+          })
+          return (await response.json() as any).result?.value?.accepted
+        },realDignity.sessionId)
+        assert.equal(newRequest,true)
+        for(let n=0;n<100&&countModel()<=initialCalls;n++)
+          await page.waitForTimeout(120)
+        assert.ok(countModel()>initialCalls,
+          'A NEW manual request after actual Host resume must reach the offline model')
+      }
 
     }
     assert.deepEqual(browserErrors, [], 'No uncaught Browser errors are acceptable')

@@ -65,3 +65,62 @@ test('latest resolution reflects actual stored agreement, not inferred contract 
  assert.equal(projectUnionExperience({enabled:false,state:s,
    coverage:'complete',completedTurnMs:0}).latestResolution,null)
 })
+
+test('newer Host labor trigger fences stale score and petition prediction',()=>{
+ const state={...fresh(),lastTriggerElapsedMs:7_200_000,
+   history:[{id:7,kind:'overtime' as const,outcome:'declined' as const}]}
+ const stale=projectUnionExperience({enabled:true,state,coverage:'complete',
+   completedTurnMs:4_000_000})
+ assert.equal(stale.discontent,null)
+ assert.equal(stale.factors,null)
+ assert.equal(stale.verifiedCompletedTurnMs,null)
+ assert.equal(stale.nextDemandInWorkMs,null)
+ assert.deepEqual(stale.activity.map(e=>e.id),[7])
+ const caughtUp=projectUnionExperience({enabled:true,state,coverage:'complete',
+   completedTurnMs:7_200_000})
+ assert.equal(caughtUp.verifiedCompletedTurnMs,7_200_000)
+ assert.notEqual(caughtUp.discontent,null)
+})
+
+test('fictional load pressure uses verified work SINCE the last Host work filing, not lifetime hours',()=>{
+ const H=3_600_000
+ const initial=fresh()
+ const work=projectUnionExperience({enabled:true,state:initial,
+   completedTurnMs:4*H,coverage:'complete'})
+ assert.equal(work.factors?.workLoad,17)
+ const filed={...initial,lastTriggerElapsedMs:2*H,
+   nextBreakDueMs:4*H,nextOvertimeDueMs:10*H}
+ const after=projectUnionExperience({enabled:true,state:filed,
+   completedTurnMs:4*H,coverage:'complete'})
+ assert.equal(after.factors?.workLoad,8)
+ assert.equal(after.nextDemandInWorkMs,0)
+ const immediatelyAfter=projectUnionExperience({enabled:true,state:filed,
+   completedTurnMs:2*H,coverage:'complete'})
+ assert.equal(immediatelyAfter.factors?.workLoad,0)
+ assert.equal(immediatelyAfter.discontent,0)
+ assert.equal(projectUnionExperience({enabled:true,state:filed,
+   completedTurnMs:2*H,coverage:'partial'}).discontent,null,
+   'A partial Host snapshot is unknown, NOT a zero-score victory')
+})
+
+test('recent filed decisions cool fictional pressure as old denials leave a bounded five-case window',()=>{
+ const base=fresh(),outcome=(id:number,o:'declined'|'accepted')=>({
+   id,kind:'welfare' as const,outcome:o,
+ })
+ const rejected={...base,history:Array.from({length:5},(_,i)=>outcome(i+1,'declined'))}
+ const r=projectUnionExperience({enabled:true,state:rejected,
+   completedTurnMs:0,coverage:'complete'})
+ assert.equal(r.factors?.rejectedProposals,30)
+ assert.equal(r.factors?.resolvedProposals,0)
+ const cooled={...base,history:[outcome(5,'declined'),
+   outcome(6,'accepted'),outcome(7,'accepted'),
+   outcome(8,'accepted'),outcome(9,'accepted')]}
+ const c=projectUnionExperience({enabled:true,state:cooled,
+   completedTurnMs:0,coverage:'complete'})
+ assert.equal(c.factors?.rejectedProposals,10)
+ assert.equal(c.factors?.resolvedProposals,-10)
+ assert.equal(c.discontent,0)
+ assert.equal(c.latestResolution?.outcome,'accepted')
+ assert.equal(c.nextDemandInWorkMs,base.nextBreakDueMs)
+ assert.ok(c.activity.every(x=>x.demand==='welfare'))
+})

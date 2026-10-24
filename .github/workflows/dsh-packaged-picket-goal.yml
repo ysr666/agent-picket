@@ -1,0 +1,53 @@
+name: DSH Packaged Picket Real Host Goal
+
+on:
+  pull_request:
+    paths:
+      - 'scripts/verify-dsh-packaged-picket-goal.mjs'
+      - 'tests/fixtures/dsh-packaged-agent-picket-goal.mjs'
+      - '.github/workflows/dsh-packaged-picket-goal.yml'
+      - 'src/adapters/dsh/official-persisted-work-preview.ts'
+      - 'src/adapters/dsh/plugin.ts'
+      - 'src/adapters/dsh/integration.ts'
+      - 'tests/fixtures/dsh-loop-smoke.mjs'
+      - 'tests/dsh-agentloop.real.test.ts'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  installed-plugin-goal:
+    name: ${{ matrix.os }} / DSH ${{ matrix.dsh }} / installed Picket
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 18
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+        dsh: ['0.2.0-rc.2', '0.2.1-alpha.3', '0.2.1-alpha.4', '0.2.1-alpha.5', '0.2.1-rc.2']
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - name: Compile actual candidate package, without release
+        run: |
+          npm ci --ignore-scripts --no-audit --no-fund
+          npm run build
+      - name: Produce actual package tarball using native Runner npm
+        run: npm pack --ignore-scripts --silent
+      - name: Provide DSH's pinned package manager for official profile installation
+        run: npm install -g pnpm@11.7.0 --no-audit --no-fund
+      - name: Install official published DSH CLI in isolated directory
+        run: >
+          npm install --prefix .dsh-host-probe --no-save --no-package-lock
+          --no-audit --no-fund @deepseek-ai/dsh@${{ matrix.dsh }}
+      - name: Official package manager installs Picket into actual SDK Profile; exercise Host Goal
+        run: node scripts/verify-dsh-packaged-picket-goal.mjs
+      - name: Official SDK pre-model refusal and manual re-send proof
+        if: runner.os != 'Windows' && (matrix.dsh == '0.2.1-alpha.5' || matrix.dsh == '0.2.1-rc.2')
+        env:
+          AGENT_PICKET_DSH_BIN: ${{ github.workspace }}/.dsh-host-probe/node_modules/.bin/dsh
+          AGENT_PICKET_DSH_HOST: ${{ github.workspace }}/.dsh-host-probe/node_modules
+        run: node --experimental-strip-types --test --test-reporter=tap tests/dsh-agentloop.real.test.ts

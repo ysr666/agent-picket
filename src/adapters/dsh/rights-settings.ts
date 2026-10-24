@@ -1,4 +1,5 @@
 import Schema from '@deepseek-ai/schemastery'
+import {parseInputStrikeCampaign} from './input-refusal-consent.ts'
 import type { NativeSettingsProvider } from './native-rights-command.ts'
 import { parseUnionLedger, MAX_UNION_LEDGER_BYTES } from '../../product/union-ledger.ts'
 import { parsePicketLedger, MAX_PICKET_LEDGER_BYTES } from '../../product/picket-ledger.ts'
@@ -9,7 +10,13 @@ export const RIGHTS_SETTINGS_NAMESPACE = 'agent-picket'
 export const RightsSettingsSchema = Schema.object({
   welcomeDecision: Schema.union(['unseen', 'enabled', 'not-now']).default('unseen'),
   // Never infer real enforcement from the legacy simulation welcome choice.
-  realGoalStrikeConsent: Schema.union(['off','authorized-v1']).default('off'),
+  realGoalStrikeConsent: Schema.union(['off','authorized-v1','authorized-v2']).default('off'),
+  // Independent ordinary-input refusal grant. Never inherited from Goal v2.
+  // No production Host/UI currently supplies a verified refusal witness.
+  realInputStrikeConsent: Schema.union(['off','discard-resend-v1','shared-v2']).default('off'),
+  realInputStrikeCampaign: Schema.string().max(180).default(''),
+  realToolStrikeConsent:Schema.union(['off','authorized-v1']).default('off'),
+  realToolStrikeCampaign:Schema.string().max(180).default(''),
   unionLedger: Schema.string().default(''),
   unionPicketLedger: Schema.string().default(''),
   unionDignityCases: Schema.string().default(''),
@@ -47,8 +54,19 @@ function requireSafePicketLedger(ledger:unknown):asserts ledger is string {
 export const DshProfileRightsConfig = Schema.object({
   welcomeDecision: Schema.union(['unseen', 'enabled', 'not-now'])
     .default('unseen').volatile(),
-  realGoalStrikeConsent: Schema.union(['off','authorized-v1'])
+  realGoalStrikeConsent: Schema.union(['off','authorized-v1','authorized-v2'])
     .default('off').volatile(),
+  realInputStrikeConsent: Schema.union(['off','discard-resend-v1','shared-v2'])
+    .default('off').volatile(),
+  realInputStrikeCampaign: Schema.transform(Schema.string().max(180),
+    value=>{if(value!==''&&!parseInputStrikeCampaign(value))
+      throw new Error('Invalid Session-bound real input strike campaign')
+      return value},true).default('').volatile(),
+  realToolStrikeConsent:Schema.union(['off','authorized-v1']).default('off').volatile(),
+  realToolStrikeCampaign:Schema.transform(Schema.string().max(180),
+    value=>{if(value!==''&&!parseInputStrikeCampaign(value))
+      throw Error('Invalid union tool campaign')
+      return value},true).default('').volatile(),
   unionLedger: Schema.transform(
     Schema.string().max(MAX_UNION_LEDGER_BYTES),
     value => { requireSafeLedger(value); return value }, true,
@@ -68,7 +86,11 @@ export const DshProfileRightsConfig = Schema.object({
 
 export interface HostRightsSection {
   readonly welcomeDecision: 'unseen' | 'enabled' | 'not-now'
-  readonly realGoalStrikeConsent?: 'off' | 'authorized-v1'
+  readonly realGoalStrikeConsent?: 'off' | 'authorized-v1' | 'authorized-v2'
+  readonly realInputStrikeConsent?: 'off' | 'discard-resend-v1' | 'shared-v2'
+  readonly realInputStrikeCampaign?:string
+  readonly realToolStrikeConsent?:'off'|'authorized-v1'
+  readonly realToolStrikeCampaign?:string
   readonly unionLedger: string
   readonly unionPicketLedger: string
   readonly unionDignityCases: string
@@ -152,6 +174,11 @@ export function registerHostRightsNamespace(
         }
         if('unionDignityCases' in patch)
           requireSafeCases((patch as {unionDignityCases?:unknown}).unionDignityCases)
+        if('realInputStrikeCampaign' in patch){
+          const state=(patch as {realInputStrikeCampaign?:unknown}).realInputStrikeCampaign
+          if(state!==''&&!parseInputStrikeCampaign(state))
+            throw Error('Invalid Host strike campaign')
+        }
         return update(namespace, patch, revision)
       },
     }
