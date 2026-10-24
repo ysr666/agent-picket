@@ -250,6 +250,8 @@ export const zhCN: Readonly<Record<keyof typeof en, string>> = {
   'settings.toolStrikeTitle': '真实工具罢工 · 官方 Host Guard',
   'settings.toolStrikeOff': '工具正常执行 · 尚未授权工具停工',
   'settings.toolStrikeGranted': '已授权工具罢工，但尚未停工',
+  'settings.toolStrikeStored': '存在其他会话或过期、重启后遗留的工具罢工记录；这不代表当前会话正在被阻断。',
+  'settings.toolStrikeClear': '清除已保存的罢工记录（并非恢复本会话）',
   'settings.toolStrikeArmed': '⚑ 本会话已记录工具罢工令 · 仅在当前 Host 确实装有有效 Guard 时才阻断新工具。这不是单次工具被拒绝的回执；Host 重启后旧令不会继续执行。',
   'settings.toolStrikeScope': '仅阻止当前选定会话未来 30 分钟内的新工具调用，原始消息及附件不丢弃。模型仍可能继续思考并消耗 Token，已经运行的工具不会被取消；其他会话及 Goal 不受此工具行动影响。Host 重启后不自动恢复阻断；手动复工。',
   'settings.toolStrikeReview': '查看真实工具罢工授权',

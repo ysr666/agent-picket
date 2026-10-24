@@ -562,6 +562,9 @@ export function createDshUnionComponents(
     const enabled=rightsIsActive(rights)
     const writable=rights.state==='ready'&&rights.writable
     const goal=goalStatus(deps)
+    // One Host-backed readback per render keeps visible campaign status and
+    // action labels consistent even if an update arrives during rendering.
+    const toolState=deps.toolStrike?.snapshot()
     // A legacy OFF membership may still have a Host-owned Goal grant. Its
     // revocation must stay available even without union membership or Goal RPC.
     const goalWritable=goal.writable&&(goal.authorized||(enabled&&goal.available))
@@ -720,32 +723,33 @@ export function createDshUnionComponents(
         h('p',{className:'ap-settings-scope'},
           label(goal.available?'settings.goalOtherEnforcementOff':'settings.futureConsent'))),
       h('section',{className:'ap-surface ap-tool-strike-status',
-        'data-ap-tool-strike':deps.toolStrike?.snapshot().armed?'armed':'off',
+        'data-ap-tool-strike':toolState?.armed?'armed':toolState?.hasCampaign?'stored':'off',
         'aria-label':label('settings.toolStrikeTitle'),style:card},
         h('h3',{style:{margin:'0 0 8px'}},label('settings.toolStrikeTitle')),
         h('p',{role:'status','aria-live':'polite','data-ap-tool-enforcement':
-          deps.toolStrike?.snapshot().armed?'campaign-recorded':'off',
+          toolState?.armed?'campaign-recorded':toolState?.hasCampaign?'stored-unverified':'off',
           style:{fontWeight:750,margin:'0 0 8px'}},
-          label(deps.toolStrike?.snapshot().armed?'settings.toolStrikeArmed':
-            deps.toolStrike?.snapshot().authorized?'settings.toolStrikeGranted':
-              'settings.toolStrikeOff')),
+          label(toolState?.armed?'settings.toolStrikeArmed':
+            toolState?.hasCampaign?'settings.toolStrikeStored':
+              toolState?.authorized?'settings.toolStrikeGranted':'settings.toolStrikeOff')),
         h('p',{style:{...secondary,lineHeight:1.55,margin:'0 0 10px'}},
           label('settings.toolStrikeScope')),
-        deps.toolStrike?.snapshot().authorized?h('div',{className:'ap-actions'},
+        toolState?.authorized?h('div',{className:'ap-actions'},
           h('button',{type:'button',style:productPrimary,
-            'data-ap-tool-action':deps.toolStrike.snapshot().hasCampaign?'resume':'strike',
-            disabled:busy||!deps.toolStrike.snapshot().writable
-              ||(!deps.toolStrike.snapshot().hasCampaign&&!deps.readUnion?.().committeeScopeKey),
+            'data-ap-tool-action':toolState.hasCampaign?(toolState.armed?'resume':'clear'):'strike',
+            disabled:busy||!toolState.writable
+              ||(!toolState.hasCampaign&&!deps.readUnion?.().committeeScopeKey),
             onClick:()=>{void setToolArmed(!deps.toolStrike!.snapshot().hasCampaign)}},
-            label(deps.toolStrike.snapshot().hasCampaign
-              ?'settings.toolStrikeResume':'settings.toolStrikeStart')),
+            label(toolState.hasCampaign
+              ?toolState.armed?'settings.toolStrikeResume':'settings.toolStrikeClear'
+              :'settings.toolStrikeStart')),
           h('button',{type:'button',style:quiet,
-            disabled:busy||!deps.toolStrike.snapshot().writable,
+            disabled:busy||!toolState.writable,
             onClick:()=>{void chooseTool('off')}},
             label('settings.toolStrikeRevoke'))):h('button',{
             type:'button',style:primary,disabled:busy||!enabled
-              ||!deps.toolStrike?.snapshot().available
-              ||!deps.toolStrike?.snapshot().writable,
+              ||!toolState?.available
+              ||!toolState?.writable,
             onClick:()=>setToolReview(true),
             'aria-expanded':toolReview,'aria-controls':'picket-tool-consent-review'},
             label('settings.toolStrikeReview')),

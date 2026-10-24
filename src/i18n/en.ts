@@ -253,6 +253,8 @@ export const en = defineEnglish({
   'settings.toolStrikeTitle': 'Real tool strike · official Host guard',
   'settings.toolStrikeOff': 'Tool execution: normal · no tool strike authorized',
   'settings.toolStrikeGranted': 'Tool action permitted, but no tool is stopped yet',
+  'settings.toolStrikeStored': 'A tool-strike campaign is saved for another Session or an expired/restarted action. It is NOT proof of enforcement in this Session.',
+  'settings.toolStrikeClear': 'Clear saved tool-strike campaign (not this Session Resume)',
   'settings.toolStrikeArmed': '⚑ Session tool campaign recorded · supported active Host guards can deny NEW tools. This is not a matched tool execution receipt; after Host restart saved campaigns no longer enforce.',
   'settings.toolStrikeScope': 'Only NEW tool calls in the selected Session are denied for up to 30 minutes, before tool execution. Your prompts are NOT deleted; model reasoning may continue and consume tokens. Already-running tools are not stopped. This does not pause other Sessions or Goals. A Host restart clears real enforcement. Resume manually.',
   'settings.toolStrikeReview': 'Review real tool-strike permission',
