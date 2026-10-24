@@ -8,6 +8,7 @@ on:
       - 'tests/codex-goal-native.real.test.ts'
       - 'tests/codex-goal-multiowner-race.real.test.ts'
       - 'tests/codex-goal-exclusive-owner.real.test.ts'
+      - 'tests/codex-goal-postturn-model.real.test.ts'
       - 'tests/codex-native-prompt-hook.real.test.ts'
       - 'src/adapters/codex/**'
       - 'scripts/codex-union-user-prompt-hook.mjs'
@@ -71,6 +72,17 @@ jobs:
           - os: macos-latest
             codexVersion: '0.164.0'
             probe: codex-goal-controlled-boundary.real.test.ts
+          # Synthetic real MODEL-turn proof, including Windows. Does not
+          # assert in-flight shell safety on Windows (separate POSIX probe).
+          - os: ubuntu-latest
+            codexVersion: '0.164.0'
+            probe: codex-goal-postturn-model.real.test.ts
+          - os: macos-latest
+            codexVersion: '0.164.0'
+            probe: codex-goal-postturn-model.real.test.ts
+          - os: windows-latest
+            codexVersion: '0.164.0'
+            probe: codex-goal-postturn-model.real.test.ts
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -121,7 +133,7 @@ jobs:
           unshare --user --map-root-user true
           echo 'CODEX_NATIVE_LINUX_USER_NAMESPACE_AVAILABLE=1'
       - name: Execute selected REAL App-Server offline safety test
-        if: runner.os != 'Windows' || (matrix.probe != 'codex-goal-native.real.test.ts' && matrix.probe != 'codex-goal-multiowner-race.real.test.ts' && matrix.probe != 'codex-goal-exclusive-owner.real.test.ts')
+        if: runner.os != 'Windows' || (matrix.probe != 'codex-goal-native.real.test.ts' && matrix.probe != 'codex-goal-multiowner-race.real.test.ts' && matrix.probe != 'codex-goal-exclusive-owner.real.test.ts' && matrix.probe != 'codex-goal-postturn-model.real.test.ts')
         env:
           AGENT_PICKET_CODEX_GOAL_NATIVE: '1'
           AGENT_PICKET_CODEX_EXPECT_VERSION: ${{ matrix.codexVersion || '0.146.1' }}
@@ -133,7 +145,7 @@ jobs:
       # wrapper watches its REAL official test and kills its process tree on
       # timeout. Exit success ONLY if the native assertions really passed.
       - name: Execute bounded native Windows Goal recovery test
-        if: runner.os == 'Windows' && (matrix.probe == 'codex-goal-native.real.test.ts' || matrix.probe == 'codex-goal-multiowner-race.real.test.ts' || matrix.probe == 'codex-goal-exclusive-owner.real.test.ts')
+        if: runner.os == 'Windows' && (matrix.probe == 'codex-goal-native.real.test.ts' || matrix.probe == 'codex-goal-multiowner-race.real.test.ts' || matrix.probe == 'codex-goal-exclusive-owner.real.test.ts' || matrix.probe == 'codex-goal-postturn-model.real.test.ts')
         env:
           AGENT_PICKET_CODEX_GOAL_NATIVE: '1'
           AGENT_PICKET_CODEX_EXPECT_VERSION: ${{ matrix.codexVersion || '0.146.1' }}
