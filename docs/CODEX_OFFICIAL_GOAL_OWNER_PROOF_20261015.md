@@ -28,6 +28,13 @@ The current 0.146.1 cells remain **not verified**, and the release script explic
 
 These constraints complement, rather than replace, existing human provenance, informed consent, UI notice, no-loss text-and-attachment recovery, and accessibility gates. **Real enforcement stays OFF**, and `npm run release:gate` intentionally returns NO-GO.
 
+## 2026-10-24 official 0.164.0 incremental ownership proof
+
+- The official npm release registry reported `@openai/codex@0.164.0`; an independently installed exact binary returned `codex-cli 0.164.0`.
+- **Verified on macOS in an isolated temporary `CODEX_HOME`:** official dual App-Servers against a loopback-only synthetic model returned a clear second-owner rejection while the first automatic Goal Turn was in flight. Exactly **one** model request occurred before releasing the first owner. After its exit, the second process resumed the same Thread and initiated exactly **one** additional synthetic request. The unchanged `tests/codex-goal-exclusive-owner.real.test.ts` passed **1/1**.
+- The native CI workflow separately checks official `0.164.0` on Ubuntu, macOS and Windows with the same real-App-Server test. **A green CI result must be read from the exact PR head after completion; this paragraph does not assert Windows/Linux results.** Older `0.163.0` and known-unsafe `0.146.1` probes stay in the matrix.
+- **Scope:** per-version OS-backed exclusive live writer denial and post-exit takeover *only*. The evidence does **not** prove Host-level atomic `Goal` state revision/CAS, origin-bound notice, no-loss retries, generic tool cancellation, or safe real-strike admission. The manifest is intentionally unchanged and the 1.0 release gate remains **NO-GO**.
+
 ## Future official Host remedy to verify
 
 Prefer an upstream **single mutation-capable owner / cross-process lease**, atomic Goal state CAS with a monotonic consent/stop epoch, and a tested owner transfer/recovery protocol. A single managed app-server with attached clients can be an operational workaround, **not** evidence of safety for arbitrary independent App-Servers. Test genuine Windows/macOS/Linux process competition, crash/restart, and queued input/recovery before updating this manifest.

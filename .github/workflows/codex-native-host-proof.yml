@@ -52,6 +52,17 @@ jobs:
           - os: windows-latest
             codexVersion: '0.163.0'
             probe: codex-goal-exclusive-owner.real.test.ts
+          # New exact-build cross-OS regression on official Codex 0.164.0.
+          # An owner-denial PASS is narrower than atomic Goal CAS proof.
+          - os: ubuntu-latest
+            codexVersion: '0.164.0'
+            probe: codex-goal-exclusive-owner.real.test.ts
+          - os: macos-latest
+            codexVersion: '0.164.0'
+            probe: codex-goal-exclusive-owner.real.test.ts
+          - os: windows-latest
+            codexVersion: '0.164.0'
+            probe: codex-goal-exclusive-owner.real.test.ts
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
