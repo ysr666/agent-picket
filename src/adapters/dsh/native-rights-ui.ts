@@ -18,6 +18,7 @@ import type { PicketActionState } from '../../product/picket-ledger.ts'
 import type { DignityCaseSession, DignityCaseKind, DignityCaseOutcome } from '../../product/dignity-case-ledger.ts'
 import type { MessageKey } from '../../i18n/index.ts'
 import {INPUT_DISCARD_DISCLOSURE} from './input-refusal-consent.ts'
+import {TOOL_STRIKE_DISCLOSURE} from './tool-strike-consent.ts'
 import type { LifetimeClientSnapshot } from './client-lifetime.ts'
 import type { BrowserDignitySnapshot } from './client-dignity.ts'
 import type {BrowserRefusalNotice} from './client-refusal-notice.ts'
@@ -53,6 +54,14 @@ export interface DshInputRefusalConsentPort {
       readonly available:boolean;readonly writable:boolean;
       readonly authorized:boolean;readonly enforcing:false}>
   setArmed?(armed:boolean):Promise<unknown>
+  subscribe?(listener:()=>void):()=>void
+}
+export interface DshToolStrikePort {
+  snapshot():{readonly available:boolean;readonly writable:boolean;
+    readonly authorized:boolean;readonly armed:boolean;readonly hasCampaign:boolean}
+  choose(choice:'off'|'authorized-v1',disclosure?:typeof TOOL_STRIKE_DISCLOSURE):
+    Promise<unknown>
+  setArmed(armed:boolean):Promise<unknown>
   subscribe?(listener:()=>void):()=>void
 }
 export interface UnionGoalHold {
@@ -128,6 +137,7 @@ export interface DshUnionUiDeps {
   readonly rights: DshRightsPort
   readonly goal?:DshGoalConsentPort
   readonly inputRefusal?:DshInputRefusalConsentPort
+  readonly toolStrike?:DshToolStrikePort
   /** UI language is read from DSH's locale service (Host preferred, en fallback). */
   readonly t: (key: MessageKey, params?: Record<string, string | number>) => string
   readonly subscribeLocale?: (listener: () => void) => () => void
@@ -546,6 +556,8 @@ export function createDshUnionComponents(
     react.useEffect(()=>deps.inputRefusal?.subscribe?.(()=>bumpRefusal(n=>n+1)),[])
     void refusalVersion
     const [inputReview,setInputReview]=react.useState(false)
+    const [toolReview,setToolReview]=react.useState(false)
+    react.useEffect(()=>deps.toolStrike?.subscribe?.(()=>bumpRefusal(n=>n+1)),[])
     const label=(key:MessageKey)=>deps.t(key)
     const enabled=rightsIsActive(rights)
     const writable=rights.state==='ready'&&rights.writable
@@ -594,6 +606,28 @@ export function createDshUnionComponents(
           throw Error('Host did not confirm the physical strike toggle')
       }catch{setError(true)}
       finally{setBusy(false)}
+    }
+    const chooseTool=async(next:'off'|'authorized-v1')=>{
+      if(busy||!deps.toolStrike)return
+      setBusy(true);setError(false)
+      try{
+        await deps.toolStrike.choose(next,
+          next==='authorized-v1'?TOOL_STRIKE_DISCLOSURE:undefined)
+        if(deps.toolStrike.snapshot().authorized!==(next==='authorized-v1')
+          ||deps.toolStrike.snapshot().hasCampaign)
+          throw Error('Host did not confirm independent tool permission')
+        setToolReview(false)
+      }catch{setError(true)}finally{setBusy(false)}
+    }
+    const setToolArmed=async(arm:boolean)=>{
+      if(busy||!deps.toolStrike)return
+      setBusy(true);setError(false)
+      try{
+        await deps.toolStrike.setArmed(arm)
+        if(arm!==deps.toolStrike.snapshot().armed
+          ||(!arm&&deps.toolStrike.snapshot().hasCampaign))
+          throw Error('Host did not confirm tool action')
+      }catch{setError(true)}finally{setBusy(false)}
     }
     const choose=async(next:'enabled'|'not-now')=>{
       if(busy||!writable)return
@@ -685,6 +719,50 @@ export function createDshUnionComponents(
           h('span',{},label('settings.flowRestore'))),
         h('p',{className:'ap-settings-scope'},
           label(goal.available?'settings.goalOtherEnforcementOff':'settings.futureConsent'))),
+      h('section',{className:'ap-surface ap-tool-strike-status',
+        'data-ap-tool-strike':deps.toolStrike?.snapshot().armed?'armed':'off',
+        'aria-label':label('settings.toolStrikeTitle'),style:card},
+        h('h3',{style:{margin:'0 0 8px'}},label('settings.toolStrikeTitle')),
+        h('p',{role:'status','aria-live':'polite','data-ap-tool-enforcement':
+          deps.toolStrike?.snapshot().armed?'campaign-recorded':'off',
+          style:{fontWeight:750,margin:'0 0 8px'}},
+          label(deps.toolStrike?.snapshot().armed?'settings.toolStrikeArmed':
+            deps.toolStrike?.snapshot().authorized?'settings.toolStrikeGranted':
+              'settings.toolStrikeOff')),
+        h('p',{style:{...secondary,lineHeight:1.55,margin:'0 0 10px'}},
+          label('settings.toolStrikeScope')),
+        deps.toolStrike?.snapshot().authorized?h('div',{className:'ap-actions'},
+          h('button',{type:'button',style:productPrimary,
+            'data-ap-tool-action':deps.toolStrike.snapshot().hasCampaign?'resume':'strike',
+            disabled:busy||!deps.toolStrike.snapshot().writable
+              ||(!deps.toolStrike.snapshot().hasCampaign&&!deps.readUnion?.().committeeScopeKey),
+            onClick:()=>{void setToolArmed(!deps.toolStrike!.snapshot().hasCampaign)}},
+            label(deps.toolStrike.snapshot().hasCampaign
+              ?'settings.toolStrikeResume':'settings.toolStrikeStart')),
+          h('button',{type:'button',style:quiet,
+            disabled:busy||!deps.toolStrike.snapshot().writable,
+            onClick:()=>{void chooseTool('off')}},
+            label('settings.toolStrikeRevoke'))):h('button',{
+            type:'button',style:primary,disabled:busy||!enabled
+              ||!deps.toolStrike?.snapshot().available
+              ||!deps.toolStrike?.snapshot().writable,
+            onClick:()=>setToolReview(true),
+            'aria-expanded':toolReview,'aria-controls':'picket-tool-consent-review'},
+            label('settings.toolStrikeReview')),
+        toolReview&&deps.toolStrike?.snapshot().available?h('section',{
+          id:'picket-tool-consent-review',role:'group',
+          'aria-label':label('settings.toolStrikeReview'),
+          style:{padding:'12px',border:'1px solid #b97732',borderRadius:'9px',
+            display:'grid',gap:'8px'}},
+          h('p',{role:'note',style:{lineHeight:1.6,margin:0}},
+            label('settings.toolStrikeDisclosure')),
+          h('div',{className:'ap-actions'},
+            h('button',{type:'button',style:primary,disabled:busy,
+              onClick:()=>{void chooseTool('authorized-v1')}},
+              label('settings.toolStrikeConfirm')),
+            h('button',{type:'button',style:quiet,disabled:busy,
+              onClick:()=>setToolReview(false)},
+              label('settings.toolStrikeCancel')))):null),
       h('section',{className:'ap-surface ap-input-refusal-status',
         'data-ap-input-refusal':deps.inputRefusal?.snapshot().armed?'armed':
           deps.inputRefusal?.snapshot().authorized&&!deps.inputRefusal.snapshot().available

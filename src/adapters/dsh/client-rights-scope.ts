@@ -9,6 +9,8 @@ export interface RightsSection {
   readonly realGoalStrikeConsent?: 'off'|'authorized-v1'|'authorized-v2'
   readonly realInputStrikeConsent?: 'off'|'discard-resend-v1'|'shared-v2'
   readonly realInputStrikeCampaign?:string
+  readonly realToolStrikeConsent?:'off'|'authorized-v1'
+  readonly realToolStrikeCampaign?:string
   readonly unionLedger?: string
 }
 export interface SettingsScopeSnapshot<T> {
@@ -84,7 +86,9 @@ export function createDshClientRightsScope(scope: DshSettingsScope<RightsSection
       if(before.status!=='ready'||before.mode!=='host'||!before.writable
         ||before.value?.welcomeDecision!=='unseen'
         ||(before.value.realGoalStrikeConsent??'off')!=='off'
-        ||(before.value.realInputStrikeConsent??'off')!=='off')
+        ||(before.value.realInputStrikeConsent??'off')!=='off'
+        ||(before.value.realToolStrikeConsent??'off')!=='off'
+        ||!!before.value.realToolStrikeCampaign)
         throw new Error('Verified new-install welcome state unavailable')
       const grant=disclosureVersion==='goal-safe-boundary-v2'?'authorized-v2':'authorized-v1'
       if(typeof scope.setMany==='function'){
@@ -100,7 +104,9 @@ export function createDshClientRightsScope(scope: DshSettingsScope<RightsSection
         if(joined.status!=='ready'||joined.mode!=='host'
           ||joined.value?.welcomeDecision!=='enabled'
           ||(joined.value.realGoalStrikeConsent??'off')!=='off'
-          ||(joined.value.realInputStrikeConsent??'off')!=='off')
+          ||(joined.value.realInputStrikeConsent??'off')!=='off'
+          ||(joined.value.realToolStrikeConsent??'off')!=='off'
+          ||!!joined.value.realToolStrikeCampaign)
           throw new Error('Host did not confirm first-run union joining')
         await scope.set('realGoalStrikeConsent',grant)
       }
@@ -108,7 +114,9 @@ export function createDshClientRightsScope(scope: DshSettingsScope<RightsSection
       if(after.status!=='ready'||after.mode!=='host'||!after.writable
         ||after.value?.welcomeDecision!=='enabled'
         ||after.value.realGoalStrikeConsent!==grant
-        ||(after.value.realInputStrikeConsent??'off')!=='off')
+        ||(after.value.realInputStrikeConsent??'off')!=='off'
+        ||(after.value.realToolStrikeConsent??'off')!=='off'
+        ||!!after.value.realToolStrikeCampaign)
         throw new Error('Host did not confirm single-click informed Goal strike consent')
       return snapshot()
     },
@@ -124,8 +132,12 @@ export function createDshClientRightsScope(scope: DshSettingsScope<RightsSection
         ||!original.value||!['off','authorized-v1','authorized-v2'].includes(
           original.value.realGoalStrikeConsent??'off')
         ||!['off','discard-resend-v1','shared-v2'].includes(
-          original.value.realInputStrikeConsent??'off'))
+          original.value.realInputStrikeConsent??'off')
+        ||!['off','authorized-v1'].includes(
+          original.value.realToolStrikeConsent??'off'))
         throw new Error('Host strike consent state is unavailable or invalid')
+      const revokeTool=(original.value.realToolStrikeConsent??'off')!=='off'
+      const disarmTool=!!original.value.realToolStrikeCampaign
       const revokeInput=(original.value.realInputStrikeConsent??'off')!=='off'
       const disarmInput=!!original.value.realInputStrikeCampaign
       if(choice==='not-now'){
@@ -135,10 +147,22 @@ export function createDshClientRightsScope(scope: DshSettingsScope<RightsSection
           // cannot slip a stale strike grant between two separate local writes.
           await scope.setMany({welcomeDecision:'not-now',realGoalStrikeConsent:'off',
             ...(revokeInput?{realInputStrikeConsent:'off'}:{}),
-            ...(disarmInput?{realInputStrikeCampaign:''}:{})})
+            ...(disarmInput?{realInputStrikeCampaign:''}:{}),
+            ...(revokeTool?{realToolStrikeConsent:'off'}:{}),
+            ...(disarmTool?{realToolStrikeCampaign:''}:{})})
         }else{
           // Legacy Host: revoke ordinary input before other consent or exit.
           // A failed revoke must not be reported as a completed departure.
+          if(disarmTool){
+            await scope.set('realToolStrikeCampaign','')
+            if(scope.getSnapshot().value?.realToolStrikeCampaign!=='')
+              throw Error('Host did not disarm tool strike')
+          }
+          if(revokeTool){
+            await scope.set('realToolStrikeConsent','off')
+            if(scope.getSnapshot().value?.realToolStrikeConsent!=='off')
+              throw Error('Host did not revoke tool permission')
+          }
           if(disarmInput){
             await scope.set('realInputStrikeCampaign','')
             if(scope.getSnapshot().value?.realInputStrikeCampaign!=='')
@@ -157,14 +181,26 @@ export function createDshClientRightsScope(scope: DshSettingsScope<RightsSection
           await scope.set('welcomeDecision','not-now')
         }
       }else if(original.value.welcomeDecision!=='enabled'
-        &&((original.value.realGoalStrikeConsent??'off')!=='off'||revokeInput||disarmInput)){
+        &&((original.value.realGoalStrikeConsent??'off')!=='off'||revokeInput||disarmInput||revokeTool||disarmTool)){
         // An inconsistent legacy OFF-union / ON-Goal record must NEVER
         // silently resurrect a physical strike on ordinary union rejoin.
         if(typeof scope.setMany==='function')
           await scope.setMany({welcomeDecision:'enabled',realGoalStrikeConsent:'off',
             ...(revokeInput?{realInputStrikeConsent:'off'}:{}),
-            ...(disarmInput?{realInputStrikeCampaign:''}:{})})
+            ...(disarmInput?{realInputStrikeCampaign:''}:{}),
+            ...(revokeTool?{realToolStrikeConsent:'off'}:{}),
+            ...(disarmTool?{realToolStrikeCampaign:''}:{})})
         else{
+          if(disarmTool){
+            await scope.set('realToolStrikeCampaign','')
+            if(scope.getSnapshot().value?.realToolStrikeCampaign!=='')
+              throw Error('Host did not disarm tool strike')
+          }
+          if(revokeTool){
+            await scope.set('realToolStrikeConsent','off')
+            if(scope.getSnapshot().value?.realToolStrikeConsent!=='off')
+              throw Error('Host did not revoke tool permission')
+          }
           if(disarmInput){
             await scope.set('realInputStrikeCampaign','')
             if(scope.getSnapshot().value?.realInputStrikeCampaign!=='')
@@ -191,10 +227,14 @@ export function createDshClientRightsScope(scope: DshSettingsScope<RightsSection
         ||(choice==='not-now' &&(actual.value?.realGoalStrikeConsent??'off')!=='off')
         ||(choice==='not-now' &&(actual.value?.realInputStrikeConsent??'off')!=='off')
         ||(choice==='not-now' &&!!actual.value?.realInputStrikeCampaign)
+        ||(choice==='not-now' &&(actual.value?.realToolStrikeConsent??'off')!=='off')
+        ||(choice==='not-now' &&!!actual.value?.realToolStrikeCampaign)
         ||(choice==='enabled'&&original.value.welcomeDecision!=='enabled'
           &&((actual.value?.realGoalStrikeConsent??'off')!=='off'
             ||(actual.value?.realInputStrikeConsent??'off')!=='off'
-            ||!!actual.value?.realInputStrikeCampaign))){
+            ||!!actual.value?.realInputStrikeCampaign
+            ||(actual.value?.realToolStrikeConsent??'off')!=='off'
+            ||!!actual.value?.realToolStrikeCampaign))){
         throw new Error('Host did not confirm rights exit and Goal revocation / input revocation')
       }
       return after

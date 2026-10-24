@@ -8,6 +8,7 @@ import {createDshLocalComposerPicket,type DshComposerBlocks} from './client-comp
 import { createDshClientRightsScope, type DshSettingsScope } from './client-rights-scope.ts'
 import {createDshRealGoalConsentControl} from './client-goal-consent.ts'
 import {createDshInputRefusalConsentControl} from './input-refusal-consent.ts'
+import {createDshToolStrikeControl} from './tool-strike-consent.ts'
 import {createDshGoalServiceWitness} from './client-goal-capability.ts'
 import { createOfficialDsh017Scope, type OfficialHostMirror, type OfficialHostSettings } from './client-host-settings-017.ts'
 import { registerDshNativeRightsSlots, type ReactForDsh, type PortalForDsh, type DshSlots } from './native-rights-ui.ts'
@@ -260,6 +261,11 @@ export function apply(ctx: ClientContext, react?: ReactForDsh, portal?: PortalFo
     }
     const baseInputConsent=createDshInputRefusalConsentControl(rightsScope,
       ()=>nativeNoticeReady,()=>desk.snapshot().committeeScopeKey)
+    const toolStrikeControl=createDshToolStrikeControl(rightsScope,
+      ()=>desk.snapshot().committeeScopeKey)
+    // Quota-like UX: separately consented, Session-scoped Host rejection.
+    // The blocked request is not replayed; human manual resend is intentional.
+    // A second authenticated headless client may NOT see a native notice.
     const inputConsentControl={...baseInputConsent,
       subscribe:(listener:()=>void)=>{
         noticeObservers.add(listener)
@@ -489,6 +495,7 @@ export function apply(ctx: ClientContext, react?: ReactForDsh, portal?: PortalFo
       }},
       goal:version==='new'?goalConsentControl:undefined,
       inputRefusal:inputConsentControl,
+      toolStrike:toolStrikeControl,
       t: (key, params) => (formatMessage as unknown as
         (locale: ReturnType<typeof uiLocale>, key: MessageKey, params?: Record<string, string | number>) => string)(
           uiLocale(), key, params),

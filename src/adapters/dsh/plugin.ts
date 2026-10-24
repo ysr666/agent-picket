@@ -17,6 +17,7 @@ import {readHostGoalStrikeConsent} from './goal-work-enforcement.ts'
 import {createVolatileRefusalNotices,registerDshRefusalNoticeFetch} from './refusal-notice-host.ts'
 import type {NativeSettingsProvider} from './native-rights-command.ts'
 import {readHostActiveInputStrike} from './host-input-strike.ts'
+import {registerDshUnionToolGuard} from './tool-strike-guard.ts'
 import { registerOfficialPersistedGoalPreview } from './official-persisted-work-preview.ts'
 
 /**
@@ -58,6 +59,13 @@ export function apply(ctx: DshIntegrationContext): void {
       consent:()=>readHostGoalStrikeConsent(nativeSettings,
         process.env.AGENT_PICKET_DSH_OFFICIAL_WORK_PREVIEW==='on'),
     })
+  // Monotonic official Host tool guard: never interrupts user input.
+  // Both a new independently written Host grant and fresh exact-Session
+  // campaign are required. No campaign exists by default.
+  registerDshUnionToolGuard(ctx as unknown as Parameters<
+    typeof registerDshUnionToolGuard>[0],{
+    settings:()=>nativeSettings,boot:hostBootStartedAtMs,
+  })
   const rules = new LocalRuleDetector()
   // Work-only lifetime summaries are local and ON by default, as expected
   // from a session analytics plugin. All text/classification persistence is

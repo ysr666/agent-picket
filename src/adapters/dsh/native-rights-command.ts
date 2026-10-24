@@ -28,6 +28,8 @@ export interface NativeRightsSection {
   readonly realGoalStrikeConsent?: 'off'|'authorized-v1'|'authorized-v2'
   readonly realInputStrikeConsent?:'off'|'discard-resend-v1'|'shared-v2'
   readonly realInputStrikeCampaign?:string
+  readonly realToolStrikeConsent?:'off'|'authorized-v1'
+  readonly realToolStrikeCampaign?:string
   readonly unionLedger: string
   readonly unionPicketLedger?: string
   readonly unionDignityCases?: string
@@ -273,18 +275,23 @@ export function createNativeUnionCommandPort(settings: NativeSettingsProvider): 
       // granted strike merely because the user joins the union again.
       const mustClear = !enabled || before.section.welcomeDecision !== 'enabled'
       const revokeReal = mustClear && ['authorized-v1','authorized-v2'].includes(before.section.realGoalStrikeConsent??'off')
+      const revokeTool = mustClear && ((before.section.realToolStrikeConsent??'off')!=='off'
+        ||!!before.section.realToolStrikeCampaign)
       const revokeInput = mustClear && ((before.section.realInputStrikeConsent??'off')!=='off'
         ||!!before.section.realInputStrikeCampaign)
       await settings.update(RIGHTS_NAMESPACE,{
         welcomeDecision:choice,
         ...(revokeReal?{realGoalStrikeConsent:'off'}:{}),
-        ...(revokeInput?{realInputStrikeConsent:'off',realInputStrikeCampaign:''}:{})
+        ...(revokeInput?{realInputStrikeConsent:'off',realInputStrikeCampaign:''}:{}),
+        ...(revokeTool?{realToolStrikeConsent:'off',realToolStrikeCampaign:''}:{})
       },before.revision)
       const after = read()
       if (!after || after.section.welcomeDecision !== choice
         || (mustClear&&['authorized-v1','authorized-v2'].includes(after.section.realGoalStrikeConsent??'off'))
         || (mustClear&&(after.section.realInputStrikeConsent??'off')!=='off')
-        || (mustClear&&!!after.section.realInputStrikeCampaign)) {
+        || (mustClear&&!!after.section.realInputStrikeCampaign)
+        || (mustClear&&(after.section.realToolStrikeConsent??'off')!=='off')
+        || (mustClear&&!!after.section.realToolStrikeCampaign)) {
         throw new Error(text('command.native.rightsConfirmationFailed'))
       }
       return text(enabled ? 'command.native.rightsEnabled' : 'command.native.rightsDisabled')

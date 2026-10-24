@@ -1,0 +1,45 @@
+name: DSH Official Native Tool Strike
+
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/dsh-official-tool-strike.yml'
+      - 'src/adapters/dsh/tool-strike-guard.ts'
+      - 'src/adapters/dsh/tool-strike-consent.ts'
+      - 'src/adapters/dsh/plugin.ts'
+      - 'src/adapters/dsh/rights-settings.ts'
+      - 'tests/dsh-tool-strike.real.test.ts'
+      - 'tests/dsh-tool-strike-guard.test.ts'
+      - 'tests/dsh-tool-strike-consent.test.ts'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  official-tool-runtime:
+    name: ${{ matrix.os }} / official DSH 0.2.1-rc.2 / ToolRuntime
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 12
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - name: Install Picket's pinned test dependencies without scripts
+        run: npm ci --ignore-scripts --no-audit --no-fund
+      - name: Install genuine published DSH in isolated probe directory
+        run: >-
+          npm install --prefix .dsh-host-tool-probe --no-save
+          --no-package-lock --no-audit --no-fund
+          @deepseek-ai/dsh@0.2.1-rc.2
+      - name: Exercise real DSH ToolRuntime refusal, Session isolation and Resume
+        env:
+          AGENT_PICKET_DSH_HOST: ${{ github.workspace }}/.dsh-host-tool-probe/node_modules
+          AGENT_PICKET_TEST_DSH_VERSION: '0.2.1-rc.2'
+          AGENT_PICKET_STATS: 'off'
+        run: node --experimental-strip-types --test --test-reporter=tap tests/dsh-tool-strike.real.test.ts

@@ -1413,8 +1413,8 @@ test('dedicated settings section only toggles Host-owned union permission',async
  assert.ok(nodes.some(n=>n.props['aria-label']==='settings.unionSection'))
  assert.ok(nodes.some(n=>n.children.includes('settings.realBlockingUnavailable')))
  const disabled=nodes.filter(n=>n.type==='button'&&n.props.disabled===true)
- assert.equal(disabled.length,3,
-   'Both legacy enforcement controls and the unverified input-refusal consent button must remain disabled')
+ assert.equal(disabled.length,4,
+   'Legacy, unverified input and missing Host tool-strike controls must remain disabled')
  const off=nodes.find(n=>n.type==='button'&&n.children.includes('settings.turnOff'))
  assert.ok(off)
  await off.props.onClick()
@@ -3454,6 +3454,68 @@ test('legacy v1 Host consent is explicitly marked unsafe and offers v2 re-author
  assert.equal(settings.some(n=>n.props['data-ap-input-enforcement']==='armed'),false)
  assert.match(en['settings.inputStrikeLegacy'],/Legacy v1: OFF/)
  assert.match(zhCN['settings.inputStrikeLegacy'],/旧 v1 不能阻断/)
+})
+
+test('tool strike UI requires separate review, then separate Start; Host revocation and Resume are wired',async()=>{
+ const view=goalSettingsRenderHarness()
+ const base=deps(rights({welcomeDecision:'enabled',laborRightsEnabled:true}))
+ let permission=false,armed=false,hasCampaign=false
+ const writes:string[]=[]
+ const port:DshUnionUiDeps['toolStrike']={
+  snapshot:()=>({available:true,writable:true,authorized:permission,
+    armed,hasCampaign}),
+  subscribe:()=>()=>{},
+  async choose(choice,disclosure){
+   writes.push('grant:'+choice+':'+String(disclosure))
+   if(choice==='authorized-v1')
+     assert.equal(disclosure,'tool-strike-current-session-v1')
+   permission=choice==='authorized-v1'
+   armed=false;hasCampaign=false
+  },
+  async setArmed(next){
+   writes.push('armed:'+next)
+   assert.equal(permission,true)
+   armed=next;hasCampaign=next
+  },
+ }
+ const d:DshUnionUiDeps={...base.d,toolStrike:port,
+  readUnion:()=>({pending:null,coverage:'unavailable',completedTurnMs:null,
+    lifetimeMs:null,committeeScopeKey:'a'.repeat(64)})}
+ const panel=createDshUnionComponents(view.hooks,{createPortal:x=>x},d).SettingsPanel
+ const button=(nodes:Node[],key:string)=>nodes.find(n=>n.type==='button'&&n.children.includes(key))
+ let nodes=view.render(panel)
+ assert.ok(nodes.some(n=>n.children.includes('settings.toolStrikeOff')))
+ assert.equal(nodes.some(n=>n.props['data-ap-tool-enforcement']==='armed'),false)
+ assert.ok(button(nodes,'settings.toolStrikeReview'))
+ assert.deepEqual(writes,[])
+ button(nodes,'settings.toolStrikeReview')!.props.onClick()
+ nodes=view.render(panel)
+ assert.ok(nodes.some(n=>n.children.includes('settings.toolStrikeDisclosure')))
+ button(nodes,'settings.toolStrikeCancel')!.props.onClick()
+ assert.deepEqual(writes,[],'Cancel does not change Host grant')
+ button(view.render(panel),'settings.toolStrikeReview')!.props.onClick()
+ button(view.render(panel),'settings.toolStrikeConfirm')!.props.onClick()
+ await new Promise<void>(r=>setImmediate(r))
+ assert.deepEqual(writes,['grant:authorized-v1:tool-strike-current-session-v1'])
+ nodes=view.render(panel)
+ assert.ok(nodes.some(n=>n.children.includes('settings.toolStrikeGranted')))
+ assert.equal(nodes.some(n=>n.props['data-ap-tool-enforcement']==='armed'),false)
+ button(nodes,'settings.toolStrikeStart')!.props.onClick()
+ await new Promise<void>(r=>setImmediate(r))
+ nodes=view.render(panel)
+ assert.ok(nodes.some(n=>n.props['data-ap-tool-enforcement']==='campaign-recorded'))
+ assert.ok(nodes.some(n=>n.children.includes('settings.toolStrikeArmed')))
+ button(nodes,'settings.toolStrikeResume')!.props.onClick()
+ await new Promise<void>(r=>setImmediate(r))
+ assert.equal(armed,false)
+ assert.equal(hasCampaign,false)
+ button(view.render(panel),'settings.toolStrikeRevoke')!.props.onClick()
+ await new Promise<void>(r=>setImmediate(r))
+ assert.deepEqual(writes,[
+  'grant:authorized-v1:tool-strike-current-session-v1',
+  'armed:true','armed:false','grant:off:undefined',
+ ])
+ assert.equal(permission,false)
 })
 
 test('ordinary-input strike review must display discard warning before an independent grant',async()=>{
