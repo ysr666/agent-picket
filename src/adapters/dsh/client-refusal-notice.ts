@@ -129,9 +129,18 @@ export function createBrowserRefusalNoticeReader(options:{
     if(disposed||!allowed())return {state:'off',receipt:null}
     // Calling snapshot must never claim an old Session proof after navigating.
     if(selected!==options.session()||bound!==options.binding(selected??''))return empty()
-    if(current.state==='verified'&&(!current.receipt||!fresh(current.receipt)
-      ||latestNativeBlockedTurn(options.window(selected!))!==current.receipt.turn))
-      return empty()
+    if(current.state==='verified'){
+      try{
+        // An already-verified Host receipt does not freeze the official event
+        // evidence. A refreshed Session window can reveal a delayed model or
+        // tool event for the same blocked Turn without changing latestTurn.
+        // Revalidate the full no-execution proof on EVERY readback.
+        const window=options.window(selected!)
+        if(!current.receipt||!fresh(current.receipt)
+          ||latestNativeBlockedTurn(window)!==current.receipt.turn
+          ||!matchRefusalToOfficialTurn(window,current.receipt))return empty()
+      }catch{return empty()}
+    }
     return current
   }
   function refresh():void {

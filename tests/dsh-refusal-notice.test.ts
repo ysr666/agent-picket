@@ -200,6 +200,36 @@ test('browser only announces an authenticated Picket notice matching genuine blo
  client.dispose()
 })
 
+test('verified notice loses attribution if later Host events disclose model or tool work',async()=>{
+  let events:RefusalEventWindow={hasMore:false,entries:[]}
+  const reader=createBrowserRefusalNoticeReader({
+    session:()=> 'session',binding:()=> 'same-binding',
+    window:()=>events,authorized:()=>true,now:()=>1000,
+    digest:async key=>fingerprint(key),
+    fetcher:async()=>Response.json(proof()),
+  })
+  reader.refresh() // Explicitly seed this Session without a stale notice.
+  events={hasMore:false,entries:[
+    {type:'event',event:{type:'turn/start',seq:0,data:{turn:2}}},
+    {type:'event',event:{type:'turn/end',seq:5,data:{turn:2,reason:{kind:'blocked'}}}},
+  ]}
+  reader.refresh()
+  await settle()
+  assert.equal(reader.snapshot().state,'verified')
+  // Official event history can be refreshed with a late-added earlier-seq
+  // event. The latest started/ended Turn is still 2 and still blocked;
+  // only the actual no-model evidence has changed.
+  events={hasMore:false,entries:[
+    {type:'event',event:{type:'turn/start',seq:0,data:{turn:2}}},
+    {type:'event',event:{type:'tool/call',seq:3,data:{name:'example'}}},
+    {type:'event',event:{type:'turn/end',seq:5,data:{turn:2,reason:{kind:'blocked'}}}},
+  ]}
+  assert.equal(latestNativeBlockedTurn(events),2)
+  assert.equal(reader.snapshot().state,'unverified',
+    'Post-verification Host tool evidence must revoke a stale no-work claim')
+  reader.dispose()
+})
+
 test('completed next turn invalidates old verified receipt and async races',async()=>{
  let window:RefusalEventWindow={hasMore:false,entries:[]}
  let now=1000,toast=0,resolveHost:(r:Response)=>void=()=>{}
