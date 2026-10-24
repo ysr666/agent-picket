@@ -17,11 +17,18 @@ test('a correctly authorized hold stops BEFORE reading text/files or invoking tu
  assert.equal(materialized,0)
  assert.equal(turnsStarted,0)
 })
+test('armed hold forbids NEW submissions while existing Turn finishes normally',async()=>{
+ let submitted=0
+ const pending=await gateCodexClientNewTurn({readHostProof:async()=>({...authorized(),
+  turnState:'running'})},id,async()=>{submitted++;return 'unexpected'})
+ assert.deepEqual(pending,{action:'held',notice:'union-current-turn-finishing'})
+ assert.equal(submitted,0)
+})
 test('must never block from an ambiguous client, forged thread, or missing notice',async()=>{
  for(const patch of [
   {ownerVerified:false},{realStrikeOptIn:false},
   {unionHoldAuthorized:false},{unionHoldActive:false},
-  {canShowPreSubmitNotice:false},{turnState:'running'},
+  {canShowPreSubmitNotice:false},
   {turnState:'unconfirmed'},{threadId:'not-the-session'},
   {source:'local-user-preference'},
  ]){

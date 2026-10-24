@@ -87,6 +87,21 @@ test('native Codex pauses only NEXT autonomous model Turn and safely resumes',{
   }).phase,'finishing-turn')
   assert.equal(first.turnCompleted(threadId).length,0,
    'Pause must not invent an early completed Turn')
+  let submittedBeforeTurnEnded=0
+  const earlyNewWork=await gateCodexClientNewTurn({
+   readHostProof:async()=>({source:'verified-owner-control-plane',threadId,
+    ownerVerified:true,realStrikeOptIn:true,
+    unionHoldAuthorized:true,unionHoldActive:true,
+    turnState:'running',canShowPreSubmitNotice:true}),
+  },threadId,async()=>{
+   submittedBeforeTurnEnded++
+   return first!.rpc('turn/start',{threadId,
+    input:[{type:'text',text:'SYNTHETIC_QUEUED_NEW_TURN'}]})
+  })
+  assert.deepEqual(earlyNewWork,{action:'held',
+   notice:'union-current-turn-finishing'})
+  assert.equal(submittedBeforeTurnEnded,0,
+   'Existing Turn may finish, but a NEW Turn must not queue during strike')
   complete(requests[0]!,'SYNTHETIC_FIRST_TURN_DONE')
   assert.equal(await until(()=>first!.turnCompleted(threadId).includes(initialId)),
    true,'In-flight model Turn must complete normally')

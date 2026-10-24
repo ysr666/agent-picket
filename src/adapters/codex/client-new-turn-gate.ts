@@ -25,7 +25,7 @@ export interface CodexClientNewTurnGatePort {
  readHostProof(threadId:string):Promise<unknown>
 }
 export type CodexClientNewTurnResult<T> =
- |{readonly action:'held';readonly notice:'union-new-work-hold'}
+ |{readonly action:'held';readonly notice:'union-new-work-hold'|'union-current-turn-finishing'}
  |{readonly action:'submitted';readonly result:T}
  |{readonly action:'host-error';readonly error:unknown}
 
@@ -42,7 +42,7 @@ export function canHoldCodexClientNewTurn(
    &&p.realStrikeOptIn===true
    &&p.unionHoldAuthorized===true
    &&p.unionHoldActive===true
-   &&p.turnState==='idle'
+   &&(p.turnState==='idle'||p.turnState==='running')
    &&p.canShowPreSubmitNotice===true
 }
 
@@ -59,7 +59,8 @@ export async function gateCodexClientNewTurn<T>(
  let proof:unknown
  try{proof=await port?.readHostProof(threadId)}catch{/* Fail open. */}
  if(canHoldCodexClientNewTurn(proof,threadId))
-  return {action:'held',notice:'union-new-work-hold'}
+  return {action:'held',notice:(proof as CodexClientNewTurnHoldProof).turnState==='running'
+    ?'union-current-turn-finishing':'union-new-work-hold'}
  try{return {action:'submitted',result:await submitUnmodified()}}
  catch(error){return {action:'host-error',error}}
 }
