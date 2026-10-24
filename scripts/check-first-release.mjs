@@ -12,7 +12,7 @@ export function checkFirstRelease(value){
   const invalid=(message)=>reasons.push(message)
   if(!value || typeof value!=='object' || Array.isArray(value))
     return ['Release attestation missing or invalid']
-  if(value.schemaVersion!==4 || value.release!=='1.0.0')
+  if(value.schemaVersion!==5 || value.release!=='1.0.0')
     invalid('Unexpected release acceptance schema/version')
   const proof=(section,name,display=name)=>{
     const evidence=section?.[name]
@@ -70,8 +70,27 @@ export function checkFirstRelease(value){
       invalid('codex/'+os+': exact official Host version is required')
     if(build==='0.146.1')
       invalid('codex/'+os+': Codex 0.146.1 has a verified duplicate live Goal owner race')
+    // #205: Official 0.164.0 Goal=paused does not gate direct user turn/start.
+    // Its real positive automatic-Goal-pause tests cannot sign off a full strike.
+    if(build==='0.164.0')
+      invalid('codex/'+os+': Codex 0.164.0 accepts ordinary new Turn while Goal is paused')
     proof(target,'exclusiveLiveGoalOwnership','codex/'+os+'/exclusiveLiveGoalOwnership')
     proof(target,'atomicGoalStateTransition','codex/'+os+'/atomicGoalStateTransition')
+    // Every supported ordinary client must be proven independently.
+    // A single instrumented Picket client cannot cover native CLI/Desktop,
+    // direct App-Server RPC or SDK clients that never call that client gate.
+    const clients=os==='linux'
+      ? ['tui','appServer','sdk']
+      : ['tui','desktop','appServer','sdk']
+    for(const client of clients){
+      const entry=target?.newTurnAdmissionByClient?.[client]
+      proof(target?.newTurnAdmissionByClient,client,
+        'codex/'+os+'/'+client+'/newTurnAdmission')
+      proof(entry,'atomicHostAdmission',
+        'codex/'+os+'/'+client+'/atomicHostAdmission')
+      proof(entry,'noticeAndLosslessComposerOrFailOpen',
+        'codex/'+os+'/'+client+'/noticeAndLosslessComposerOrFailOpen')
+    }
   }
   // Desktop is a separate native Host. The policy now ALLOWS discarding the
   // attempted text/attachments and an explicit USER resubmit after return,
